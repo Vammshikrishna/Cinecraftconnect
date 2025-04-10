@@ -1,7 +1,7 @@
 
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, Search, Menu, X, Film, User, Briefcase, Play, Users } from 'lucide-react';
+import { Bell, Search, Menu, X, Film, User, Briefcase, Play, Users, BookOpen } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -56,6 +56,10 @@ const Navbar = () => {
             <Link to="/network" className={`nav-item ${isActive('/network') ? 'nav-item-active' : 'nav-item-inactive'}`}>
               <Users size={18} />
               <span>Network</span>
+            </Link>
+            <Link to="/learn" className={`nav-item ${isActive('/learn') ? 'nav-item-active' : 'nav-item-inactive'}`}>
+              <BookOpen size={18} />
+              <span>Learn</span>
             </Link>
           </nav>
 
@@ -157,6 +161,16 @@ const Navbar = () => {
               <div className="flex items-center">
                 <Users size={18} className="mr-3" />
                 <span>Network</span>
+              </div>
+            </Link>
+            <Link 
+              to="/learn" 
+              className={`nav-item block ${isActive('/learn') ? 'nav-item-active' : 'nav-item-inactive'}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <div className="flex items-center">
+                <BookOpen size={18} className="mr-3" />
+                <span>Learn</span>
               </div>
             </Link>
             <div className="pt-4 pb-3 border-t border-white/10">

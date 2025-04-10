@@ -14,6 +14,7 @@ import Login from "./pages/Login";
 import Explore from "./pages/Explore";
 import CraftPage from "./pages/CraftPage";
 import AllCraftsPage from "./pages/AllCraftsPage";
+import LearningPortal from "./pages/LearningPortal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
           <Route path="/explore" element={<Explore />} />
           <Route path="/craft/:craftName" element={<CraftPage />} />
           <Route path="/craft/all" element={<AllCraftsPage />} />
+          <Route path="/learn" element={<LearningPortal />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
