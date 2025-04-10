@@ -2,7 +2,7 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Camera, Film, Music, Brush, Scissors, Mic, TheatreMask, Laptop } from "lucide-react";
+import { ArrowLeft, Camera, Film, Music, Brush, Scissors, Mic, Users, Laptop } from "lucide-react";
 import { Link } from "react-router-dom";
 
 // Expanded crafts information with descriptions
@@ -40,7 +40,7 @@ const craftsInfo = [
   {
     name: "Acting",
     description: "Performers who bring characters to life through emotional and physical interpretation of the script.",
-    icon: <TheatreMask className="h-8 w-8 text-cinesphere-purple mb-2" />,
+    icon: <Users className="h-8 w-8 text-cinesphere-purple mb-2" />,
   },
   {
     name: "Music Composition",
