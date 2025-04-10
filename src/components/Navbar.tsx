@@ -1,7 +1,7 @@
 
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Bell, Search, Menu, X, Film, User, Briefcase, Play, PenTool, Users } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Bell, Search, Menu, X, Film, User, Briefcase, Play, Users } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -15,9 +15,18 @@ import {
 
 const Navbar = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
   
   const toggleMobileMenu = () => {
     setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  // Function to check if a path is active
+  const isActive = (path: string) => {
+    if (path === '/') {
+      return location.pathname === path;
+    }
+    return location.pathname.startsWith(path);
   };
 
   return (
@@ -32,19 +41,19 @@ const Navbar = () => {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
-            <Link to="/feed" className="nav-item nav-item-inactive">
+            <Link to="/feed" className={`nav-item ${isActive('/feed') ? 'nav-item-active' : 'nav-item-inactive'}`}>
               <Play size={18} />
               <span>Feed</span>
             </Link>
-            <Link to="/projects" className="nav-item nav-item-inactive">
+            <Link to="/projects" className={`nav-item ${isActive('/projects') ? 'nav-item-active' : 'nav-item-inactive'}`}>
               <Film size={18} />
               <span>Projects</span>
             </Link>
-            <Link to="/jobs" className="nav-item nav-item-inactive">
+            <Link to="/jobs" className={`nav-item ${isActive('/jobs') ? 'nav-item-active' : 'nav-item-inactive'}`}>
               <Briefcase size={18} />
               <span>Jobs</span>
             </Link>
-            <Link to="/network" className="nav-item nav-item-inactive">
+            <Link to="/network" className={`nav-item ${isActive('/network') ? 'nav-item-active' : 'nav-item-inactive'}`}>
               <Users size={18} />
               <span>Network</span>
             </Link>
@@ -85,7 +94,11 @@ const Navbar = () => {
                 </DropdownMenuItem>
                 <DropdownMenuItem>Settings</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>Logout</DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Link to="/login" className="flex items-center w-full">
+                    Logout
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -106,32 +119,52 @@ const Navbar = () => {
       {mobileMenuOpen && (
         <div className="md:hidden bg-cinesphere-dark border-t border-white/10">
           <div className="space-y-1 px-4 py-3">
-            <Link to="/feed" className="nav-item nav-item-inactive block">
+            <Link 
+              to="/feed" 
+              className={`nav-item block ${isActive('/feed') ? 'nav-item-active' : 'nav-item-inactive'}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
               <div className="flex items-center">
                 <Play size={18} className="mr-3" />
                 <span>Feed</span>
               </div>
             </Link>
-            <Link to="/projects" className="nav-item nav-item-inactive block">
+            <Link 
+              to="/projects" 
+              className={`nav-item block ${isActive('/projects') ? 'nav-item-active' : 'nav-item-inactive'}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
               <div className="flex items-center">
                 <Film size={18} className="mr-3" />
                 <span>Projects</span>
               </div>
             </Link>
-            <Link to="/jobs" className="nav-item nav-item-inactive block">
+            <Link 
+              to="/jobs" 
+              className={`nav-item block ${isActive('/jobs') ? 'nav-item-active' : 'nav-item-inactive'}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
               <div className="flex items-center">
                 <Briefcase size={18} className="mr-3" />
                 <span>Jobs</span>
               </div>
             </Link>
-            <Link to="/network" className="nav-item nav-item-inactive block">
+            <Link 
+              to="/network" 
+              className={`nav-item block ${isActive('/network') ? 'nav-item-active' : 'nav-item-inactive'}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
               <div className="flex items-center">
                 <Users size={18} className="mr-3" />
                 <span>Network</span>
               </div>
             </Link>
             <div className="pt-4 pb-3 border-t border-white/10">
-              <Link to="/profile" className="nav-item nav-item-inactive block">
+              <Link 
+                to="/profile" 
+                className="nav-item nav-item-inactive block"
+                onClick={() => setMobileMenuOpen(false)}
+              >
                 <div className="flex items-center">
                   <User size={18} className="mr-3" />
                   <span>Profile</span>

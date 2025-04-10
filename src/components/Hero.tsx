@@ -51,9 +51,11 @@ const Hero = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
           {['Direction', 'Cinematography', 'Production Design', 'Editing', 
             'Sound Design', 'Screenwriting', 'Acting', 'Costume Design'].map((craft) => (
-            <div key={craft} className="glass-card p-3 rounded-lg">
-              {craft}
-            </div>
+            <Link to={`/craft/${craft.toLowerCase().replace(' ', '-')}`} key={craft}>
+              <div className="glass-card p-3 rounded-lg hover:bg-cinesphere-purple/20 transition-colors">
+                {craft}
+              </div>
+            </Link>
           ))}
         </div>
         <p className="mt-4 text-sm text-gray-400">And 16 more film crafts...</p>
