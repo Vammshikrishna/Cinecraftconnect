@@ -2,7 +2,7 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Users, Film, Briefcase, Tv, Award, Book } from "lucide-react";
+import { ArrowRight, Users, Film, Briefcase, Tv, Award, Book, Info } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Explore = () => {
@@ -97,7 +97,7 @@ const Explore = () => {
           
           {/* Crafts Section */}
           <h2 className="text-2xl font-bold mb-8 text-center">Connecting All 24 Film Crafts</h2>
-          <div className="glass-card rounded-xl p-8 mb-16">
+          <div className="glass-card rounded-xl p-8 mb-8">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {craftCategories.map((craft) => (
                 <div key={craft} className="bg-cinesphere-dark/50 rounded-lg p-3 text-center hover:bg-cinesphere-purple/20 transition-colors">
@@ -107,9 +107,17 @@ const Explore = () => {
             </div>
             <div className="text-center mt-8">
               <p className="text-gray-400 mb-4">Find the right collaborators for any position in your production</p>
-              <Button asChild className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-                <Link to="/network">Browse by Craft</Link>
-              </Button>
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                <Button asChild className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
+                  <Link to="/network">Browse by Craft</Link>
+                </Button>
+                <Button asChild variant="outline" className="border-white/20 hover:bg-white/5">
+                  <Link to="/craft/all" className="flex items-center">
+                    <Info className="mr-2 h-4 w-4" />
+                    Learn About All Crafts
+                  </Link>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
