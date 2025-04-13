@@ -16,6 +16,10 @@ import CraftPage from "./pages/CraftPage";
 import AllCraftsPage from "./pages/AllCraftsPage";
 import LearningPortal from "./pages/LearningPortal";
 import NotFound from "./pages/NotFound";
+import DiscussionRooms from "./pages/DiscussionRooms";
+import Settings from "./pages/Settings";
+import Profile from "./pages/Profile";
+import ChatPage from "./pages/ChatPage";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +33,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/feed" element={<Feed />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/my" element={<Projects />} />
           <Route path="/jobs" element={<Jobs />} />
           <Route path="/network" element={<Network />} />
           <Route path="/register" element={<Register />} />
@@ -37,6 +42,10 @@ const App = () => (
           <Route path="/craft/:craftName" element={<CraftPage />} />
           <Route path="/craft/all" element={<AllCraftsPage />} />
           <Route path="/learn" element={<LearningPortal />} />
+          <Route path="/discussion-rooms" element={<DiscussionRooms />} />
+          <Route path="/chats" element={<ChatPage />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
