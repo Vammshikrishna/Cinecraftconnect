@@ -1,10 +1,13 @@
 
 import { useState } from "react";
 import { Star, StarHalf, StarOff } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface StarRatingProps {
-  rating: number;
-  onRate?: (rating: number) => void;
+  title: string;
+  type: 'Movie' | 'Short Film';
+  initialRating?: number;
   readOnly?: boolean;
   className?: string;
   size?: number;
@@ -12,14 +15,57 @@ interface StarRatingProps {
 }
 
 const StarRating = ({
-  rating,
-  onRate,
+  title,
+  type,
+  initialRating = 0,
   readOnly = false,
   className = "",
   size = 20,
   showValue = false,
 }: StarRatingProps) => {
+  const [rating, setRating] = useState(initialRating);
   const [hovered, setHovered] = useState<number | null>(null);
+
+  const handleRate = async (selectedRating: number) => {
+    if (readOnly) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        toast({
+          title: "Login Required",
+          description: "Please log in to rate this movie.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('movie_ratings')
+        .upsert({ 
+          user_id: user.id, 
+          movie_title: title, 
+          rating: selectedRating 
+        })
+        .select();
+
+      if (error) throw error;
+
+      setRating(selectedRating);
+      toast({
+        title: "Rating Submitted",
+        description: `You rated "${title}" ${selectedRating} stars.`
+      });
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      toast({
+        title: "Error",
+        description: "Could not submit rating. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className={`flex items-center gap-1 ${className}`}>
@@ -31,7 +77,7 @@ const StarRating = ({
             className={`p-0 bg-transparent border-0 focus:outline-none`}
             disabled={readOnly}
             aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
-            onClick={() => onRate && onRate(star)}
+            onClick={() => handleRate(star)}
             onMouseEnter={() => !readOnly && setHovered(star)}
             onMouseLeave={() => setHovered(null)}
           >

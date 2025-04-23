@@ -19,7 +19,13 @@ const MovieRating = ({ title, rating, releaseDate, type }: MovieRatingProps) => 
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between">
-          <StarRating rating={rating} readOnly showValue size={20} />
+          <StarRating 
+            title={title}
+            type={type}
+            initialRating={rating} 
+            showValue 
+            size={20} 
+          />
           <span className="text-sm text-gray-400">Released: {releaseDate}</span>
         </div>
       </CardContent>
