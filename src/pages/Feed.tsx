@@ -194,19 +194,6 @@ const Feed = () => {
                       ))}
                     </div>
                     
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-400 mr-2">Public rating:</span>
-                        <StarRating
-                          rating={postRatings[post.id] || 0}
-                          onRate={(rating) => handleRate(post.id, rating)}
-                        />
-                        {postRatings[post.id] && (
-                          <span className="text-xs text-yellow-400 ml-2">{postRatings[post.id]} / 5</span>
-                        )}
-                      </div>
-                    </div>
-                    
                     <div className="flex items-center justify-between pt-4 border-t border-white/10">
                       <Button variant="ghost" size="sm" className="text-gray-400 hover:text-cinesphere-purple hover:bg-cinesphere-purple/10 flex items-center">
                         <Heart size={18} className="mr-1" />
