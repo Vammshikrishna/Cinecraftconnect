@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "@/components/Navbar";
@@ -7,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, MessageCircle, Share2, Film, Camera, PenTool, Music, Scissors, Video, Mic, Play } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import StarRating from "@/components/StarRating";
 
-// Mock data for posts with AI-generated content
 const mockPosts = [
   {
     id: 1,
@@ -73,7 +72,6 @@ const mockPosts = [
   }
 ];
 
-// Craft filters for the feed
 const craftFilters = [
   { name: "All", icon: null, active: true },
   { name: "Directing", icon: <Film size={16} />, active: false },
@@ -86,7 +84,12 @@ const craftFilters = [
 const Feed = () => {
   const [activeFilter, setActiveFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("feed");
-  
+  const [postRatings, setPostRatings] = useState<{ [postId: number]: number }>({});
+
+  const handleRate = (postId: number, rating: number) => {
+    setPostRatings((curr) => ({ ...curr, [postId]: rating }));
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-cinesphere-dark to-black">
       <Navbar />
@@ -109,7 +112,6 @@ const Feed = () => {
             </TabsList>
             
             <TabsContent value="feed">
-              {/* Craft Filters */}
               <div className="mb-8 overflow-x-auto">
                 <div className="flex space-x-2 min-w-max">
                   {craftFilters.map((filter) => (
@@ -132,11 +134,9 @@ const Feed = () => {
                 </div>
               </div>
               
-              {/* Posts Feed */}
               <div className="space-y-6">
                 {mockPosts.map((post) => (
                   <div key={post.id} className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
-                    {/* Post Header */}
                     <div className="flex items-center mb-4">
                       <Avatar className="h-10 w-10 mr-3">
                         <AvatarImage src="/placeholder.svg" />
@@ -152,10 +152,8 @@ const Feed = () => {
                       </div>
                     </div>
                     
-                    {/* Post Content */}
                     <p className="mb-4">{post.content}</p>
                     
-                    {/* Post Image (if any) */}
                     {post.hasImage && (
                       <div className="mb-4 rounded-lg overflow-hidden bg-cinesphere-dark/50 h-64 flex items-center justify-center relative">
                         <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
@@ -169,7 +167,6 @@ const Feed = () => {
                       </div>
                     )}
                     
-                    {/* Post Video (if any) */}
                     {post.hasVideo && (
                       <div className="mb-4 rounded-lg overflow-hidden bg-cinesphere-dark/50 h-80 flex items-center justify-center relative">
                         <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
@@ -186,7 +183,6 @@ const Feed = () => {
                       </div>
                     )}
                     
-                    {/* Post Tags */}
                     <div className="flex flex-wrap gap-2 mb-4">
                       {post.tags && post.tags.map((tag) => (
                         <span 
@@ -198,7 +194,19 @@ const Feed = () => {
                       ))}
                     </div>
                     
-                    {/* Post Actions */}
+                    <div className="mb-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-400 mr-2">Public rating:</span>
+                        <StarRating
+                          rating={postRatings[post.id] || 0}
+                          onRate={(rating) => handleRate(post.id, rating)}
+                        />
+                        {postRatings[post.id] && (
+                          <span className="text-xs text-yellow-400 ml-2">{postRatings[post.id]} / 5</span>
+                        )}
+                      </div>
+                    </div>
+                    
                     <div className="flex items-center justify-between pt-4 border-t border-white/10">
                       <Button variant="ghost" size="sm" className="text-gray-400 hover:text-cinesphere-purple hover:bg-cinesphere-purple/10 flex items-center">
                         <Heart size={18} className="mr-1" />
@@ -296,7 +304,6 @@ const Feed = () => {
                 <p className="mb-6 text-gray-300">Chat with other filmmakers, collaborators, and mentors.</p>
                 
                 <div className="space-y-3 mb-6">
-                  {/* Chat preview items */}
                   <div className="flex items-center p-3 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
                     <Avatar className="h-10 w-10 mr-3">
                       <AvatarFallback className="bg-gradient-to-br from-cinesphere-purple to-cinesphere-blue">MC</AvatarFallback>
