@@ -4,9 +4,10 @@ import Footer from "@/components/Footer";
 import { Link } from "react-router-dom";
 import { Film, Plus, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import StarRating from "@/components/StarRating";
 
 const Projects = () => {
-  // Mock project data
+  // Mock project data with ratings
   const projects = [
     {
       id: 1,
@@ -15,6 +16,7 @@ const Projects = () => {
       role: "Director",
       status: "In Production",
       collaborators: 8,
+      rating: 4.5,
     },
     {
       id: 2,
@@ -23,6 +25,7 @@ const Projects = () => {
       role: "Cinematographer",
       status: "Completed",
       collaborators: 12,
+      rating: 4.8,
     },
     {
       id: 3,
@@ -31,6 +34,7 @@ const Projects = () => {
       role: "Production Designer",
       status: "Pre-Production",
       collaborators: 24,
+      rating: 3.9,
     }
   ];
 
@@ -64,8 +68,9 @@ const Projects = () => {
                   <span className="text-sm text-gray-400">Your role: {project.role}</span>
                 </div>
                 
-                <div className="flex items-center gap-2 mb-5">
+                <div className="flex justify-between items-center mb-5">
                   <span className="text-sm text-gray-400">{project.collaborators} collaborators</span>
+                  <StarRating rating={project.rating} readOnly showValue size={16} />
                 </div>
                 
                 <Link to={`/projects/${project.id}`} className="flex items-center text-cinesphere-purple hover:underline">
