@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Star, StarOff } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
@@ -14,7 +13,6 @@ interface StarRatingProps {
   showValue?: boolean;
 }
 
-// Define a type for the movie rating data
 interface MovieRating {
   user_id: string;
   movie_title: string;
@@ -48,14 +46,13 @@ const StarRating = ({
         return;
       }
 
-      // Use a generic type parameter with the PostgrestQueryBuilder
       const { error } = await supabase
-        .from('movie_ratings')
+        .from('movie_ratings' as any)
         .upsert({ 
           user_id: user.id, 
           movie_title: title, 
           rating: selectedRating 
-        } as MovieRating, { onConflict: 'user_id,movie_title' })
+        } as MovieRating)
         .select();
 
       if (error) throw error;
