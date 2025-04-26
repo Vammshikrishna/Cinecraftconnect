@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
+  Home,
   Play, 
   Film, 
   Briefcase, 
@@ -37,6 +38,16 @@ const MobileMenu = ({ isOpen, onClose, onSearchOpen }: MobileMenuProps) => {
   return (
     <div className="md:hidden bg-cinesphere-dark border-t border-white/10">
       <div className="space-y-1 px-4 py-3">
+        <Link 
+          to="/" 
+          className={`nav-item block ${isActive('/') ? 'nav-item-active' : 'nav-item-inactive'}`}
+          onClick={onClose}
+        >
+          <div className="flex items-center">
+            <Home size={18} className="mr-3" />
+            <span>Home</span>
+          </div>
+        </Link>
         <Link 
           to="/feed" 
           className={`nav-item block ${isActive('/feed') ? 'nav-item-active' : 'nav-item-inactive'}`}

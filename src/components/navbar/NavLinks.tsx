@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from 'react-router-dom';
-import { Play, Film, Briefcase, Users, BookOpen } from 'lucide-react';
+import { Home, Play, Film, Briefcase, Users, BookOpen } from 'lucide-react';
 
 const NavLinks = () => {
   const location = useLocation();
@@ -15,6 +15,10 @@ const NavLinks = () => {
 
   return (
     <nav className="hidden md:flex items-center space-x-6">
+      <Link to="/" className={`nav-item ${isActive('/') ? 'nav-item-active' : 'nav-item-inactive'}`}>
+        <Home size={18} />
+        <span>Home</span>
+      </Link>
       <Link to="/feed" className={`nav-item ${isActive('/feed') ? 'nav-item-active' : 'nav-item-inactive'}`}>
         <Play size={18} />
         <span>Feed</span>
