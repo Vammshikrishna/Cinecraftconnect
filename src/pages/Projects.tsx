@@ -70,7 +70,14 @@ const Projects = () => {
                 
                 <div className="flex justify-between items-center mb-5">
                   <span className="text-sm text-gray-400">{project.collaborators} collaborators</span>
-                  <StarRating rating={project.rating} readOnly showValue size={16} />
+                  <StarRating 
+                    title={project.title}
+                    type={project.type as 'Short Film' | 'Movie'}
+                    initialRating={project.rating} 
+                    readOnly 
+                    showValue 
+                    size={16}
+                  />
                 </div>
                 
                 <Link to={`/projects/${project.id}`} className="flex items-center text-cinesphere-purple hover:underline">
