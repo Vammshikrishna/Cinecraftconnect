@@ -3,73 +3,63 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerTrigger,
-} from "@/components/ui/drawer";
 
 export function MobileNav() {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const toggleMenu = () => {
+    setIsOpen(!isOpen);
+  };
 
   return (
-    <Drawer open={open} onOpenChange={setOpen}>
-      <DrawerTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="fixed bottom-4 left-4 z-50 rounded-full bg-cinesphere-dark shadow-lg border border-white/10 md:hidden"
-        >
-          <Menu className="h-6 w-6" />
-          <span className="sr-only">Toggle menu</span>
-        </Button>
-      </DrawerTrigger>
-      <DrawerContent className="bg-cinesphere-dark border-t border-white/10">
-        <nav className="flex flex-col items-center p-6 space-y-4">
-          <Link
-            to="/"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Home
-          </Link>
-          <Link
-            to="/feed"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Feed
-          </Link>
-          <Link
-            to="/projects"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Projects
-          </Link>
-          <Link
-            to="/jobs"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Jobs
-          </Link>
-          <Link
-            to="/network"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Network
-          </Link>
-          <Link
-            to="/learn"
-            onClick={() => setOpen(false)}
-            className="nav-item nav-item-inactive w-full text-center"
-          >
-            Learn
-          </Link>
-        </nav>
-      </DrawerContent>
-    </Drawer>
+    <div className="md:hidden">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="fixed bottom-4 left-4 z-50 rounded-full bg-cinesphere-dark shadow-lg border border-white/10"
+        onClick={toggleMenu}
+      >
+        <Menu className="h-6 w-6" />
+        <span className="sr-only">Toggle menu</span>
+      </Button>
+
+      <nav className={`fixed inset-0 z-40 pointer-events-none ${isOpen ? 'visible' : 'invisible'}`}>
+        <div 
+          className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+            isOpen ? 'opacity-100' : 'opacity-0'
+          }`}
+          onClick={() => setIsOpen(false)}
+        />
+        
+        <div className="fixed bottom-4 left-4 flex items-center justify-center">
+          <div className={`relative transition-all duration-500 ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}>
+            {[
+              { to: "/", label: "Home", angle: 0 },
+              { to: "/feed", label: "Feed", angle: 60 },
+              { to: "/projects", label: "Projects", angle: 120 },
+              { to: "/jobs", label: "Jobs", angle: 180 },
+              { to: "/network", label: "Network", angle: 240 },
+              { to: "/learn", label: "Learn", angle: 300 }
+            ].map(({ to, label, angle }) => (
+              <Link
+                key={to}
+                to={to}
+                onClick={() => setIsOpen(false)}
+                className="nav-item nav-item-inactive absolute pointer-events-auto"
+                style={{
+                  transform: `rotate(${angle}deg) translate(100px) rotate(-${angle}deg)`,
+                  transition: 'transform 0.5s, opacity 0.3s',
+                  opacity: isOpen ? 1 : 0
+                }}
+              >
+                <div className="bg-cinesphere-dark px-4 py-2 rounded-full shadow-lg border border-white/10">
+                  {label}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </nav>
+    </div>
   );
 }
