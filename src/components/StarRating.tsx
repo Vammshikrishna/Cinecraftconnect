@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { Star, StarOff } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
@@ -46,13 +47,15 @@ const StarRating = ({
         return;
       }
 
+      const ratingData: MovieRating = {
+        user_id: user.id,
+        movie_title: title,
+        rating: selectedRating
+      };
+
       const { error } = await supabase
-        .from('movie_ratings' as any)
-        .upsert({ 
-          user_id: user.id, 
-          movie_title: title, 
-          rating: selectedRating 
-        } as MovieRating)
+        .from('movie_ratings')
+        .upsert(ratingData)
         .select();
 
       if (error) throw error;
