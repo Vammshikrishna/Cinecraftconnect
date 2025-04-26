@@ -16,7 +16,7 @@ export function MobileNav() {
       <Button
         variant="ghost"
         size="icon"
-        className="fixed bottom-4 left-4 z-50 rounded-full bg-cinesphere-dark shadow-lg border border-white/10"
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-full bg-cinesphere-dark shadow-lg border border-white/10"
         onClick={toggleMenu}
       >
         <Menu className="h-6 w-6" />
@@ -31,7 +31,7 @@ export function MobileNav() {
           onClick={() => setIsOpen(false)}
         />
         
-        <div className="fixed bottom-4 left-4 flex items-center justify-center">
+        <div className="fixed inset-0 flex items-center justify-center">
           <div className={`relative transition-all duration-500 ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}>
             {[
               { to: "/", label: "Home", angle: 0 },
@@ -47,7 +47,7 @@ export function MobileNav() {
                 onClick={() => setIsOpen(false)}
                 className="nav-item nav-item-inactive absolute pointer-events-auto"
                 style={{
-                  transform: `rotate(${angle}deg) translate(100px) rotate(-${angle}deg)`,
+                  transform: `rotate(${angle}deg) translate(120px) rotate(-${angle}deg)`,
                   transition: 'transform 0.5s, opacity 0.3s',
                   opacity: isOpen ? 1 : 0
                 }}
