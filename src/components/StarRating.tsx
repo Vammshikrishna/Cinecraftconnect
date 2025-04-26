@@ -14,6 +14,13 @@ interface StarRatingProps {
   showValue?: boolean;
 }
 
+// Define a type for the movie rating data
+interface MovieRating {
+  user_id: string;
+  movie_title: string;
+  rating: number;
+}
+
 const StarRating = ({
   title,
   type,
@@ -41,15 +48,14 @@ const StarRating = ({
         return;
       }
 
-      // Fix: Using explicit typing with 'any' to bypass the type error
-      // while maintaining the functionality
+      // Use a generic type parameter with the PostgrestQueryBuilder
       const { error } = await supabase
-        .from('movie_ratings' as any)
+        .from('movie_ratings')
         .upsert({ 
           user_id: user.id, 
           movie_title: title, 
           rating: selectedRating 
-        } as any)
+        } as MovieRating, { onConflict: 'user_id,movie_title' })
         .select();
 
       if (error) throw error;
