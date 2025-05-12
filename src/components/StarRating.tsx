@@ -53,11 +53,12 @@ const StarRating = ({
         rating: selectedRating
       };
 
-      // Use type assertion to fix TypeScript error with Supabase
+      // Use the correct type for the "onConflict" option
       const { error } = await supabase
         .from('movie_ratings')
-        .upsert(ratingData, { onConflict: 'user_id,movie_title' } as any)
-        .select();
+        .upsert(ratingData, { 
+          onConflict: 'user_id,movie_title'
+        });
 
       if (error) throw error;
 
