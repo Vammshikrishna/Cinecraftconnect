@@ -6,6 +6,7 @@ import Testimonials from "@/components/Testimonials";
 import CTASection from "@/components/CTASection";
 import Footer from "@/components/Footer";
 import MovieRating from "@/components/MovieRating";
+import Announcements from "@/components/Announcements";
 
 const Index = () => {
   // Mock data for latest rated releases
@@ -36,6 +37,9 @@ const Index = () => {
       <main className="pt-16">
         <Hero />
         <Features />
+        
+        {/* Announcements Section */}
+        <Announcements />
         
         {/* Latest Rated Releases Section */}
         <section className="py-16 px-4 md:px-8">
