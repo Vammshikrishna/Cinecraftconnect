@@ -9,6 +9,72 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      announcements: {
+        Row: {
+          author_id: string
+          content: string
+          event_date: string | null
+          event_location: string | null
+          id: string
+          posted_at: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          author_id: string
+          content: string
+          event_date?: string | null
+          event_location?: string | null
+          id?: string
+          posted_at?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          author_id?: string
+          content?: string
+          event_date?: string | null
+          event_location?: string | null
+          id?: string
+          posted_at?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      collaborations: {
+        Row: {
+          craft: string
+          description: string
+          id: string
+          location: string | null
+          posted_date: string | null
+          poster_id: string
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          craft: string
+          description: string
+          id?: string
+          location?: string | null
+          posted_date?: string | null
+          poster_id: string
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          craft?: string
+          description?: string
+          id?: string
+          location?: string | null
+          posted_date?: string | null
+          poster_id?: string
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       movie_ratings: {
         Row: {
           created_at: string
@@ -33,6 +99,48 @@ export type Database = {
           rating?: number
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          craft: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          location: string | null
+          role: string | null
+          updated_at: string | null
+          username: string | null
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          craft?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          location?: string | null
+          role?: string | null
+          updated_at?: string | null
+          username?: string | null
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          craft?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          location?: string | null
+          role?: string | null
+          updated_at?: string | null
+          username?: string | null
+          website?: string | null
         }
         Relationships: []
       }

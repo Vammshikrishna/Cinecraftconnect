@@ -1,98 +1,211 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { CalendarDays, MessageCircle, ThumbsUp, Share2, Megaphone, Calendar } from "lucide-react";
+import { CalendarDays, MessageCircle, ThumbsUp, Share2, Megaphone, Calendar, Loader2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 
-// Mock announcement data
-const mockAnnouncements = [
-  {
-    id: 1,
-    author: "Jordan Rivera",
-    authorRole: "Director",
-    avatar: "/placeholder.svg",
-    initials: "JR",
-    title: "Casting Call: Lead Actress for Short Film",
-    content: "Looking for a lead actress (25-35) for an upcoming drama short film 'Echoes of Tomorrow'. Auditions will be held next weekend at Downtown Studio.",
-    eventDate: "2025-05-25",
-    eventLocation: "Downtown Studio, LA",
-    postedAt: "2025-05-01",
-    likes: 42,
-    comments: 8
-  },
-  {
-    id: 2,
-    author: "Emma Clark",
-    authorRole: "Producer",
-    avatar: "/placeholder.svg",
-    initials: "EC",
-    title: "Film Festival Launch Party",
-    content: "Join us for the launch party of the 10th Annual Independent Filmmakers Festival. Network with industry professionals and enjoy screenings of selected short films.",
-    eventDate: "2025-06-10",
-    eventLocation: "Riverfront Cinema, NYC",
-    postedAt: "2025-05-05",
-    likes: 67,
-    comments: 15
-  },
-  {
-    id: 3,
-    author: "Marcus Johnson",
-    authorRole: "Workshop Facilitator",
-    avatar: "/placeholder.svg",
-    initials: "MJ",
-    title: "Screenwriting Workshop Series",
-    content: "Four-week intensive screenwriting workshop for beginners and intermediate writers. Learn structure, character development, and dialogue techniques from industry professionals.",
-    eventDate: "2025-06-05",
-    eventLocation: "Film Academy Center, Online",
-    postedAt: "2025-05-08",
-    likes: 31,
-    comments: 6
-  }
-];
+interface Profile {
+  id: string;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
+  role?: string;
+}
+
+interface Announcement {
+  id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  event_date: string | null;
+  event_location: string | null;
+  posted_at: string;
+  updated_at: string;
+  author?: Profile;
+}
 
 const Announcements = () => {
+  const { user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [eventLocation, setEventLocation] = useState("");
-  const [announcements, setAnnouncements] = useState(mockAnnouncements);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetchAnnouncements();
+
+    // Set up realtime subscription
+    const announcementsChannel = supabase
+      .channel('public:announcements')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            fetchAnnouncementWithAuthor(payload.new as Announcement);
+          } else if (payload.eventType === 'UPDATE') {
+            setAnnouncements(current => 
+              current.map(item => item.id === payload.new.id ? {...item, ...payload.new} : item)
+            );
+          } else if (payload.eventType === 'DELETE') {
+            setAnnouncements(current => 
+              current.filter(item => item.id !== payload.old.id)
+            );
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(announcementsChannel);
+    };
+  }, []);
+
+  const fetchAnnouncements = async () => {
+    setIsLoading(true);
+    try {
+      const { data: announcementData, error } = await supabase
+        .from('announcements')
+        .select('*')
+        .order('posted_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Now fetch author information for each announcement
+      const authorIds = [...new Set(announcementData.map(a => a.author_id))];
+      
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, username, full_name, avatar_url, role')
+        .in('id', authorIds);
+        
+      if (profileError) throw profileError;
+
+      // Create a map of profiles by id for easy lookup
+      const profileMap: Record<string, Profile> = {};
+      profileData?.forEach(profile => {
+        profileMap[profile.id] = profile;
+      });
+      
+      setProfiles(profileMap);
+      
+      // Attach author data to announcements
+      const announcementsWithAuthors = announcementData.map(announcement => ({
+        ...announcement,
+        author: profileMap[announcement.author_id]
+      }));
+      
+      setAnnouncements(announcementsWithAuthors);
+    } catch (error) {
+      console.error("Error fetching announcements:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load announcements",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchAnnouncementWithAuthor = async (newAnnouncement: Announcement) => {
+    try {
+      // Check if we already have the author's profile
+      if (!profiles[newAnnouncement.author_id]) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username, full_name, avatar_url, role')
+          .eq('id', newAnnouncement.author_id)
+          .single();
+          
+        if (profileError) throw profileError;
+        
+        // Add this profile to our profiles map
+        setProfiles(current => ({
+          ...current,
+          [profileData.id]: profileData
+        }));
+      }
+      
+      // Add the announcement with author data to our list
+      setAnnouncements(current => [
+        {
+          ...newAnnouncement,
+          author: profiles[newAnnouncement.author_id] || undefined
+        },
+        ...current
+      ]);
+    } catch (error) {
+      console.error("Error fetching announcement author:", error);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Create new announcement (in a real app, this would send to a backend)
-    const newAnnouncement = {
-      id: announcements.length + 1,
-      author: "Current User", // In a real app, get from auth
-      authorRole: "Filmmaker", // In a real app, get from profile
-      avatar: "/placeholder.svg",
-      initials: "CU",
-      title: title,
-      content: content,
-      eventDate: eventDate,
-      eventLocation: eventLocation,
-      postedAt: new Date().toISOString().split('T')[0],
-      likes: 0,
-      comments: 0
-    };
+    if (!user) {
+      toast({
+        title: "Authentication required",
+        description: "Please sign in to post an announcement",
+        variant: "destructive"
+      });
+      return;
+    }
     
-    setAnnouncements([newAnnouncement, ...announcements]);
+    setIsSubmitting(true);
     
-    // Reset form
-    setTitle("");
-    setContent("");
-    setEventDate("");
-    setEventLocation("");
-    setShowForm(false);
-    
-    toast({
-      title: "Announcement posted!",
-      description: "Your announcement has been published to the community."
-    });
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .insert({
+          author_id: user.id,
+          title,
+          content,
+          event_date: eventDate || null,
+          event_location: eventLocation || null
+        });
+        
+      if (error) throw error;
+      
+      // Reset form
+      setTitle("");
+      setContent("");
+      setEventDate("");
+      setEventLocation("");
+      setShowForm(false);
+      
+      toast({
+        title: "Announcement posted!",
+        description: "Your announcement has been published to the community."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to post announcement",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getInitials = (name?: string) => {
+    if (!name) return "U";
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase();
   };
 
   return (
@@ -103,6 +216,7 @@ const Announcements = () => {
           <Button 
             onClick={() => setShowForm(!showForm)} 
             className="bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+            disabled={!user}
           >
             <Megaphone size={16} className="mr-2" /> 
             {showForm ? "Cancel" : "Post Announcement"}
@@ -162,8 +276,19 @@ const Announcements = () => {
               </div>
               
               <div className="flex gap-2 pt-2">
-                <Button type="submit" className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-                  Post Announcement
+                <Button 
+                  type="submit" 
+                  className="bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Posting...
+                    </>
+                  ) : (
+                    "Post Announcement"
+                  )}
                 </Button>
                 <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="border-white/20">
                   Cancel
@@ -173,63 +298,95 @@ const Announcements = () => {
           </div>
         )}
         
+        {/* Loading State */}
+        {isLoading && (
+          <div className="flex justify-center items-center p-20">
+            <Loader2 className="h-10 w-10 text-cinesphere-purple animate-spin" />
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {!isLoading && announcements.length === 0 && (
+          <div className="glass-card rounded-xl p-8 text-center">
+            <Megaphone className="h-12 w-12 mx-auto text-cinesphere-purple/50 mb-4" />
+            <h3 className="text-xl font-semibold mb-2">No Announcements Yet</h3>
+            <p className="text-gray-400 mb-6">Be the first to post an announcement in the community</p>
+            <Button 
+              onClick={() => setShowForm(true)} 
+              className="bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+              disabled={!user}
+            >
+              Post First Announcement
+            </Button>
+            {!user && (
+              <p className="mt-4 text-sm text-gray-400">
+                Sign in to post an announcement
+              </p>
+            )}
+          </div>
+        )}
+        
         {/* Announcements List */}
-        <div className="space-y-6">
-          {announcements.map((announcement) => (
-            <div key={announcement.id} className="glass-card rounded-xl p-6 hover:shadow-lg transition-all">
-              <div className="flex items-start gap-4">
-                <Avatar className="h-12 w-12">
-                  <AvatarImage src={announcement.avatar} />
-                  <AvatarFallback className="bg-cinesphere-purple/30 text-white">{announcement.initials}</AvatarFallback>
-                </Avatar>
-                
-                <div className="flex-1">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-1">
-                    <h3 className="text-xl font-semibold">{announcement.title}</h3>
-                  </div>
+        {!isLoading && announcements.length > 0 && (
+          <div className="space-y-6">
+            {announcements.map((announcement) => (
+              <div key={announcement.id} className="glass-card rounded-xl p-6 hover:shadow-lg transition-all">
+                <div className="flex items-start gap-4">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={announcement.author?.avatar_url || ""} />
+                    <AvatarFallback className="bg-cinesphere-purple/30 text-white">
+                      {getInitials(announcement.author?.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
                   
-                  <div className="flex items-center text-sm text-gray-400 mb-3">
-                    <span className="mr-2">{announcement.author}</span>
-                    <span className="text-cinesphere-purple">{announcement.authorRole}</span>
-                    <span className="mx-2">·</span>
-                    <span>Posted {new Date(announcement.postedAt).toLocaleDateString()}</span>
-                  </div>
-                  
-                  <p className="text-gray-200 mb-4">{announcement.content}</p>
-                  
-                  {(announcement.eventDate || announcement.eventLocation) && (
-                    <div className="bg-cinesphere-dark/30 rounded-lg p-3 mb-4 flex flex-col sm:flex-row gap-3">
-                      {announcement.eventDate && (
-                        <div className="flex items-center text-cinesphere-purple">
-                          <Calendar size={16} className="mr-2" />
-                          <span>Event Date: {new Date(announcement.eventDate).toLocaleDateString()}</span>
-                        </div>
-                      )}
-                      {announcement.eventLocation && (
-                        <div className="flex items-center text-cinesphere-purple sm:ml-4">
-                          <CalendarDays size={16} className="mr-2" />
-                          <span>Location: {announcement.eventLocation}</span>
-                        </div>
-                      )}
+                  <div className="flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-1">
+                      <h3 className="text-xl font-semibold">{announcement.title}</h3>
                     </div>
-                  )}
-                  
-                  <div className="flex pt-2 border-t border-white/10">
-                    <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-                      <ThumbsUp size={16} className="mr-1" /> {announcement.likes}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-                      <MessageCircle size={16} className="mr-1" /> {announcement.comments}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white ml-auto">
-                      <Share2 size={16} className="mr-1" /> Share
-                    </Button>
+                    
+                    <div className="flex items-center text-sm text-gray-400 mb-3">
+                      <span className="mr-2">{announcement.author?.full_name || "User"}</span>
+                      <span className="text-cinesphere-purple">{announcement.author?.role || "Filmmaker"}</span>
+                      <span className="mx-2">·</span>
+                      <span>Posted {new Date(announcement.posted_at).toLocaleDateString()}</span>
+                    </div>
+                    
+                    <p className="text-gray-200 mb-4">{announcement.content}</p>
+                    
+                    {(announcement.event_date || announcement.event_location) && (
+                      <div className="bg-cinesphere-dark/30 rounded-lg p-3 mb-4 flex flex-col sm:flex-row gap-3">
+                        {announcement.event_date && (
+                          <div className="flex items-center text-cinesphere-purple">
+                            <Calendar size={16} className="mr-2" />
+                            <span>Event Date: {new Date(announcement.event_date).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                        {announcement.event_location && (
+                          <div className="flex items-center text-cinesphere-purple sm:ml-4">
+                            <CalendarDays size={16} className="mr-2" />
+                            <span>Location: {announcement.event_location}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex pt-2 border-t border-white/10">
+                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+                        <ThumbsUp size={16} className="mr-1" /> 0
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+                        <MessageCircle size={16} className="mr-1" /> 0
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white ml-auto">
+                        <Share2 size={16} className="mr-1" /> Share
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

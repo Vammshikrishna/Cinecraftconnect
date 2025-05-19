@@ -1,10 +1,45 @@
 
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Film, ArrowLeft, Mail, Lock } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Loader2 } from "lucide-react";
 
 const Login = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { signIn, user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get the location they were trying to access before being redirected to login
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/feed";
+  
+  // If user is already logged in, redirect them
+  if (user) {
+    navigate(from, { replace: true });
+    return null;
+  }
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    
+    try {
+      setIsSubmitting(true);
+      await signIn(email, password);
+      // After successful login, navigate to the page they were trying to access
+      navigate(from, { replace: true });
+    } catch (error) {
+      console.error("Login error:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-cinesphere-dark flex flex-col">
       <div className="container mx-auto px-4 py-8">
@@ -24,7 +59,7 @@ const Login = () => {
           </div>
           
           <div className="glass-card rounded-xl p-8">
-            <form className="space-y-5">
+            <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-1">
                 <label htmlFor="email" className="text-sm font-medium">Email Address</label>
                 <div className="relative">
@@ -34,6 +69,9 @@ const Login = () => {
                     type="email" 
                     placeholder="you@example.com" 
                     className="pl-10 bg-cinesphere-dark/50 border-white/10" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
                   />
                 </div>
               </div>
@@ -51,13 +89,27 @@ const Login = () => {
                     id="password"
                     type="password" 
                     placeholder="Enter your password" 
-                    className="pl-10 bg-cinesphere-dark/50 border-white/10" 
+                    className="pl-10 bg-cinesphere-dark/50 border-white/10"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
                   />
                 </div>
               </div>
               
-              <Button type="submit" className="w-full bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-                Sign In
+              <Button 
+                type="submit" 
+                className="w-full bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing In...
+                  </>
+                ) : (
+                  "Sign In"
+                )}
               </Button>
             </form>
             
