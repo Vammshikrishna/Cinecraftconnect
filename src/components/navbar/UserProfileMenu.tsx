@@ -4,12 +4,10 @@ import {
   User, 
   Film, 
   Video, 
-  Settings,
-  LogOut,
-  Loader2
+  Settings
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -18,55 +16,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAuth } from '@/contexts/AuthContext';
 
 const UserProfileMenu = () => {
-  const { user, profile, signOut, isLoading } = useAuth();
-  
-  if (isLoading) {
-    return (
-      <Button variant="ghost" size="icon" className="rounded-full h-8 w-8 p-0">
-        <Loader2 className="h-4 w-4 animate-spin" />
-      </Button>
-    );
-  }
-  
-  if (!user) {
-    return (
-      <Link to="/login">
-        <Button size="sm" className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-          Sign In
-        </Button>
-      </Link>
-    );
-  }
-  
-  // Get the user's initials for the avatar fallback
-  const getInitials = () => {
-    if (!profile?.full_name) return "U";
-    
-    return profile.full_name
-      .split(' ')
-      .map(part => part[0])
-      .join('')
-      .toUpperCase();
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="rounded-full h-8 w-8 p-0">
           <Avatar className="h-8 w-8">
-            <AvatarImage src={profile?.avatar_url || ""} />
             <AvatarFallback className="bg-cinesphere-purple text-white">
-              {getInitials()}
+              GU
             </AvatarFallback>
           </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="bg-cinesphere-dark/95 backdrop-blur-lg border-white/10">
         <DropdownMenuLabel>
-          {profile?.full_name || user.email}
+          Guest User
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem>
@@ -93,13 +58,6 @@ const UserProfileMenu = () => {
             <Settings className="mr-2 h-4 w-4" />
             <span>Settings</span>
           </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-white/10" />
-        <DropdownMenuItem onClick={() => signOut()}>
-          <div className="flex items-center w-full text-red-400 hover:text-red-300 cursor-pointer">
-            <LogOut className="mr-2 h-4 w-4" />
-            <span>Logout</span>
-          </div>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
