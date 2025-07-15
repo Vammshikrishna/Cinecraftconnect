@@ -9,25 +9,27 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, User, MapPin, Link as LinkIcon, Film, Camera } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
+import { Loader2, Save, User, MapPin, Link as LinkIcon, Film, Camera, Briefcase } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import StarRating from "@/components/StarRating";
+import { PortfolioGrid } from "@/components/portfolio/PortfolioGrid";
+import { PortfolioUpload } from "@/components/portfolio/PortfolioUpload";
 
 const Profile = () => {
-  const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPortfolioUpload, setShowPortfolioUpload] = useState(false);
   const [formData, setFormData] = useState({
-    username: profile?.username || "",
-    full_name: profile?.full_name || "",
-    bio: profile?.bio || "",
-    craft: profile?.craft || "",
-    location: profile?.location || "",
-    website: profile?.website || ""
+    username: "john_director",
+    full_name: "John Director",
+    bio: "Passionate filmmaker with 10+ years of experience in independent cinema.",
+    craft: "Director",
+    location: "Los Angeles, CA",
+    website: "johndirector.com"
   });
 
   // Sample movie ratings (in a real app, fetch from the database)
@@ -46,27 +48,10 @@ const Profile = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    
     setIsSubmitting(true);
     
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          username: formData.username,
-          full_name: formData.full_name,
-          bio: formData.bio,
-          craft: formData.craft,
-          location: formData.location,
-          website: formData.website,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
-        
-      if (error) throw error;
-      
-      await refreshProfile();
+      // Simulate profile update
       setIsEditing(false);
       toast({
         title: "Profile updated",
@@ -101,6 +86,9 @@ const Profile = () => {
               <TabsTrigger value="profile" className="data-[state=active]:bg-cinesphere-purple/20">
                 <User size={16} className="mr-2" /> Profile
               </TabsTrigger>
+              <TabsTrigger value="portfolio" className="data-[state=active]:bg-cinesphere-purple/20">
+                <Briefcase size={16} className="mr-2" /> Portfolio
+              </TabsTrigger>
               <TabsTrigger value="watchlist" className="data-[state=active]:bg-cinesphere-purple/20">
                 <Film size={16} className="mr-2" /> Watchlist & Ratings
               </TabsTrigger>
@@ -111,14 +99,14 @@ const Profile = () => {
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8">
                   <div className="flex items-center mb-4 md:mb-0">
                     <Avatar className="h-16 w-16 mr-4">
-                      <AvatarImage src={profile?.avatar_url || ""} />
+                      <AvatarImage src="" />
                       <AvatarFallback className="bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue text-white text-xl">
-                        {profile?.full_name ? getInitials(profile.full_name) : "U"}
+                        {getInitials(formData.full_name)}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <h1 className="text-2xl md:text-3xl font-bold">{profile?.full_name || "User"}</h1>
-                      <p className="text-cinesphere-purple">{profile?.craft || "Film Enthusiast"}</p>
+                      <h1 className="text-2xl md:text-3xl font-bold">{formData.full_name}</h1>
+                      <p className="text-cinesphere-purple">{formData.craft}</p>
                     </div>
                   </div>
                   {!isEditing && (
@@ -232,36 +220,50 @@ const Profile = () => {
                   </form>
                 ) : (
                   <div className="space-y-6">
-                    {profile?.bio && (
-                      <div>
-                        <h3 className="text-lg font-medium mb-2">Bio</h3>
-                        <p className="text-gray-300">{profile.bio}</p>
-                      </div>
-                    )}
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Bio</h3>
+                      <p className="text-gray-300">{formData.bio}</p>
+                    </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {profile?.location && (
-                        <div className="flex items-center">
-                          <MapPin size={18} className="text-cinesphere-purple mr-2" />
-                          <span>{profile.location}</span>
-                        </div>
-                      )}
+                      <div className="flex items-center">
+                        <MapPin size={18} className="text-cinesphere-purple mr-2" />
+                        <span>{formData.location}</span>
+                      </div>
                       
-                      {profile?.website && (
-                        <div className="flex items-center">
-                          <LinkIcon size={18} className="text-cinesphere-purple mr-2" />
-                          <a 
-                            href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-cinesphere-purple hover:underline"
-                          >
-                            {profile.website}
-                          </a>
-                        </div>
-                      )}
+                      <div className="flex items-center">
+                        <LinkIcon size={18} className="text-cinesphere-purple mr-2" />
+                        <a 
+                          href={formData.website.startsWith('http') ? formData.website : `https://${formData.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-cinesphere-purple hover:underline"
+                        >
+                          {formData.website}
+                        </a>
+                      </div>
                     </div>
                   </div>
+                )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="portfolio">
+              <div className="space-y-6">
+                {showPortfolioUpload ? (
+                  <PortfolioUpload
+                    onSuccess={() => {
+                      setShowPortfolioUpload(false);
+                      // Refresh portfolio grid
+                    }}
+                    onCancel={() => setShowPortfolioUpload(false)}
+                  />
+                ) : (
+                  <PortfolioGrid
+                    userId="temp-user-id"
+                    isOwner={true}
+                    onAddNew={() => setShowPortfolioUpload(true)}
+                  />
                 )}
               </div>
             </TabsContent>

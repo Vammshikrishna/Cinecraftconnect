@@ -107,6 +107,54 @@ export type Database = {
         }
         Relationships: []
       }
+      portfolio_items: {
+        Row: {
+          completion_date: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_featured: boolean | null
+          media_type: string | null
+          media_url: string | null
+          project_type: string | null
+          role: string | null
+          tags: string[] | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completion_date?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_featured?: boolean | null
+          media_type?: string | null
+          media_url?: string | null
+          project_type?: string | null
+          role?: string | null
+          tags?: string[] | null
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completion_date?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_featured?: boolean | null
+          media_type?: string | null
+          media_url?: string | null
+          project_type?: string | null
+          role?: string | null
+          tags?: string[] | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -146,6 +194,63 @@ export type Database = {
           updated_at?: string | null
           username?: string | null
           website?: string | null
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          budget_max: number | null
+          budget_min: number | null
+          created_at: string
+          creator_id: string
+          current_team: Json | null
+          description: string | null
+          end_date: string | null
+          genre: string[] | null
+          id: string
+          is_public: boolean | null
+          location: string | null
+          required_roles: string[] | null
+          start_date: string | null
+          status: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          budget_max?: number | null
+          budget_min?: number | null
+          created_at?: string
+          creator_id: string
+          current_team?: Json | null
+          description?: string | null
+          end_date?: string | null
+          genre?: string[] | null
+          id?: string
+          is_public?: boolean | null
+          location?: string | null
+          required_roles?: string[] | null
+          start_date?: string | null
+          status?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          budget_max?: number | null
+          budget_min?: number | null
+          created_at?: string
+          creator_id?: string
+          current_team?: Json | null
+          description?: string | null
+          end_date?: string | null
+          genre?: string[] | null
+          id?: string
+          is_public?: boolean | null
+          location?: string | null
+          required_roles?: string[] | null
+          start_date?: string | null
+          status?: string | null
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }

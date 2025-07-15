@@ -1,103 +1,176 @@
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { Link } from "react-router-dom";
-import { Film, Plus, ArrowRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, MapPin, DollarSign, Eye, Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import StarRating from "@/components/StarRating";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const Projects = () => {
-  // Mock project data with ratings
-  const projects = [
+  const [projects, setProjects] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const fetchProjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setProjects(data || []);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to load projects",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  // Mock projects for demo (since no real projects exist yet)
+  const mockProjects = [
     {
       id: 1,
-      title: "Echoes in Silence",
-      type: "Short Film",
-      role: "Director",
-      status: "In Production",
-      collaborators: 8,
-      rating: 4.5,
+      title: "Midnight Chronicles",
+      description: "A dark thriller exploring the depths of human psychology",
+      status: "production",
+      budget_min: 50000,
+      budget_max: 100000,
+      genre: ["Thriller", "Drama"],
+      location: "New York",
+      creator: "Sarah Director"
     },
     {
       id: 2,
-      title: "Neon Dreams",
-      type: "Music Video",
-      role: "Cinematographer",
-      status: "Completed",
-      collaborators: 12,
-      rating: 4.8,
+      title: "Silent Echoes",
+      description: "An intimate documentary about forgotten voices",
+      status: "post_production",
+      budget_min: 25000,
+      budget_max: 50000,
+      genre: ["Documentary"],
+      location: "Los Angeles",
+      creator: "Mike Producer"
     },
     {
       id: 3,
-      title: "Beyond the Stars",
-      type: "Feature Film",
-      role: "Production Designer",
-      status: "Pre-Production",
-      collaborators: 24,
-      rating: 3.9,
+      title: "Neon Dreams",
+      description: "A cyberpunk short film set in 2087",
+      status: "planning",
+      budget_min: 15000,
+      budget_max: 30000,
+      genre: ["Sci-Fi", "Short"],
+      location: "Remote",
+      creator: "Alex Visionary"
     }
   ];
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'planning': return 'bg-blue-500/20 text-blue-300';
+      case 'development': return 'bg-yellow-500/20 text-yellow-300';
+      case 'production': return 'bg-green-500/20 text-green-300';
+      case 'post_production': return 'bg-purple-500/20 text-purple-300';
+      case 'completed': return 'bg-emerald-500/20 text-emerald-300';
+      default: return 'bg-gray-500/20 text-gray-300';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-cinesphere-dark">
+    <div className="min-h-screen bg-gradient-to-b from-cinesphere-dark to-black">
       <Navbar />
       <main className="pt-24 pb-16 px-4 md:px-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl font-bold">Projects</h1>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold mb-2">Projects</h1>
+              <p className="text-gray-400">Discover and collaborate on exciting film projects</p>
+            </div>
             <Button className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-              <Plus size={16} className="mr-2" /> Create Project
+              <Plus className="mr-2 h-4 w-4" />
+              Create Project
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project) => (
-              <div key={project.id} className="glass-card rounded-xl p-6 hover:shadow-lg transition-all">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold mb-1">{project.title}</h3>
-                    <p className="text-sm text-gray-400">{project.type}</p>
-                  </div>
-                  <span className="px-2 py-1 text-xs rounded-full bg-cinesphere-purple/30 text-cinesphere-purple">
-                    {project.status}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-2 mb-3">
-                  <Film size={16} className="text-gray-400" />
-                  <span className="text-sm text-gray-400">Your role: {project.role}</span>
-                </div>
-                
-                <div className="flex justify-between items-center mb-5">
-                  <span className="text-sm text-gray-400">{project.collaborators} collaborators</span>
-                  <StarRating 
-                    title={project.title}
-                    type={project.type as 'Short Film' | 'Movie'}
-                    initialRating={project.rating} 
-                    readOnly 
-                    showValue 
-                    size={16}
-                  />
-                </div>
-                
-                <Link to={`/projects/${project.id}`} className="flex items-center text-cinesphere-purple hover:underline">
-                  View Project <ArrowRight size={16} className="ml-2" />
-                </Link>
-              </div>
-            ))}
-            
-            {/* Create New Project Card */}
-            <div className="border border-dashed border-white/20 rounded-xl p-6 flex flex-col items-center justify-center h-full text-center">
-              <div className="w-12 h-12 rounded-full bg-cinesphere-purple/20 flex items-center justify-center mb-4">
-                <Plus size={24} className="text-cinesphere-purple" />
-              </div>
-              <h3 className="text-xl font-semibold mb-1">Start a New Project</h3>
-              <p className="text-sm text-gray-400 mb-4">Create a project space to collaborate with others</p>
-              <Button variant="outline" className="border-cinesphere-purple text-cinesphere-purple">
-                Create Project
-              </Button>
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-64 bg-muted animate-pulse rounded-lg" />
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {mockProjects.map((project) => (
+                <Card key={project.id} className="glass-card hover:shadow-xl transition-all duration-300 group">
+                  <CardContent className="p-6">
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="text-xl font-bold group-hover:text-cinesphere-purple transition-colors">
+                        {project.title}
+                      </h3>
+                      <Badge className={getStatusColor(project.status)}>
+                        {project.status.replace('_', ' ')}
+                      </Badge>
+                    </div>
+                    
+                    <p className="text-gray-300 mb-4 line-clamp-3">
+                      {project.description}
+                    </p>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center text-sm text-gray-400">
+                        <MapPin className="mr-2 h-4 w-4" />
+                        {project.location}
+                      </div>
+                      
+                      <div className="flex items-center text-sm text-gray-400">
+                        <DollarSign className="mr-2 h-4 w-4" />
+                        ${project.budget_min?.toLocaleString()} - ${project.budget_max?.toLocaleString()}
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-1 mb-4">
+                        {project.genre?.map((genre: string, index: number) => (
+                          <Badge key={index} variant="outline" className="text-xs">
+                            {genre}
+                          </Badge>
+                        ))}
+                      </div>
+                      
+                      <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                        <span className="text-sm text-gray-400">by {project.creator}</span>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline">
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
+                            <Heart className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              
+              {/* Create New Project Card */}
+              <Card className="glass-card hover:shadow-xl transition-all duration-300 group cursor-pointer border-dashed border-2 border-cinesphere-purple/30 hover:border-cinesphere-purple">
+                <CardContent className="p-6 flex flex-col items-center justify-center h-full min-h-[300px]">
+                  <Plus className="h-12 w-12 text-cinesphere-purple mb-4 group-hover:scale-110 transition-transform" />
+                  <h3 className="text-xl font-bold mb-2 text-center">Create New Project</h3>
+                  <p className="text-gray-400 text-center">Start your next film project and find collaborators</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </div>
       </main>
       <Footer />
