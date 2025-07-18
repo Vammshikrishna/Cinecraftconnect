@@ -1,5 +1,5 @@
 
-import { Users, Briefcase, MessageCircle, Award, Search, Zap } from 'lucide-react';
+import { Users, Briefcase, MessageCircle, Award, Search, Zap, ArrowRight } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Link } from 'react-router-dom';
 
