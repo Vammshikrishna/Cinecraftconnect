@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Film, ArrowLeft, Mail, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -30,11 +31,26 @@ const Login = () => {
     
     try {
       setIsSubmitting(true);
-      await signIn(email, password);
+      const { error } = await signIn(email, password);
+      
+      if (error) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to sign in",
+          variant: "destructive"
+        });
+        return;
+      }
+      
       // After successful login, navigate to the page they were trying to access
       navigate(from, { replace: true });
     } catch (error) {
       console.error("Login error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      });
     } finally {
       setIsSubmitting(false);
     }

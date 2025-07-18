@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Film, ArrowLeft, Mail, Lock, User, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/components/ui/use-toast";
 
 const Register = () => {
   const [fullName, setFullName] = useState("");
@@ -26,11 +27,31 @@ const Register = () => {
     
     try {
       setIsSubmitting(true);
-      await signUp(email, password, fullName);
+      const { error } = await signUp(email, password, fullName);
+      
+      if (error) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to create account",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      toast({
+        title: "Account created!",
+        description: "Please check your email to verify your account.",
+      });
+      
       // After successful registration, navigate to feed
       navigate("/feed");
     } catch (error) {
       console.error("Registration error:", error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred",
+        variant: "destructive"
+      });
     } finally {
       setIsSubmitting(false);
     }
