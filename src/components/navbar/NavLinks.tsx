@@ -13,32 +13,32 @@ const NavLinks = () => {
     return location.pathname.startsWith(path);
   };
 
+  const navItems = [
+    { path: '/', icon: Home, label: 'Home' },
+    { path: '/feed', icon: Play, label: 'Feed' },
+    { path: '/projects', icon: Film, label: 'Projects' },
+    { path: '/jobs', icon: Briefcase, label: 'Jobs' },
+    { path: '/network', icon: Users, label: 'Network' },
+    { path: '/learn', icon: BookOpen, label: 'Learn' }
+  ];
+
   return (
-    <nav className="hidden md:flex items-center space-x-6">
-      <Link to="/" className={`nav-item ${isActive('/') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <Home size={18} />
-        <span>Home</span>
-      </Link>
-      <Link to="/feed" className={`nav-item ${isActive('/feed') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <Play size={18} />
-        <span>Feed</span>
-      </Link>
-      <Link to="/projects" className={`nav-item ${isActive('/projects') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <Film size={18} />
-        <span>Projects</span>
-      </Link>
-      <Link to="/jobs" className={`nav-item ${isActive('/jobs') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <Briefcase size={18} />
-        <span>Jobs</span>
-      </Link>
-      <Link to="/network" className={`nav-item ${isActive('/network') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <Users size={18} />
-        <span>Network</span>
-      </Link>
-      <Link to="/learn" className={`nav-item ${isActive('/learn') ? 'nav-item-active' : 'nav-item-inactive'}`}>
-        <BookOpen size={18} />
-        <span>Learn</span>
-      </Link>
+    <nav className="hidden md:flex items-center space-x-2">
+      {navItems.map(({ path, icon: Icon, label }) => (
+        <Link 
+          key={path}
+          to={path} 
+          className={`nav-item px-4 py-2 rounded-lg transition-all duration-200 hover-lift relative group ${
+            isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
+          }`}
+        >
+          <Icon size={18} />
+          <span className="font-medium">{label}</span>
+          {isActive(path) && (
+            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue rounded-full"></div>
+          )}
+        </Link>
+      ))}
     </nav>
   );
 };
