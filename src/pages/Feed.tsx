@@ -12,10 +12,10 @@ import ChatTab from "@/components/feed/ChatTab";
 
 const Feed = () => {
   const [activeTab, setActiveTab] = useState("feed");
-  const [postRatings, setPostRatings] = useState<{ [postId: number]: number }>({});
+  const [postRatings, setPostRatings] = useState<{ [postId: string]: number }>({});
 
-  const handleRate = (postId: number, rating: number) => {
-    setPostRatings((curr) => ({ ...curr, [postId]: rating }));
+  const handleRate = (postId: string | number, rating: number) => {
+    setPostRatings((curr) => ({ ...curr, [String(postId)]: rating }));
   };
 
   return (

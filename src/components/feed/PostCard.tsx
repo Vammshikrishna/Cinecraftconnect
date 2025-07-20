@@ -11,7 +11,7 @@ interface PostAuthor {
 }
 
 interface PostProps {
-  id: number;
+  id: string | number;
   author: PostAuthor;
   timeAgo: string;
   content: string;
@@ -24,7 +24,7 @@ interface PostProps {
   comments: number;
   tags?: string[];
   rating?: number;
-  onRate?: (postId: number, rating: number) => void;
+  onRate?: (postId: string | number, rating: number) => void;
 }
 
 const PostCard = ({ 
