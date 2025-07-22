@@ -14,6 +14,57 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_recommendations: {
+        Row: {
+          ai_model: string | null
+          created_at: string
+          id: string
+          interaction_data: Json | null
+          is_clicked: boolean | null
+          is_dismissed: boolean | null
+          is_shown: boolean | null
+          reason: string | null
+          recommendation_type: string
+          recommended_id: string
+          recommended_type: string
+          score: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_model?: string | null
+          created_at?: string
+          id?: string
+          interaction_data?: Json | null
+          is_clicked?: boolean | null
+          is_dismissed?: boolean | null
+          is_shown?: boolean | null
+          reason?: string | null
+          recommendation_type: string
+          recommended_id: string
+          recommended_type: string
+          score?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_model?: string | null
+          created_at?: string
+          id?: string
+          interaction_data?: Json | null
+          is_clicked?: boolean | null
+          is_dismissed?: boolean | null
+          is_shown?: boolean | null
+          reason?: string | null
+          recommendation_type?: string
+          recommended_id?: string
+          recommended_type?: string
+          score?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       announcements: {
         Row: {
           author_id: string
@@ -77,6 +128,54 @@ export type Database = {
           poster_id?: string
           title?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      content_moderation: {
+        Row: {
+          ai_confidence: number | null
+          ai_flags: Json | null
+          content_id: string
+          content_text: string | null
+          content_type: string
+          created_at: string
+          human_reviewed: boolean | null
+          human_reviewer_id: string | null
+          id: string
+          moderated_at: string | null
+          moderation_reason: string | null
+          moderation_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_flags?: Json | null
+          content_id: string
+          content_text?: string | null
+          content_type: string
+          created_at?: string
+          human_reviewed?: boolean | null
+          human_reviewer_id?: string | null
+          id?: string
+          moderated_at?: string | null
+          moderation_reason?: string | null
+          moderation_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_flags?: Json | null
+          content_id?: string
+          content_text?: string | null
+          content_type?: string
+          created_at?: string
+          human_reviewed?: boolean | null
+          human_reviewer_id?: string | null
+          id?: string
+          moderated_at?: string | null
+          moderation_reason?: string | null
+          moderation_status?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -165,6 +264,60 @@ export type Database = {
           id?: string
           movie_title?: string
           rating?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          action_url: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          is_actionable: boolean | null
+          is_read: boolean | null
+          message: string
+          metadata: Json | null
+          priority: string | null
+          related_id: string | null
+          related_type: string | null
+          title: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action_url?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_actionable?: boolean | null
+          is_read?: boolean | null
+          message: string
+          metadata?: Json | null
+          priority?: string | null
+          related_id?: string | null
+          related_type?: string | null
+          title: string
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action_url?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          is_actionable?: boolean | null
+          is_read?: boolean | null
+          message?: string
+          metadata?: Json | null
+          priority?: string | null
+          related_id?: string | null
+          related_type?: string | null
+          title?: string
+          type?: string
           updated_at?: string
           user_id?: string
         }
@@ -631,6 +784,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_analytics: {
+        Row: {
+          created_at: string
+          device_info: Json | null
+          duration_seconds: number | null
+          event_data: Json | null
+          event_type: string
+          id: string
+          page_url: string | null
+          session_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_info?: Json | null
+          duration_seconds?: number | null
+          event_data?: Json | null
+          event_type: string
+          id?: string
+          page_url?: string | null
+          session_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_info?: Json | null
+          duration_seconds?: number | null
+          event_data?: Json | null
+          event_type?: string
+          id?: string
+          page_url?: string | null
+          session_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_connections: {
         Row: {
           created_at: string
@@ -655,12 +844,73 @@ export type Database = {
         }
         Relationships: []
       }
+      user_engagement_scores: {
+        Row: {
+          comments_made: number | null
+          created_at: string
+          date: string
+          engagement_score: number | null
+          id: string
+          likes_given: number | null
+          likes_received: number | null
+          posts_created: number | null
+          profile_views: number | null
+          session_duration_minutes: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          comments_made?: number | null
+          created_at?: string
+          date: string
+          engagement_score?: number | null
+          id?: string
+          likes_given?: number | null
+          likes_received?: number | null
+          posts_created?: number | null
+          profile_views?: number | null
+          session_duration_minutes?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          comments_made?: number | null
+          created_at?: string
+          date?: string
+          engagement_score?: number | null
+          id?: string
+          likes_given?: number | null
+          likes_received?: number | null
+          posts_created?: number | null
+          profile_views?: number | null
+          session_duration_minutes?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      calculate_daily_engagement_score: {
+        Args: { target_date?: string }
+        Returns: undefined
+      }
+      create_notification: {
+        Args: {
+          target_user_id: string
+          notification_type: string
+          notification_title: string
+          notification_message: string
+          action_url?: string
+          related_id?: string
+          related_type?: string
+          priority?: string
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

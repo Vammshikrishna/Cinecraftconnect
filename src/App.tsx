@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Index from "./pages/Index";
 import Feed from "./pages/Feed";
+import Analytics from "./pages/Analytics";
 import Projects from "./pages/Projects";
 import Jobs from "./pages/Jobs";
 import Network from "./pages/Network";
@@ -39,6 +40,7 @@ const App = () => (
             <Route path="/explore" element={<Explore />} />
             {/* All routes accessible without authentication */}
             <Route path="/feed" element={<Feed />} />
+            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/my" element={<Projects />} />
             <Route path="/jobs" element={<Jobs />} />
