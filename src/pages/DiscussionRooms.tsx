@@ -34,10 +34,10 @@ interface DiscussionRoom {
   creator_id: string;
   is_active: boolean;
   created_at: string;
-  profiles: {
+  profiles?: {
     full_name: string;
     avatar_url: string;
-  };
+  } | null;
 }
 
 const DiscussionRooms = () => {
@@ -62,13 +62,7 @@ const DiscussionRooms = () => {
     try {
       let query = supabase
         .from('discussion_rooms')
-        .select(`
-          *,
-          profiles:creator_id (
-            full_name,
-            avatar_url
-          )
-        `)
+        .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 

@@ -36,10 +36,10 @@ interface Project {
   start_date: string;
   creator_id: string;
   created_at: string;
-  profiles: {
+  profiles?: {
     full_name: string;
     avatar_url: string;
-  };
+  } | null;
 }
 
 const Projects = () => {
@@ -58,13 +58,7 @@ const Projects = () => {
     try {
       let query = supabase
         .from('projects')
-        .select(`
-          *,
-          profiles:creator_id (
-            full_name,
-            avatar_url
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (activeTab === 'my') {
