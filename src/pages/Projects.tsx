@@ -1,179 +1,298 @@
 
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { useState, useEffect } from "react";
-import { Plus, MapPin, DollarSign, Eye, Heart } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/hooks/use-toast';
+import { formatDistanceToNow } from 'date-fns';
+import { 
+  Search, 
+  Filter, 
+  MapPin, 
+  Calendar, 
+  DollarSign, 
+  Users, 
+  Eye,
+  Film,
+  Plus
+} from 'lucide-react';
+
+interface Project {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  location: string;
+  genre: string[];
+  required_roles: string[];
+  budget_min: number;
+  budget_max: number;
+  start_date: string;
+  creator_id: string;
+  created_at: string;
+  profiles: {
+    full_name: string;
+    avatar_url: string;
+  };
+}
 
 const Projects = () => {
-  const [projects, setProjects] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
   const { toast } = useToast();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
+
+  useEffect(() => {
+    fetchProjects();
+  }, [activeTab]);
 
   const fetchProjects = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('projects')
-        .select('*')
+        .select(`
+          *,
+          profiles:creator_id (
+            full_name,
+            avatar_url
+          )
+        `)
         .order('created_at', { ascending: false });
+
+      if (activeTab === 'my') {
+        query = query.eq('creator_id', user?.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       setProjects(data || []);
-    } catch (error: any) {
+    } catch (error) {
+      console.error('Error fetching projects:', error);
       toast({
         title: "Error",
-        description: "Failed to load projects",
-        variant: "destructive"
+        description: "Failed to load projects.",
+        variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
+  const filteredProjects = projects.filter(project =>
+    project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    project.location?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  // Mock projects for demo (since no real projects exist yet)
-  const mockProjects = [
-    {
-      id: 1,
-      title: "Midnight Chronicles",
-      description: "A dark thriller exploring the depths of human psychology",
-      status: "production",
-      budget_min: 50000,
-      budget_max: 100000,
-      genre: ["Thriller", "Drama"],
-      location: "New York",
-      creator: "Sarah Director"
-    },
-    {
-      id: 2,
-      title: "Silent Echoes",
-      description: "An intimate documentary about forgotten voices",
-      status: "post_production",
-      budget_min: 25000,
-      budget_max: 50000,
-      genre: ["Documentary"],
-      location: "Los Angeles",
-      creator: "Mike Producer"
-    },
-    {
-      id: 3,
-      title: "Neon Dreams",
-      description: "A cyberpunk short film set in 2087",
-      status: "planning",
-      budget_min: 15000,
-      budget_max: 30000,
-      genre: ["Sci-Fi", "Short"],
-      location: "Remote",
-      creator: "Alex Visionary"
-    }
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'planning': return 'bg-blue-500/20 text-blue-300';
-      case 'development': return 'bg-yellow-500/20 text-yellow-300';
-      case 'production': return 'bg-green-500/20 text-green-300';
-      case 'post_production': return 'bg-purple-500/20 text-purple-300';
-      case 'completed': return 'bg-emerald-500/20 text-emerald-300';
-      default: return 'bg-gray-500/20 text-gray-300';
-    }
+  const formatBudget = (min?: number, max?: number) => {
+    if (!min && !max) return 'Budget TBD';
+    if (min && max) return `$${min.toLocaleString()} - $${max.toLocaleString()}`;
+    if (min) return `$${min.toLocaleString()}+`;
+    return `Up to $${max?.toLocaleString()}`;
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-cinesphere-dark to-black">
-      <Navbar />
-      <main className="pt-24 pb-16 px-4 md:px-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold mb-2">Projects</h1>
-              <p className="text-gray-400">Discover and collaborate on exciting film projects</p>
+  const ProjectCard = ({ project }: { project: Project }) => (
+    <Card className="border-white/10 bg-cinesphere-dark/50 hover:bg-cinesphere-dark/70 transition-colors">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-white text-xl mb-2">{project.title}</CardTitle>
+            <div className="flex items-center space-x-2 mb-3">
+              <Badge variant="outline" className="capitalize">
+                {project.status}
+              </Badge>
+              {project.location && (
+                <div className="flex items-center text-gray-400 text-sm">
+                  <MapPin className="mr-1 h-3 w-3" />
+                  {project.location}
+                </div>
+              )}
             </div>
-            <Button className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-              <Plus className="mr-2 h-4 w-4" />
-              Create Project
-            </Button>
           </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-64 bg-muted animate-pulse rounded-lg" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {mockProjects.map((project) => (
-                <Card key={project.id} className="glass-card hover:shadow-xl transition-all duration-300 group">
-                  <CardContent className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="text-xl font-bold group-hover:text-cinesphere-purple transition-colors">
-                        {project.title}
-                      </h3>
-                      <Badge className={getStatusColor(project.status)}>
-                        {project.status.replace('_', ' ')}
-                      </Badge>
-                    </div>
-                    
-                    <p className="text-gray-300 mb-4 line-clamp-3">
-                      {project.description}
-                    </p>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center text-sm text-gray-400">
-                        <MapPin className="mr-2 h-4 w-4" />
-                        {project.location}
-                      </div>
-                      
-                      <div className="flex items-center text-sm text-gray-400">
-                        <DollarSign className="mr-2 h-4 w-4" />
-                        ${project.budget_min?.toLocaleString()} - ${project.budget_max?.toLocaleString()}
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-1 mb-4">
-                        {project.genre?.map((genre: string, index: number) => (
-                          <Badge key={index} variant="outline" className="text-xs">
-                            {genre}
-                          </Badge>
-                        ))}
-                      </div>
-                      
-                      <div className="flex items-center justify-between pt-4 border-t border-white/10">
-                        <span className="text-sm text-gray-400">by {project.creator}</span>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="outline">
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button size="sm" className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-                            <Heart className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              
-              {/* Create New Project Card */}
-              <Card className="glass-card hover:shadow-xl transition-all duration-300 group cursor-pointer border-dashed border-2 border-cinesphere-purple/30 hover:border-cinesphere-purple">
-                <CardContent className="p-6 flex flex-col items-center justify-center h-full min-h-[300px]">
-                  <Plus className="h-12 w-12 text-cinesphere-purple mb-4 group-hover:scale-110 transition-transform" />
-                  <h3 className="text-xl font-bold mb-2 text-center">Create New Project</h3>
-                  <p className="text-gray-400 text-center">Start your next film project and find collaborators</p>
-                </CardContent>
-              </Card>
+          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
+            <Eye className="h-4 w-4" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-gray-300 mb-4 line-clamp-2">{project.description}</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="flex items-center text-gray-400 text-sm">
+            <DollarSign className="mr-1 h-4 w-4" />
+            {formatBudget(project.budget_min, project.budget_max)}
+          </div>
+          {project.start_date && (
+            <div className="flex items-center text-gray-400 text-sm">
+              <Calendar className="mr-1 h-4 w-4" />
+              {formatDistanceToNow(new Date(project.start_date), { addSuffix: true })}
             </div>
           )}
         </div>
-      </main>
-      <Footer />
+
+        <div className="space-y-3">
+          {project.genre && project.genre.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-400 mb-2">Genres</p>
+              <div className="flex flex-wrap gap-1">
+                {project.genre.slice(0, 3).map((g) => (
+                  <Badge key={g} variant="secondary" className="text-xs">
+                    {g}
+                  </Badge>
+                ))}
+                {project.genre.length > 3 && (
+                  <Badge variant="secondary" className="text-xs">
+                    +{project.genre.length - 3} more
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
+
+          {project.required_roles && project.required_roles.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-400 mb-2 flex items-center">
+                <Users className="mr-1 h-4 w-4" />
+                Looking for
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {project.required_roles.slice(0, 3).map((role) => (
+                  <Badge key={role} variant="outline" className="text-xs">
+                    {role}
+                  </Badge>
+                ))}
+                {project.required_roles.length > 3 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{project.required_roles.length - 3} more
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
+          <div className="flex items-center text-gray-400 text-sm">
+            <div className="w-6 h-6 bg-cinesphere-purple rounded-full flex items-center justify-center mr-2">
+              {project.profiles?.full_name?.charAt(0) || 'U'}
+            </div>
+            {project.profiles?.full_name || 'Unknown'}
+          </div>
+          <span className="text-xs text-gray-500">
+            {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-cinesphere-dark pt-20">
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-between mb-8">
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <Card key={i} className="border-white/10 bg-cinesphere-dark/50">
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-1/2" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-4 w-full mb-2" />
+                  <Skeleton className="h-4 w-2/3 mb-4" />
+                  <Skeleton className="h-8 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-cinesphere-dark pt-20">
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
+              <Film className="mr-3 h-8 w-8" />
+              Projects
+            </h1>
+            <p className="text-gray-400">Discover and collaborate on film projects</p>
+          </div>
+          <ProjectCreationModal onProjectCreated={fetchProjects} />
+        </div>
+
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row gap-4 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="Search projects..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 bg-white/5 border-white/10"
+              />
+            </div>
+            <Button variant="outline" className="border-white/20 hover:bg-white/10">
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+            </Button>
+          </div>
+
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="bg-cinesphere-dark/50 border border-white/10">
+              <TabsTrigger 
+                value="all" 
+                className="data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+              >
+                All Projects ({projects.length})
+              </TabsTrigger>
+              <TabsTrigger 
+                value="my"
+                className="data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+              >
+                My Projects
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {filteredProjects.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProjects.map((project) => (
+              <ProjectCard key={project.id} project={project} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <Film className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+            <p className="text-gray-400 text-lg mb-2">
+              {searchTerm ? 'No projects match your search' : 'No projects found'}
+            </p>
+            <p className="text-gray-500 mb-4">
+              {searchTerm ? 'Try adjusting your search terms' : 'Be the first to create a project'}
+            </p>
+            {!searchTerm && (
+              <ProjectCreationModal onProjectCreated={fetchProjects} />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
