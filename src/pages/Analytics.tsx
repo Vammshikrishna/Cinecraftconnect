@@ -1,386 +1,357 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { TrendingUp, Users, MessageSquare, Heart, Eye, Activity } from "lucide-react";
-
-interface EngagementData {
-  date: string;
-  posts_created: number;
-  comments_made: number;
-  likes_given: number;
-  likes_received: number;
-  engagement_score: number;
-}
-
-interface UserAnalytics {
-  total_posts: number;
-  total_comments: number;
-  total_likes_given: number;
-  total_likes_received: number;
-  avg_engagement_score: number;
-  total_sessions: number;
-}
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { InteractiveCard } from '@/components/ui/interactive-card';
+import { cn } from '@/lib/utils';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  Area,
+  AreaChart
+} from 'recharts';
+import {
+  TrendingUp,
+  TrendingDown,
+  Users,
+  Eye,
+  Heart,
+  MessageCircle,
+  Share2,
+  Calendar,
+  Filter,
+  Download,
+  LucideIcon
+} from 'lucide-react';
 
 const Analytics = () => {
-  const [engagementData, setEngagementData] = useState<EngagementData[]>([]);
-  const [userAnalytics, setUserAnalytics] = useState<UserAnalytics | null>(null);
+  const [timeRange, setTimeRange] = useState('7d');
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
 
   useEffect(() => {
-    fetchAnalyticsData();
+    // Simulate loading
+    const timer = setTimeout(() => setLoading(false), 1000);
+    return () => clearTimeout(timer);
   }, []);
 
-  const fetchAnalyticsData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  const analyticsData = [
+    { name: 'Mon', views: 400, likes: 240, comments: 140, shares: 80 },
+    { name: 'Tue', views: 300, likes: 139, comments: 221, shares: 90 },
+    { name: 'Wed', views: 200, likes: 980, comments: 229, shares: 100 },
+    { name: 'Thu', views: 278, likes: 390, comments: 200, shares: 110 },
+    { name: 'Fri', views: 189, likes: 480, comments: 218, shares: 95 },
+    { name: 'Sat', views: 239, likes: 380, comments: 250, shares: 120 },
+    { name: 'Sun', views: 349, likes: 430, comments: 210, shares: 105 },
+  ];
 
-      // Fetch engagement scores for the last 30 days
-      const { data: engagementScores, error: engagementError } = await supabase
-        .from('user_engagement_scores')
-        .select('*')
-        .eq('user_id', user.id)
-        .gte('date', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-        .order('date', { ascending: true });
+  const engagementData = [
+    { name: 'Posts', value: 45, color: 'hsl(var(--primary))' },
+    { name: 'Comments', value: 30, color: 'hsl(var(--secondary))' },
+    { name: 'Likes', value: 15, color: 'hsl(var(--accent))' },
+    { name: 'Shares', value: 10, color: 'hsl(var(--muted))' },
+  ];
 
-      if (engagementError) throw engagementError;
-
-      // Fetch overall user analytics
-      const { data: posts } = await supabase
-        .from('posts')
-        .select('id')
-        .eq('author_id', user.id);
-
-      const { data: comments } = await supabase
-        .from('post_comments')
-        .select('id')
-        .eq('user_id', user.id);
-
-      const { data: likesGiven } = await supabase
-        .from('post_likes')
-        .select('id')
-        .eq('user_id', user.id);
-
-      const { data: likesReceived } = await supabase
-        .from('post_likes')
-        .select('id')
-        .in('post_id', posts?.map(p => p.id) || []);
-
-      const { data: sessions } = await supabase
-        .from('user_analytics')
-        .select('session_id')
-        .eq('user_id', user.id)
-        .eq('event_type', 'page_view');
-
-      const uniqueSessions = new Set(sessions?.map(s => s.session_id)).size;
-      const avgEngagement = engagementScores?.reduce((sum, score) => sum + Number(score.engagement_score), 0) / (engagementScores?.length || 1);
-
-      setEngagementData(engagementScores || []);
-      setUserAnalytics({
-        total_posts: posts?.length || 0,
-        total_comments: comments?.length || 0,
-        total_likes_given: likesGiven?.length || 0,
-        total_likes_received: likesReceived?.length || 0,
-        avg_engagement_score: avgEngagement || 0,
-        total_sessions: uniqueSessions
-      });
-
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load analytics data",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const trackEvent = async (eventType: string, eventData: any = {}) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      await supabase
-        .from('user_analytics')
-        .insert([
-          {
-            user_id: user.id,
-            event_type: eventType,
-            event_data: eventData,
-            page_url: window.location.pathname
-          }
-        ]);
-    } catch (error) {
-      console.error('Error tracking event:', error);
-    }
-  };
-
-  useEffect(() => {
-    // Track page view
-    trackEvent('page_view', { page: 'analytics' });
-  }, []);
+  const StatCard = ({ title, value, change, icon: Icon, trend }: {
+    title: string;
+    value: string;
+    change: string;
+    icon: LucideIcon;
+    trend: 'up' | 'down';
+  }) => (
+    <Card className="relative overflow-hidden group hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+      <CardContent className="p-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-2xl font-bold animate-fade-in">{value}</p>
+            <div className={cn(
+              "flex items-center text-xs mt-1 transition-colors",
+              trend === 'up' ? "text-green-500" : "text-red-500"
+            )}>
+              {trend === 'up' ? (
+                <TrendingUp className="mr-1 h-3 w-3" />
+              ) : (
+                <TrendingDown className="mr-1 h-3 w-3" />
+              )}
+              {change}
+            </div>
+          </div>
+          <div className={cn(
+            "p-3 rounded-full transition-all duration-300 group-hover:scale-110",
+            "bg-primary/10 text-primary group-hover:bg-primary/20"
+          )}>
+            <Icon className="h-6 w-6" />
+          </div>
+        </div>
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent transform translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="min-h-screen bg-background pt-20">
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <EnhancedSkeleton className="h-8 w-48 mb-2" />
+              <EnhancedSkeleton className="h-4 w-64" />
+            </div>
+            <EnhancedSkeleton className="h-10 w-32" />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CardSkeleton className="h-96" />
+            <CardSkeleton className="h-96" />
+          </div>
+        </div>
       </div>
     );
   }
 
-  const COLORS = ['hsl(var(--primary))', 'hsl(var(--secondary))', 'hsl(var(--accent))', 'hsl(var(--muted))'];
-
-  const pieData = userAnalytics ? [
-    { name: 'Posts Created', value: userAnalytics.total_posts },
-    { name: 'Comments Made', value: userAnalytics.total_comments },
-    { name: 'Likes Given', value: userAnalytics.total_likes_given },
-    { name: 'Likes Received', value: userAnalytics.total_likes_received },
-  ] : [];
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Analytics Dashboard</h1>
-        <p className="text-muted-foreground">
-          Track your engagement and activity on the platform
-        </p>
-      </div>
+    <div className="min-h-screen bg-background pt-20">
+      <div className="container mx-auto px-4 py-8 animate-fade-in">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 space-y-4 lg:space-y-0">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
+              <TrendingUp className="mr-3 h-8 w-8 text-primary" />
+              Analytics Dashboard
+            </h1>
+            <p className="text-muted-foreground">Track your performance and engagement metrics</p>
+          </div>
+          <div className="flex space-x-3">
+            <Button variant="outline" className="hover-glow">
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+            </Button>
+            <Button variant="outline" className="hover-glow">
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </Button>
+          </div>
+        </div>
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Posts</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.total_posts || 0}</div>
-          </CardContent>
-        </Card>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatCard
+            title="Total Views"
+            value="12,543"
+            change="+12.5%"
+            icon={Eye}
+            trend="up"
+          />
+          <StatCard
+            title="Engagement Rate"
+            value="8.2%"
+            change="+2.1%"
+            icon={Heart}
+            trend="up"
+          />
+          <StatCard
+            title="New Followers"
+            value="1,234"
+            change="-3.2%"
+            icon={Users}
+            trend="down"
+          />
+          <StatCard
+            title="Total Comments"
+            value="2,847"
+            change="+15.3%"
+            icon={MessageCircle}
+            trend="up"
+          />
+        </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Comments</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.total_comments || 0}</div>
-          </CardContent>
-        </Card>
+        <Tabs value={timeRange} onValueChange={setTimeRange} className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-4 sm:space-y-0">
+            <TabsList className="grid w-full sm:w-auto grid-cols-3 lg:grid-cols-4">
+              <TabsTrigger value="7d" className="data-[state=active]:bg-primary">7 Days</TabsTrigger>
+              <TabsTrigger value="30d" className="data-[state=active]:bg-primary">30 Days</TabsTrigger>
+              <TabsTrigger value="90d" className="data-[state=active]:bg-primary">90 Days</TabsTrigger>
+              <TabsTrigger value="1y" className="data-[state=active]:bg-primary">1 Year</TabsTrigger>
+            </TabsList>
+            <Badge variant="secondary" className="text-xs">
+              <Calendar className="mr-1 h-3 w-3" />
+              Last updated: 2 hours ago
+            </Badge>
+          </div>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Likes Given</CardTitle>
-            <Heart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.total_likes_given || 0}</div>
-          </CardContent>
-        </Card>
+          <TabsContent value={timeRange} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Enhanced Performance Chart */}
+              <InteractiveCard
+                title="Performance Overview"
+                description="Views, likes, and comments over time"
+                variant="hover-lift"
+                className="h-96"
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={analyticsData}>
+                    <defs>
+                      <linearGradient id="viewsGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="likesGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                    />
+                    <YAxis 
+                      stroke="hsl(var(--muted-foreground))"
+                      fontSize={12}
+                    />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--popover))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 12px hsl(var(--primary) / 0.15)'
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="views"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      fill="url(#viewsGradient)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="likes"
+                      stroke="hsl(var(--secondary))"
+                      strokeWidth={2}
+                      fill="url(#likesGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </InteractiveCard>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Likes Received</CardTitle>
-            <Heart className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.total_likes_received || 0}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Engagement</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.avg_engagement_score.toFixed(1) || 0}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Sessions</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{userAnalytics?.total_sessions || 0}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="engagement" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="engagement">Engagement Trends</TabsTrigger>
-          <TabsTrigger value="activity">Activity Breakdown</TabsTrigger>
-          <TabsTrigger value="insights">AI Insights</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="engagement">
-          <Card>
-            <CardHeader>
-              <CardTitle>Engagement Score Over Time</CardTitle>
-              <CardDescription>
-                Your daily engagement score based on posts, comments, and likes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={engagementData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line 
-                    type="monotone" 
-                    dataKey="engagement_score" 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="activity">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Activity Distribution</CardTitle>
-                <CardDescription>
-                  Breakdown of your platform activity
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
+              {/* Enhanced Engagement Distribution */}
+              <InteractiveCard
+                title="Engagement Distribution"
+                description="Breakdown of user interactions"
+                variant="glow"
+                className="h-96"
+              >
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={pieData}
+                      data={engagementData}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                       outerRadius={80}
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      {engagementData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip 
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--popover))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px'
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
+              </InteractiveCard>
+            </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Daily Activity</CardTitle>
-                <CardDescription>
-                  Posts, comments, and likes over the last 30 days
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={engagementData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="posts_created" fill="hsl(var(--primary))" />
-                    <Bar dataKey="comments_made" fill="hsl(var(--secondary))" />
-                    <Bar dataKey="likes_given" fill="hsl(var(--accent))" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="insights">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Engagement Insights</CardTitle>
-                <CardDescription>
-                  AI-powered insights about your activity
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-semibold mb-2">📈 Growth Trend</h4>
-                  <p className="text-sm text-muted-foreground">
-                    Your engagement has been {userAnalytics?.avg_engagement_score > 50 ? 'consistently strong' : 'steadily growing'}. 
-                    Keep posting quality content to maintain momentum.
-                  </p>
-                </div>
-                
-                <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-semibold mb-2">🎯 Recommendation</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {userAnalytics?.total_comments < userAnalytics?.total_posts 
-                      ? "Try engaging more with other users' content to build stronger connections."
-                      : "Great job staying active in discussions! Your engagement ratio is excellent."
-                    }
-                  </p>
-                </div>
-                
-                <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-semibold mb-2">⭐ Achievement</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {userAnalytics?.total_likes_received > userAnalytics?.total_posts * 2
-                      ? "Congratulations! Your content resonates well with the community."
-                      : "Keep creating engaging content to increase your like-to-post ratio."
-                    }
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Performance Metrics</CardTitle>
-                <CardDescription>
-                  Key performance indicators for your profile
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Engagement Rate</span>
-                  <span className="font-semibold">
-                    {userAnalytics ? ((userAnalytics.total_likes_received / Math.max(userAnalytics.total_posts, 1)) * 100).toFixed(1) : 0}%
-                  </span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Content Quality Score</span>
-                  <span className="font-semibold">
-                    {userAnalytics?.avg_engagement_score > 75 ? '🌟 Excellent' : 
-                     userAnalytics?.avg_engagement_score > 50 ? '👍 Good' : 
-                     userAnalytics?.avg_engagement_score > 25 ? '📈 Growing' : '🔄 Building'}
-                  </span>
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Community Impact</span>
-                  <span className="font-semibold">
-                    {userAnalytics?.total_comments > 20 ? '🏆 High' : 
-                     userAnalytics?.total_comments > 10 ? '📢 Medium' : '🌱 Emerging'}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+            {/* Enhanced Detailed Metrics */}
+            <InteractiveCard
+              title="Detailed Metrics"
+              description="Complete performance breakdown"
+              variant="gradient"
+            >
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={analyticsData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                  />
+                  <YAxis 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                  />
+                  <Tooltip 
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--popover))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px hsl(var(--primary) / 0.15)'
+                    }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="views" 
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: 'hsl(var(--primary))', strokeWidth: 2 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="likes" 
+                    stroke="hsl(var(--secondary))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--secondary))', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: 'hsl(var(--secondary))', strokeWidth: 2 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="comments" 
+                    stroke="hsl(var(--accent))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--accent))', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: 'hsl(var(--accent))', strokeWidth: 2 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="shares" 
+                    stroke="hsl(var(--muted-foreground))" 
+                    strokeWidth={3}
+                    dot={{ fill: 'hsl(var(--muted-foreground))', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: 'hsl(var(--muted-foreground))', strokeWidth: 2 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </InteractiveCard>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 };

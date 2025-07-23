@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal';
-import { Skeleton } from '@/components/ui/skeleton';
+import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { InteractiveCard } from '@/components/ui/interactive-card';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { 
@@ -95,38 +96,32 @@ const Projects = () => {
   };
 
   const ProjectCard = ({ project }: { project: Project }) => (
-    <Card className="border-white/10 bg-cinesphere-dark/50 hover:bg-cinesphere-dark/70 transition-colors">
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-white text-xl mb-2">{project.title}</CardTitle>
-            <div className="flex items-center space-x-2 mb-3">
-              <Badge variant="outline" className="capitalize">
-                {project.status}
-              </Badge>
-              {project.location && (
-                <div className="flex items-center text-gray-400 text-sm">
-                  <MapPin className="mr-1 h-3 w-3" />
-                  {project.location}
-                </div>
-              )}
+    <InteractiveCard
+      title={project.title}
+      description={project.description?.substring(0, 100) + (project.description?.length > 100 ? '...' : '')}
+      variant="hover-lift"
+      className="h-full"
+    >
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Badge variant="outline" className="capitalize">
+            {project.status}
+          </Badge>
+          {project.location && (
+            <div className="flex items-center text-muted-foreground text-sm">
+              <MapPin className="mr-1 h-3 w-3" />
+              {project.location}
             </div>
-          </div>
-          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-            <Eye className="h-4 w-4" />
-          </Button>
+          )}
         </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-gray-300 mb-4 line-clamp-2">{project.description}</p>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div className="flex items-center text-gray-400 text-sm">
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-center text-muted-foreground text-sm">
             <DollarSign className="mr-1 h-4 w-4" />
             {formatBudget(project.budget_min, project.budget_max)}
           </div>
           {project.start_date && (
-            <div className="flex items-center text-gray-400 text-sm">
+            <div className="flex items-center text-muted-foreground text-sm">
               <Calendar className="mr-1 h-4 w-4" />
               {formatDistanceToNow(new Date(project.start_date), { addSuffix: true })}
             </div>
@@ -136,7 +131,7 @@ const Projects = () => {
         <div className="space-y-3">
           {project.genre && project.genre.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-gray-400 mb-2">Genres</p>
+              <p className="text-sm font-medium text-muted-foreground mb-2">Genres</p>
               <div className="flex flex-wrap gap-1">
                 {project.genre.slice(0, 3).map((g) => (
                   <Badge key={g} variant="secondary" className="text-xs">
@@ -154,7 +149,7 @@ const Projects = () => {
 
           {project.required_roles && project.required_roles.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-gray-400 mb-2 flex items-center">
+              <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center">
                 <Users className="mr-1 h-4 w-4" />
                 Looking for
               </p>
@@ -174,42 +169,35 @@ const Projects = () => {
           )}
         </div>
 
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-          <div className="flex items-center text-gray-400 text-sm">
-            <div className="w-6 h-6 bg-cinesphere-purple rounded-full flex items-center justify-center mr-2">
+        <div className="flex items-center justify-between pt-4 border-t border-border">
+          <div className="flex items-center text-muted-foreground text-sm">
+            <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">
               {project.profiles?.full_name?.charAt(0) || 'U'}
             </div>
             {project.profiles?.full_name || 'Unknown'}
           </div>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
           </span>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </InteractiveCard>
   );
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-cinesphere-dark pt-20">
+      <div className="min-h-screen bg-background pt-20">
         <div className="container mx-auto px-4 py-8">
           <div className="flex items-center justify-between mb-8">
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-10 w-32" />
+            <div>
+              <EnhancedSkeleton className="h-8 w-48 mb-2" />
+              <EnhancedSkeleton className="h-4 w-64" />
+            </div>
+            <EnhancedSkeleton className="h-10 w-32" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...Array(6)].map((_, i) => (
-              <Card key={i} className="border-white/10 bg-cinesphere-dark/50">
-                <CardHeader>
-                  <Skeleton className="h-6 w-3/4 mb-2" />
-                  <Skeleton className="h-4 w-1/2" />
-                </CardHeader>
-                <CardContent>
-                  <Skeleton className="h-4 w-full mb-2" />
-                  <Skeleton className="h-4 w-2/3 mb-4" />
-                  <Skeleton className="h-8 w-full" />
-                </CardContent>
-              </Card>
+              <CardSkeleton key={i} />
             ))}
           </div>
         </div>
@@ -218,15 +206,15 @@ const Projects = () => {
   }
 
   return (
-    <div className="min-h-screen bg-cinesphere-dark pt-20">
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
+    <div className="min-h-screen bg-background pt-20">
+      <div className="container mx-auto px-4 py-8 animate-fade-in">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 space-y-4 lg:space-y-0">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
-              <Film className="mr-3 h-8 w-8" />
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
+              <Film className="mr-3 h-8 w-8 text-primary" />
               Projects
             </h1>
-            <p className="text-gray-400">Discover and collaborate on film projects</p>
+            <p className="text-muted-foreground">Discover and collaborate on film projects</p>
           </div>
           <ProjectCreationModal onProjectCreated={fetchProjects} />
         </div>
