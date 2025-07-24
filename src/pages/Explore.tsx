@@ -1,128 +1,106 @@
 
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { Button } from "@/components/ui/button";
-import { ArrowRight, Users, Film, Briefcase, Tv, Award, Book, Info } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useState } from 'react';
+import { Search, Compass, TrendingUp } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import AdvancedSearch from '@/components/search/AdvancedSearch';
+import SavedSearches from '@/components/search/SavedSearches';
+import SearchResults from '@/components/search/SearchResults';
+
+interface SearchFilters {
+  query: string;
+  contentType: string[];
+  dateRange: { from: Date | null; to: Date | null };
+  location: string;
+  tags: string[];
+  author: string;
+  sortBy: string;
+  mediaOnly: boolean;
+}
 
 const Explore = () => {
-  // Feature sections
-  const features = [
-    {
-      icon: <Users size={32} className="text-cinesphere-purple" />,
-      title: "Networking & Discovery",
-      description: "Connect with professionals across all film crafts. Find collaborators based on skills, location, and availability.",
-      link: "/network",
-      linkText: "Browse Professionals"
-    },
-    {
-      icon: <Film size={32} className="text-cinesphere-purple" />,
-      title: "Portfolio Showcase",
-      description: "Create a stunning profile with showreel, project history, and skills to showcase your unique talents.",
-      link: "/profile",
-      linkText: "Create Your Profile"
-    },
-    {
-      icon: <Tv size={32} className="text-cinesphere-purple" />,
-      title: "Content Sharing",
-      description: "Share behind-the-scenes, work-in-progress, and finished projects with the community.",
-      link: "/feed",
-      linkText: "View Content Feed"
-    },
-    {
-      icon: <Briefcase size={32} className="text-cinesphere-purple" />,
-      title: "Job Marketplace",
-      description: "Find your next gig or talent for your production with our specialized film industry job board.",
-      link: "/jobs",
-      linkText: "Browse Jobs"
-    },
-    {
-      icon: <Book size={32} className="text-cinesphere-purple" />,
-      title: "Project Collaboration",
-      description: "Create project spaces to coordinate with your team, share files, and track progress.",
-      link: "/projects",
-      linkText: "Start a Project"
-    },
-    {
-      icon: <Award size={32} className="text-cinesphere-purple" />,
-      title: "Recognition",
-      description: "Get noticed for your contributions and earn credibility through peer recommendations.",
-      link: "/recognition",
-      linkText: "Learn More"
-    }
-  ];
+  const [activeFilters, setActiveFilters] = useState<SearchFilters>({
+    query: '',
+    contentType: [],
+    dateRange: { from: null, to: null },
+    location: '',
+    tags: [],
+    author: '',
+    sortBy: 'relevance',
+    mediaOnly: false
+  });
+  const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // Craft categories
-  const craftCategories = [
-    "Direction", "Cinematography", "Production Design", "Editing", 
-    "Sound Design", "Screenwriting", "Acting", "Costume Design",
-    "Visual Effects", "Animation", "Makeup", "Stunt Coordination",
-    "Music Composition", "Casting", "Art Direction", "Color Grading"
-  ];
+  const handleSearch = async (filters: SearchFilters) => {
+    setLoading(true);
+    setActiveFilters(filters);
+    setHasSearched(true);
+    
+    setTimeout(() => {
+      setLoading(false);
+    }, 1000);
+  };
+
+  const handleSaveSearch = async (name: string, filters: SearchFilters) => {
+    console.log('Saving search:', name, filters);
+  };
+
+  const handleLoadSearch = (savedSearch: any) => {
+    const filters = {
+      query: savedSearch.search_query || '',
+      ...savedSearch.search_filters
+    };
+    handleSearch(filters);
+  };
 
   return (
-    <div className="min-h-screen bg-cinesphere-dark">
-      <Navbar />
-      <main className="pt-24 pb-16 px-4 md:px-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Hero Section */}
-          <div className="glass-card rounded-xl p-8 md:p-12 mb-16 text-center">
-            <h1 className="text-3xl md:text-4xl font-bold mb-4">
-              Discover the CineSphere Ecosystem
+    <div className="min-h-screen bg-background pt-20">
+      <div className="container mx-auto px-4 py-8 animate-fade-in">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
+              <Compass className="mr-3 h-8 w-8 text-primary" />
+              Explore & Discover
             </h1>
-            <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-8">
-              A complete platform designed specifically for film industry professionals to connect, collaborate, and create together.
-            </p>
-            <Button asChild size="lg" className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-              <Link to="/register">Join CineSphere Today</Link>
-            </Button>
-          </div>
-          
-          {/* Features Grid */}
-          <h2 className="text-2xl font-bold mb-8 text-center">Core Features</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-            {features.map((feature, index) => (
-              <div key={index} className="glass-card rounded-xl p-6 flex flex-col h-full">
-                <div className="mb-4">{feature.icon}</div>
-                <h3 className="text-xl font-semibold mb-2">{feature.title}</h3>
-                <p className="text-gray-300 mb-6 flex-grow">{feature.description}</p>
-                <Button asChild variant="outline" className="mt-auto border-white/20 hover:bg-white/5 w-full">
-                  <Link to={feature.link} className="flex items-center justify-center">
-                    {feature.linkText} <ArrowRight size={16} className="ml-2" />
-                  </Link>
-                </Button>
-              </div>
-            ))}
-          </div>
-          
-          {/* Crafts Section */}
-          <h2 className="text-2xl font-bold mb-8 text-center">Connecting All 24 Film Crafts</h2>
-          <div className="glass-card rounded-xl p-8 mb-8">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {craftCategories.map((craft) => (
-                <div key={craft} className="bg-cinesphere-dark/50 rounded-lg p-3 text-center hover:bg-cinesphere-purple/20 transition-colors">
-                  {craft}
-                </div>
-              ))}
-            </div>
-            <div className="text-center mt-8">
-              <p className="text-gray-400 mb-4">Find the right collaborators for any position in your production</p>
-              <div className="flex flex-col sm:flex-row justify-center gap-4">
-                <Button asChild className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-                  <Link to="/network">Browse by Craft</Link>
-                </Button>
-                <Button asChild variant="outline" className="border-white/20 hover:bg-white/5">
-                  <Link to="/craft/all" className="flex items-center">
-                    <Info className="mr-2 h-4 w-4" />
-                    Learn About All Crafts
-                  </Link>
-                </Button>
-              </div>
-            </div>
+            <p className="text-muted-foreground">Find content, projects, people, and opportunities</p>
           </div>
         </div>
-      </main>
-      <Footer />
+
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="lg:col-span-3 space-y-6">
+            <AdvancedSearch 
+              onSearch={handleSearch}
+              onSaveSearch={handleSaveSearch}
+            />
+
+            <SearchResults
+              query={activeFilters.query}
+              filters={activeFilters}
+              loading={loading}
+            />
+
+            {!hasSearched && !loading && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    Trending Now
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground">Use the search above to discover content</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            <SavedSearches onLoadSearch={handleLoadSearch} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
