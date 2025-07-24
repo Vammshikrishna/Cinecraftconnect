@@ -19,7 +19,7 @@ import FeedTab from '@/components/feed/FeedTab';
 import DiscussionRoomsTab from '@/components/feed/DiscussionRoomsTab';
 import ChatTab from '@/components/feed/ChatTab';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
-import { RecommendationsPanel } from '@/components/ai/RecommendationsPanel';
+import RecommendationsPanel from '@/components/ai/RecommendationsPanel';
 
 const Feed = () => {
   const [activeTab, setActiveTab] = useState('all');
