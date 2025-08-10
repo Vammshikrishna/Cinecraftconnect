@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AdvancedSearch from '@/components/search/AdvancedSearch';
 import SavedSearches from '@/components/search/SavedSearches';
 import SearchResults from '@/components/search/SearchResults';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface SearchFilters {
   query: string;
@@ -18,6 +20,7 @@ interface SearchFilters {
 }
 
 const Explore = () => {
+  const { toast } = useToast();
   const [activeFilters, setActiveFilters] = useState<SearchFilters>({
     query: '',
     contentType: [],
@@ -42,7 +45,42 @@ const Explore = () => {
   };
 
   const handleSaveSearch = async (name: string, filters: SearchFilters) => {
-    console.log('Saving search:', name, filters);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: 'Sign in required', description: 'Please sign in to save searches.' });
+        return;
+      }
+
+      const jsonFilters = {
+        query: filters.query,
+        contentType: filters.contentType,
+        dateRange: {
+          from: filters.dateRange.from ? filters.dateRange.from.toISOString() : null,
+          to: filters.dateRange.to ? filters.dateRange.to.toISOString() : null,
+        },
+        location: filters.location,
+        tags: filters.tags,
+        author: filters.author,
+        sortBy: filters.sortBy,
+        mediaOnly: filters.mediaOnly,
+      };
+
+      const payload = {
+        user_id: user.id,
+        search_name: name,
+        search_query: filters.query,
+        search_filters: jsonFilters as any,
+        search_type: 'global' as const,
+      };
+
+      const { error } = await supabase.from('saved_searches').insert([payload as any]);
+      if (error) throw error;
+      toast({ title: 'Search saved', description: `Saved "${name}"` });
+    } catch (e: any) {
+      console.error('Save search error', e);
+      toast({ title: 'Failed to save search', description: e.message });
+    }
   };
 
   const handleLoadSearch = (savedSearch: any) => {

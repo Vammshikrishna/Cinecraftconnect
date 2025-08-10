@@ -74,6 +74,12 @@ const AdvancedSearch = ({ onSearch, onSaveSearch }: AdvancedSearchProps) => {
           <Button onClick={handleSearch} className="hover-glow">
             Search
           </Button>
+          <Button variant="secondary" onClick={() => {
+            const name = window.prompt('Name this search');
+            if (name) onSaveSearch(name, filters);
+          }}>
+            Save
+          </Button>
         </div>
       </CardContent>
     </Card>
