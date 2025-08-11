@@ -22,6 +22,7 @@ import Profile from "./pages/Profile";
 import ChatPage from "./pages/ChatPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Performance from "./pages/Performance";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Navbar from "@/components/Navbar";
 
@@ -42,7 +43,8 @@ const App = () => (
             <Route path="/explore" element={<Explore />} />
             {/* All routes accessible without authentication */}
             <Route path="/feed" element={<Feed />} />
-            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+          <Route path="/performance" element={<Performance />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/projects/my" element={<Projects />} />
             <Route path="/jobs" element={<Jobs />} />
