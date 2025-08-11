@@ -1,5 +1,5 @@
 
-import Navbar from "@/components/Navbar";
+
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Camera, Film, Music, Brush, Scissors, Mic, Users, Laptop } from "lucide-react";
@@ -53,7 +53,7 @@ const craftsInfo = [
 const AllCraftsPage = () => {
   return (
     <div className="min-h-screen bg-cinesphere-dark">
-      <Navbar />
+      
       <main className="pt-24 pb-16 px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
           <Button asChild variant="outline" className="mb-8 border-white/20 hover:bg-white/5">

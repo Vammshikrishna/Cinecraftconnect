@@ -1,5 +1,5 @@
 
-import Navbar from "@/components/Navbar";
+
 import Footer from "@/components/Footer";
 import { Link } from "react-router-dom";
 import { Search, MapPin, Clock, Briefcase, Filter, ArrowUpDown } from "lucide-react";
@@ -49,7 +49,7 @@ const Jobs = () => {
 
   return (
     <div className="min-h-screen bg-cinesphere-dark">
-      <Navbar />
+      
       <main className="pt-24 pb-16 px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-between items-center mb-8">

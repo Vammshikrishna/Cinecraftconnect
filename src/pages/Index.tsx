@@ -1,5 +1,5 @@
 
-import Navbar from "@/components/Navbar";
+
 import EnhancedHero from "@/components/EnhancedHero";
 import EnhancedFeatures from "@/components/EnhancedFeatures";
 import StatsSection from "@/components/StatsSection";
@@ -35,7 +35,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-cinesphere-dark">
-      <Navbar />
+      
       <Breadcrumb />
       <main className="pt-16">
         <EnhancedHero />

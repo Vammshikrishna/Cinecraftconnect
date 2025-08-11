@@ -1,5 +1,5 @@
 
-import Navbar from "@/components/Navbar";
+
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -51,7 +51,7 @@ const featuredCourses = [
 const LearningPortal = () => {
   return (
     <div className="min-h-screen bg-cinesphere-dark">
-      <Navbar />
+      
       <main className="pt-24 pb-16 px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Hero Section */}
