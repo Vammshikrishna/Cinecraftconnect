@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Save, User, MapPin, Link as LinkIcon, Film, Camera, Briefcase } from "lucide-react";
+import { Loader2, Save, User, MapPin, Link as LinkIcon, Film, Camera, Briefcase, BarChart3, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import StarRating from "@/components/StarRating";
@@ -88,6 +88,9 @@ const Profile = () => {
               </TabsTrigger>
               <TabsTrigger value="portfolio" className="data-[state=active]:bg-cinesphere-purple/20">
                 <Briefcase size={16} className="mr-2" /> Portfolio
+              </TabsTrigger>
+              <TabsTrigger value="analytics" className="data-[state=active]:bg-cinesphere-purple/20">
+                <BarChart3 size={16} className="mr-2" /> Analytics
               </TabsTrigger>
               <TabsTrigger value="watchlist" className="data-[state=active]:bg-cinesphere-purple/20">
                 <Film size={16} className="mr-2" /> Watchlist & Ratings
@@ -265,6 +268,65 @@ const Profile = () => {
                     onAddNew={() => setShowPortfolioUpload(true)}
                   />
                 )}
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="analytics">
+              <div className="glass-card rounded-xl p-6 md:p-8">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-bold">Analytics Dashboard</h2>
+                  <Button 
+                    onClick={() => navigate("/analytics")}
+                    className="bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+                  >
+                    View Full Analytics
+                  </Button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <Card className="bg-black/20 backdrop-blur-sm border-white/10">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-400">Profile Views</p>
+                          <p className="text-2xl font-bold">1,247</p>
+                        </div>
+                        <User className="h-8 w-8 text-cinesphere-purple" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="bg-black/20 backdrop-blur-sm border-white/10">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-400">Portfolio Views</p>
+                          <p className="text-2xl font-bold">856</p>
+                        </div>
+                        <Briefcase className="h-8 w-8 text-cinesphere-purple" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="bg-black/20 backdrop-blur-sm border-white/10">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-gray-400">Connections</p>
+                          <p className="text-2xl font-bold">342</p>
+                        </div>
+                        <Users className="h-8 w-8 text-cinesphere-purple" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+                
+                <div className="mt-6 p-4 bg-cinesphere-purple/10 rounded-lg border border-cinesphere-purple/20">
+                  <p className="text-sm text-gray-300">
+                    <BarChart3 className="inline h-4 w-4 mr-2 text-cinesphere-purple" />
+                    Access your complete analytics dashboard to view detailed insights, engagement metrics, and growth trends.
+                  </p>
+                </div>
               </div>
             </TabsContent>
             
