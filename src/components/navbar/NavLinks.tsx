@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Play, Film, Briefcase, Users, BookOpen, BarChart3, Activity } from 'lucide-react';
+import { Home, Play, Film, Briefcase, Users, BookOpen, BarChart3 } from 'lucide-react';
 
 const NavLinks = () => {
   const location = useLocation();
@@ -17,7 +17,6 @@ const NavLinks = () => {
     { path: '/', icon: Home, label: 'Home' },
     { path: '/feed', icon: Play, label: 'Feed' },
     { path: '/analytics', icon: BarChart3, label: 'Analytics' },
-    { path: '/performance', icon: Activity, label: 'Performance' },
     { path: '/projects', icon: Film, label: 'Projects' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' },
