@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Play, Film, Briefcase, Users, BookOpen } from 'lucide-react';
+import { Home, Play, Film, Briefcase, Users, BookOpen, MessageSquare } from 'lucide-react';
 
 const NavLinks = () => {
   const location = useLocation();
@@ -19,6 +19,7 @@ const NavLinks = () => {
     { path: '/projects', icon: Film, label: 'Projects' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' },
+    { path: '/chats', icon: MessageSquare, label: 'Chat' },
     { path: '/learn', icon: BookOpen, label: 'Learn' }
   ];
 
