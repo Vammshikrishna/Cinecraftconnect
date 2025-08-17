@@ -64,11 +64,16 @@ export default {
 					ring: 'hsl(var(--sidebar-ring))'
 				},
 				cinesphere: {
-					dark: '#1A1F2C',
-					gray: '#8E9196',
-					purple: '#9b87f5',
-					'light-purple': '#D6BCFA',
-					blue: '#1EAEDB',
+					dark: '#0B1426',
+					surface: '#1A1D29',
+					coral: '#FF6B6B',
+					'coral-light': '#FF8E8E',
+					sky: '#4ECDC4',
+					'sky-light': '#7DDDD6',
+					sunset: '#FFE66D',
+					'sunset-light': '#FFED8A',
+					gray: '#6B7280',
+					'light-gray': '#9CA3AF',
 				}
 			},
 			borderRadius: {
