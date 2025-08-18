@@ -13,8 +13,8 @@ export function MobileNav() {
   };
 
   const navItems = [
-    { to: "/", icon: Home },
-    { to: "/feed", icon: Play },
+    { to: "/feed", icon: Home },
+    { to: "/", icon: Play },
     { to: "/projects", icon: Film },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users },

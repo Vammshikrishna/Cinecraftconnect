@@ -18,6 +18,8 @@ import {
 import FeedTab from '@/components/feed/FeedTab';
 import DiscussionRoomsTab from '@/components/feed/DiscussionRoomsTab';
 import ChatTab from '@/components/feed/ChatTab';
+import AnnouncementsTab from '@/components/feed/AnnouncementsTab';
+import RatingsTab from '@/components/feed/RatingsTab';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import RecommendationsPanel from '@/components/ai/RecommendationsPanel';
 
@@ -90,7 +92,7 @@ const Feed = () => {
           {/* Main Feed */}
           <div className="lg:col-span-3">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsList className="grid w-full grid-cols-5 mb-6">
                 <TabsTrigger value="all" className="data-[state=active]:bg-primary">
                   All Posts
                 </TabsTrigger>
@@ -100,10 +102,32 @@ const Feed = () => {
                 <TabsTrigger value="discussions" className="data-[state=active]:bg-primary">
                   Discussions
                 </TabsTrigger>
+                <TabsTrigger value="announcements" className="data-[state=active]:bg-primary">
+                  Announcements
+                </TabsTrigger>
+                <TabsTrigger value="ratings" className="data-[state=active]:bg-primary">
+                  Ratings
+                </TabsTrigger>
               </TabsList>
 
-              <TabsContent value={activeTab} className="space-y-6">
+              <TabsContent value="all" className="space-y-6">
                 <FeedTab postRatings={postRatings} onRate={handleRate} />
+              </TabsContent>
+              
+              <TabsContent value="following" className="space-y-6">
+                <FeedTab postRatings={postRatings} onRate={handleRate} />
+              </TabsContent>
+              
+              <TabsContent value="discussions" className="space-y-6">
+                <DiscussionRoomsTab />
+              </TabsContent>
+              
+              <TabsContent value="announcements" className="space-y-6">
+                <AnnouncementsTab />
+              </TabsContent>
+              
+              <TabsContent value="ratings" className="space-y-6">
+                <RatingsTab />
               </TabsContent>
             </Tabs>
           </div>

@@ -14,8 +14,8 @@ const NavLinks = () => {
   };
 
   const navItems = [
-    { path: '/', icon: Home, label: 'Home' },
-    { path: '/feed', icon: Play, label: 'Feed' },
+    { path: '/feed', icon: Home, label: 'Home' },
+    { path: '/', icon: Play, label: 'Landing' },
     { path: '/projects', icon: Film, label: 'Projects' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' },
