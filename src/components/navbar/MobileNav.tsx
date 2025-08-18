@@ -1,65 +1,46 @@
 
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Menu } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Link, useLocation } from "react-router-dom";
+import { Home, Play, Film, Briefcase, Users, BookOpen } from "lucide-react";
 
 export function MobileNav() {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const toggleMenu = () => {
-    setIsOpen(!isOpen);
+  const location = useLocation();
+  
+  const isActive = (path: string) => {
+    if (path === '/') {
+      return location.pathname === path;
+    }
+    return location.pathname.startsWith(path);
   };
 
-  return (
-    <div className="md:hidden">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-full bg-cinesphere-dark shadow-lg border border-white/10"
-        onClick={toggleMenu}
-      >
-        <Menu className="h-6 w-6" />
-        <span className="sr-only">Toggle menu</span>
-      </Button>
+  const navItems = [
+    { to: "/", icon: Home },
+    { to: "/feed", icon: Play },
+    { to: "/projects", icon: Film },
+    { to: "/jobs", icon: Briefcase },
+    { to: "/network", icon: Users },
+    { to: "/learn", icon: BookOpen }
+  ];
 
-      <nav className={`fixed inset-0 z-40 pointer-events-none ${isOpen ? 'visible' : 'invisible'}`}>
-        <div 
-          className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
-            isOpen ? 'opacity-100' : 'opacity-0'
-          }`}
-          onClick={() => setIsOpen(false)}
-        />
-        
-        <div className="fixed inset-0 flex items-center justify-center">
-          <div className={`relative transition-all duration-500 ${isOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}`}>
-            {[
-              { to: "/", label: "Home", angle: 0 },
-              { to: "/feed", label: "Feed", angle: 60 },
-              { to: "/projects", label: "Projects", angle: 120 },
-              { to: "/jobs", label: "Jobs", angle: 180 },
-              { to: "/network", label: "Network", angle: 240 },
-              { to: "/learn", label: "Learn", angle: 300 }
-            ].map(({ to, label, angle }) => (
-              <Link
-                key={to}
-                to={to}
-                onClick={() => setIsOpen(false)}
-                className="nav-item nav-item-inactive absolute pointer-events-auto"
-                style={{
-                  transform: `rotate(${angle}deg) translate(120px) rotate(-${angle}deg)`,
-                  transition: 'transform 0.5s, opacity 0.3s',
-                  opacity: isOpen ? 1 : 0
-                }}
-              >
-                <div className="bg-cinesphere-dark px-4 py-2 rounded-full shadow-lg border border-white/10">
-                  {label}
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </nav>
-    </div>
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-t border-border">
+      <div className="flex items-center justify-around py-2 px-4">
+        {navItems.map(({ to, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${
+              isActive(to) 
+                ? 'text-primary' 
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Icon size={24} className={isActive(to) ? 'text-primary' : ''} />
+            {isActive(to) && (
+              <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in"></div>
+            )}
+          </Link>
+        ))}
+      </div>
+    </nav>
   );
 }
