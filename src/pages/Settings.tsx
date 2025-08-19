@@ -42,11 +42,30 @@ const Settings = () => {
   };
 
   const toggleTheme = () => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-    // In a real app, this would update the theme context
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    
+    // Update CSS variables for theme switching
+    const root = document.documentElement;
+    if (newTheme === 'light') {
+      root.style.setProperty('--background', '0 0% 100%');
+      root.style.setProperty('--foreground', '224 71.4% 4.1%');
+      root.style.setProperty('--card', '0 0% 100%');
+      root.style.setProperty('--card-foreground', '224 71.4% 4.1%');
+      root.style.setProperty('--primary', '220.9 39.3% 11%');
+      root.style.setProperty('--primary-foreground', '210 20% 98%');
+    } else {
+      root.style.setProperty('--background', '20 14.3% 4.1%');
+      root.style.setProperty('--foreground', '0 0% 95%');
+      root.style.setProperty('--card', '24 9.8% 10%');
+      root.style.setProperty('--card-foreground', '0 0% 95%');
+      root.style.setProperty('--primary', '263.4 70% 50.4%');
+      root.style.setProperty('--primary-foreground', '210 20% 98%');
+    }
+    
     toast({
       title: "Theme Updated",
-      description: `Switched to ${theme === 'dark' ? 'light' : 'dark'} theme.`,
+      description: `Switched to ${newTheme} theme.`,
     });
   };
 
@@ -172,12 +191,12 @@ const Settings = () => {
 
           <Card className="mt-8 border-red-500/20 bg-red-500/5">
             <CardHeader>
-              <CardTitle className="text-red-400">Danger Zone</CardTitle>
+              <CardTitle className="text-red-400">Account Actions</CardTitle>
               <CardDescription>
-                These actions cannot be undone. Please be careful.
+                Manage your account and session
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Button
                 variant="destructive"
                 onClick={handleSignOut}

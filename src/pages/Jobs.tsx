@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Search, MapPin, Clock, Briefcase, Filter, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { JobCreationModal } from "@/components/jobs/JobCreationModal";
 
 const Jobs = () => {
   // Mock job listings
@@ -54,9 +55,7 @@ const Jobs = () => {
         <div className="max-w-6xl mx-auto">
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-3xl font-bold">Jobs</h1>
-            <Button className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-              Post a Job
-            </Button>
+            <JobCreationModal />
           </div>
 
           {/* Search and Filter Bar */}
