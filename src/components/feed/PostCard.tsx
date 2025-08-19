@@ -8,6 +8,7 @@ interface PostAuthor {
   name: string;
   role: string;
   initials: string;
+  avatar?: string;
 }
 
 interface PostProps {
@@ -48,8 +49,8 @@ const PostCard = ({
     <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
       <div className="flex items-center mb-4">
         <Avatar className="h-10 w-10 mr-3">
-          <AvatarImage src="/placeholder.svg" />
-          <AvatarFallback className="bg-gradient-to-br from-cinesphere-purple to-cinesphere-blue text-white">{author.initials}</AvatarFallback>
+          <AvatarImage src={author.avatar || "/placeholder.svg"} />
+          <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">{author.initials}</AvatarFallback>
         </Avatar>
         <div className="flex-1">
           <div className="flex items-center justify-between">
@@ -64,12 +65,12 @@ const PostCard = ({
       <p className="mb-4">{content}</p>
       
       {hasImage && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-cinesphere-dark/50 h-64 flex items-center justify-center relative">
+        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 h-64 flex items-center justify-center relative">
           <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
             <p className="text-gray-400">{imageAlt || "Image"}</p>
           </div>
           {isAIGenerated && (
-            <div className="absolute top-2 right-2 bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue text-white text-xs px-2 py-1 rounded-full">
+            <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
               AI Generated
             </div>
           )}
@@ -77,15 +78,15 @@ const PostCard = ({
       )}
       
       {hasVideo && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-cinesphere-dark/50 h-80 flex items-center justify-center relative">
+        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 h-80 flex items-center justify-center relative">
           <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
             <p className="text-gray-400">{videoThumbnail}</p>
-            <Button variant="default" size="icon" className="absolute bg-cinesphere-purple/80 hover:bg-cinesphere-purple">
+            <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
               <Play size={24} />
             </Button>
           </div>
           {isAIGenerated && (
-            <div className="absolute top-2 right-2 bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue text-white text-xs px-2 py-1 rounded-full">
+            <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
               AI Generated
             </div>
           )}
@@ -96,7 +97,7 @@ const PostCard = ({
         {tags && tags.map((tag) => (
           <span 
             key={tag} 
-            className="text-xs px-2 py-1 bg-white/10 rounded-full text-gray-300 hover:bg-cinesphere-purple/20 cursor-pointer"
+            className="text-xs px-2 py-1 bg-white/10 rounded-full text-muted-foreground hover:bg-primary/20 cursor-pointer"
           >
             #{tag}
           </span>
@@ -104,15 +105,15 @@ const PostCard = ({
       </div>
       
       <div className="flex items-center justify-between pt-4 border-t border-white/10">
-        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-cinesphere-purple hover:bg-cinesphere-purple/10 flex items-center">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
           <Heart size={18} className="mr-1" />
           <span>{likes}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-cinesphere-purple hover:bg-cinesphere-purple/10 flex items-center">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
           <MessageCircle size={18} className="mr-1" />
           <span>{comments}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-cinesphere-purple hover:bg-cinesphere-purple/10">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10">
           <Share2 size={18} />
         </Button>
       </div>

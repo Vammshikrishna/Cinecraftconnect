@@ -138,7 +138,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
               value={projectData.title}
               onChange={(e) => setProjectData(prev => ({ ...prev, title: e.target.value }))}
               placeholder="Enter your project title"
-              className="bg-white/5 border-white/10"
+              className="bg-input border-border"
             />
           </div>
           <div className="space-y-2">
@@ -148,7 +148,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
               value={projectData.description}
               onChange={(e) => setProjectData(prev => ({ ...prev, description: e.target.value }))}
               placeholder="Describe your project vision..."
-              className="bg-white/5 border-white/10 min-h-[100px]"
+              className="bg-input border-border min-h-[100px]"
             />
           </div>
           <div className="space-y-2">
@@ -161,7 +161,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
               value={projectData.location}
               onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))}
               placeholder="Filming location"
-              className="bg-white/5 border-white/10"
+              className="bg-input border-border"
             />
           </div>
         </div>
@@ -173,7 +173,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       component: (
         <div className="space-y-6">
           <div className="space-y-3">
-            <Label className="text-white">Project Genre *</Label>
+            <Label className="text-foreground">Project Genre *</Label>
             <div className="flex flex-wrap gap-2">
               {availableGenres.map((genre) => (
                 <Badge
@@ -181,7 +181,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                   variant={projectData.genre.includes(genre) ? "default" : "outline"}
                   className={`cursor-pointer transition-colors ${
                     projectData.genre.includes(genre)
-                      ? 'bg-cinesphere-purple text-white'
+                      ? 'bg-primary text-primary-foreground'
                       : 'border-white/20 hover:bg-white/10'
                   }`}
                   onClick={() => handleGenreToggle(genre)}
@@ -193,7 +193,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
           </div>
 
           <div className="space-y-3">
-            <Label className="text-white flex items-center">
+            <Label className="text-foreground flex items-center">
               <Users className="mr-1 h-4 w-4" />
               Required Roles *
             </Label>
@@ -204,7 +204,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                   variant={projectData.required_roles.includes(role) ? "default" : "outline"}
                   className={`cursor-pointer transition-colors ${
                     projectData.required_roles.includes(role)
-                      ? 'bg-cinesphere-blue text-white'
+                      ? 'bg-secondary text-secondary-foreground'
                       : 'border-white/20 hover:bg-white/10'
                   }`}
                   onClick={() => handleRoleToggle(role)}
@@ -233,7 +233,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                 value={projectData.budget_min}
                 onChange={(e) => setProjectData(prev => ({ ...prev, budget_min: e.target.value }))}
                 placeholder="0"
-                className="bg-white/5 border-white/10"
+                className="bg-input border-border"
               />
             </div>
             <div className="space-y-2">
@@ -244,7 +244,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                 value={projectData.budget_max}
                 onChange={(e) => setProjectData(prev => ({ ...prev, budget_max: e.target.value }))}
                 placeholder="0"
-                className="bg-white/5 border-white/10"
+                className="bg-input border-border"
               />
             </div>
           </div>
@@ -260,7 +260,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                 type="date"
                 value={projectData.start_date}
                 onChange={(e) => setProjectData(prev => ({ ...prev, start_date: e.target.value }))}
-                className="bg-white/5 border-white/10"
+                className="bg-input border-border"
               />
             </div>
             <div className="space-y-2">
@@ -270,7 +270,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
                 type="date"
                 value={projectData.end_date}
                 onChange={(e) => setProjectData(prev => ({ ...prev, end_date: e.target.value }))}
-                className="bg-white/5 border-white/10"
+                className="bg-input border-border"
               />
             </div>
           </div>
@@ -282,14 +282,16 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-cinesphere-purple hover:bg-cinesphere-purple/90">
-          <Plus className="mr-2 h-4 w-4" />
-          Create Project
-        </Button>
+        <div className="mb-6">
+          <Button className="bg-primary hover:bg-primary/90">
+            <Plus className="mr-2 h-4 w-4" />
+            Create Project
+          </Button>
+        </div>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl bg-cinesphere-dark/95 border-white/10">
+      <DialogContent className="max-w-4xl bg-background border-border">
         <DialogHeader>
-          <DialogTitle className="text-white text-2xl">Create New Project</DialogTitle>
+          <DialogTitle className="text-foreground text-2xl">Create New Project</DialogTitle>
         </DialogHeader>
         <MultiStepForm
           steps={steps}

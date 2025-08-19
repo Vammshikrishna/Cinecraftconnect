@@ -146,7 +146,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         {!showCreatePost ? (
           <Button
             onClick={() => setShowCreatePost(true)}
-            className="w-full justify-start text-left bg-transparent hover:bg-white/5 border-dashed border-2 border-white/20 h-12"
+            className="w-full justify-start text-left bg-transparent hover:bg-accent border-dashed border-2 border-border h-12"
             variant="outline"
           >
             <PlusCircle className="mr-2 h-5 w-5" />
@@ -158,15 +158,15 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               placeholder="What's happening in your creative world?"
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
-              className="min-h-[100px] bg-black/20 border-white/10 text-white placeholder:text-gray-400"
+              className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
             />
             <div className="flex justify-between items-center">
               <div className="flex space-x-2">
-                <Button variant="outline" size="sm" className="border-white/20">
+                <Button variant="outline" size="sm" className="border-border">
                   <Image className="w-4 h-4 mr-1" />
                   Image
                 </Button>
-                <Button variant="outline" size="sm" className="border-white/20">
+                <Button variant="outline" size="sm" className="border-border">
                   <Video className="w-4 h-4 mr-1" />
                   Video
                 </Button>
@@ -209,9 +209,9 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               key={post.id}
               id={post.id}
               author={{
-                name: "Creator",
-                role: "Filmmaker",
-                initials: "CF"
+                name: "Creative Professional",
+                role: "Creator",
+                initials: "CP"
               }}
               timeAgo={new Date(post.created_at).toLocaleDateString()}
               content={post.content}

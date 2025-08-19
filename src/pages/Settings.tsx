@@ -70,45 +70,45 @@ const Settings = () => {
   };
 
   return (
-    <div className="min-h-screen bg-cinesphere-dark pt-20">
+    <div className="min-h-screen bg-background pt-20">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2 flex items-center">
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
               <SettingsIcon className="mr-3 h-8 w-8" />
               Settings
             </h1>
-            <p className="text-gray-400">
+            <p className="text-muted-foreground">
               Manage your account settings and preferences
             </p>
           </div>
 
           <Tabs defaultValue="account" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4 bg-cinesphere-dark/50 border border-white/10">
+            <TabsList className="grid w-full grid-cols-4 bg-card border border-border">
               <TabsTrigger 
                 value="account" 
-                className="flex items-center data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 <User className="mr-2 h-4 w-4" />
                 Account
               </TabsTrigger>
               <TabsTrigger 
                 value="notifications"
-                className="flex items-center data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 <Bell className="mr-2 h-4 w-4" />
                 Notifications
               </TabsTrigger>
               <TabsTrigger 
                 value="privacy"
-                className="flex items-center data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 <Shield className="mr-2 h-4 w-4" />
                 Privacy
               </TabsTrigger>
               <TabsTrigger 
                 value="appearance"
-                className="flex items-center data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 <Palette className="mr-2 h-4 w-4" />
                 Appearance
@@ -128,9 +128,9 @@ const Settings = () => {
             </TabsContent>
 
             <TabsContent value="appearance">
-              <Card className="border-white/10 bg-cinesphere-dark/50">
+              <Card className="border-border bg-card">
                 <CardHeader>
-                  <CardTitle className="text-white flex items-center">
+                  <CardTitle className="text-foreground flex items-center">
                     <Palette className="mr-2 h-5 w-5" />
                     Appearance Settings
                   </CardTitle>
@@ -141,8 +141,8 @@ const Settings = () => {
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <h3 className="text-white font-medium">Theme</h3>
-                      <p className="text-sm text-gray-400">
+                      <h3 className="text-foreground font-medium">Theme</h3>
+                      <p className="text-sm text-muted-foreground">
                         Choose between light and dark themes
                       </p>
                     </div>
@@ -150,7 +150,7 @@ const Settings = () => {
                       variant="outline"
                       size="sm"
                       onClick={toggleTheme}
-                      className="border-white/20 hover:bg-white/10"
+                      className="border-border hover:bg-accent"
                     >
                       {theme === 'dark' ? (
                         <>
@@ -167,19 +167,19 @@ const Settings = () => {
                   </div>
 
                   <div className="space-y-3">
-                    <h3 className="text-white font-medium">Color Scheme</h3>
+                    <h3 className="text-foreground font-medium">Color Scheme</h3>
                     <div className="grid grid-cols-3 gap-3">
-                      {['Purple', 'Blue', 'Green'].map((color) => (
+                      {['Primary', 'Secondary', 'Accent'].map((color) => (
                         <div
                           key={color}
-                          className="p-4 rounded-lg border border-white/10 cursor-pointer hover:border-cinesphere-purple/50 transition-colors"
+                          className="p-4 rounded-lg border border-border cursor-pointer hover:border-primary/50 transition-colors"
                         >
                           <div className={`w-full h-8 rounded mb-2 ${
-                            color === 'Purple' ? 'bg-cinesphere-purple' :
-                            color === 'Blue' ? 'bg-cinesphere-blue' :
-                            'bg-green-500'
+                            color === 'Primary' ? 'bg-primary' :
+                            color === 'Secondary' ? 'bg-secondary' :
+                            'bg-accent'
                           }`}></div>
-                          <p className="text-sm text-white text-center">{color}</p>
+                          <p className="text-sm text-foreground text-center">{color}</p>
                         </div>
                       ))}
                     </div>

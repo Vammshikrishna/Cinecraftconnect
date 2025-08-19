@@ -49,7 +49,7 @@ const Jobs = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-cinesphere-dark">
+    <div className="min-h-screen bg-background">
       
       <main className="pt-24 pb-16 px-4 md:px-8">
         <div className="max-w-6xl mx-auto">
@@ -65,14 +65,14 @@ const Jobs = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                 <Input 
                   placeholder="Search for jobs..."
-                  className="pl-10 bg-cinesphere-dark/50 border-white/10"
+                  className="pl-10 bg-input border-border"
                 />
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="border-white/20">
+                <Button variant="outline" className="border-border">
                   <Filter size={18} className="mr-2" /> Filters
                 </Button>
-                <Button variant="outline" className="border-white/20">
+                <Button variant="outline" className="border-border">
                   <ArrowUpDown size={18} className="mr-2" /> Sort
                 </Button>
               </div>
@@ -105,7 +105,7 @@ const Jobs = () => {
                   </div>
                   
                   <div className="flex flex-col md:items-end justify-between">
-                    <span className="font-medium text-cinesphere-purple">{job.salary}</span>
+                    <span className="font-medium text-primary">{job.salary}</span>
                     <Button className="mt-2 md:mt-0">
                       Apply Now
                     </Button>

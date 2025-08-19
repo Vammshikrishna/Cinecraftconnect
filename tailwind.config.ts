@@ -64,16 +64,18 @@ export default {
 					ring: 'hsl(var(--sidebar-ring))'
 				},
 				cinesphere: {
-					dark: '#0B1426',
-					surface: '#1A1D29',
-					coral: '#FF6B6B',
-					'coral-light': '#FF8E8E',
-					sky: '#4ECDC4',
-					'sky-light': '#7DDDD6',
-					sunset: '#FFE66D',
-					'sunset-light': '#FFED8A',
-					gray: '#6B7280',
-					'light-gray': '#9CA3AF',
+					dark: 'hsl(220 58% 9%)',
+					surface: 'hsl(220 25% 14%)',
+					coral: 'hsl(0 85% 67%)',
+					'coral-light': 'hsl(0 80% 75%)',
+					sky: 'hsl(176 60% 60%)',
+					'sky-light': 'hsl(176 55% 70%)',
+					sunset: 'hsl(48 100% 71%)',
+					'sunset-light': 'hsl(48 95% 80%)',
+					gray: 'hsl(220 15% 45%)',
+					'light-gray': 'hsl(220 10% 65%)',
+					purple: 'hsl(262 83% 58%)',
+					blue: 'hsl(210 100% 66%)',
 				}
 			},
 			borderRadius: {

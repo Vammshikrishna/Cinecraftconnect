@@ -227,26 +227,26 @@ const Projects = () => {
                 placeholder="Search projects..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-white/5 border-white/10"
+                className="pl-10 bg-input border-border"
               />
             </div>
-            <Button variant="outline" className="border-white/20 hover:bg-white/10">
+            <Button variant="outline" className="border-border hover:bg-accent">
               <Filter className="mr-2 h-4 w-4" />
               Filters
             </Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-cinesphere-dark/50 border border-white/10">
+            <TabsList className="bg-card border border-border">
               <TabsTrigger 
                 value="all" 
-                className="data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 All Projects ({projects.length})
               </TabsTrigger>
               <TabsTrigger 
                 value="my"
-                className="data-[state=active]:bg-cinesphere-purple data-[state=active]:text-white"
+                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               >
                 My Projects
               </TabsTrigger>
