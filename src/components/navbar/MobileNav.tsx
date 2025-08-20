@@ -11,6 +11,7 @@ import {
   SheetTitle
 } from "@/components/ui/sheet";
 import UserProfileMenu from "./UserProfileMenu";
+import LogoutButton from "./LogoutButton";
 
 export function MobileNav() {
   const location = useLocation();
@@ -87,8 +88,9 @@ export function MobileNav() {
                   <Settings size={20} />
                   <span>Settings</span>
                 </Link>
-                <div className="pt-4 border-t border-border">
+                <div className="pt-4 border-t border-border space-y-2">
                   <UserProfileMenu />
+                  <LogoutButton />
                 </div>
               </div>
             </SheetContent>
