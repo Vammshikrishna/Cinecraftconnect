@@ -7,7 +7,8 @@ import CraftFilters from "./CraftFilters";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
-import { PlusCircle, Image, Video } from "lucide-react";
+import { PlusCircle } from "lucide-react";
+import MediaUpload from "./MediaUpload";
 
 interface Post {
   id: string;
@@ -21,6 +22,13 @@ interface Post {
   comment_count: number;
   share_count: number;
   created_at: string;
+  profiles?: {
+    id: string;
+    full_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
+    craft: string | null;
+  };
 }
 
 interface FeedTabProps {
@@ -34,18 +42,29 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [loading, setLoading] = useState(true);
   const [newPostContent, setNewPostContent] = useState("");
   const [showCreatePost, setShowCreatePost] = useState(false);
+  const [postMediaUrl, setPostMediaUrl] = useState("");
+  const [postMediaType, setPostMediaType] = useState<'image' | 'video' | null>(null);
   const { toast } = useToast();
 
-  // Fetch posts from database
+  // Fetch posts from database with author profile data
   const fetchPosts = async () => {
     try {
       const { data, error } = await supabase
         .from('posts')
-        .select('*')
+        .select(`
+          *,
+          profiles:author_id (
+            id,
+            full_name,
+            username,
+            avatar_url,
+            craft
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPosts(data || []);
+      setPosts((data as any) || []);
     } catch (error) {
       console.error('Error fetching posts:', error);
       toast({
@@ -79,6 +98,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
           {
             author_id: user.id,
             content: newPostContent,
+            media_url: postMediaUrl || null,
+            media_type: postMediaType || null,
             tags: [], // Can be enhanced later with tag extraction
           }
         ]);
@@ -86,6 +107,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       if (error) throw error;
 
       setNewPostContent("");
+      setPostMediaUrl("");
+      setPostMediaType(null);
       setShowCreatePost(false);
       fetchPosts(); // Refresh posts
       toast({
@@ -100,6 +123,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         variant: "destructive",
       });
     }
+  };
+
+  const handleMediaUpload = (mediaUrl: string, mediaType: 'image' | 'video') => {
+    setPostMediaUrl(mediaUrl);
+    setPostMediaType(mediaType);
   };
 
   // Set up real-time subscription
@@ -160,16 +188,15 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               onChange={(e) => setNewPostContent(e.target.value)}
               className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
             />
+            
+            <MediaUpload 
+              onMediaUpload={handleMediaUpload}
+              disabled={false}
+            />
+            
             <div className="flex justify-between items-center">
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" className="border-border">
-                  <Image className="w-4 h-4 mr-1" />
-                  Image
-                </Button>
-                <Button variant="outline" size="sm" className="border-border">
-                  <Video className="w-4 h-4 mr-1" />
-                  Video
-                </Button>
+              <div className="text-xs text-muted-foreground">
+                {postMediaUrl && `${postMediaType} attached`}
               </div>
               <div className="flex space-x-2">
                 <Button
@@ -177,6 +204,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                   onClick={() => {
                     setShowCreatePost(false);
                     setNewPostContent("");
+                    setPostMediaUrl("");
+                    setPostMediaType(null);
                   }}
                 >
                   Cancel
@@ -204,29 +233,40 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
             </Button>
           </Card>
         ) : (
-          posts.map((post) => (
-            <PostCard
-              key={post.id}
-              id={post.id}
-              author={{
-                name: "Creative Professional",
-                role: "Creator",
-                initials: "CP"
-              }}
-              timeAgo={new Date(post.created_at).toLocaleDateString()}
-              content={post.content}
-              hasImage={post.media_type === 'image'}
-              imageAlt={post.media_type === 'image' ? 'Post image' : undefined}
-              hasVideo={post.media_type === 'video'}
-              videoThumbnail={post.media_type === 'video' ? 'Post video' : undefined}
-              isAIGenerated={post.has_ai_generated}
-              likes={post.like_count}
-              comments={post.comment_count}
-              tags={post.tags || []}
-              rating={postRatings[post.id]}
-              onRate={onRate}
-            />
-          ))
+          posts.map((post) => {
+            const author = post.profiles;
+            const authorName = author?.full_name || author?.username || 'Anonymous User';
+            const authorRole = author?.craft || 'Creator';
+            const getInitials = (name: string) => {
+              return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
+            };
+
+            return (
+              <PostCard
+                key={post.id}
+                id={post.id}
+                author={{
+                  name: authorName,
+                  role: authorRole,
+                  initials: getInitials(authorName),
+                  avatar: author?.avatar_url || undefined
+                }}
+                timeAgo={new Date(post.created_at).toLocaleDateString()}
+                content={post.content}
+                hasImage={post.media_type === 'image'}
+                imageAlt={post.media_type === 'image' ? 'Post image' : undefined}
+                hasVideo={post.media_type === 'video'}
+                videoThumbnail={post.media_type === 'video' ? 'Post video' : undefined}
+                isAIGenerated={post.has_ai_generated}
+                likes={post.like_count}
+                comments={post.comment_count}
+                tags={post.tags || []}
+                rating={postRatings[post.id]}
+                onRate={onRate}
+                mediaUrl={post.media_url}
+              />
+            );
+          })
         )}
       </div>
     </>

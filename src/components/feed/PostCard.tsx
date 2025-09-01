@@ -26,6 +26,7 @@ interface PostProps {
   tags?: string[];
   rating?: number;
   onRate?: (postId: string | number, rating: number) => void;
+  mediaUrl?: string;
 }
 
 const PostCard = ({ 
@@ -42,7 +43,8 @@ const PostCard = ({
   comments, 
   tags,
   rating,
-  onRate
+  onRate,
+  mediaUrl
 }: PostProps) => {
   
   return (
@@ -66,9 +68,17 @@ const PostCard = ({
       
       {hasImage && (
         <div className="mb-4 rounded-lg overflow-hidden bg-card/50 h-64 flex items-center justify-center relative">
-          <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
-            <p className="text-gray-400">{imageAlt || "Image"}</p>
-          </div>
+          {mediaUrl ? (
+            <img 
+              src={mediaUrl} 
+              alt={imageAlt || "Post image"} 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
+              <p className="text-gray-400">{imageAlt || "Image"}</p>
+            </div>
+          )}
           {isAIGenerated && (
             <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
               AI Generated
@@ -78,13 +88,24 @@ const PostCard = ({
       )}
       
       {hasVideo && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 h-80 flex items-center justify-center relative">
-          <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
-            <p className="text-gray-400">{videoThumbnail}</p>
-            <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
-              <Play size={24} />
-            </Button>
-          </div>
+        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
+          {mediaUrl ? (
+            <video 
+              src={mediaUrl} 
+              controls 
+              className="w-full max-h-80 object-cover"
+              preload="metadata"
+            >
+              Your browser does not support video playback.
+            </video>
+          ) : (
+            <div className="h-80 flex items-center justify-center backdrop-blur-sm">
+              <p className="text-gray-400">{videoThumbnail}</p>
+              <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
+                <Play size={24} />
+              </Button>
+            </div>
+          )}
           {isAIGenerated && (
             <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
               AI Generated
