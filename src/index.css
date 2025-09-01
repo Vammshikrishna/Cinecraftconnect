@@ -67,7 +67,7 @@
   }
   
   .text-gradient {
-    @apply bg-gradient-to-r from-cinesphere-coral to-cinesphere-sky bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
   }
   
   .nav-item {
@@ -92,6 +92,8 @@
   
   .film-strip-frame {
     @apply inline-block h-6 w-6 bg-black border-2 border-cinesphere-gray rounded-sm;
+  }
+  
   /* Enhanced Animations */
   @keyframes shimmer {
     0% { background-position: -200% 0; }

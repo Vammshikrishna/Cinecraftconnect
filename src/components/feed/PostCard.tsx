@@ -116,16 +116,16 @@ const PostCard = ({
       
       <div className="flex flex-wrap gap-2 mb-4">
         {tags && tags.map((tag) => (
-          <span 
+            <span 
             key={tag} 
-            className="text-xs px-2 py-1 bg-white/10 rounded-full text-muted-foreground hover:bg-primary/20 cursor-pointer"
+            className="text-xs px-2 py-1 bg-muted/20 rounded-full text-muted-foreground hover:bg-primary/20 cursor-pointer"
           >
             #{tag}
           </span>
         ))}
       </div>
       
-      <div className="flex items-center justify-between pt-4 border-t border-white/10">
+      <div className="flex items-center justify-between pt-4 border-t border-border">
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
           <Heart size={18} className="mr-1" />
           <span>{likes}</span>
