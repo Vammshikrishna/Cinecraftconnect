@@ -3,66 +3,69 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import SmartHome from "./components/SmartHome";
-import Feed from "./pages/Feed";
-import Analytics from "./pages/Analytics";
-import Projects from "./pages/Projects";
-import Jobs from "./pages/Jobs";
-import Network from "./pages/Network";
-import Explore from "./pages/Explore";
-import CraftPage from "./pages/CraftPage";
-import AllCraftsPage from "./pages/AllCraftsPage";
-import LearningPortal from "./pages/LearningPortal";
-import NotFound from "./pages/NotFound";
-import DiscussionRooms from "./pages/DiscussionRooms";
-import Settings from "./pages/Settings";
-import Profile from "./pages/Profile";
-import ChatPage from "./pages/ChatPage";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { lazy } from "react";
 
-import ProtectedRoute from "./components/ProtectedRoute";
+import SmartHome from "./components/SmartHome";
 import Navbar from "@/components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
+
+// Lazy load pages for better performance
+const Feed = lazy(() => import("./pages/Feed"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const Projects = lazy(() => import("./pages/Projects"));
+const Jobs = lazy(() => import("./pages/Jobs"));
+const Network = lazy(() => import("./pages/Network"));
+const Explore = lazy(() => import("./pages/Explore"));
+const CraftPage = lazy(() => import("./pages/CraftPage"));
+const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
+const LearningPortal = lazy(() => import("./pages/LearningPortal"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Profile = lazy(() => import("./pages/Profile"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const Auth = lazy(() => import("./pages/Auth"));
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Navbar />
-          <Routes>
-            <Route path="/" element={<SmartHome />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/explore" element={<Explore />} />
-            {/* All routes accessible without authentication */}
-            <Route path="/feed" element={<Feed />} />
-          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-          
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/my" element={<Projects />} />
-            <Route path="/jobs" element={<Jobs />} />
-            <Route path="/network" element={<Network />} />
-            <Route path="/craft/:craftName" element={<CraftPage />} />
-            <Route path="/craft/all" element={<AllCraftsPage />} />
-            <Route path="/learn" element={<LearningPortal />} />
-            <Route path="/discussion-rooms" element={<DiscussionRooms />} />
-            <Route path="/chats" element={<ChatPage />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Navbar />
+            <Routes>
+              <Route path="/" element={<SmartHome />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/login" element={<Navigate to="/auth" replace />} />
+              <Route path="/register" element={<Navigate to="/auth" replace />} />
+              <Route path="/explore" element={<Explore />} />
+              <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+              <Route path="/projects/my" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+              <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
+              <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
+              <Route path="/craft/:craftName" element={<CraftPage />} />
+              <Route path="/craft/all" element={<AllCraftsPage />} />
+              <Route path="/learn" element={<LearningPortal />} />
+              <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
+              <Route path="/chats" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
