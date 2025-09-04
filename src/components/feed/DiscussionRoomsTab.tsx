@@ -84,16 +84,27 @@ const DiscussionRoomsTab = () => {
 
       if (error) throw error;
 
-      // Join the room as creator
-      await supabase
-        .from('room_members')
-        .insert([
-          {
-            room_id: (await supabase.from('discussion_rooms').select('id').eq('title', newRoomTitle).single()).data?.id,
-            user_id: user.id,
-            role: 'creator'
-          }
-        ]);
+      // Get the created room ID and join as creator
+      const { data: roomData } = await supabase
+        .from('discussion_rooms')
+        .select('id')
+        .eq('title', newRoomTitle)
+        .eq('creator_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (roomData) {
+        await supabase
+          .from('room_members')
+          .insert([
+            {
+              room_id: roomData.id,
+              user_id: user.id,
+              role: 'creator'
+            }
+          ]);
+      }
 
       setNewRoomTitle("");
       setNewRoomDescription("");
@@ -158,6 +169,7 @@ const DiscussionRoomsTab = () => {
           rooms.map((room, index) => (
             <DiscussionRoomCard 
               key={room.id}
+              id={room.id}
               title={room.title}
               description={room.description}
               memberCount={room.member_count}

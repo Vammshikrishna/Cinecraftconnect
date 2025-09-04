@@ -22,6 +22,7 @@ import AnnouncementsTab from '@/components/feed/AnnouncementsTab';
 import RatingsTab from '@/components/feed/RatingsTab';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
 import RecommendationsPanel from '@/components/ai/RecommendationsPanel';
+import EnhancedNotificationsCenter from '@/components/notifications/EnhancedNotificationsCenter';
 
 const Feed = () => {
   const [activeTab, setActiveTab] = useState('all');
@@ -151,6 +152,9 @@ const Feed = () => {
                 ))}
               </div>
             </InteractiveCard>
+
+            {/* Notifications */}
+            <EnhancedNotificationsCenter />
 
             {/* Activity Feed */}
             <InteractiveCard
