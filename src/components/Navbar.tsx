@@ -23,7 +23,7 @@ const Navbar = () => {
             {/* Logo */}
             <Link to="/" className="flex items-center">
               <Film className="h-8 w-8 text-cinesphere-purple mr-2" />
-              <span className="text-2xl font-bold text-gradient">CineSphere</span>
+              <span className="text-2xl font-bold text-gradient">Cinecraft Connect</span>
             </Link>
 
             {/* Desktop Navigation */}
