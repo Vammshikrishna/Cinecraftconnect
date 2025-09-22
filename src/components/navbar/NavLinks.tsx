@@ -1,9 +1,11 @@
 
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Play, Film, Briefcase, Users, BookOpen, MessageSquare } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const NavLinks = () => {
   const location = useLocation();
+  const { user } = useAuth();
   
   // Function to check if a path is active
   const isActive = (path: string) => {
@@ -13,7 +15,7 @@ const NavLinks = () => {
     return location.pathname.startsWith(path);
   };
 
-  const navItems = [
+  const allNavItems = [
     { path: '/feed', icon: Home, label: 'Home' },
     { path: '/', icon: Play, label: 'Landing' },
     { path: '/projects', icon: Film, label: 'Projects' },
@@ -22,6 +24,14 @@ const NavLinks = () => {
     { path: '/chats', icon: MessageSquare, label: 'Chat' },
     { path: '/learn', icon: BookOpen, label: 'Learn' }
   ];
+
+  // Filter out Landing page for authenticated users
+  const navItems = allNavItems.filter(item => {
+    if (item.path === '/' && user) {
+      return false; // Hide Landing for authenticated users
+    }
+    return true;
+  });
 
   return (
     <nav className="hidden md:flex items-center space-x-2">
