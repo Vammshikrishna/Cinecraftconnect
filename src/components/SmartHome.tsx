@@ -25,7 +25,16 @@ const SmartHome = () => {
     );
   }
 
-  // Only show Index page - let routing handle authenticated users
+  // Only show Index page to non-authenticated users
+  if (user) {
+    // Show loading while redirect happens for authenticated users
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
   return <Index />;
 };
 
