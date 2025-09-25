@@ -13,11 +13,22 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { z } from "zod";
 
 interface PortfolioUploadProps {
   onSuccess?: () => void;
   onCancel?: () => void;
 }
+
+// Portfolio upload validation schema
+const portfolioSchema = z.object({
+  title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
+  description: z.string().max(2000, "Description must be less than 2000 characters").optional(),
+  projectType: z.string().max(100, "Project type must be less than 100 characters").optional(),
+  role: z.string().max(100, "Role must be less than 100 characters").optional(),
+  tags: z.array(z.string().max(50, "Tag must be less than 50 characters")).max(10, "Maximum 10 tags allowed").optional()
+});
 
 export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) => {
   const [title, setTitle] = useState("");
@@ -30,6 +41,7 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const addTag = () => {
     if (currentTag.trim() && !tags.includes(currentTag.trim())) {
@@ -51,13 +63,35 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) {
+    
+    // Check authentication
+    if (!user) {
       toast({
         title: "Error",
-        description: "Title is required",
+        description: "You must be logged in to upload portfolio items",
         variant: "destructive"
       });
       return;
+    }
+
+    // Validate form data
+    try {
+      portfolioSchema.parse({
+        title: title.trim(),
+        description: description.trim(),
+        projectType: projectType.trim(),
+        role: role.trim(),
+        tags: tags
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        toast({
+          title: "Validation Error",
+          description: error.issues[0].message,
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     setUploading(true);
@@ -70,7 +104,7 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
       if (file) {
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const filePath = `temp-user-id/${fileName}`;
+        const filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('portfolios')
@@ -90,7 +124,7 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
       const { error: insertError } = await supabase
         .from('portfolio_items')
         .insert({
-          user_id: 'temp-user-id', // This will be replaced with actual user ID when auth is implemented
+          user_id: user.id,
           title,
           description: description || null,
           media_url: mediaUrl,

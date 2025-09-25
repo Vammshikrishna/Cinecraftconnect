@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Film, Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { z } from 'zod';
+
+// Auth validation schemas
+const loginSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters")
+});
+
+const signUpSchema = z.object({
+  email: z.string().trim().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  fullName: z.string().trim().min(2, "Full name must be at least 2 characters").max(100, "Full name must be less than 100 characters")
+});
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -20,30 +33,44 @@ const Auth = () => {
   const [errors, setErrors] = useState<Record<string, string>>({});
   
   const navigate = useNavigate();
-  const { signIn, signUp } = useAuth();
+  const location = useLocation();
+  const { signIn, signUp, user } = useAuth();
   const { toast } = useToast();
 
+  // Redirect authenticated users
+  if (user) {
+    const from = location.state?.from?.pathname || '/feed';
+    navigate(from, { replace: true });
+  }
+
   const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-    
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email';
+    try {
+      if (isLogin) {
+        loginSchema.parse({
+          email: formData.email,
+          password: formData.password
+        });
+      } else {
+        signUpSchema.parse({
+          email: formData.email,
+          password: formData.password,
+          fullName: formData.fullName
+        });
+      }
+      setErrors({});
+      return true;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const newErrors: Record<string, string> = {};
+        error.issues.forEach((err) => {
+          if (err.path) {
+            newErrors[err.path[0] as string] = err.message;
+          }
+        });
+        setErrors(newErrors);
+      }
+      return false;
     }
-    
-    if (!formData.password) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-    
-    if (!isLogin && !formData.fullName) {
-      newErrors.fullName = 'Full name is required';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -69,7 +96,8 @@ const Auth = () => {
             title: "Welcome back!",
             description: "You have successfully signed in.",
           });
-          navigate('/feed');
+          const from = location.state?.from?.pathname || '/feed';
+          navigate(from, { replace: true });
         }
       } else {
         const { error } = await signUp(formData.email, formData.password, formData.fullName);
