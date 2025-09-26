@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Film, Menu, X } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { useAuth } from '@/contexts/AuthContext';
 
 // Import the new component files
 import NavLinks from './navbar/NavLinks';
@@ -14,6 +15,7 @@ import { MobileNav } from "./navbar/MobileNav";
 
 const Navbar = () => {
   const [searchOpen, setSearchOpen] = useState(false);
+  const { user } = useAuth();
 
   return (
     <>
@@ -26,23 +28,39 @@ const Navbar = () => {
               <span className="text-2xl font-bold text-gradient">Cinecraft Connect</span>
             </Link>
 
-            {/* Desktop Navigation */}
-            <NavLinks />
+            {/* Desktop Navigation - Only show for authenticated users */}
+            {user && <NavLinks />}
 
-            {/* Search, Notifications, Profile */}
+            {/* Right side content */}
             <div className="hidden md:flex items-center space-x-4">
-              <SearchDialog 
-                isOpen={searchOpen}
-                onOpenChange={setSearchOpen}
-              />
-              <NotificationsDropdown />
-              <ChatMenu />
-              <UserProfileMenu />
+              {user ? (
+                <>
+                  {/* Authenticated user features */}
+                  <SearchDialog 
+                    isOpen={searchOpen}
+                    onOpenChange={setSearchOpen}
+                  />
+                  <NotificationsDropdown />
+                  <ChatMenu />
+                  <UserProfileMenu />
+                </>
+              ) : (
+                <>
+                  {/* Unauthenticated user buttons */}
+                  <Button variant="ghost" asChild>
+                    <Link to="/auth">Login</Link>
+                  </Button>
+                  <Button variant="default" asChild>
+                    <Link to="/auth">Sign Up</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>
       </header>
-      <MobileNav />
+      {/* Only show mobile nav for authenticated users */}
+      {user && <MobileNav />}
     </>
   );
 };

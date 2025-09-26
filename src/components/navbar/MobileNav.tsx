@@ -10,12 +10,19 @@ import {
   SheetHeader,
   SheetTitle
 } from "@/components/ui/sheet";
+import { useAuth } from "@/contexts/AuthContext";
 import UserProfileMenu from "./UserProfileMenu";
 import LogoutButton from "./LogoutButton";
 
 export function MobileNav() {
   const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const { user } = useAuth();
+
+  // Don't render mobile nav for unauthenticated users
+  if (!user) {
+    return null;
+  }
   
   const isActive = (path: string) => {
     if (path === '/') {
@@ -26,7 +33,6 @@ export function MobileNav() {
 
   const navItems = [
     { to: "/feed", icon: Home },
-    { to: "/", icon: Play },
     { to: "/projects", icon: Film },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users }

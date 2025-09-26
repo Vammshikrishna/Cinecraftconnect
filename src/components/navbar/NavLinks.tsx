@@ -25,13 +25,10 @@ const NavLinks = () => {
     { path: '/learn', icon: BookOpen, label: 'Learn' }
   ];
 
-  // Filter out Landing page for authenticated users
-  const navItems = allNavItems.filter(item => {
-    if (item.path === '/' && user) {
-      return false; // Hide Landing for authenticated users
-    }
-    return true;
-  });
+  // Show different items based on authentication status
+  const navItems = user 
+    ? allNavItems.filter(item => item.path !== '/') // Hide Landing for authenticated users
+    : allNavItems.filter(item => item.path === '/'); // Show only Landing for unauthenticated users
 
   return (
     <nav className="hidden md:flex items-center space-x-2">
