@@ -32,27 +32,41 @@ const Navbar = () => {
             {user && <NavLinks />}
 
             {/* Right side content */}
-            <div className="hidden md:flex items-center space-x-4">
+            <div className="flex items-center space-x-4">
               {user ? (
                 <>
                   {/* Authenticated user features */}
-                  <SearchDialog 
-                    isOpen={searchOpen}
-                    onOpenChange={setSearchOpen}
-                  />
-                  <NotificationsDropdown />
-                  <ChatMenu />
-                  <UserProfileMenu />
+                  <div className="hidden md:flex items-center space-x-4">
+                    <SearchDialog 
+                      isOpen={searchOpen}
+                      onOpenChange={setSearchOpen}
+                    />
+                    <NotificationsDropdown />
+                    <ChatMenu />
+                    <UserProfileMenu />
+                  </div>
+                  {/* Mobile menu button for authenticated users */}
+                  <div className="md:hidden">
+                    <MobileMenu />
+                  </div>
                 </>
               ) : (
                 <>
                   {/* Unauthenticated user buttons */}
-                  <Button variant="ghost" asChild>
-                    <Link to="/auth">Login</Link>
-                  </Button>
-                  <Button variant="default" asChild>
-                    <Link to="/auth">Sign Up</Link>
-                  </Button>
+                  <div className="hidden md:flex items-center space-x-4">
+                    <Button variant="ghost" asChild>
+                      <Link to="/auth">Login</Link>
+                    </Button>
+                    <Button variant="default" asChild>
+                      <Link to="/auth">Sign Up</Link>
+                    </Button>
+                  </div>
+                  {/* Mobile auth buttons */}
+                  <div className="md:hidden flex items-center space-x-2">
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to="/auth">Login</Link>
+                    </Button>
+                  </div>
                 </>
               )}
             </div>

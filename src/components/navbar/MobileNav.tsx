@@ -35,7 +35,8 @@ export function MobileNav() {
     { to: "/feed", icon: Home },
     { to: "/projects", icon: Film },
     { to: "/jobs", icon: Briefcase },
-    { to: "/network", icon: Users }
+    { to: "/network", icon: Users },
+    { to: "/learn", icon: BookOpen }
   ];
 
   return (
@@ -59,48 +60,6 @@ export function MobileNav() {
             </Link>
           ))}
           
-          <Sheet open={isOpen} onOpenChange={setIsOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="sm" className="flex flex-col items-center justify-center py-2 px-3">
-                <Menu size={20} />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-[300px] sm:w-[400px]">
-              <SheetHeader>
-                <SheetTitle>Menu</SheetTitle>
-              </SheetHeader>
-              <div className="mt-6 space-y-4">
-                <Link 
-                  to="/learn" 
-                  className="flex items-center space-x-3 text-foreground hover:text-primary transition-colors py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  <BookOpen size={20} />
-                  <span>Learn</span>
-                </Link>
-                <Link 
-                  to="/profile" 
-                  className="flex items-center space-x-3 text-foreground hover:text-primary transition-colors py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  <Users size={20} />
-                  <span>Profile</span>
-                </Link>
-                <Link 
-                  to="/settings" 
-                  className="flex items-center space-x-3 text-foreground hover:text-primary transition-colors py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  <Settings size={20} />
-                  <span>Settings</span>
-                </Link>
-                <div className="pt-4 border-t border-border space-y-2">
-                  <UserProfileMenu />
-                  <LogoutButton />
-                </div>
-              </div>
-            </SheetContent>
-          </Sheet>
         </div>
       </nav>
     </>
