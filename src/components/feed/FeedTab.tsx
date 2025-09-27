@@ -53,7 +53,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .from('posts')
         .select(`
           *,
-          profiles!posts_author_id_fkey (
+          profiles:author_id (
             id,
             full_name,
             username,
