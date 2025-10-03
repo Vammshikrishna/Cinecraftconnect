@@ -98,6 +98,87 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          id: string
+          ip_address: string | null
+          new_data: Json | null
+          old_data: Json | null
+          record_id: string | null
+          table_name: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          record_id?: string | null
+          table_name?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          new_data?: Json | null
+          old_data?: Json | null
+          record_id?: string | null
+          table_name?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      background_jobs: {
+        Row: {
+          attempts: number | null
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          job_type: string
+          max_attempts: number | null
+          payload: Json | null
+          scheduled_at: string | null
+          started_at: string | null
+          status: string | null
+        }
+        Insert: {
+          attempts?: number | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_type: string
+          max_attempts?: number | null
+          payload?: Json | null
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          attempts?: number | null
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          job_type?: string
+          max_attempts?: number | null
+          payload?: Json | null
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
       collaborations: {
         Row: {
           craft: string
@@ -497,7 +578,6 @@ export type Database = {
           full_name: string | null
           id: string
           location: string | null
-          role: string | null
           updated_at: string | null
           username: string | null
           website: string | null
@@ -510,7 +590,6 @@ export type Database = {
           full_name?: string | null
           id: string
           location?: string | null
-          role?: string | null
           updated_at?: string | null
           username?: string | null
           website?: string | null
@@ -523,7 +602,6 @@ export type Database = {
           full_name?: string | null
           id?: string
           location?: string | null
-          role?: string | null
           updated_at?: string | null
           username?: string | null
           website?: string | null
@@ -653,6 +731,33 @@ export type Database = {
           status?: string | null
           title?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      rate_limits: {
+        Row: {
+          action_count: number | null
+          action_type: string
+          created_at: string
+          id: string
+          user_id: string | null
+          window_start: string
+        }
+        Insert: {
+          action_count?: number | null
+          action_type: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          window_start?: string
+        }
+        Update: {
+          action_count?: number | null
+          action_type?: string
+          created_at?: string
+          id?: string
+          user_id?: string | null
+          window_start?: string
         }
         Relationships: []
       }
@@ -897,6 +1002,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -905,6 +1031,15 @@ export type Database = {
       calculate_daily_engagement_score: {
         Args: { target_date?: string }
         Returns: undefined
+      }
+      check_rate_limit: {
+        Args: {
+          _action_type: string
+          _max_requests: number
+          _user_id: string
+          _window_minutes: number
+        }
+        Returns: boolean
       }
       create_notification: {
         Args: {
@@ -919,9 +1054,32 @@ export type Database = {
         }
         Returns: string
       }
+      get_user_feed: {
+        Args: { _limit?: number; _offset?: number; _user_id: string }
+        Returns: {
+          author_avatar_url: string
+          author_full_name: string
+          author_id: string
+          comment_count: number
+          content: string
+          created_at: string
+          id: string
+          like_count: number
+          media_type: string
+          media_url: string
+          tags: string[]
+        }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1048,6 +1206,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "user"],
+    },
   },
 } as const

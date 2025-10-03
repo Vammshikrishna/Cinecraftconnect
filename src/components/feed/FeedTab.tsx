@@ -4,6 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "./PostCard";
 import CraftFilters from "./CraftFilters";
+import { useRealtimePosts } from "@/hooks/useRealtimePosts";
+import { performanceMonitor } from "@/utils/monitoring";
+import { cacheManager } from "@/utils/caching";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -46,8 +49,39 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [postMediaType, setPostMediaType] = useState<'image' | 'video' | null>(null);
   const { toast } = useToast();
 
+  // Real-time posts subscription
+  useRealtimePosts({
+    onInsert: (newPost) => {
+      setPosts(prev => [newPost as Post, ...prev]);
+      cacheManager.invalidate('posts-feed');
+      toast({
+        title: "New post",
+        description: "A new post was just added to the feed!",
+      });
+    },
+    onUpdate: (updatedPost) => {
+      setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost as Post : p));
+      cacheManager.invalidate('posts-feed');
+    },
+    onDelete: (postId) => {
+      setPosts(prev => prev.filter(p => p.id !== postId));
+      cacheManager.invalidate('posts-feed');
+    }
+  });
+
   // Fetch posts from database with author profile data
   const fetchPosts = async () => {
+    const stopTimer = performanceMonitor.startTimer('fetch-posts');
+    
+    // Check cache first
+    const cached = cacheManager.get<Post[]>('posts-feed');
+    if (cached) {
+      setPosts(cached);
+      setLoading(false);
+      stopTimer();
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from('posts')
@@ -64,7 +98,14 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setPosts((data as any) || []);
+      
+      const posts = (data as any) || [];
+      setPosts(posts);
+      cacheManager.set('posts-feed', posts, 300); // 5 minutes
+      
+      performanceMonitor.logToAnalytics('posts_fetched', {
+        count: posts.length
+      });
     } catch (error) {
       console.error('Error fetching posts:', error);
       toast({
@@ -74,6 +115,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       });
     } finally {
       setLoading(false);
+      stopTimer();
     }
   };
 
@@ -110,11 +152,14 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       setPostMediaUrl("");
       setPostMediaType(null);
       setShowCreatePost(false);
+      cacheManager.invalidate('posts-feed');
       fetchPosts(); // Refresh posts
       toast({
         title: "Success",
         description: "Post created successfully!",
       });
+      
+      performanceMonitor.logToAnalytics('post_created');
     } catch (error) {
       console.error('Error creating post:', error);
       toast({

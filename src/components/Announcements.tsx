@@ -14,7 +14,6 @@ interface Profile {
   username?: string;
   full_name?: string;
   avatar_url?: string;
-  role?: string;
 }
 
 interface Announcement {
@@ -86,7 +85,7 @@ const Announcements = () => {
       
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('id, username, full_name, avatar_url, role')
+        .select('id, username, full_name, avatar_url')
         .in('id', authorIds);
         
       if (profileError) throw profileError;
@@ -124,7 +123,7 @@ const Announcements = () => {
       if (!profiles[newAnnouncement.author_id]) {
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('id, username, full_name, avatar_url, role')
+          .select('id, username, full_name, avatar_url')
           .eq('id', newAnnouncement.author_id)
           .single();
           
@@ -346,7 +345,6 @@ const Announcements = () => {
                     
                     <div className="flex items-center text-sm text-gray-400 mb-3">
                       <span className="mr-2">{announcement.author?.full_name || "User"}</span>
-                      <span className="text-cinesphere-purple">{announcement.author?.role || "Filmmaker"}</span>
                       <span className="mx-2">·</span>
                       <span>Posted {new Date(announcement.posted_at).toLocaleDateString()}</span>
                     </div>
