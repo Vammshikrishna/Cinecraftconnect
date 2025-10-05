@@ -289,39 +289,88 @@ export type Database = {
       }
       discussion_rooms: {
         Row: {
+          category_id: string | null
           created_at: string
           creator_id: string
           description: string
           id: string
           is_active: boolean | null
+          last_activity_at: string | null
           member_count: number | null
           room_type: string | null
+          tags: string[] | null
           title: string
           updated_at: string
         }
         Insert: {
+          category_id?: string | null
           created_at?: string
           creator_id: string
           description: string
           id?: string
           is_active?: boolean | null
+          last_activity_at?: string | null
           member_count?: number | null
           room_type?: string | null
+          tags?: string[] | null
           title: string
           updated_at?: string
         }
         Update: {
+          category_id?: string | null
           created_at?: string
           creator_id?: string
           description?: string
           id?: string
           is_active?: boolean | null
+          last_activity_at?: string | null
           member_count?: number | null
           room_type?: string | null
+          tags?: string[] | null
           title?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "discussion_rooms_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "room_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_reactions: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_reactions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "room_messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       movie_ratings: {
         Row: {
@@ -758,6 +807,30 @@ export type Database = {
           id?: string
           user_id?: string | null
           window_start?: string
+        }
+        Relationships: []
+      }
+      room_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          icon: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          icon?: string | null
+          id?: string
+          name?: string
         }
         Relationships: []
       }
