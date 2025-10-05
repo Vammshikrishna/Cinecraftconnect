@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { 
@@ -22,8 +23,18 @@ import {
   Lock,
   Crown,
   UserPlus,
-  Eye
+  Eye,
+  Circle,
+  Tag
 } from 'lucide-react';
+import EnhancedRoomChat from '@/components/chat/EnhancedRoomChat';
+
+interface Category {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
 
 interface DiscussionRoom {
   id: string;
@@ -34,40 +45,77 @@ interface DiscussionRoom {
   creator_id: string;
   is_active: boolean;
   created_at: string;
+  last_activity_at: string | null;
+  category_id: string | null;
+  tags: string[] | null;
   profiles?: {
     full_name: string;
     avatar_url: string;
   } | null;
+  room_categories?: Category | null;
 }
 
 const DiscussionRooms = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [rooms, setRooms] = useState<DiscussionRoom[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const [newRoom, setNewRoom] = useState({
     title: '',
     description: '',
     room_type: 'public' as 'public' | 'private',
+    category_id: '',
+    tags: [] as string[],
   });
 
   useEffect(() => {
+    fetchCategories();
     fetchRooms();
-  }, [activeTab]);
+  }, [activeTab, selectedCategory]);
+
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('room_categories')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setCategories(data || []);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
 
   const fetchRooms = async () => {
     try {
       let query = supabase
         .from('discussion_rooms')
-        .select('*')
+        .select(`
+          *,
+          room_categories (
+            id,
+            name,
+            icon,
+            description
+          )
+        `)
         .eq('is_active', true)
-        .order('created_at', { ascending: false });
+        .order('last_activity_at', { ascending: false, nullsFirst: false });
 
       if (activeTab === 'my') {
         query = query.eq('creator_id', user?.id);
+      }
+
+      if (selectedCategory && selectedCategory !== 'all') {
+        query = query.eq('category_id', selectedCategory);
       }
 
       const { data, error } = await query;
@@ -93,7 +141,11 @@ const DiscussionRooms = () => {
       const { error } = await supabase
         .from('discussion_rooms')
         .insert({
-          ...newRoom,
+          title: newRoom.title,
+          description: newRoom.description,
+          room_type: newRoom.room_type,
+          category_id: newRoom.category_id || null,
+          tags: newRoom.tags.length > 0 ? newRoom.tags : null,
           creator_id: user.id,
         });
 
@@ -105,7 +157,7 @@ const DiscussionRooms = () => {
       });
 
       setCreateModalOpen(false);
-      setNewRoom({ title: '', description: '', room_type: 'public' });
+      setNewRoom({ title: '', description: '', room_type: 'public', category_id: '', tags: [] });
       fetchRooms();
     } catch (error) {
       console.error('Error creating room:', error);
@@ -121,15 +173,28 @@ const DiscussionRooms = () => {
     if (!user) return;
 
     try {
-      const { error } = await supabase
+      // Check if already a member
+      const { data: existingMember } = await supabase
         .from('room_members')
-        .insert({
-          room_id: roomId,
-          user_id: user.id,
-        });
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('user_id', user.id)
+        .single();
 
-      if (error) throw error;
+      if (!existingMember) {
+        const { error } = await supabase
+          .from('room_members')
+          .insert({
+            room_id: roomId,
+            user_id: user.id,
+          });
 
+        if (error) throw error;
+      }
+
+      setSelectedRoom(roomId);
+      setChatOpen(true);
+      
       toast({
         title: "Joined Room",
         description: "You have successfully joined the discussion room!",
@@ -144,70 +209,92 @@ const DiscussionRooms = () => {
     }
   };
 
-  const filteredRooms = rooms.filter(room =>
-    room.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    room.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredRooms = rooms.filter(room => {
+    const matchesSearch = room.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      room.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
 
-  const RoomCard = ({ room }: { room: DiscussionRoom }) => (
-    <Card className="border-white/10 bg-cinesphere-dark/50 hover:bg-cinesphere-dark/70 transition-colors">
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-white text-xl mb-2 flex items-center">
-              {room.room_type === 'private' ? (
-                <Lock className="mr-2 h-5 w-5 text-yellow-400" />
-              ) : (
-                <Globe className="mr-2 h-5 w-5 text-green-400" />
-              )}
-              {room.title}
-            </CardTitle>
-            <div className="flex items-center space-x-2 mb-3">
-              <Badge variant="outline" className="capitalize">
-                {room.room_type}
-              </Badge>
-              <div className="flex items-center text-gray-400 text-sm">
-                <Users className="mr-1 h-3 w-3" />
-                {room.member_count} members
+  const RoomCard = ({ room }: { room: DiscussionRoom }) => {
+    const isActive = room.last_activity_at && 
+      new Date(room.last_activity_at) > new Date(Date.now() - 5 * 60 * 1000);
+
+    return (
+      <Card className="border-white/10 bg-cinesphere-dark/50 hover:bg-cinesphere-dark/70 transition-colors">
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <CardTitle className="text-white text-xl mb-2 flex items-center">
+                {room.room_type === 'private' ? (
+                  <Lock className="mr-2 h-5 w-5 text-yellow-400" />
+                ) : (
+                  <Globe className="mr-2 h-5 w-5 text-green-400" />
+                )}
+                {room.title}
+                {isActive && (
+                  <Circle className="ml-2 h-2 w-2 fill-green-500 text-green-500 animate-pulse" />
+                )}
+              </CardTitle>
+              <div className="flex items-center space-x-2 mb-3 flex-wrap gap-2">
+                {room.room_categories && (
+                  <Badge variant="secondary" className="text-xs">
+                    {room.room_categories.icon} {room.room_categories.name}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="capitalize">
+                  {room.room_type}
+                </Badge>
+                <div className="flex items-center text-gray-400 text-sm">
+                  <Users className="mr-1 h-3 w-3" />
+                  {room.member_count} members
+                </div>
               </div>
+              {room.tags && room.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {room.tags.map((tag, idx) => (
+                    <Badge key={idx} variant="outline" className="text-xs">
+                      <Tag className="mr-1 h-2 w-2" />
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-            <Eye className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-gray-300 mb-4 line-clamp-2">{room.description}</p>
-        
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center text-gray-400 text-sm">
-            <div className="w-6 h-6 bg-cinesphere-purple rounded-full flex items-center justify-center mr-2">
-              {room.profiles?.full_name?.charAt(0) || 'U'}
+        </CardHeader>
+        <CardContent>
+          <p className="text-gray-300 mb-4 line-clamp-2">{room.description}</p>
+          
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center text-gray-400 text-sm">
+              <div className="w-6 h-6 bg-cinesphere-purple rounded-full flex items-center justify-center mr-2">
+                {room.profiles?.full_name?.charAt(0) || 'U'}
+              </div>
+              <span>{room.profiles?.full_name || 'Unknown'}</span>
+              <Crown className="ml-2 h-4 w-4 text-yellow-400" />
             </div>
-            <span>{room.profiles?.full_name || 'Unknown'}</span>
-            <Crown className="ml-2 h-4 w-4 text-yellow-400" />
+            <span className="text-xs text-gray-500">
+              {room.last_activity_at 
+                ? `Active ${formatDistanceToNow(new Date(room.last_activity_at), { addSuffix: true })}`
+                : `Created ${formatDistanceToNow(new Date(room.created_at), { addSuffix: true })}`
+              }
+            </span>
           </div>
-          <span className="text-xs text-gray-500">
-            {formatDistanceToNow(new Date(room.created_at), { addSuffix: true })}
-          </span>
-        </div>
 
-        <div className="flex space-x-2">
-          <Button 
-            onClick={() => joinRoom(room.id)}
-            className="flex-1 bg-cinesphere-purple hover:bg-cinesphere-purple/90"
-          >
-            <UserPlus className="mr-2 h-4 w-4" />
-            Join Room
-          </Button>
-          <Button variant="outline" className="border-white/20 hover:bg-white/10">
-            <MessageCircle className="h-4 w-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
+          <div className="flex space-x-2">
+            <Button 
+              onClick={() => joinRoom(room.id)}
+              className="flex-1 bg-cinesphere-purple hover:bg-cinesphere-purple/90"
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Join & Chat
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
   if (loading) {
     return (
@@ -282,6 +369,21 @@ const DiscussionRooms = () => {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="room-category">Category</Label>
+                  <Select value={newRoom.category_id} onValueChange={(value) => setNewRoom(prev => ({ ...prev, category_id: value }))}>
+                    <SelectTrigger className="bg-white/5 border-white/10">
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>
+                          {cat.icon} {cat.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
                   <Label>Room Type</Label>
                   <div className="flex space-x-2">
                     <Button
@@ -324,10 +426,19 @@ const DiscussionRooms = () => {
                 className="pl-10 bg-white/5 border-white/10"
               />
             </div>
-            <Button variant="outline" className="border-white/20 hover:bg-white/10">
-              <Filter className="mr-2 h-4 w-4" />
-              Filters
-            </Button>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-full sm:w-[200px] bg-white/5 border-white/10">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map(cat => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -347,6 +458,26 @@ const DiscussionRooms = () => {
             </TabsList>
           </Tabs>
         </div>
+
+        {/* Chat Dialog */}
+        <Dialog open={chatOpen} onOpenChange={setChatOpen}>
+          <DialogContent className="max-w-4xl h-[600px] p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5" />
+                {rooms.find(r => r.id === selectedRoom)?.title || 'Discussion Room'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 p-6 pt-0 h-full">
+              {selectedRoom && (
+                <EnhancedRoomChat 
+                  roomId={selectedRoom} 
+                  roomTitle={rooms.find(r => r.id === selectedRoom)?.title || ''} 
+                />
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {filteredRooms.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
