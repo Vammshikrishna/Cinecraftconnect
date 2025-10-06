@@ -2,26 +2,25 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal';
+import { ProjectDetailDialog } from '@/components/projects/ProjectDetailDialog';
+import { ProjectFilters, FilterState } from '@/components/projects/ProjectFilters';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { InteractiveCard } from '@/components/ui/interactive-card';
+import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { 
   Search, 
-  Filter, 
   MapPin, 
   Calendar, 
   DollarSign, 
   Users, 
-  Eye,
-  Film,
-  Plus
+  Film
 } from 'lucide-react';
 
 interface Project {
@@ -35,11 +34,13 @@ interface Project {
   budget_min: number;
   budget_max: number;
   start_date: string;
+  end_date?: string;
   creator_id: string;
   created_at: string;
   profiles?: {
     full_name: string;
     avatar_url: string;
+    craft?: string;
   } | null;
 }
 
@@ -50,6 +51,13 @@ const Projects = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [filters, setFilters] = useState<FilterState>({
+    genres: [],
+    roles: [],
+    status: [],
+    locations: []
+  });
 
   useEffect(() => {
     fetchProjects();
@@ -59,7 +67,14 @@ const Projects = () => {
     try {
       let query = supabase
         .from('projects')
-        .select('*')
+        .select(`
+          *,
+          profiles!creator_id (
+            full_name,
+            avatar_url,
+            craft
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (activeTab === 'my') {
@@ -69,7 +84,7 @@ const Projects = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setProjects(data || []);
+      setProjects((data || []) as any);
     } catch (error) {
       console.error('Error fetching projects:', error);
       toast({
@@ -82,11 +97,27 @@ const Projects = () => {
     }
   };
 
-  const filteredProjects = projects.filter(project =>
-    project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.location?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProjects = projects.filter(project => {
+    // Search filter
+    const matchesSearch = 
+      project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.location?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    // Status filter
+    const matchesStatus = filters.status.length === 0 || 
+      filters.status.includes(project.status);
+
+    // Genre filter
+    const matchesGenre = filters.genres.length === 0 ||
+      (project.genre && filters.genres.some(g => project.genre.includes(g)));
+
+    // Role filter
+    const matchesRole = filters.roles.length === 0 ||
+      (project.required_roles && filters.roles.some(r => project.required_roles.includes(r)));
+
+    return matchesSearch && matchesStatus && matchesGenre && matchesRole;
+  });
 
   const formatBudget = (min?: number, max?: number) => {
     if (!min && !max) return 'Budget TBD';
@@ -95,16 +126,27 @@ const Projects = () => {
     return `Up to $${max?.toLocaleString()}`;
   };
 
+  const getStatusVariant = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'planning': return 'secondary';
+      case 'in-production': return 'default';
+      case 'post-production': return 'outline';
+      case 'completed': return 'secondary';
+      default: return 'outline';
+    }
+  };
+
   const ProjectCard = ({ project }: { project: Project }) => (
     <InteractiveCard
       title={project.title}
       description={project.description?.substring(0, 100) + (project.description?.length > 100 ? '...' : '')}
       variant="hover-lift"
-      className="h-full"
+      className="h-full cursor-pointer"
+      onClick={() => setSelectedProject(project)}
     >
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Badge variant="outline" className="capitalize">
+          <Badge variant={getStatusVariant(project.status)} className="capitalize">
             {project.status}
           </Badge>
           {project.location && (
@@ -222,18 +264,18 @@ const Projects = () => {
         <div className="mb-6">
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search projects..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-input border-border"
+                className="pl-10"
               />
             </div>
-            <Button variant="outline" className="border-border hover:bg-accent">
-              <Filter className="mr-2 h-4 w-4" />
-              Filters
-            </Button>
+            <ProjectFilters 
+              onFiltersChange={setFilters}
+              activeFilters={filters}
+            />
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -255,25 +297,35 @@ const Projects = () => {
         </div>
 
         {filteredProjects.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6}>
             {filteredProjects.map((project) => (
               <ProjectCard key={project.id} project={project} />
             ))}
-          </div>
+          </ResponsiveGrid>
         ) : (
           <div className="text-center py-12">
-            <Film className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-            <p className="text-gray-400 text-lg mb-2">
-              {searchTerm ? 'No projects match your search' : 'No projects found'}
+            <Film className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-lg mb-2">
+              {searchTerm || Object.values(filters).some(f => f.length > 0)
+                ? 'No projects match your filters' 
+                : 'No projects found'}
             </p>
-            <p className="text-gray-500 mb-4">
-              {searchTerm ? 'Try adjusting your search terms' : 'Be the first to create a project'}
+            <p className="text-muted-foreground/80 mb-4">
+              {searchTerm || Object.values(filters).some(f => f.length > 0)
+                ? 'Try adjusting your filters or search terms' 
+                : 'Be the first to create a project'}
             </p>
-            {!searchTerm && (
+            {!searchTerm && Object.values(filters).every(f => f.length === 0) && (
               <ProjectCreationModal onProjectCreated={fetchProjects} />
             )}
           </div>
         )}
+
+        <ProjectDetailDialog 
+          project={selectedProject}
+          open={!!selectedProject}
+          onOpenChange={(open) => !open && setSelectedProject(null)}
+        />
       </div>
     </div>
   );
