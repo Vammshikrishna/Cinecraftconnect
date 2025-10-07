@@ -12,16 +12,15 @@ import SearchDialog from './navbar/SearchDialog';
 import UserProfileMenu from './navbar/UserProfileMenu';
 import ChatMenu from './navbar/ChatMenu';
 import { MobileNav } from "./navbar/MobileNav";
-
 const Navbar = () => {
   const [searchOpen, setSearchOpen] = useState(false);
-  const { user } = useAuth();
-
-  return (
-    <>
+  const {
+    user
+  } = useAuth();
+  return <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-cinesphere-dark/80 backdrop-blur-md border-b border-white/10">
         <div className="container mx-auto">
-          <div className="flex items-center justify-between py-4">
+          <div className="flex items-center justify-between py-4 bg-slate-950 rounded-none">
             {/* Logo */}
             <Link to="/" className="flex items-center">
               <Film className="h-8 w-8 text-cinesphere-purple mr-2" />
@@ -33,14 +32,10 @@ const Navbar = () => {
 
             {/* Right side content */}
             <div className="flex items-center space-x-4">
-              {user ? (
-                <>
+              {user ? <>
                   {/* Authenticated user features */}
                   <div className="hidden md:flex items-center space-x-4">
-                    <SearchDialog 
-                      isOpen={searchOpen}
-                      onOpenChange={setSearchOpen}
-                    />
+                    <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
                     <NotificationsDropdown />
                     <ChatMenu />
                     <UserProfileMenu />
@@ -49,9 +44,7 @@ const Navbar = () => {
                   <div className="md:hidden">
                     <MobileMenu />
                   </div>
-                </>
-              ) : (
-                <>
+                </> : <>
                   {/* Unauthenticated user buttons */}
                   <div className="hidden md:flex items-center space-x-4">
                     <Button variant="ghost" asChild>
@@ -67,16 +60,13 @@ const Navbar = () => {
                       <Link to="/auth">Login</Link>
                     </Button>
                   </div>
-                </>
-              )}
+                </>}
             </div>
           </div>
         </div>
       </header>
       {/* Only show mobile nav for authenticated users */}
       {user && <MobileNav />}
-    </>
-  );
+    </>;
 };
-
 export default Navbar;
