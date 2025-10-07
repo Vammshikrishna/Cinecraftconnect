@@ -19,6 +19,7 @@ const NavLinks = () => {
     { path: '/feed', icon: Home, label: 'Home' },
     { path: '/', icon: Play, label: 'Landing' },
     { path: '/projects', icon: Film, label: 'Projects' },
+    { path: '/discussion-rooms', icon: Play, label: 'Discussion Rooms' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' },
     { path: '/chats', icon: MessageSquare, label: 'Chat' },

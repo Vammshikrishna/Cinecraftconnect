@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,13 +15,27 @@ export const AccountSettings = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    full_name: profile?.full_name || '',
-    username: profile?.username || '',
-    bio: profile?.bio || '',
-    location: profile?.location || '',
-    website: profile?.website || '',
-    craft: profile?.craft || '',
+    full_name: '',
+    username: '',
+    bio: '',
+    location: '',
+    website: '',
+    craft: '',
   });
+
+  // Update form when profile loads
+  useEffect(() => {
+    if (profile) {
+      setFormData({
+        full_name: profile.full_name || '',
+        username: profile.username || '',
+        bio: profile.bio || '',
+        location: profile.location || '',
+        website: profile.website || '',
+        craft: profile.craft || '',
+      });
+    }
+  }, [profile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

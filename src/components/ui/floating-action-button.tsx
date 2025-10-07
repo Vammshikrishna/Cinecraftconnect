@@ -37,5 +37,28 @@ export function FloatingActionButton({
     primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/25",
     secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/90"
   };
-  return;
+  
+  return (
+    <div
+      className={cn(positions[position], "z-50 transition-all duration-300")}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <Button
+        onClick={onClick}
+        className={cn(
+          sizes[size],
+          variants[variant],
+          "rounded-full transition-all duration-300 hover:scale-110 border",
+          isHovered && label && "pr-6",
+          className
+        )}
+      >
+        <Icon className={cn("transition-all duration-300", label && isHovered && "mr-2")} />
+        {label && isHovered && (
+          <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+        )}
+      </Button>
+    </div>
+  );
 }
