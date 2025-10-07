@@ -24,6 +24,7 @@ const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
 const LearningPortal = lazy(() => import("./pages/LearningPortal"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
+const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -56,7 +57,7 @@ const App = () => (
               <Route path="/learn" element={<LearningPortal />} />
               <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
               <Route path="/chats" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-              <Route path="/profile" element={<Navigate to="/settings" replace />} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
