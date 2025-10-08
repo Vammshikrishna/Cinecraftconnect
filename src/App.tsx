@@ -27,6 +27,7 @@ const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
 const Profile = lazy(() => import("./pages/Profile"));
 const Settings = lazy(() => import("./pages/Settings"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
+const ChatsList = lazy(() => import("./pages/ChatsList"));
 const Auth = lazy(() => import("./pages/Auth"));
 
 const queryClient = new QueryClient();
@@ -56,7 +57,8 @@ const App = () => (
               <Route path="/craft/all" element={<AllCraftsPage />} />
               <Route path="/learn" element={<LearningPortal />} />
               <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
-              <Route path="/chats" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
+              <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />

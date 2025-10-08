@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -24,6 +25,7 @@ interface SearchResult {
 }
 
 const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -130,28 +132,20 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
   };
 
   const handleResultClick = (result: SearchResult) => {
-    console.log('Selected search result:', result);
-    
-    // Here you could navigate to different pages based on result type
     switch (result.type) {
       case 'user':
-        // Navigate to user profile
-        window.location.href = `/profile?user=${result.id}`;
+        navigate(`/profile?user=${result.id}`);
         break;
       case 'project':
-        // Navigate to project details
-        window.location.href = `/projects?id=${result.id}`;
+        navigate(`/projects?id=${result.id}`);
         break;
       case 'post':
-        // Navigate to post or feed with highlight
-        window.location.href = `/feed?highlight=${result.id}`;
+        navigate(`/feed?highlight=${result.id}`);
         break;
       case 'hashtag':
-        // Navigate to feed with hashtag filter
-        window.location.href = `/feed?tag=${result.id}`;
+        navigate(`/feed?tag=${result.id}`);
         break;
     }
-    
     onOpenChange(false);
   };
 

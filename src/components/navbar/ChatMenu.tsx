@@ -46,17 +46,38 @@ const ChatMenu = () => {
       try {
         const { data, error } = await supabase
           .from('direct_messages')
-          .select(`
-            *,
-            sender_profile:sender_id(full_name, username, avatar_url),
-            recipient_profile:recipient_id(full_name, username, avatar_url)
-          `)
+          .select('id, content, created_at, sender_id, recipient_id, is_read')
           .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
           .order('created_at', { ascending: false })
           .limit(5);
 
         if (error) throw error;
-        setRecentMessages(data || []);
+
+        // Fetch profiles for all unique user IDs
+        const userIds = new Set<string>();
+        data?.forEach(msg => {
+          userIds.add(msg.sender_id);
+          userIds.add(msg.recipient_id);
+        });
+
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, username, avatar_url')
+          .in('id', Array.from(userIds));
+
+        const profilesMap = profiles?.reduce((acc, profile) => {
+          acc[profile.id] = profile;
+          return acc;
+        }, {} as Record<string, any>) || {};
+
+        // Combine messages with profiles
+        const messagesWithProfiles = data?.map(msg => ({
+          ...msg,
+          sender_profile: profilesMap[msg.sender_id],
+          recipient_profile: profilesMap[msg.recipient_id]
+        }));
+
+        setRecentMessages(messagesWithProfiles || []);
 
         // Count unread messages
         const { count } = await supabase
