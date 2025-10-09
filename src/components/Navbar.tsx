@@ -40,9 +40,9 @@ const Navbar = () => {
                     <ChatMenu />
                     <UserProfileMenu />
                   </div>
-                  {/* Mobile menu button for authenticated users */}
+                  {/* Mobile profile button for authenticated users */}
                   <div className="md:hidden">
-                    <MobileMenu />
+                    <UserProfileMenu />
                   </div>
                 </> : <>
                   {/* Unauthenticated user buttons */}
