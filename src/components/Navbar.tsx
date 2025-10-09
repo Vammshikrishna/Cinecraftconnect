@@ -20,7 +20,7 @@ const Navbar = () => {
   return <>
       <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md border-b border-white/10 bg-black">
         <div className="container mx-auto bg-black rounded-none">
-          <div className="flex items-center justify-between py-4 bg-slate-950 rounded-none">
+          <div className="flex items-center justify-between py-4 rounded-none bg-black">
             {/* Logo */}
             <Link to="/" className="flex items-center">
               <Film className="h-8 w-8 text-cinesphere-purple mr-2" />
