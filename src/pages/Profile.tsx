@@ -1,10 +1,16 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProfileSettings } from '@/components/settings/ProfileSettings';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
+import PortfolioUploadDialog from '@/components/portfolio/PortfolioUploadDialog';
 import MovieRating from '@/components/MovieRating';
 import { AccountSettings } from '@/components/settings/AccountSettings';
 import { NotificationSettings } from '@/components/settings/NotificationSettings';
 import { PrivacySettings } from '@/components/settings/PrivacySettings';
+import { UserPosts } from '@/components/profile/UserPosts';
+import { UserProjects } from '@/components/profile/UserProjects';
+import { UserAnnouncements } from '@/components/profile/UserAnnouncements';
+import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   User, 
   Briefcase, 
@@ -25,7 +31,9 @@ import {
 } from 'recharts';
 
 const Profile = () => {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 500);
@@ -95,8 +103,23 @@ const Profile = () => {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="profile">
+            <TabsContent value="profile" className="space-y-6">
               <ProfileSettings />
+              
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold">My Posts</h3>
+                <UserPosts />
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold">My Projects</h3>
+                <UserProjects />
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold">My Announcements</h3>
+                <UserAnnouncements />
+              </div>
             </TabsContent>
 
             <TabsContent value="portfolio">
@@ -111,7 +134,15 @@ const Profile = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <PortfolioGrid />
+                  <PortfolioGrid 
+                    userId={user?.id} 
+                    isOwner={true} 
+                    onAddNew={() => setPortfolioDialogOpen(true)}
+                  />
+                  <PortfolioUploadDialog
+                    isOpen={portfolioDialogOpen}
+                    onOpenChange={setPortfolioDialogOpen}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -121,54 +152,14 @@ const Profile = () => {
                 <CardHeader>
                   <CardTitle className="text-foreground flex items-center">
                     <TrendingUp className="mr-2 h-5 w-5" />
-                    Profile Analytics
+                    Real-Time Analytics
                   </CardTitle>
                   <CardDescription>
-                    Track your profile performance and engagement
+                    Track your profile performance and engagement in real-time
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="p-4 rounded-lg border border-border bg-background">
-                      <p className="text-sm text-muted-foreground">Profile Views</p>
-                      <p className="text-2xl font-bold text-foreground">2,543</p>
-                      <p className="text-xs text-green-500">+12.5% this week</p>
-                    </div>
-                    <div className="p-4 rounded-lg border border-border bg-background">
-                      <p className="text-sm text-muted-foreground">Portfolio Views</p>
-                      <p className="text-2xl font-bold text-foreground">1,234</p>
-                      <p className="text-xs text-green-500">+8.2% this week</p>
-                    </div>
-                    <div className="p-4 rounded-lg border border-border bg-background">
-                      <p className="text-sm text-muted-foreground">Connections</p>
-                      <p className="text-2xl font-bold text-foreground">456</p>
-                      <p className="text-xs text-green-500">+5.1% this week</p>
-                    </div>
-                  </div>
-                  
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={analyticsData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis 
-                        dataKey="name" 
-                        stroke="hsl(var(--muted-foreground))"
-                        fontSize={12}
-                      />
-                      <YAxis 
-                        stroke="hsl(var(--muted-foreground))"
-                        fontSize={12}
-                      />
-                      <Tooltip 
-                        contentStyle={{
-                          backgroundColor: 'hsl(var(--popover))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                      />
-                      <Bar dataKey="views" fill="hsl(var(--primary))" />
-                      <Bar dataKey="likes" fill="hsl(var(--secondary))" />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <RealTimeAnalytics />
                 </CardContent>
               </Card>
             </TabsContent>
