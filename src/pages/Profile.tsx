@@ -2,11 +2,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProfileSettings } from '@/components/settings/ProfileSettings';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import MovieRating from '@/components/MovieRating';
+import { AccountSettings } from '@/components/settings/AccountSettings';
+import { NotificationSettings } from '@/components/settings/NotificationSettings';
+import { PrivacySettings } from '@/components/settings/PrivacySettings';
 import { 
   User, 
   Briefcase, 
   TrendingUp, 
-  Film 
+  Film,
+  Settings
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -53,7 +57,7 @@ const Profile = () => {
           </div>
 
           <Tabs defaultValue="profile" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4 bg-card border border-border">
+            <TabsList className="grid w-full grid-cols-5 bg-card border border-border">
               <TabsTrigger 
                 value="profile" 
                 className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
@@ -81,6 +85,13 @@ const Profile = () => {
               >
                 <Film className="mr-2 h-4 w-4" />
                 Watchlist & Ratings
+              </TabsTrigger>
+              <TabsTrigger 
+                value="settings"
+                className="flex items-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Settings
               </TabsTrigger>
             </TabsList>
 
@@ -199,6 +210,12 @@ const Profile = () => {
                   </div>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="settings" className="space-y-6">
+              <AccountSettings />
+              <NotificationSettings />
+              <PrivacySettings />
             </TabsContent>
           </Tabs>
         </div>
