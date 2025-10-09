@@ -52,7 +52,7 @@ const UserProfileMenu = () => {
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-white/10" />
         <DropdownMenuItem>
-          <Link to="/settings" className="flex items-center w-full">
+          <Link to="/profile" className="flex items-center w-full">
             <User className="mr-2 h-4 w-4" />
             <span>Profile</span>
           </Link>
