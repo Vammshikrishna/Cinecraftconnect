@@ -19,7 +19,7 @@ const Navbar = () => {
   } = useAuth();
   return <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-cinesphere-dark/80 backdrop-blur-md border-b border-white/10">
-        <div className="container mx-auto bg-slate-950 rounded-full">
+        <div className="container mx-auto bg-black rounded-none">
           <div className="flex items-center justify-between py-4 bg-slate-950 rounded-none">
             {/* Logo */}
             <Link to="/" className="flex items-center">
