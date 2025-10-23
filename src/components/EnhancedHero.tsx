@@ -1,34 +1,39 @@
-
 import { ArrowRight, Play, Users, Award, Briefcase } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Link } from 'react-router-dom';
-
 const EnhancedHero = () => {
-  const stats = [
-    { icon: Users, value: "10K+", label: "Film Professionals" },
-    { icon: Briefcase, value: "500+", label: "Active Projects" },
-    { icon: Award, value: "24", label: "Film Crafts" },
-    { icon: Play, value: "1K+", label: "Success Stories" }
-  ];
-
-  return (
-    <div className="relative min-h-screen flex flex-col justify-center items-center py-20 px-4 md:px-8 overflow-hidden">
+  const stats = [{
+    icon: Users,
+    value: "10K+",
+    label: "Film Professionals"
+  }, {
+    icon: Briefcase,
+    value: "500+",
+    label: "Active Projects"
+  }, {
+    icon: Award,
+    value: "24",
+    label: "Film Crafts"
+  }, {
+    icon: Play,
+    value: "1K+",
+    label: "Success Stories"
+  }];
+  return <div className="relative min-h-screen flex flex-col justify-center items-center py-20 px-4 md:px-8 overflow-hidden">
       {/* Enhanced Animated Film Strip Background */}
       <div className="absolute inset-0 opacity-5">
         <div className="absolute top-1/4 -left-10 right-0 film-strip animate-film-scroll">
-          {[...Array(30)].map((_, i) => (
-            <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue" />
-          ))}
+          {[...Array(30)].map((_, i) => <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue" />)}
         </div>
-        <div className="absolute top-2/4 -left-10 right-0 film-strip animate-film-scroll" style={{ animationDelay: '-5s' }}>
-          {[...Array(30)].map((_, i) => (
-            <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-blue to-cinesphere-purple" />
-          ))}
+        <div className="absolute top-2/4 -left-10 right-0 film-strip animate-film-scroll" style={{
+        animationDelay: '-5s'
+      }}>
+          {[...Array(30)].map((_, i) => <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-blue to-cinesphere-purple" />)}
         </div>
-        <div className="absolute top-3/4 -left-10 right-0 film-strip animate-film-scroll" style={{ animationDelay: '-10s' }}>
-          {[...Array(30)].map((_, i) => (
-            <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue" />
-          ))}
+        <div className="absolute top-3/4 -left-10 right-0 film-strip animate-film-scroll" style={{
+        animationDelay: '-10s'
+      }}>
+          {[...Array(30)].map((_, i) => <div key={i} className="film-strip-frame bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue" />)}
         </div>
       </div>
       
@@ -69,15 +74,11 @@ const EnhancedHero = () => {
 
         {/* Stats Section */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
-          {stats.map(({ icon: Icon, value, label }) => (
-            <div key={label} className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 bg-cinesphere-purple/20 rounded-full mb-3">
-                <Icon className="h-6 w-6 text-cinesphere-purple" />
-              </div>
-              <div className="text-3xl font-bold text-white mb-1">{value}</div>
-              <div className="text-sm text-gray-400">{label}</div>
-            </div>
-          ))}
+          {stats.map(({
+          icon: Icon,
+          value,
+          label
+        }) => {})}
         </div>
       </div>
       
@@ -87,23 +88,14 @@ const EnhancedHero = () => {
           <span className="text-gradient">Connecting All 24 Film Crafts</span>
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 text-sm">
-          {[
-            'Direction', 'Cinematography', 'Production Design', 'Editing', 
-            'Sound Design', 'Screenwriting', 'Acting', 'Costume Design',
-            'VFX', 'Animation', 'Music', 'Casting',
-            'Producing', 'Lighting', 'Makeup', 'Stunts'
-          ].map((craft) => (
-            <Link to={`/craft/${craft.toLowerCase().replace(' ', '-')}`} key={craft}>
+          {['Direction', 'Cinematography', 'Production Design', 'Editing', 'Sound Design', 'Screenwriting', 'Acting', 'Costume Design', 'VFX', 'Animation', 'Music', 'Casting', 'Producing', 'Lighting', 'Makeup', 'Stunts'].map(craft => <Link to={`/craft/${craft.toLowerCase().replace(' ', '-')}`} key={craft}>
               <div className="glass-card p-4 rounded-xl hover:bg-cinesphere-purple/20 transition-all duration-300 hover:scale-105 hover:shadow-lg border border-white/10">
                 <span className="font-medium">{craft}</span>
               </div>
-            </Link>
-          ))}
+            </Link>)}
         </div>
         <p className="mt-6 text-gray-400">And many more specialized roles...</p>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default EnhancedHero;
