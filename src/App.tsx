@@ -29,6 +29,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const ChatsList = lazy(() => import("./pages/ChatsList"));
 const Auth = lazy(() => import("./pages/Auth"));
+const ProjectDiscussionPage = lazy(() => import("./pages/ProjectDiscussionPage"));
 
 const queryClient = new QueryClient();
 
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
               <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
               <Route path="/projects/my" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+              <Route path="/projects/:projectId/discussion" element={<ProtectedRoute><ProjectDiscussionPage /></ProtectedRoute>} />
               <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
               <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
               <Route path="/craft/:craftName" element={<CraftPage />} />

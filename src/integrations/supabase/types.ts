@@ -179,6 +179,44 @@ export type Database = {
         }
         Relationships: []
       }
+      call_participants: {
+        Row: {
+          call_id: string
+          id: string
+          is_audio_enabled: boolean | null
+          is_video_enabled: boolean | null
+          joined_at: string | null
+          left_at: string | null
+          user_id: string
+        }
+        Insert: {
+          call_id: string
+          id?: string
+          is_audio_enabled?: boolean | null
+          is_video_enabled?: boolean | null
+          joined_at?: string | null
+          left_at?: string | null
+          user_id: string
+        }
+        Update: {
+          call_id?: string
+          id?: string
+          is_audio_enabled?: boolean | null
+          is_video_enabled?: boolean | null
+          joined_at?: string | null
+          left_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_participants_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "room_calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       collaborations: {
         Row: {
           craft: string
@@ -297,6 +335,8 @@ export type Database = {
           is_active: boolean | null
           last_activity_at: string | null
           member_count: number | null
+          project_id: string | null
+          room_purpose: string | null
           room_type: string | null
           tags: string[] | null
           title: string
@@ -311,6 +351,8 @@ export type Database = {
           is_active?: boolean | null
           last_activity_at?: string | null
           member_count?: number | null
+          project_id?: string | null
+          room_purpose?: string | null
           room_type?: string | null
           tags?: string[] | null
           title: string
@@ -325,6 +367,8 @@ export type Database = {
           is_active?: boolean | null
           last_activity_at?: string | null
           member_count?: number | null
+          project_id?: string | null
+          room_purpose?: string | null
           room_type?: string | null
           tags?: string[] | null
           title?: string
@@ -336,6 +380,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "room_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discussion_rooms_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -818,6 +869,50 @@ export type Database = {
         }
         Relationships: []
       }
+      room_calls: {
+        Row: {
+          call_type: string
+          created_at: string | null
+          ended_at: string | null
+          id: string
+          is_active: boolean | null
+          participant_count: number | null
+          room_id: string
+          started_at: string | null
+          started_by: string
+        }
+        Insert: {
+          call_type: string
+          created_at?: string | null
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          participant_count?: number | null
+          room_id: string
+          started_at?: string | null
+          started_by: string
+        }
+        Update: {
+          call_type?: string
+          created_at?: string | null
+          ended_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          participant_count?: number | null
+          room_id?: string
+          started_at?: string | null
+          started_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_calls_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "discussion_rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       room_categories: {
         Row: {
           created_at: string
@@ -879,25 +974,37 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          media_type: string | null
+          media_url: string | null
           message_type: string | null
+          priority: string | null
           room_id: string
           user_id: string
+          visibility_role: string | null
         }
         Insert: {
           content: string
           created_at?: string
           id?: string
+          media_type?: string | null
+          media_url?: string | null
           message_type?: string | null
+          priority?: string | null
           room_id: string
           user_id: string
+          visibility_role?: string | null
         }
         Update: {
           content?: string
           created_at?: string
           id?: string
+          media_type?: string | null
+          media_url?: string | null
           message_type?: string | null
+          priority?: string | null
           room_id?: string
           user_id?: string
+          visibility_role?: string | null
         }
         Relationships: [
           {

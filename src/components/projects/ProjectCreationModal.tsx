@@ -94,7 +94,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
 
       toast({
         title: "Project Created",
-        description: "Your project has been created successfully!",
+        description: "Your project and discussion room have been created successfully!",
       });
       
       setIsOpen(false);

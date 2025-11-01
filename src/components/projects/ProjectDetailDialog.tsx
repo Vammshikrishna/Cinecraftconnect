@@ -14,6 +14,7 @@ import {
   Send,
   Clock
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Project {
   id: string;
@@ -43,6 +44,8 @@ interface ProjectDetailDialogProps {
 }
 
 export function ProjectDetailDialog({ project, open, onOpenChange }: ProjectDetailDialogProps) {
+  const navigate = useNavigate();
+  
   if (!project) return null;
 
   const formatBudget = (min?: number, max?: number) => {
@@ -191,13 +194,19 @@ export function ProjectDetailDialog({ project, open, onOpenChange }: ProjectDeta
 
           {/* Action Buttons */}
           <div className="flex gap-3">
-            <Button className="flex-1">
-              <Send className="mr-2 h-4 w-4" />
-              Express Interest
+            <Button 
+              className="flex-1"
+              onClick={() => {
+                onOpenChange(false);
+                navigate(`/projects/${project.id}/discussion`);
+              }}
+            >
+              <MessageCircle className="mr-2 h-4 w-4" />
+              Go to Discussion Room
             </Button>
             <Button variant="outline">
-              <MessageCircle className="mr-2 h-4 w-4" />
-              Message Creator
+              <Send className="mr-2 h-4 w-4" />
+              Express Interest
             </Button>
           </div>
         </div>
