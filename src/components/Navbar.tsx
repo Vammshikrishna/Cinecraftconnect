@@ -19,44 +19,52 @@ const Navbar = () => {
   } = useAuth();
   return <>
       <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md border-b border-white/10 bg-black">
-        <div className="container mx-auto bg-black rounded-none">
-          <div className="flex items-center justify-between py-4 rounded-none bg-black">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+          <div className="flex items-center justify-between py-3 sm:py-4">
             {/* Logo */}
-            <Link to="/" className="flex items-center">
-              <Film className="h-8 w-8 text-cinesphere-purple mr-2" />
-              <span className="text-2xl font-bold text-gradient">Cine Craft Connect</span>
+            <Link to="/" className="flex items-center flex-shrink-0">
+              <Film className="h-6 w-6 sm:h-8 sm:w-8 text-cinesphere-purple mr-2" />
+              <span className="text-lg sm:text-2xl font-bold text-gradient whitespace-nowrap">
+                <span className="hidden sm:inline">Cine Craft Connect</span>
+                <span className="sm:hidden">CCC</span>
+              </span>
             </Link>
 
-            {/* Desktop Navigation - Only show for authenticated users */}
-            {user && <NavLinks />}
+            {/* Desktop Navigation - Only show for authenticated users on large screens */}
+            {user && (
+              <div className="hidden lg:flex flex-1 mx-8">
+                <NavLinks />
+              </div>
+            )}
 
             {/* Right side content */}
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               {user ? <>
                   {/* Authenticated user features */}
-                  <div className="hidden md:flex items-center space-x-4">
+                  <div className="hidden lg:flex items-center gap-3">
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
                     <NotificationsDropdown />
                     <ChatMenu />
                     <UserProfileMenu />
                   </div>
-                  {/* Mobile profile button for authenticated users */}
-                  <div className="md:hidden">
+                  {/* Mobile: Show only search and profile */}
+                  <div className="lg:hidden flex items-center gap-2">
+                    <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
                     <UserProfileMenu />
                   </div>
                 </> : <>
                   {/* Unauthenticated user buttons */}
-                  <div className="hidden md:flex items-center space-x-4">
-                    <Button variant="ghost" asChild>
+                  <div className="hidden sm:flex items-center gap-3">
+                    <Button variant="ghost" size="sm" asChild>
                       <Link to="/auth">Login</Link>
                     </Button>
-                    <Button variant="default" asChild>
+                    <Button variant="default" size="sm" asChild>
                       <Link to="/auth">Sign Up</Link>
                     </Button>
                   </div>
-                  {/* Mobile auth buttons */}
-                  <div className="md:hidden flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" asChild>
+                  {/* Mobile auth button - single compact button */}
+                  <div className="sm:hidden">
+                    <Button variant="default" size="sm" asChild>
                       <Link to="/auth">Login</Link>
                     </Button>
                   </div>
