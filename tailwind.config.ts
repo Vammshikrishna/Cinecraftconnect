@@ -19,6 +19,10 @@ export default {
 			}
 		},
 		extend: {
+			fontFamily: {
+				sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+				display: ['Inter', 'system-ui', 'sans-serif'],
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
@@ -63,20 +67,8 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
-				cinesphere: {
-					dark: 'hsl(220 58% 9%)',
-					surface: 'hsl(220 25% 14%)',
-					coral: 'hsl(0 85% 67%)',
-					'coral-light': 'hsl(0 80% 75%)',
-					sky: 'hsl(176 60% 60%)',
-					'sky-light': 'hsl(176 55% 70%)',
-					sunset: 'hsl(48 100% 71%)',
-					'sunset-light': 'hsl(48 95% 80%)',
-					gray: 'hsl(220 15% 45%)',
-					'light-gray': 'hsl(220 10% 65%)',
-					purple: 'hsl(262 83% 58%)',
-					blue: 'hsl(210 100% 66%)',
-				}
+				success: 'hsl(var(--success))',
+				warning: 'hsl(var(--warning))',
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
