@@ -41,7 +41,7 @@ const EnhancedRoomChat = ({ roomId, roomTitle }: EnhancedRoomChatProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { onlineUsers } = usePresence(roomId);
-  const { typingUsers, sendTypingStatus } = useTypingIndicator(roomId);
+  const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
   const typingTimeoutRef = useRef<NodeJS.Timeout>();
 
   const scrollToBottom = () => {
@@ -101,7 +101,7 @@ const EnhancedRoomChat = ({ roomId, roomTitle }: EnhancedRoomChatProps) => {
 
     try {
       setSending(true);
-      sendTypingStatus(false, currentUsername);
+      stopTyping();
       
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -141,8 +141,8 @@ const EnhancedRoomChat = ({ roomId, roomTitle }: EnhancedRoomChatProps) => {
     setNewMessage(e.target.value);
     
     // Send typing indicator
-    if (e.target.value.trim() && currentUsername) {
-      sendTypingStatus(true, currentUsername);
+    if (e.target.value.trim()) {
+      startTyping();
       
       // Clear previous timeout
       if (typingTimeoutRef.current) {
@@ -151,10 +151,10 @@ const EnhancedRoomChat = ({ roomId, roomTitle }: EnhancedRoomChatProps) => {
       
       // Stop typing after 3 seconds of inactivity
       typingTimeoutRef.current = setTimeout(() => {
-        sendTypingStatus(false, currentUsername);
+        stopTyping();
       }, 3000);
     } else {
-      sendTypingStatus(false, currentUsername);
+      stopTyping();
     }
   };
 
@@ -324,7 +324,7 @@ const EnhancedRoomChat = ({ roomId, roomTitle }: EnhancedRoomChatProps) => {
           {/* Typing indicator */}
           {typingUsers.length > 0 && (
             <div className="text-xs text-muted-foreground italic">
-              {typingUsers.map(u => u.username).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+              {typingUsers.map(u => u.full_name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
             </div>
           )}
           

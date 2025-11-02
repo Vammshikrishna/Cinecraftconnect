@@ -18,9 +18,11 @@ interface MessageComposerProps {
   onSend: (content: string, priority: string, visibilityRole: string) => Promise<void>;
   userRole: 'creator' | 'admin' | 'moderator' | 'member';
   disabled?: boolean;
+  onTyping?: () => void;
+  onStopTyping?: () => void;
 }
 
-export const MessageComposer = ({ onSend, userRole, disabled }: MessageComposerProps) => {
+export const MessageComposer = ({ onSend, userRole, disabled, onTyping, onStopTyping }: MessageComposerProps) => {
   const [content, setContent] = useState('');
   const [priority, setPriority] = useState<string>('normal');
   const [visibilityRole, setVisibilityRole] = useState<string>('all');
@@ -37,6 +39,7 @@ export const MessageComposer = ({ onSend, userRole, disabled }: MessageComposerP
       messageSchema.parse({ content });
 
       setSending(true);
+      onStopTyping?.();
       await onSend(content, priority, visibilityRole);
       
       // Reset form
@@ -52,6 +55,11 @@ export const MessageComposer = ({ onSend, userRole, disabled }: MessageComposerP
     } finally {
       setSending(false);
     }
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setContent(e.target.value);
+    onTyping?.();
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -103,8 +111,9 @@ export const MessageComposer = ({ onSend, userRole, disabled }: MessageComposerP
       <div className="relative">
         <Textarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={handleContentChange}
           onKeyPress={handleKeyPress}
+          onBlur={() => onStopTyping?.()}
           placeholder="Type your message... (Shift+Enter for new line)"
           className="min-h-[80px] pr-24 resize-none"
           disabled={disabled || sending}

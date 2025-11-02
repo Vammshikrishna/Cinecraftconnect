@@ -6,6 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageComposer } from './MessageComposer';
+import { TypingIndicator } from './TypingIndicator';
+import { OnlinePresence } from './OnlinePresence';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertCircle, AlertTriangle, Lock } from 'lucide-react';
 
@@ -39,6 +42,7 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
 
   useEffect(() => {
     fetchMessages();
@@ -128,7 +132,26 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
   const handleSendMessage = async (content: string, priority: string, visibilityRole: string) => {
     if (!user) return;
 
-    await supabase.from('room_messages').insert({
+    // Stop typing indicator when sending
+    stopTyping();
+
+    // Optimistic update
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      room_id: roomId,
+      user_id: user.id,
+      content,
+      message_type: 'text',
+      priority,
+      visibility_role: visibilityRole,
+      media_url: null,
+      media_type: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages(prev => [...prev, optimisticMessage]);
+
+    const { error } = await supabase.from('room_messages').insert({
       room_id: roomId,
       user_id: user.id,
       content,
@@ -136,14 +159,20 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
       priority,
       visibility_role: visibilityRole,
     });
+
+    if (error) {
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+      console.error('Error sending message:', error);
+    }
   };
 
   const getPriorityStyles = (priority: string) => {
     switch (priority) {
       case 'high':
-        return 'border-l-4 border-l-amber-500 bg-amber-500/5';
+        return 'border-l-4 border-l-[hsl(var(--accent))] bg-[hsl(var(--accent))]/5';
       case 'critical':
-        return 'border-l-4 border-l-red-500 bg-red-500/5';
+        return 'border-l-4 border-l-[hsl(var(--destructive))] bg-[hsl(var(--destructive))]/5 font-semibold';
       default:
         return '';
     }
@@ -152,9 +181,9 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
   const getPriorityIcon = (priority: string) => {
     switch (priority) {
       case 'high':
-        return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+        return <AlertTriangle className="h-4 w-4 text-[hsl(var(--accent))]" />;
       case 'critical':
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
+        return <AlertCircle className="h-4 w-4 text-[hsl(var(--destructive))]" />;
       default:
         return null;
     }
@@ -173,6 +202,11 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
 
   return (
     <div className="flex flex-col h-[600px]">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <h3 className="font-semibold">Discussion</h3>
+        <OnlinePresence roomId={roomId} />
+      </div>
+      
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-4">
           {messages.map((message) => {
@@ -228,10 +262,14 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
         </div>
       </ScrollArea>
 
+      <TypingIndicator typingUsers={typingUsers} />
+
       <div className="p-4">
         <MessageComposer
           onSend={handleSendMessage}
           userRole={userRole}
+          onTyping={startTyping}
+          onStopTyping={stopTyping}
         />
       </div>
     </div>
