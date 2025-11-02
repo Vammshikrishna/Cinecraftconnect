@@ -119,32 +119,7 @@ const Feed = () => {
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
-            {/* Trending Topics */}
-            <InteractiveCard title="Trending Topics" icon={TrendingUp} variant="hover-lift">
-              <div className="space-y-2">
-                {trendingTopics.map((topic, index) => <div key={index} className="flex items-center justify-between p-2 rounded hover:bg-accent/50 transition-colors cursor-pointer click-effect">
-                    <span className="text-sm font-medium">{topic.name}</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {topic.posts}
-                    </Badge>
-                  </div>)}
-              </div>
-            </InteractiveCard>
-
-            {/* Notifications */}
-            <EnhancedNotificationsCenter />
-
-            {/* Activity Feed */}
-            <InteractiveCard title="Recent Activity" icon={Activity} variant="glow">
-              <ActivityFeed />
-            </InteractiveCard>
-
-            {/* AI Recommendations */}
-            <InteractiveCard title="Recommended for You" icon={Sparkles} variant="gradient">
-              <RecommendationsPanel />
-            </InteractiveCard>
-          </div>
+          
         </div>
         
         {/* Floating Action Button */}

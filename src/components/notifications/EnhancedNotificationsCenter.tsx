@@ -240,10 +240,6 @@ const EnhancedNotificationsCenter = () => {
   if (loading) {
     return;
   }
-  return <Card className="w-full animate-fade-in">
-      
-      
-      
-    </Card>;
+  return;
 };
 export default EnhancedNotificationsCenter;
