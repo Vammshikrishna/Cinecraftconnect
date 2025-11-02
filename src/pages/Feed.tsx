@@ -62,10 +62,7 @@ const Feed = () => {
             <div className="lg:col-span-3 space-y-6">
               {[...Array(3)].map((_, i) => <CardSkeleton key={i} className="h-48" />)}
             </div>
-            <div className="space-y-6">
-              <CardSkeleton className="h-32" />
-              <CardSkeleton className="h-48" />
-            </div>
+            
           </div>
         </div>
       </div>;
