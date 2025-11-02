@@ -238,98 +238,12 @@ const EnhancedNotificationsCenter = () => {
   };
   const filteredNotifications = filterNotifications(notifications, activeTab);
   if (loading) {
-    return <Card className="w-full animate-fade-in">
-        
-        
-      </Card>;
+    return;
   }
   return <Card className="w-full animate-fade-in">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-primary" />
-            Notifications
-            {unreadCount > 0 && <Badge variant="destructive" className="ml-2">
-                {unreadCount}
-              </Badge>}
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button onClick={markAllAsRead} size="sm" variant="outline" disabled={unreadCount === 0}>
-              <Check className="h-4 w-4 mr-1" />
-              Mark all read
-            </Button>
-            <Button size="sm" variant="ghost">
-              <Settings className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
       
-      <CardContent>
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="unread">
-              Unread
-              {unreadCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">
-                  {unreadCount}
-                </Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="actionable">Actionable</TabsTrigger>
-            <TabsTrigger value="mentions">Mentions</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        <ScrollArea className="h-[400px] pr-4">
-          {filteredNotifications.length === 0 ? <div className="text-center py-8">
-              <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">
-                {activeTab === 'all' ? 'No notifications yet' : `No ${activeTab} notifications`}
-              </p>
-            </div> : <div className="space-y-3">
-              {filteredNotifications.map(notification => <div key={notification.id} className={`p-4 rounded-lg border transition-colors ${notification.is_read ? 'bg-muted/20 opacity-70' : 'bg-card border-primary/20 shadow-sm'}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3 flex-1">
-                      <div className="text-xl">
-                        {getNotificationIcon(notification.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-medium text-sm text-foreground">
-                            {notification.title}
-                          </h4>
-                          <Badge variant={getPriorityColor(notification.priority)} className="text-xs">
-                            {notification.priority}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {notification.message}
-                        </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>
-                            {new Date(notification.created_at).toLocaleDateString()} at{' '}
-                            {new Date(notification.created_at).toLocaleTimeString()}
-                          </span>
-                          {notification.action_url && <a href={notification.action_url} className="text-primary hover:underline">
-                              View
-                            </a>}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-1">
-                      {!notification.is_read && <Button size="sm" variant="ghost" onClick={() => markAsRead(notification.id)} className="h-8 w-8 p-0">
-                          <Check className="h-4 w-4" />
-                        </Button>}
-                      <Button size="sm" variant="ghost" onClick={() => deleteNotification(notification.id)} className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive">
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>)}
-            </div>}
-        </ScrollArea>
-      </CardContent>
+      
+      
     </Card>;
 };
 export default EnhancedNotificationsCenter;
