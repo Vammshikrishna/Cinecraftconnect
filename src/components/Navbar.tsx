@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { Film } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { useAuth } from '@/contexts/AuthContext';
-import { ThemeToggle } from './ThemeToggle';
 
 // Import the new component files
 import NavLinks from './navbar/NavLinks';
@@ -45,19 +44,16 @@ const Navbar = () => {
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
                     <NotificationsDropdown />
                     <ChatMenu />
-                    <ThemeToggle />
                     <UserProfileMenu />
                   </div>
-                  {/* Mobile: Show only search, theme toggle and profile */}
+                  {/* Mobile: Show only search and profile */}
                   <div className="lg:hidden flex items-center gap-1">
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
-                    <ThemeToggle />
                     <UserProfileMenu />
                   </div>
                 </> : <>
                   {/* Unauthenticated user buttons */}
                   <div className="hidden sm:flex items-center gap-2">
-                    <ThemeToggle />
                     <Button variant="ghost" size="sm" asChild className="px-3">
                       <Link to="/auth">Login</Link>
                     </Button>
@@ -67,7 +63,6 @@ const Navbar = () => {
                   </div>
                   {/* Mobile auth button - single compact button */}
                   <div className="sm:hidden flex items-center gap-1">
-                    <ThemeToggle />
                     <Button className="btn-primary text-xs px-2 py-1 h-8" size="sm" asChild>
                       <Link to="/auth">Login</Link>
                     </Button>
