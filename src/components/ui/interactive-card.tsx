@@ -25,5 +25,30 @@ export function InteractiveCard({
     glow: "transition-all duration-300 hover:shadow-2xl hover:shadow-primary/20 hover:-translate-y-1",
     gradient: "bg-gradient-to-br from-card via-card to-primary/5 transition-all duration-300 hover:from-primary/5 hover:to-primary/10 hover:-translate-y-1"
   };
-  return;
+  
+  return (
+    <Card
+      className={cn(
+        "cursor-pointer border-border/40",
+        variants[variant],
+        className
+      )}
+      onClick={onClick}
+    >
+      <CardHeader className="flex flex-row items-center gap-4 pb-2">
+        {Icon && (
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+            <Icon className="h-6 w-6 text-primary" />
+          </div>
+        )}
+        <div className="flex-1">
+          <h3 className="font-semibold text-foreground">{title}</h3>
+          {description && (
+            <p className="text-sm text-muted-foreground">{description}</p>
+          )}
+        </div>
+      </CardHeader>
+      {children && <CardContent>{children}</CardContent>}
+    </Card>
+  );
 }
