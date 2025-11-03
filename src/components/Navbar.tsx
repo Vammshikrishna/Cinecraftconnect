@@ -32,7 +32,7 @@ const Navbar = () => {
 
             {/* Desktop Navigation - Only show for authenticated users on large screens */}
             {user && (
-              <div className="hidden lg:flex flex-1 mx-8">
+              <div className="hidden lg:flex flex-1 mx-4 overflow-x-auto scrollbar-hide">
                 <NavLinks />
               </div>
             )}

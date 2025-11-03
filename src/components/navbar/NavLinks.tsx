@@ -32,22 +32,24 @@ const NavLinks = () => {
     : allNavItems.filter(item => item.path === '/'); // Show only Landing for unauthenticated users
 
   return (
-    <nav className="hidden md:flex items-center space-x-2">
-      {navItems.map(({ path, icon: Icon, label }) => (
-        <Link 
-          key={path}
-          to={path} 
-          className={`nav-item px-4 py-2 rounded-lg transition-all duration-200 hover-lift relative group ${
-            isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
-          }`}
-        >
-          <Icon size={18} />
-          <span className="font-medium">{label}</span>
-          {isActive(path) && (
-            <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue rounded-full"></div>
-          )}
-        </Link>
-      ))}
+    <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide w-full">
+      <div className="flex items-center gap-1 min-w-max">
+        {navItems.map(({ path, icon: Icon, label }) => (
+          <Link 
+            key={path}
+            to={path} 
+            className={`nav-item px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${
+              isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
+            }`}
+          >
+            <Icon size={18} className="flex-shrink-0" />
+            <span className="font-medium text-sm">{label}</span>
+            {isActive(path) && (
+              <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-primary to-primary/80 rounded-full"></div>
+            )}
+          </Link>
+        ))}
+      </div>
     </nav>
   );
 };
