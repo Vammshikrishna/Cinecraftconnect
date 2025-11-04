@@ -30,6 +30,7 @@ const ChatPage = lazy(() => import("./pages/ChatPage"));
 const ChatsList = lazy(() => import("./pages/ChatsList"));
 const Auth = lazy(() => import("./pages/Auth"));
 const ProjectDiscussionPage = lazy(() => import("./pages/ProjectDiscussionPage"));
+const PublicProfile = lazy(() => import("./pages/PublicProfile"));
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ const App = () => (
               <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
               <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/profile/view" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>

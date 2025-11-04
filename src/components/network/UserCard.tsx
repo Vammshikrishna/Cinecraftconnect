@@ -68,7 +68,7 @@ export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection 
   return (
     <div className="bg-card border border-border rounded-2xl p-6 hover:shadow-md transition-all">
       <div className="flex items-start gap-4">
-        <Link to={`/profile?id=${user.id}`}>
+        <Link to={`/profile/view?id=${user.id}`}>
           <Avatar className="h-14 w-14 cursor-pointer hover:ring-2 ring-primary transition-all">
             <AvatarImage src={user.avatar_url} />
             <AvatarFallback className="bg-primary/10 text-primary">
@@ -78,7 +78,7 @@ export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection 
         </Link>
 
         <div className="flex-1 min-w-0">
-          <Link to={`/profile?id=${user.id}`}>
+          <Link to={`/profile/view?id=${user.id}`}>
             <h3 className="text-lg font-semibold text-foreground hover:text-primary transition-colors truncate">
               {user.full_name || user.username}
             </h3>
@@ -96,16 +96,29 @@ export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection 
 
           <div className="flex gap-2">
             {renderActionButton()}
-            <Button
-              size="sm"
-              variant="outline"
-              className="flex-1 border-border"
-              asChild
-            >
-              <Link to={`/chats?user=${user.id}`}>
-                <MessageCircle size={14} className="mr-1" /> Message
-              </Link>
-            </Button>
+            {user.connection_status === 'connected' ? (
+              <Button
+                size="sm"
+                variant="default"
+                className="flex-1"
+                asChild
+              >
+                <Link to={`/chats?user=${user.id}`}>
+                  <MessageCircle size={14} className="mr-1" /> Message
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1 border-border"
+                asChild
+              >
+                <Link to={`/chats?user=${user.id}`}>
+                  <MessageCircle size={14} className="mr-1" /> Message
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       </div>

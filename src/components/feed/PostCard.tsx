@@ -1,10 +1,11 @@
-
 import { Heart, MessageCircle, Share2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import StarRating from "@/components/StarRating";
+import { Link } from "react-router-dom";
 
 interface PostAuthor {
+  id?: string;
   name: string;
   role: string;
   initials: string;
@@ -57,8 +58,14 @@ const PostCard = ({
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-semibold">{author.name}</p>
-              <p className="text-xs text-gray-400">{author.role} • {timeAgo}</p>
+              {author.id ? (
+                <Link to={`/profile/view?id=${author.id}`} className="hover:text-primary transition-colors">
+                  <p className="font-semibold">{author.name}</p>
+                </Link>
+              ) : (
+                <p className="font-semibold">{author.name}</p>
+              )}
+              <p className="text-xs text-muted-foreground">{author.role} • {timeAgo}</p>
             </div>
           </div>
         </div>
