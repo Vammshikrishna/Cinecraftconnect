@@ -51,9 +51,8 @@ const Profile = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-background pt-20">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-background">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
               <User className="mr-3 h-8 w-8" />
@@ -209,7 +208,6 @@ const Profile = () => {
               <PrivacySettings />
             </TabsContent>
           </Tabs>
-        </div>
       </div>
     </div>
   );

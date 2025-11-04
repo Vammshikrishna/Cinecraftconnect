@@ -1,17 +1,39 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, Globe, MapPin, Briefcase } from 'lucide-react';
+import { User, Mail, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export const AccountSettings = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      setIsSigningOut(true);
+      await signOut();
+      toast({
+        title: "Signed out successfully",
+        description: "You have been signed out of your account.",
+      });
+      navigate('/auth');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to sign out. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
 
   return (
     <Card className="border-border bg-card">
@@ -44,6 +66,20 @@ export const AccountSettings = () => {
           <h3 className="text-sm font-medium text-foreground mb-2">Password</h3>
           <Button variant="outline" size="sm" className="border-border">
             Change Password
+          </Button>
+        </div>
+
+        <div className="pt-4 border-t border-border">
+          <h3 className="text-sm font-medium text-foreground mb-2">Account Actions</h3>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="border-border"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            {isSigningOut ? 'Signing out...' : 'Sign Out'}
           </Button>
         </div>
 

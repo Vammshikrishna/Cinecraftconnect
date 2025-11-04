@@ -42,9 +42,8 @@ const Network = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="pt-24 pb-16 px-4 md:px-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex justify-between items-center mb-8">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
+        <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-foreground mb-2">Network</h1>
               <p className="text-muted-foreground">
@@ -330,7 +329,6 @@ const Network = () => {
               </Card>
             </TabsContent>
           </Tabs>
-        </div>
       </main>
       <Footer />
     </div>
