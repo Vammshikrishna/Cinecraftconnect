@@ -35,14 +35,6 @@ const MobileMenu = () => {
             <Users size={20} />
             <span>Profile</span>
           </Link>
-          <Link 
-            to="/settings" 
-            className="flex items-center space-x-3 text-foreground hover:text-primary transition-colors py-2"
-            onClick={() => setIsOpen(false)}
-          >
-            <Settings size={20} />
-            <span>Settings</span>
-          </Link>
           <div className="pt-4 border-t border-border space-y-2">
             <UserProfileMenu />
             <LogoutButton />

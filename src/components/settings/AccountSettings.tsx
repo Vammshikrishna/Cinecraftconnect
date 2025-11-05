@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { User, Mail, LogOut } from 'lucide-react';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { User, Mail, LogOut, Palette } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const AccountSettings = () => {
@@ -67,6 +67,40 @@ export const AccountSettings = () => {
           <Button variant="outline" size="sm" className="border-border">
             Change Password
           </Button>
+        </div>
+
+        <div className="pt-4 border-t border-border">
+          <h3 className="text-sm font-medium text-foreground mb-4 flex items-center">
+            <Palette className="mr-2 h-4 w-4" />
+            Appearance
+          </h3>
+          <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-card/50 mb-4">
+            <div className="space-y-1">
+              <h4 className="text-foreground font-medium">Theme</h4>
+              <p className="text-sm text-muted-foreground">
+                Toggle between light and dark mode
+              </p>
+            </div>
+            <ThemeToggle />
+          </div>
+          <div className="space-y-3">
+            <h4 className="text-foreground font-medium">Color Scheme</h4>
+            <div className="grid grid-cols-3 gap-3">
+              {['Primary', 'Secondary', 'Accent'].map((color) => (
+                <div
+                  key={color}
+                  className="p-4 rounded-lg border border-border cursor-pointer hover:border-primary/50 transition-colors"
+                >
+                  <div className={`w-full h-8 rounded mb-2 ${
+                    color === 'Primary' ? 'bg-primary' :
+                    color === 'Secondary' ? 'bg-secondary' :
+                    'bg-accent'
+                  }`}></div>
+                  <p className="text-sm text-foreground text-center">{color}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="pt-4 border-t border-border">

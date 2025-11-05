@@ -1,15 +1,13 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProfileSettings } from '@/components/settings/ProfileSettings';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import PortfolioUploadDialog from '@/components/portfolio/PortfolioUploadDialog';
 import MovieRating from '@/components/MovieRating';
 import { AccountSettings } from '@/components/settings/AccountSettings';
-import { NotificationSettings } from '@/components/settings/NotificationSettings';
-import { PrivacySettings } from '@/components/settings/PrivacySettings';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { UserProjects } from '@/components/profile/UserProjects';
 import { UserAnnouncements } from '@/components/profile/UserAnnouncements';
 import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
+import ProfileManagement from '@/components/profile/ProfileManagement';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   User, 
@@ -103,7 +101,7 @@ const Profile = () => {
             </TabsList>
 
             <TabsContent value="profile" className="space-y-6">
-              <ProfileSettings />
+              <ProfileManagement />
               
               <div className="space-y-4">
                 <h3 className="text-xl font-semibold">My Posts</h3>
@@ -204,8 +202,6 @@ const Profile = () => {
 
             <TabsContent value="settings" className="space-y-6">
               <AccountSettings />
-              <NotificationSettings />
-              <PrivacySettings />
             </TabsContent>
           </Tabs>
       </div>
