@@ -1,16 +1,13 @@
-
 import { Film, Instagram, Twitter, Youtube, Facebook } from 'lucide-react';
 import { Link } from 'react-router-dom';
-
 const Footer = () => {
-  return (
-    <footer className="bg-black py-12 px-4 md:px-8 border-t border-white/10">
+  return <footer className="bg-black py-12 px-4 md:px-8 border-t border-white/10">
       <div className="max-w-6xl mx-auto">
         <div className="grid md:grid-cols-4 gap-8 mb-8">
           <div>
             <Link to="/" className="flex items-center mb-4">
               <Film className="h-6 w-6 text-cinesphere-purple mr-2" />
-              <span className="text-xl font-bold text-gradient">CineSphere</span>
+              <span className="text-xl font-bold text-gradient">CineCraft Connect</span>
             </Link>
             <p className="text-gray-400 text-sm">
               Connecting film professionals worldwide. Collaborate, share, and grow together.
@@ -65,8 +62,6 @@ const Footer = () => {
           <p>&copy; {new Date().getFullYear()} CineSphere. All rights reserved.</p>
         </div>
       </div>
-    </footer>
-  );
+    </footer>;
 };
-
 export default Footer;
