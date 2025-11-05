@@ -1,47 +1,38 @@
 import { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { 
   MessageCircle, 
-  Phone, 
-  Users, 
-  Settings,
-  Video,
-  PhoneCall
+  CheckSquare, 
+  FileText, 
+  Calendar,
+  DollarSign,
+  Sparkles,
+  ChevronRight
 } from 'lucide-react';
 import { EnhancedChatInterface } from '@/components/discussions/EnhancedChatInterface';
-import { VideoCallInterface } from '@/components/discussions/VideoCallInterface';
-import { CallParticipants } from '@/components/discussions/CallParticipants';
-import { useCallState } from '@/hooks/useCallState';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
 interface ProjectDiscussionRoomProps {
   projectId: string;
   projectTitle: string;
+  projectDescription?: string;
 }
 
-export const ProjectDiscussionRoom = ({ projectId, projectTitle }: ProjectDiscussionRoomProps) => {
+type ActiveSection = 'chat' | 'tasks' | 'files' | 'schedule' | 'budget';
+
+export const ProjectDiscussionRoom = ({ 
+  projectId, 
+  projectTitle,
+  projectDescription = "A collaborative workspace for your production team"
+}: ProjectDiscussionRoomProps) => {
   const { user } = useAuth();
   const [roomId, setRoomId] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'creator' | 'admin' | 'moderator' | 'member'>('member');
   const [loading, setLoading] = useState(true);
-
-  const {
-    activeCall,
-    participants,
-    isInCall,
-    isAudioEnabled,
-    isVideoEnabled,
-    startCall,
-    joinCall,
-    leaveCall,
-    endCall,
-    toggleAudio,
-    toggleVideo,
-  } = useCallState(roomId || '');
+  const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
 
   useEffect(() => {
     fetchDiscussionRoom();
@@ -80,149 +71,125 @@ export const ProjectDiscussionRoom = ({ projectId, projectTitle }: ProjectDiscus
     }
   };
 
-  const handleStartCall = async (callType: 'audio' | 'video') => {
-    await startCall(callType);
+  const navItems = [
+    { id: 'chat' as ActiveSection, label: 'Chat', icon: MessageCircle },
+    { id: 'tasks' as ActiveSection, label: 'Tasks', icon: CheckSquare },
+    { id: 'files' as ActiveSection, label: 'Files', icon: FileText },
+    { id: 'schedule' as ActiveSection, label: 'Schedule', icon: Calendar },
+    { id: 'budget' as ActiveSection, label: 'Budget', icon: DollarSign },
+  ];
+
+  const renderContent = () => {
+    if (!roomId) return null;
+
+    switch (activeSection) {
+      case 'chat':
+        return (
+          <Card className="h-full">
+            <EnhancedChatInterface roomId={roomId} userRole={userRole} />
+          </Card>
+        );
+      case 'tasks':
+        return (
+          <Card className="p-8">
+            <h3 className="text-xl font-semibold mb-4">Task Management</h3>
+            <p className="text-muted-foreground">Create and manage production tasks, assign team members, and track progress.</p>
+          </Card>
+        );
+      case 'files':
+        return (
+          <Card className="p-8">
+            <h3 className="text-xl font-semibold mb-4">File Repository</h3>
+            <p className="text-muted-foreground">Share scripts, storyboards, legal documents, and other project files.</p>
+          </Card>
+        );
+      case 'schedule':
+        return (
+          <Card className="p-8">
+            <h3 className="text-xl font-semibold mb-4">Production Schedule</h3>
+            <p className="text-muted-foreground">Manage call sheets, shot lists, and production calendar.</p>
+          </Card>
+        );
+      case 'budget':
+        return (
+          <Card className="p-8">
+            <h3 className="text-xl font-semibold mb-4">Budget Tracker</h3>
+            <p className="text-muted-foreground">Track expenses, manage budgets, and generate financial reports.</p>
+          </Card>
+        );
+      default:
+        return null;
+    }
   };
 
   if (loading || !roomId) {
     return (
       <div className="flex items-center justify-center h-96">
-        <p className="text-muted-foreground">Loading discussion room...</p>
+        <p className="text-muted-foreground">Loading workspace...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">{projectTitle}</h2>
-          <p className="text-muted-foreground">Discussion Room</p>
+    <div className="flex h-[calc(100vh-12rem)] gap-0">
+      {/* Sidebar */}
+      <div className="w-80 bg-card border-r border-border flex flex-col">
+        {/* Project Header */}
+        <div className="p-6 border-b border-border">
+          <h2 className="text-2xl font-bold mb-2">{projectTitle}</h2>
+          <p className="text-sm text-muted-foreground">{projectDescription}</p>
         </div>
-        <div className="flex gap-2">
-          {!activeCall && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => handleStartCall('audio')}
-                className="gap-2"
-              >
-                <PhoneCall className="h-4 w-4" />
-                Start Audio Call
-              </Button>
-              <Button
-                onClick={() => handleStartCall('video')}
-                className="gap-2"
-              >
-                <Video className="h-4 w-4" />
-                Start Video Call
-              </Button>
-            </>
-          )}
-        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 p-4">
+          <div className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeSection === item.id;
+              
+              return (
+                <Button
+                  key={item.id}
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start gap-3 h-11 px-4",
+                    isActive && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
+                  )}
+                  onClick={() => setActiveSection(item.id)}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                  {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                </Button>
+              );
+            })}
+          </div>
+
+          {/* AI Tools Section */}
+          <div className="mt-8 pt-6 border-t border-border">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3 px-2">
+              AI Tools
+            </h3>
+            <Button
+              variant="ghost"
+              className="w-full justify-start gap-3 h-11 px-4 text-accent-foreground"
+            >
+              <Sparkles className="h-5 w-5" />
+              <span>Learning Assistant</span>
+            </Button>
+            <p className="text-xs text-muted-foreground px-4 mt-2">
+              Ask questions about project skills.
+            </p>
+          </div>
+        </nav>
       </div>
 
-      <Tabs defaultValue="chat" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="chat" className="gap-2">
-            <MessageCircle className="h-4 w-4" />
-            Chat
-          </TabsTrigger>
-          <TabsTrigger value="call" className="gap-2">
-            <Phone className="h-4 w-4" />
-            Call
-            {activeCall && (
-              <Badge variant="destructive" className="ml-1">
-                Live
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="members" className="gap-2">
-            <Users className="h-4 w-4" />
-            Members
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="gap-2" disabled={userRole === 'member'}>
-            <Settings className="h-4 w-4" />
-            Settings
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="chat" className="mt-6">
-          <Card>
-            <EnhancedChatInterface
-              roomId={roomId}
-              userRole={userRole}
-            />
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="call" className="mt-6 space-y-6">
-          {activeCall ? (
-            <>
-              <VideoCallInterface
-                call={activeCall}
-                participants={participants}
-                isInCall={isInCall}
-                isAudioEnabled={isAudioEnabled}
-                isVideoEnabled={isVideoEnabled}
-                onToggleAudio={toggleAudio}
-                onToggleVideo={toggleVideo}
-                onLeaveCall={leaveCall}
-                onEndCall={endCall}
-                currentUserId={user?.id || ''}
-              />
-              <CallParticipants
-                participants={participants}
-                isInCall={isInCall}
-                onJoinCall={() => joinCall()}
-              />
-            </>
-          ) : (
-            <Card className="p-12 text-center">
-              <Phone className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-xl font-semibold mb-2">No Active Call</h3>
-              <p className="text-muted-foreground mb-6">
-                Start an audio or video call to collaborate with your team
-              </p>
-              <div className="flex gap-3 justify-center">
-                <Button
-                  variant="outline"
-                  onClick={() => handleStartCall('audio')}
-                  className="gap-2"
-                >
-                  <PhoneCall className="h-4 w-4" />
-                  Start Audio Call
-                </Button>
-                <Button
-                  onClick={() => handleStartCall('video')}
-                  className="gap-2"
-                >
-                  <Video className="h-4 w-4" />
-                  Start Video Call
-                </Button>
-              </div>
-            </Card>
-          )}
-        </TabsContent>
-
-        <TabsContent value="members" className="mt-6">
-          <Card className="p-6">
-            <h3 className="font-semibold mb-4">Room Members</h3>
-            <p className="text-muted-foreground text-sm">
-              Member management functionality coming soon
-            </p>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="settings" className="mt-6">
-          <Card className="p-6">
-            <h3 className="font-semibold mb-4">Room Settings</h3>
-            <p className="text-muted-foreground text-sm">
-              Room configuration options coming soon
-            </p>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Main Content Area */}
+      <div className="flex-1 bg-background overflow-auto">
+        <div className="h-full">
+          {renderContent()}
+        </div>
+      </div>
     </div>
   );
 };
