@@ -96,22 +96,11 @@ export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection 
 
           <div className="flex gap-2">
             {renderActionButton()}
-            {user.connection_status === 'connected' ? (
+            {user.connection_status === 'connected' && (
               <Button
                 size="sm"
                 variant="default"
                 className="flex-1"
-                asChild
-              >
-                <Link to={`/chats?user=${user.id}`}>
-                  <MessageCircle size={14} className="mr-1" /> Message
-                </Link>
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1 border-border"
                 asChild
               >
                 <Link to={`/chats?user=${user.id}`}>

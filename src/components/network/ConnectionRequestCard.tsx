@@ -4,6 +4,7 @@ import { MapPin, Check, X } from 'lucide-react';
 import { Connection } from '@/hooks/useConnections';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import { useState } from 'react';
 
 interface ConnectionRequestCardProps {
   connection: Connection;
@@ -17,6 +18,19 @@ export const ConnectionRequestCard = ({
   onReject,
 }: ConnectionRequestCardProps) => {
   const profile = connection.follower_profile;
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleAccept = async () => {
+    setIsProcessing(true);
+    await onAccept(connection.id);
+    setIsProcessing(false);
+  };
+
+  const handleReject = async () => {
+    setIsProcessing(true);
+    await onReject(connection.id);
+    setIsProcessing(false);
+  };
 
   const getInitials = (name: string) => {
     return name
@@ -61,16 +75,18 @@ export const ConnectionRequestCard = ({
           <div className="flex gap-2">
             <Button
               size="sm"
-              onClick={() => onAccept(connection.id)}
+              onClick={handleAccept}
               className="flex-1 btn-primary"
+              disabled={isProcessing}
             >
               <Check size={14} className="mr-1" /> Accept
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onReject(connection.id)}
+              onClick={handleReject}
               className="flex-1 border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
+              disabled={isProcessing}
             >
               <X size={14} className="mr-1" /> Reject
             </Button>
