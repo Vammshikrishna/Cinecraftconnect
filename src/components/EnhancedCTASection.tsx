@@ -1,22 +1,18 @@
-
 import { ArrowRight, Sparkles, Users, Film } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Link } from 'react-router-dom';
-
 const EnhancedCTASection = () => {
-  return (
-    <section className="py-24 px-4 md:px-8 bg-gradient-to-r from-cinesphere-purple/20 via-cinesphere-dark to-cinesphere-blue/20 relative overflow-hidden">
+  return <section className="py-24 px-4 md:px-8 bg-gradient-to-r from-cinesphere-purple/20 via-cinesphere-dark to-cinesphere-blue/20 relative overflow-hidden">
       {/* Background Elements */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-10 left-10 w-32 h-32 bg-cinesphere-purple rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-10 right-10 w-40 h-40 bg-cinesphere-blue rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute bottom-10 right-10 w-40 h-40 bg-cinesphere-blue rounded-full blur-3xl animate-pulse" style={{
+        animationDelay: '1s'
+      }}></div>
       </div>
 
       <div className="max-w-4xl mx-auto text-center relative z-10">
-        <div className="inline-flex items-center px-4 py-2 bg-cinesphere-purple/20 rounded-full mb-6">
-          <Sparkles className="h-4 w-4 text-cinesphere-purple mr-2" />
-          <span className="text-sm font-medium text-cinesphere-purple">Join 10,000+ Film Professionals</span>
-        </div>
+        
 
         <h2 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
           <span className="text-gradient bg-gradient-to-r from-white via-cinesphere-light-purple to-cinesphere-blue bg-clip-text text-transparent">
@@ -60,8 +56,6 @@ const EnhancedCTASection = () => {
           </div>
         </div>
       </div>
-    </section>
-  );
+    </section>;
 };
-
 export default EnhancedCTASection;

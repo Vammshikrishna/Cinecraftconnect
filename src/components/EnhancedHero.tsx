@@ -73,19 +73,7 @@ const EnhancedHero = () => {
         </div>
 
         {/* Stats Section */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-16">
-          {stats.map(({
-          icon: Icon,
-          value,
-          label
-        }) => (
-            <div key={label} className="text-center">
-              <Icon className="h-8 w-8 mx-auto mb-3 text-primary" />
-              <div className="text-3xl font-bold mb-1">{value}</div>
-              <div className="text-sm text-muted-foreground">{label}</div>
-            </div>
-          ))}
-        </div>
+        
       </div>
       
       {/* Enhanced Crafts Display */}
