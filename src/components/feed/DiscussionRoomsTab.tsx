@@ -7,6 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import DiscussionRoomCard from "./DiscussionRoomCard";
+import { z } from "zod";
+
+const roomSchema = z.object({
+  title: z.string()
+    .trim()
+    .min(1, 'Title cannot be empty')
+    .max(200, 'Title must be less than 200 characters'),
+  description: z.string()
+    .trim()
+    .min(1, 'Description cannot be empty')
+    .max(2000, 'Description must be less than 2000 characters')
+});
 
 interface DiscussionRoom {
   id: string;
@@ -52,16 +64,22 @@ const DiscussionRoomsTab = () => {
 
   // Create new discussion room
   const createRoom = async () => {
-    if (!newRoomTitle.trim() || !newRoomDescription.trim()) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in all fields",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
+      // Validate input
+      const validation = roomSchema.safeParse({
+        title: newRoomTitle,
+        description: newRoomDescription
+      });
+
+      if (!validation.success) {
+        toast({
+          title: "Validation error",
+          description: validation.error.issues[0].message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({
@@ -76,8 +94,8 @@ const DiscussionRoomsTab = () => {
         .from('discussion_rooms')
         .insert([
           {
-            title: newRoomTitle,
-            description: newRoomDescription,
+            title: validation.data.title,
+            description: validation.data.description,
             creator_id: user.id,
           }
         ]);

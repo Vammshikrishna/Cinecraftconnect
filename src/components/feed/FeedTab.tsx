@@ -12,6 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import MediaUpload from "./MediaUpload";
+import { z } from "zod";
+
+const postSchema = z.object({
+  content: z.string()
+    .trim()
+    .min(1, 'Content cannot be empty')
+    .max(5000, 'Content must be less than 5000 characters'),
+  tags: z.array(z.string().max(50)).max(10).optional()
+});
 
 interface Post {
   id: string;
@@ -121,9 +130,22 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
 
   // Create new post
   const createPost = async () => {
-    if (!newPostContent.trim()) return;
-
     try {
+      // Validate input
+      const validation = postSchema.safeParse({ 
+        content: newPostContent,
+        tags: []
+      });
+
+      if (!validation.success) {
+        toast({
+          title: "Validation error",
+          description: validation.error.issues[0].message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({
@@ -139,10 +161,10 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .insert([
           {
             author_id: user.id,
-            content: newPostContent,
+            content: validation.data.content,
             media_url: postMediaUrl || null,
             media_type: postMediaType || null,
-            tags: [], // Can be enhanced later with tag extraction
+            tags: validation.data.tags || [],
           }
         ]);
 

@@ -78,7 +78,13 @@ const EnhancedHero = () => {
           icon: Icon,
           value,
           label
-        }) => {})}
+        }) => (
+            <div key={label} className="text-center">
+              <Icon className="h-8 w-8 mx-auto mb-3 text-primary" />
+              <div className="text-3xl font-bold mb-1">{value}</div>
+              <div className="text-sm text-muted-foreground">{label}</div>
+            </div>
+          ))}
         </div>
       </div>
       
