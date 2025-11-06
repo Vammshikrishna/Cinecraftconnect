@@ -74,15 +74,15 @@ const PostCard = ({
       <p className="mb-4">{content}</p>
       
       {hasImage && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 h-64 flex items-center justify-center relative">
+        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
           {mediaUrl ? (
             <img 
               src={mediaUrl} 
               alt={imageAlt || "Post image"} 
-              className="w-full h-full object-cover"
+              className="w-full h-auto object-contain max-h-[600px]"
             />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center backdrop-blur-sm">
+            <div className="h-64 flex items-center justify-center backdrop-blur-sm">
               <p className="text-gray-400">{imageAlt || "Image"}</p>
             </div>
           )}
@@ -100,13 +100,13 @@ const PostCard = ({
             <video 
               src={mediaUrl} 
               controls 
-              className="w-full max-h-80 object-cover"
+              className="w-full h-auto object-contain max-h-[600px]"
               preload="metadata"
             >
               Your browser does not support video playback.
             </video>
           ) : (
-            <div className="h-80 flex items-center justify-center backdrop-blur-sm">
+            <div className="h-80 flex items-center justify-center backdrop-blur-sm relative">
               <p className="text-gray-400">{videoThumbnail}</p>
               <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
                 <Play size={24} />
