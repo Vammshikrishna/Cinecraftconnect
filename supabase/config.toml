@@ -1,7 +1,7 @@
 project_id = "hfkubpcdbjxhafulxhfv"
 
 [functions.realtime-chat]
-verify_jwt = false
+verify_jwt = true
 
 [functions.process-background-jobs]
 verify_jwt = false
