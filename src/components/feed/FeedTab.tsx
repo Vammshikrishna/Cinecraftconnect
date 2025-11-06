@@ -313,6 +313,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 key={post.id}
                 id={post.id}
                 author={{
+                  id: author?.id,
                   name: authorName,
                   role: authorRole,
                   initials: getInitials(authorName),
