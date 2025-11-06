@@ -19,19 +19,40 @@ serve(async (req) => {
   }
 
   try {
+    // Verify JWT authentication
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - Missing Authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    const { type, roomId, userId, payload }: SignalingMessage = await req.json();
+    // Extract authenticated user from JWT token
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    );
 
-    // Verify user is a member of the room
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized - Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { type, roomId, payload }: Omit<SignalingMessage, 'userId'> = await req.json();
+
+    // Verify user is a member of the room using authenticated user.id
     const { data: membership } = await supabase
       .from('room_members')
       .select('id')
       .eq('room_id', roomId)
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .single();
 
     if (!membership) {
@@ -49,7 +70,7 @@ serve(async (req) => {
           .from('room_messages')
           .insert({
             room_id: roomId,
-            user_id: userId,
+            user_id: user.id,
             content: `User joined the call`,
             message_type: 'system',
             priority: 'normal',
@@ -63,7 +84,7 @@ serve(async (req) => {
         // In production, you'd use a proper WebRTC signaling server
         // For now, we'll use realtime channels to relay signaling data
         // This is a simplified implementation
-        console.log(`Relaying ${type} for room ${roomId} from user ${userId}`);
+        console.log(`Relaying ${type} for room ${roomId} from user ${user.id}`);
         break;
 
       case 'leave-room':
@@ -71,7 +92,7 @@ serve(async (req) => {
           .from('room_messages')
           .insert({
             room_id: roomId,
-            user_id: userId,
+            user_id: user.id,
             content: `User left the call`,
             message_type: 'system',
             priority: 'normal',

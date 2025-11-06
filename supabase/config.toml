@@ -4,10 +4,13 @@ project_id = "hfkubpcdbjxhafulxhfv"
 verify_jwt = true
 
 [functions.process-background-jobs]
-verify_jwt = false
+verify_jwt = true
 
 [functions.health-check]
 verify_jwt = false
 
 [functions.rate-limit-check]
+verify_jwt = true
+
+[functions.webrtc-signaling]
 verify_jwt = true
