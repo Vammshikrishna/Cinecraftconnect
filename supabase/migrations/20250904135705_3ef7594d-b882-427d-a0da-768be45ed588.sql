@@ -1,7 +1,7 @@
 -- Enable real-time updates for posts
-ALTER PUBLICATION supabase_realtime ADD TABLE posts;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE posts;
 ALTER PUBLICATION supabase_realtime ADD TABLE discussion_rooms;
-ALTER PUBLICATION supabase_realtime ADD TABLE room_messages;
+-- ALTER PUBLICATION supabase_realtime ADD TABLE room_messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 
 -- Set replica identity full for real-time

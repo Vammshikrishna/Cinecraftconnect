@@ -97,24 +97,56 @@ const EnhancedRealTimeChat = ({ roomId, roomTitle }: EnhancedRealTimeChatProps) 
         return;
       }
 
-      const { error } = await supabase
+      const messageContent = newMessage.trim();
+      const { error: messageError } = await supabase
         .from('room_messages')
         .insert([
           {
             room_id: roomId,
             user_id: user.id,
-            content: newMessage.trim(),
+            content: messageContent,
             message_type: 'text'
           }
         ]);
 
-      if (error) throw error;
+      if (messageError) throw messageError;
       setNewMessage('');
-    } catch (error) {
+
+      let recipientId: string | undefined;
+      const UUID_LENGTH = 36;
+      const isOneOnOneChat = roomId.length === UUID_LENGTH * 2;
+
+      if (isOneOnOneChat) {
+        const id1 = roomId.substring(0, UUID_LENGTH);
+        const id2 = roomId.substring(UUID_LENGTH);
+        
+        if (user.id === id1) {
+          recipientId = id2;
+        } else if (user.id === id2) {
+          recipientId = id1;
+        }
+      }
+
+      if (recipientId) {
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: recipientId,
+            type: 'new_message',
+            message: `New message from ${user.user_metadata.full_name || 'a user'}: ${messageContent.substring(0, 30)}...`,
+            link: `/chat`,
+          });
+
+        if (notificationError) {
+          console.error("Error creating notification:", notificationError);
+        }
+      }
+
+    } catch (error: any) {
       console.error('Error sending message:', error);
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: error.message || "Failed to send message",
         variant: "destructive",
       });
     } finally {

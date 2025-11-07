@@ -1,16 +1,13 @@
-project_id = "hfkubpcdbjxhafulxhfv"
+project_id = "cinecraft-connect"
 
-[functions.realtime-chat]
-verify_jwt = true
+[api]
+port = 54321
 
-[functions.process-background-jobs]
-verify_jwt = true
+[db]
+port = 54322
 
-[functions.health-check]
-verify_jwt = false
+[auth]
+enable_signup = true
 
-[functions.rate-limit-check]
-verify_jwt = true
-
-[functions.webrtc-signaling]
-verify_jwt = true
+[studio]
+port = 54323

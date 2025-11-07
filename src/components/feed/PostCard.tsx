@@ -1,8 +1,11 @@
-import { Heart, MessageCircle, Share2, Play } from "lucide-react";
+import { Heart, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import StarRating from "@/components/StarRating";
 import { Link } from "react-router-dom";
+import { useState } from "react";
+import CommentSection from "./CommentSection";
+import ShareButton from "../ShareButton";
 
 interface PostAuthor {
   id?: string;
@@ -24,9 +27,11 @@ interface PostProps {
   isAIGenerated?: boolean;
   likes: number;
   comments: number;
+  shares: number;
   tags?: string[];
   rating?: number;
   onRate?: (postId: string | number, rating: number) => void;
+  onShare?: (postId: string | number) => void;
   mediaUrl?: string;
 }
 
@@ -42,11 +47,26 @@ const PostCard = ({
   isAIGenerated, 
   likes, 
   comments, 
+  shares,
   tags,
   rating,
   onRate,
+  onShare,
   mediaUrl
 }: PostProps) => {
+
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(likes);
+  const [showComments, setShowComments] = useState(false);
+
+  const handleLike = () => {
+    setIsLiked(!isLiked);
+    setLikeCount(isLiked ? likeCount - 1 : likeCount + 1);
+  };
+
+  const handleComment = () => {
+    setShowComments(!showComments);
+  };
   
   return (
     <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
@@ -133,18 +153,17 @@ const PostCard = ({
       </div>
       
       <div className="flex items-center justify-between pt-4 border-t border-border">
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
-          <Heart size={18} className="mr-1" />
-          <span>{likes}</span>
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleLike}>
+          <Heart size={18} className={`mr-1 ${isLiked ? 'text-red-500 fill-current' : ''}`} />
+          <span>{likeCount}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleComment}>
           <MessageCircle size={18} className="mr-1" />
           <span>{comments}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10">
-          <Share2 size={18} />
-        </Button>
+        <ShareButton postId={id} />
       </div>
+      {showComments && <CommentSection postId={id} commentCount={comments} />}
     </div>
   );
 };

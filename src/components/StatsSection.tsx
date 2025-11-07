@@ -21,7 +21,7 @@ const StatsSection = () => {
     label: "Awards Won",
     description: "By our community members"
   }];
-  return <section className="py-20 px-4 md:px-8 bg-gradient-to-r from-cinesphere-purple/10 to-cinesphere-blue/10">
+  return <section className="py-20 px-4 md:px-8 bg-gradient-to-r from-cinecraft-connect-purple/10 to-cinecraft-connect-blue/10">
       
     </section>;
 };
