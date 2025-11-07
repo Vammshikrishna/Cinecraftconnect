@@ -5,11 +5,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 
-const ShareButton = ({ postId }: { postId: number }) => {
+const ShareButton = ({ postId, shareCount }: { postId: string, shareCount: number }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isShared, setIsShared] = useState(false);
+  const [currentShareCount, setCurrentShareCount] = useState(shareCount);
 
   useEffect(() => {
     if (!user) return;
@@ -46,6 +47,13 @@ const ShareButton = ({ postId }: { postId: number }) => {
     }
 
     setIsLoading(true);
+    const originalShareCount = currentShareCount;
+    const originalIsShared = isShared;
+
+    // Optimistic update
+    setCurrentShareCount(originalShareCount + 1);
+    setIsShared(true);
+
     try {
       const { error } = await supabase
         .from('shares')
@@ -57,12 +65,10 @@ const ShareButton = ({ postId }: { postId: number }) => {
             title: 'Already Shared',
             description: 'You have already shared this post.',
           });
-          setIsShared(true); // Sync UI state
         } else {
           throw error;
         }
       } else {
-        setIsShared(true);
         const shareUrl = `${window.location.origin}/post/${postId}`;
         try {
           await navigator.clipboard.writeText(shareUrl);
@@ -75,11 +81,14 @@ const ShareButton = ({ postId }: { postId: number }) => {
           toast({
             title: 'Post Shared',
             description: 'Link could not be copied to clipboard.',
-            variant: 'outline',
+            variant: 'default',
           });
         }
       }
     } catch (error) {
+      // Rollback on error
+      setCurrentShareCount(originalShareCount);
+      setIsShared(originalIsShared);
       toast({
         title: 'Error',
         description: 'Failed to share the post. Please try again.',
@@ -94,11 +103,13 @@ const ShareButton = ({ postId }: { postId: number }) => {
   return (
     <Button
       variant="ghost"
-      size="icon"
+      size="sm"
       onClick={handleShare}
       disabled={isLoading || isShared}
+      className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center"
     >
-      <Share2 className="h-5 w-5" />
+      <Share2 className="h-5 w-5 mr-1" />
+      <span>{currentShareCount}</span>
     </Button>
   );
 };

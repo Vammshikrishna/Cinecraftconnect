@@ -36,13 +36,22 @@ const ChatsList = () => {
     useEffect(() => {
         if (!user) return;
 
+        const handleNewMessage = (payload: any) => {
+            const newMessage = payload.new as { conversation_id: string };
+
+            if (newMessage?.conversation_id) {
+                const conversations = queryClient.getQueryData<any[]>(['conversations', user.id]);
+                if (conversations && conversations.some(c => c.conversation_id === newMessage.conversation_id)) {
+                    queryClient.invalidateQueries({ queryKey: ['conversations', user.id] });
+                }
+            }
+        };
+
         const channel = supabase
             .channel('public:messages')
             .on('postgres_changes', 
                 { event: 'INSERT', schema: 'public', table: 'messages' }, 
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['conversations', user.id] });
-                }
+                handleNewMessage
             )
             .subscribe();
 

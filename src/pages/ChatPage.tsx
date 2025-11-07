@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import Spinner from "@/components/Spinner";
 import EnhancedRealTimeChat from "@/components/chat/EnhancedRealTimeChat";
 import { User } from "@supabase/supabase-js";
+import { useToast } from "@/hooks/use-toast";
 
 interface ConnectionProfile {
   id: string;
@@ -20,17 +21,46 @@ const getOneOnOneRoomId = (userId1: string, userId2: string): string => {
 
 const ChatPage = () => {
     const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [loadingUser, setLoadingUser] = useState(true);
     const { connections, loading: connectionsLoading } = useConnections();
     const [connectionProfiles, setConnectionProfiles] = useState<ConnectionProfile[]>([]);
     const [activeConnection, setActiveConnection] = useState<ConnectionProfile | null>(null);
+    const { toast } = useToast();
 
     useEffect(() => {
+        let isMounted = true;
+
         const fetchUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            setCurrentUser(user);
+            setLoadingUser(true);
+            try {
+                const { data: { user }, error } = await supabase.auth.getUser();
+                if (error) throw error;
+                if (isMounted) {
+                    setCurrentUser(user);
+                }
+            } catch (error) {
+                console.error("Error fetching current user:", error);
+                if (isMounted) {
+                    setCurrentUser(null);
+                    toast({
+                        title: "Authentication Error",
+                        description: "Could not fetch your user information. Please try refreshing.",
+                        variant: "destructive"
+                    });
+                }
+            } finally {
+                if (isMounted) {
+                    setLoadingUser(false);
+                }
+            }
         };
+
         fetchUser();
-    }, []);
+
+        return () => {
+            isMounted = false;
+        };
+    }, [toast]);
 
     useEffect(() => {
         if (!connections || !currentUser) return;
@@ -65,8 +95,19 @@ const ChatPage = () => {
         }
     }, [connectionProfiles, activeConnection]);
 
-    if (connectionsLoading || !currentUser) {
+    if (connectionsLoading || loadingUser) {
         return <div className="flex h-[calc(100vh-4rem)] items-center justify-center"><Spinner /></div>;
+    }
+
+    if (!currentUser) {
+        return (
+             <div className="flex h-[calc(100vh-4rem)] items-center justify-center text-center">
+                <div>
+                    <h2 className="text-xl font-semibold text-destructive">Authentication Error</h2>
+                    <p className="text-muted-foreground">We couldn\'t load your user details. Please refresh the page.</p>
+                </div>
+            </div>
+        );
     }
     
     const activeRoomId = activeConnection && currentUser ? getOneOnOneRoomId(currentUser.id, activeConnection.id) : null;

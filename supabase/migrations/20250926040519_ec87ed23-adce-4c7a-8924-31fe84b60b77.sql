@@ -16,8 +16,8 @@ ON public.direct_messages
 FOR DELETE 
 USING ((sender_id = auth.uid()) OR (recipient_id = auth.uid()));
 
--- Fix missing INSERT policy for user_activities to allow system to track activities
-CREATE POLICY "System can create user activities" 
+-- Fix INSERT policy for user_activities to allow system and users to track activities
+CREATE POLICY "System and users can create activity records" 
 ON public.user_activities 
 FOR INSERT 
-WITH CHECK (auth.uid() = user_id);
+WITH CHECK ((auth.role() = 'service_role' OR auth.uid() = user_id));

@@ -42,8 +42,17 @@ const Network = () => {
     "Producer",
   ];
 
-  const getInitials = (name: string | null | undefined, fallback = 'U') => 
-    (name || fallback).split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const getInitials = (name: string | null | undefined, fallback = 'U') => {
+    if (!name || !name.trim()) return fallback;
+    const initials = name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => Array.from(word)[0].toUpperCase())
+      .join('')
+      .slice(0, 2);
+    return initials || fallback;
+  };
 
   return (
     <div className="min-h-screen bg-background">

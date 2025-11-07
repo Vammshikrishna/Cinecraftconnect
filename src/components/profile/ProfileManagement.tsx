@@ -125,7 +125,18 @@ const ProfileManagement = () => {
     }
   };
   
-  const getInitials = (name: string) => name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
+  const getInitials = (name: string): string => {
+    if (!name || !name.trim()) {
+      return '';
+    }
+    return name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => Array.from(word)[0].toUpperCase())
+      .join('')
+      .slice(0, 2);
+  };
 
   // View Mode Component
   const renderViewMode = () => (
