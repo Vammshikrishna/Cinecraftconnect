@@ -1,11 +1,7 @@
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimeChannel } from '@supabase/supabase-js';
-
-interface Post {
-  id: string;
-  [key: string]: any;
-}
+import { Post } from '@/types';
 
 interface UseRealtimePostsProps {
   onInsert?: (post: Post) => void;

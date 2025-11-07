@@ -1,4 +1,12 @@
+-- Ensure the default category exists, and then create a trigger to assign it.
 
+-- First, ensure the 'General Discussion' category exists.
+INSERT INTO public.room_categories (name, description, is_private)
+VALUES ('General Discussion', 'A default category for general topics.', false)
+ON CONFLICT (name) DO NOTHING;
+
+-- This function is triggered before a new discussion room is inserted.
+-- If the category_id is not provided, it assigns the 'General Discussion' category.
 CREATE OR REPLACE FUNCTION public.assign_default_discussion_category()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -10,19 +18,20 @@ DECLARE
 BEGIN
   -- Check if a category is already assigned
   IF NEW.category_id IS NULL THEN
-    -- Find the ID of the 'General Discussion' category
-    SELECT id INTO general_category_id
+    -- Find the ID of the 'General Discussion' category. STRICT ensures it raises an exception if not found.
+    SELECT id INTO STRICT general_category_id
     FROM public.room_categories
-    WHERE name = 'General Discussion'
-    LIMIT 1;
+    WHERE name = 'General Discussion';
 
-    -- If the category is found, assign it to the new room
-    IF general_category_id IS NOT NULL THEN
-      NEW.category_id := general_category_id;
-    END IF;
+    -- Assign the found category ID.
+    NEW.category_id := general_category_id;
   END IF;
 
   RETURN NEW;
+
+EXCEPTION
+  WHEN NO_DATA_FOUND THEN
+    RAISE EXCEPTION 'Default category "General Discussion" not found.';
 END;
 $$;
 

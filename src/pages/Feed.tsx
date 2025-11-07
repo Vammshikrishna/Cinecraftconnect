@@ -31,12 +31,6 @@ const Feed = () => {
     }));
   };
 
-  const handleShare = (postId: string | number) => {
-    // No longer tracking shares at the feed level.
-    // The ShareButton component now handles its own state.
-    console.log(`Share action for post ${postId} is handled by the component.`);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-background pt-20">
@@ -81,7 +75,7 @@ const Feed = () => {
               </TabsList>
 
               <TabsContent value="all" className="space-y-6">
-                <FeedTab postRatings={postRatings} onRate={handleRate} onShare={handleShare} />
+                <FeedTab postRatings={postRatings} onRate={handleRate} />
               </TabsContent>
               
               <TabsContent value="following" className="space-y-6">

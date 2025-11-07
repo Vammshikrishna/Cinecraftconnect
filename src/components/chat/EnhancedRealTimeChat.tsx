@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Send, Users, Video, Mic, MicOff, VideoOff, Phone } from 'lucide-react';
+import { isUUID } from '@/utils/uuid';
 
 interface Message {
   id: string;
@@ -114,26 +115,35 @@ const EnhancedRealTimeChat = ({ roomId, roomTitle }: EnhancedRealTimeChatProps) 
 
       let recipientId: string | undefined;
       const UUID_LENGTH = 36;
-      const isOneOnOneChat = roomId.length === UUID_LENGTH * 2;
 
-      if (isOneOnOneChat) {
+      // One-on-one chat room IDs are formed by concatenating two user UUIDs.
+      const isPotentiallyOneOnOne = roomId.length === UUID_LENGTH * 2;
+
+      if (isPotentiallyOneOnOne) {
         const id1 = roomId.substring(0, UUID_LENGTH);
         const id2 = roomId.substring(UUID_LENGTH);
-        
-        if (user.id === id1) {
-          recipientId = id2;
-        } else if (user.id === id2) {
-          recipientId = id1;
+
+        if (isUUID(id1) && isUUID(id2)) {
+          if (user.id === id1) {
+            recipientId = id2;
+          } else if (user.id === id2) {
+            recipientId = id1;
+          }
+        } else {
+          console.warn('Invalid one-on-one chat roomId format:', roomId);
         }
       }
 
       if (recipientId) {
+        const messagePreview = messageContent.length > 30
+          ? `${messageContent.substring(0, 30)}...`
+          : messageContent;
         const { error: notificationError } = await supabase
           .from('notifications')
           .insert({
             user_id: recipientId,
             type: 'new_message',
-            message: `New message from ${user.user_metadata.full_name || 'a user'}: ${messageContent.substring(0, 30)}...`,
+            message: `New message from ${user?.user_metadata?.full_name || 'a user'}: ${messagePreview}`,
             link: `/chat`,
           });
 

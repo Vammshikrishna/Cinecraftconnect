@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Container, Grid, Card, CardContent, Avatar, Typography, Box, Chip, Tabs, Tab, IconButton } from '@mui/material';
 import { User, Briefcase, Star, MapPin, ExternalLink } from 'lucide-react';
 
-import { CraftPageSkeleton } from '@/components/skeletons/CraftPageSkeleton';
-import { ProjectCard } from '@/components/ProjectCard'; // Assuming this is the correct path
+// import { CraftPageSkeleton } from '@/components/skeletons/CraftPageSkeleton';
+// import { ProjectCard } from '@/components/ProjectCard'; // Assuming this is the correct path
 
 const mockProfessionals = [
   {
@@ -37,7 +36,6 @@ const mockProjects = [
   },
 ];
 
-
 const CraftPage = () => {
   const { craftName } = useParams<{ craftName: string }>();
   const [loading, setLoading] = useState(true);
@@ -55,12 +53,14 @@ const CraftPage = () => {
   }, [formattedCraftName]);
 
   if (loading) {
-    return <CraftPageSkeleton />;
+    return <div>Loading...</div>; // Replace with a proper skeleton loader if available
   }
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+
+  const AnyGrid = Grid as any;
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -81,9 +81,9 @@ const CraftPage = () => {
       </Box>
 
       {tabValue === 0 && (
-        <Grid container spacing={4}>
+        <AnyGrid container spacing={4}>
           {professionals.map((pro) => (
-            <Grid item xs={12} md={6} lg={4} key={pro.id}>
+            <AnyGrid xs={12} md={6} lg={4} key={pro.id}>
               <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <CardContent sx={{ flexGrow: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -112,19 +112,25 @@ const CraftPage = () => {
                   </Box>
                 </CardContent>
               </Card>
-            </Grid>
+            </AnyGrid>
           ))}
-        </Grid>
+        </AnyGrid>
       )}
 
       {tabValue === 1 && (
-        <Grid container spacing={4}>
+        <AnyGrid container spacing={4}>
           {projects.map((project) => (
-            <Grid item xs={12} sm={6} md={4} key={project.id}>
-              <ProjectCard project={project} />
-            </Grid>
+            <AnyGrid xs={12} sm={6} md={4} key={project.id}>
+              {/* Replace with a proper project card component when available */}
+              <Card>
+                <CardContent>
+                  <Typography variant="h6">{project.title}</Typography>
+                  <Typography variant="body2">{project.description}</Typography>
+                </CardContent>
+              </Card>
+            </AnyGrid>
           ))}
-        </Grid>
+        </AnyGrid>
       )}
     </Container>
   );

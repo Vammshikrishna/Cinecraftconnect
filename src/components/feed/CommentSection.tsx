@@ -8,23 +8,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeComments } from "@/hooks/useRealtimeComments";
 import { Trash2 } from "lucide-react";
+import { Post } from "@/types";
 
-interface CommentWithProfile {
-  id: string;
-  content: string;
-  created_at: string;
-  author_id: string;
-  profiles: {
-    full_name: string | null;
-    username: string | null;
-    avatar_url: string | null;
-  } | null;
-}
-
-const CommentSection = ({ postId }: { postId: string | number }) => {
+const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [comments, setComments] = useState<CommentWithProfile[]>([]);
+  const [comments, setComments] = useState<Post[]>([]);
   const [newComment, setNewComment] = useState("");
 
   const fetchComments = useCallback(async () => {
@@ -39,7 +28,7 @@ const CommentSection = ({ postId }: { postId: string | number }) => {
     if (error) {
       toast({ title: "Error fetching comments", description: error.message, variant: "destructive" });
     } else {
-      setComments(data as CommentWithProfile[]);
+      setComments(data as Post[]);
     }
   }, [postId, toast]);
 
@@ -67,15 +56,21 @@ const CommentSection = ({ postId }: { postId: string | number }) => {
     }
 
     const tempId = crypto.randomUUID();
-    const optimisticComment: CommentWithProfile = {
+    const optimisticComment: Post = {
       id: tempId,
       content: newComment.trim(),
       created_at: new Date().toISOString(),
       author_id: user.id,
+      like_count: 0,
+      comment_count: 0,
+      share_count: 0,
+      has_ai_generated: false,
       profiles: {
+        id: user.id,
         full_name: user.user_metadata?.full_name || "You",
         username: user.user_metadata?.username || "",
         avatar_url: user.user_metadata?.avatar_url || null,
+        craft: user.user_metadata?.craft || null,
       },
     };
 
