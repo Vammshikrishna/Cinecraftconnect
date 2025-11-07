@@ -46,9 +46,10 @@ interface Post {
 interface FeedTabProps {
   postRatings: { [postId: string]: number };
   onRate: (postId: string | number, rating: number) => void;
+  onShare: (postId: string | number) => void;
 }
 
-const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
+const FeedTab = ({ postRatings, onRate, onShare }: FeedTabProps) => {
   const [activeFilter, setActiveFilter] = useState("All");
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,6 +192,65 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       });
     }
   };
+  
+  const handleSharePost = async (postId: string | number) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "Authentication required",
+          description: "Please log in to share posts",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('shares')
+        .insert([
+          {
+            post_id: postId,
+            user_id: user.id,
+          }
+        ]);
+
+      if (error) {
+        if (error.code === '23505') { // unique_violation
+          toast({
+            title: "Already shared",
+            description: "You have already shared this post.",
+          });
+        } else {
+          throw error;
+        }
+      } else {
+        onShare(postId);
+        const shareUrl = `${window.location.origin}/post/${postId}`;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            toast({
+              title: "Success",
+              description: "Post shared and link copied to clipboard!",
+            });
+        } catch (err) {
+            console.error("Failed to copy link: ", err);
+            toast({
+                title: "Post shared!",
+                description: "Failed to copy link to clipboard.",
+                variant: "outline"
+            });
+        }
+        performanceMonitor.logToAnalytics('post_shared', { postId });
+      }
+    } catch (error) {
+      console.error('Error sharing post:', error);
+      toast({
+        title: "Error",
+        description: "Failed to share post",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleMediaUpload = (mediaUrl: string, mediaType: 'image' | 'video') => {
     setPostMediaUrl(mediaUrl);
@@ -328,9 +388,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 isAIGenerated={post.has_ai_generated}
                 likes={post.like_count}
                 comments={post.comment_count}
+                shares={post.share_count}
                 tags={post.tags || []}
                 rating={postRatings[post.id]}
                 onRate={onRate}
+                onShare={handleSharePost}
                 mediaUrl={post.media_url}
               />
             );

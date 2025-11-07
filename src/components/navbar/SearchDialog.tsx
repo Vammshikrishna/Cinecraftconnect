@@ -1,15 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, User, Hash, Briefcase, FileText } from "lucide-react";
+import { Search, User, Briefcase, FileText, Hash, X } from "lucide-react";
 
 interface SearchDialogProps {
   isOpen: boolean;
@@ -21,106 +19,72 @@ interface SearchResult {
   id: string;
   title: string;
   subtitle: string;
-  icon: any;
+  icon: React.ElementType;
 }
+
+type SearchFilter = 'all' | 'user' | 'project' | 'post';
 
 const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<SearchFilter>('all');
 
-  // Debounced search function
+  const searchDelay = 300; // ms
+
   useEffect(() => {
-    const searchDelayTimer = setTimeout(() => {
-      if (searchQuery.length > 2) {
-        performSearch(searchQuery);
+    const handler = setTimeout(() => {
+      if (searchQuery.length > 1) {
+        performSearch(searchQuery, activeFilter);
       } else {
         setSearchResults([]);
       }
-    }, 300);
+    }, searchDelay);
 
-    return () => clearTimeout(searchDelayTimer);
-  }, [searchQuery]);
+    return () => clearTimeout(handler);
+  }, [searchQuery, activeFilter]);
 
-  const performSearch = async (query: string) => {
+  const performSearch = async (query: string, filter: SearchFilter) => {
     setLoading(true);
     try {
       const results: SearchResult[] = [];
+      const queryLower = query.toLowerCase();
 
-      // Search users/profiles
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name, username, craft')
-        .or(`full_name.ilike.%${query}%,username.ilike.%${query}%,craft.ilike.%${query}%`)
-        .limit(5);
-
-      if (profiles) {
-        profiles.forEach(profile => {
-          results.push({
-            type: 'user',
-            id: profile.id,
-            title: profile.full_name || profile.username || 'Anonymous User',
-            subtitle: profile.craft || 'Creator',
-            icon: User
-          });
-        });
+      // Search Users
+      if (filter === 'all' || filter === 'user') {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, full_name, username, craft')
+          .or(`full_name.ilike.%${query}%,username.ilike.%${query}%`)
+          .limit(5);
+        data?.forEach(p => results.push({ type: 'user', id: p.id, title: p.full_name || p.username || 'User', subtitle: p.craft || `@${p.username}`, icon: User }));
       }
 
-      // Search projects
-      const { data: projects } = await supabase
-        .from('projects')
-        .select('id, title, description, status')
-        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-        .eq('is_public', true)
-        .limit(5);
-
-      if (projects) {
-        projects.forEach(project => {
-          results.push({
-            type: 'project',
-            id: project.id,
-            title: project.title,
-            subtitle: project.description?.slice(0, 50) + '...' || `Status: ${project.status}`,
-            icon: Briefcase
-          });
-        });
+      // Search Projects
+      if (filter === 'all' || filter === 'project') {
+        const { data } = await supabase
+          .from('projects')
+          .select('id, title, status')
+          .ilike('title', `%${query}%`)
+          .eq('is_public', true)
+          .limit(5);
+        data?.forEach(p => results.push({ type: 'project', id: p.id, title: p.title, subtitle: `Status: ${p.status}`, icon: Briefcase }));
       }
 
-      // Search posts
-      const { data: posts } = await supabase
-        .from('posts')
-        .select(`
-          id, 
-          content,
-          profiles:author_id (full_name, username)
-        `)
-        .ilike('content', `%${query}%`)
-        .limit(5);
-
-      if (posts) {
-        posts.forEach((post: any) => {
-          const authorName = post.profiles?.full_name || post.profiles?.username || 'Anonymous';
-          results.push({
-            type: 'post',
-            id: post.id,
-            title: post.content.slice(0, 50) + '...',
-            subtitle: `by ${authorName}`,
-            icon: FileText
-          });
-        });
+      // Search Posts
+      if (filter === 'all' || filter === 'post') {
+        const { data } = await supabase
+          .from('posts')
+          .select('id, content, profiles(full_name, username)')
+          .ilike('content', `%${query}%`)
+          .limit(5);
+        data?.forEach((p: any) => results.push({ type: 'post', id: p.id, title: p.content.substring(0, 60) + '...', subtitle: `By ${p.profiles?.full_name || p.profiles?.username || 'user'}`, icon: FileText }));
       }
 
-      // Add hashtag suggestions if query starts with #
+      // Hashtag Suggestion
       if (query.startsWith('#')) {
-        const hashtag = query.slice(1);
-        results.push({
-          type: 'hashtag',
-          id: hashtag,
-          title: `#${hashtag}`,
-          subtitle: 'Search for this hashtag',
-          icon: Hash
-        });
+        results.unshift({ type: 'hashtag', id: query.slice(1), title: query, subtitle: 'Search for this tag', icon: Hash });
       }
 
       setSearchResults(results);
@@ -132,82 +96,91 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
   };
 
   const handleResultClick = (result: SearchResult) => {
-    switch (result.type) {
-      case 'user':
-        navigate(`/profile?user=${result.id}`);
-        break;
-      case 'project':
-        navigate(`/projects?id=${result.id}`);
-        break;
-      case 'post':
-        navigate(`/feed?highlight=${result.id}`);
-        break;
-      case 'hashtag':
-        navigate(`/feed?tag=${result.id}`);
-        break;
-    }
     onOpenChange(false);
+    switch (result.type) {
+      case 'user': return navigate(`/profile/view?user=${result.id}`);
+      case 'project': return navigate(`/projects/${result.id}`);
+      case 'post': return navigate(`/feed?highlight=${result.id}`);
+      case 'hashtag': return navigate(`/feed?tag=${result.id}`);
+    }
   };
+
+  const filterOptions: { id: SearchFilter, label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'user', label: 'People' },
+    { id: 'project', label: 'Projects' },
+    { id: 'post', label: 'Posts' },
+  ];
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-card border-white/20 max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-foreground">Search</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
+        <div className="flex items-center p-4 border-b">
+            <Search className="h-5 w-5 text-muted-foreground mr-3" />
             <Input
-              placeholder="Search people, projects, posts, and more..."
+              placeholder="Search CineCraft Connect..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-input border-border text-foreground placeholder:text-muted-foreground"
+              className="border-0 focus-visible:ring-0 shadow-none p-0 text-base h-auto bg-transparent"
               autoFocus
             />
-          </div>
+            {searchQuery && (
+                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setSearchQuery('')}>
+                    <X className="h-4 w-4"/>
+                </Button>
+            )}
+        </div>
 
-          {loading && (
-            <div className="flex justify-center p-4">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-            </div>
-          )}
-
-          {searchQuery && !loading && (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {searchResults.length > 0 ? (
-                searchResults.map((result, index) => {
-                  const IconComponent = result.icon;
-                  return (
-                    <Button
-                      key={`${result.type}-${result.id}-${index}`}
-                      variant="ghost"
-                      className="w-full justify-start h-auto p-3 hover:bg-accent transition-colors"
-                      onClick={() => handleResultClick(result)}
+        <div className="p-2 border-b">
+            <div className="flex items-center gap-2">
+                <span className="text-sm font-medium px-2">Filters:</span>
+                {filterOptions.map(opt => (
+                    <Button 
+                        key={opt.id} 
+                        variant={activeFilter === opt.id ? 'secondary' : 'ghost'} 
+                        size="sm"
+                        onClick={() => setActiveFilter(opt.id)}
+                        className="text-xs h-7"
                     >
-                      <IconComponent className="h-4 w-4 mr-3 text-muted-foreground flex-shrink-0" />
-                      <div className="text-left flex-1 min-w-0">
-                        <div className="font-medium truncate">{result.title}</div>
-                        <div className="text-sm text-muted-foreground truncate">
-                          {result.subtitle}
-                        </div>
-                      </div>
+                        {opt.label}
                     </Button>
-                  );
-                })
-              ) : (
-                <div className="p-3 text-center text-muted-foreground">
-                  No results found for "{searchQuery}"
-                </div>
-              )}
+                ))}
             </div>
+        </div>
+
+        <div className="max-h-[60vh] overflow-y-auto">
+          {loading && <div className="p-8 flex justify-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div></div>}
+          
+          {!loading && searchQuery && (
+            searchResults.length > 0 ? (
+              <ul className="py-2">
+                {searchResults.map((result) => {
+                  const Icon = result.icon;
+                  return (
+                    <li key={`${result.type}-${result.id}`}>
+                      <button
+                        className="w-full flex items-center gap-3 text-left p-3 hover:bg-accent transition-colors"
+                        onClick={() => handleResultClick(result)}
+                      >
+                        <Icon className="h-4 w-4 text-muted-foreground" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{result.title}</p>
+                          <p className="text-sm text-muted-foreground truncate">{result.subtitle}</p>
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="p-8 text-center text-sm text-muted-foreground">No results for "{searchQuery}"</p>
+            )
           )}
 
-          {!searchQuery && (
-            <div className="p-3 text-center text-muted-foreground">
-              <p className="text-sm">Start typing to search for people, projects, or posts...</p>
-              <p className="text-xs mt-1">Use # to search for hashtags</p>
+          {!searchQuery && !loading && (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+                <p>Find professionals, projects, and discussions.</p>
+                <p className="text-xs mt-2">Use # to search for specific tags.</p>
             </div>
           )}
         </div>

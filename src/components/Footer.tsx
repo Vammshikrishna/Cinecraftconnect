@@ -6,7 +6,7 @@ const Footer = () => {
         <div className="grid md:grid-cols-4 gap-8 mb-8">
           <div>
             <Link to="/" className="flex items-center mb-4">
-              <Film className="h-6 w-6 text-cinesphere-purple mr-2" />
+              <Film className="h-6 w-6 text-cinecraft-connect-purple mr-2" />
               <span className="text-xl font-bold text-gradient">CineCraft Connect</span>
             </Link>
             <p className="text-gray-400 text-sm">
@@ -59,7 +59,7 @@ const Footer = () => {
         </div>
         
         <div className="border-t border-white/10 pt-8 text-center text-sm text-gray-400">
-          <p>&copy; {new Date().getFullYear()} CineSphere. All rights reserved.</p>
+          <p>&copy; {new Date().getFullYear()} CineCraft Connect. All rights reserved.</p>
         </div>
       </div>
     </footer>;

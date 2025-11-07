@@ -24,6 +24,10 @@ export default {
 				display: ['Inter', 'system-ui', 'sans-serif'],
 			},
 			colors: {
+        'cinecraft-connect-purple': '#8A2BE2',
+        'cinecraft-connect-blue': '#4682B4',
+        'cinecraft-connect-light-purple': '#9370DB',
+        'cinecraft-connect-dark': '#121212',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',

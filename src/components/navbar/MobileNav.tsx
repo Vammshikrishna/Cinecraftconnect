@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from "react-router-dom";
-import { Home, Play, Film, Briefcase, Users, BookOpen, Menu, Settings } from "lucide-react";
+import { Home, Play, Film, Briefcase, Users, BookOpen, Menu, Settings, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -34,6 +34,7 @@ export function MobileNav() {
   const navItems = [
     { to: "/feed", icon: Home },
     { to: "/projects", icon: Film },
+    { to: "/discussion-rooms", icon: MessageSquare },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users },
     { to: "/learn", icon: BookOpen }
