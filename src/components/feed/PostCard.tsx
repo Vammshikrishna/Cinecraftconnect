@@ -1,13 +1,8 @@
-import { Heart, MessageCircle, Play } from "lucide-react";
+import { Heart, MessageCircle, Share2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import StarRating from "@/components/StarRating";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
-import CommentSection from "./CommentSection";
-import ShareButton from "../ShareButton";
-import { useToast } from "@/hooks/use-toast";
-import { togglePostLike } from "@/services/postService"; // Import the new service
 
 interface PostAuthor {
   id?: string;
@@ -18,7 +13,7 @@ interface PostAuthor {
 }
 
 interface PostProps {
-  id: string;
+  id: string | number;
   author: PostAuthor;
   timeAgo: string;
   content: string;
@@ -27,13 +22,11 @@ interface PostProps {
   hasVideo?: boolean;
   videoThumbnail?: string;
   isAIGenerated?: boolean;
-  like_count: number;
-  comment_count: number;
-  share_count: number;
+  likes: number;
+  comments: number;
   tags?: string[];
   rating?: number;
-  currentUserLiked?: boolean;
-  onRate?: (postId: string, rating: number) => void;
+  onRate?: (postId: string | number, rating: number) => void;
   mediaUrl?: string;
 }
 
@@ -47,72 +40,13 @@ const PostCard = ({
   hasVideo, 
   videoThumbnail,
   isAIGenerated, 
-  like_count,
-  comment_count, 
-  share_count,
+  likes, 
+  comments, 
   tags,
   rating,
-  currentUserLiked,
   onRate,
   mediaUrl
 }: PostProps) => {
-
-  const [isLiked, setIsLiked] = useState(currentUserLiked || false);
-  const [likeCount, setLikeCount] = useState(like_count);
-  const [showComments, setShowComments] = useState(false);
-  const [isLiking, setIsLiking] = useState(false);
-  const { toast } = useToast();
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLiking) {
-      setIsLiked(currentUserLiked || false);
-      setLikeCount(like_count);
-    }
-  }, [currentUserLiked, like_count, isLiking]);
-
-  const handleLike = async () => {
-    if (isLiking) return;
-
-    setIsLiking(true);
-    const originalLiked = isLiked;
-    const originalLikeCount = likeCount;
-
-    // Optimistic UI update
-    setIsLiked(!originalLiked);
-    setLikeCount(originalLiked ? originalLikeCount - 1 : originalLikeCount + 1);
-
-    try {
-      // Use the imported service function
-      await togglePostLike(id, originalLiked);
-    } catch (error) {
-      console.error("Failed to toggle like:", error);
-      if (isMountedRef.current) {
-        // Rollback on error
-        setIsLiked(originalLiked);
-        setLikeCount(originalLikeCount);
-        toast({
-          title: "Error",
-          description: "Could not update like status. Please try again.",
-          variant: "destructive",
-        });
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsLiking(false);
-      }
-    }
-  };
-
-  const handleComment = () => {
-    setShowComments(!showComments);
-  };
   
   return (
     <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
@@ -199,17 +133,18 @@ const PostCard = ({
       </div>
       
       <div className="flex items-center justify-between pt-4 border-t border-border">
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleLike} disabled={isLiking}>
-          <Heart size={18} className={`mr-1 ${isLiked ? 'text-red-500 fill-current' : ''}`} />
-          <span>{likeCount}</span>
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
+          <Heart size={18} className="mr-1" />
+          <span>{likes}</span>
         </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleComment}>
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center">
           <MessageCircle size={18} className="mr-1" />
-          <span>{comment_count}</span>
+          <span>{comments}</span>
         </Button>
-        <ShareButton postId={id} shareCount={share_count} />
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10">
+          <Share2 size={18} />
+        </Button>
       </div>
-      {showComments && <CommentSection postId={id} />}
     </div>
   );
 };

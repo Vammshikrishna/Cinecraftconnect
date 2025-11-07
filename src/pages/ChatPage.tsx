@@ -1,169 +1,171 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useConnections } from "@/hooks/useConnections";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
-import Spinner from "@/components/Spinner";
-import EnhancedRealTimeChat from "@/components/chat/EnhancedRealTimeChat";
-import { User } from "@supabase/supabase-js";
-import { useToast } from "@/hooks/use-toast";
 
-interface ConnectionProfile {
+import { useState, useEffect } from "react";
+import Footer from "@/components/Footer";
+import VoiceChat from "@/components/chat/VoiceChat";
+import TextChat from "@/components/chat/TextChat";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MessageSquare, Mic, Zap, Users } from "lucide-react";
+
+interface Message {
   id: string;
-  full_name: string;
-  avatar_url?: string;
+  type: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  isTranscript?: boolean;
 }
 
-const getOneOnOneRoomId = (userId1: string, userId2: string): string => {
-  return [userId1, userId2].sort().join('');
-};
-
 const ChatPage = () => {
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [loadingUser, setLoadingUser] = useState(true);
-    const { connections, loading: connectionsLoading } = useConnections();
-    const [connectionProfiles, setConnectionProfiles] = useState<ConnectionProfile[]>([]);
-    const [activeConnection, setActiveConnection] = useState<ConnectionProfile | null>(null);
-    const { toast } = useToast();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isVoiceConnected, setIsVoiceConnected] = useState(false);
 
-    useEffect(() => {
-        let isMounted = true;
+  useEffect(() => {
+    document.title = "AI Chat | CineSphere";
+  }, []);
 
-        const fetchUser = async () => {
-            setLoadingUser(true);
-            try {
-                const { data: { user }, error } = await supabase.auth.getUser();
-                if (error) throw error;
-                if (isMounted) {
-                    setCurrentUser(user);
-                }
-            } catch (error) {
-                console.error("Error fetching current user:", error);
-                if (isMounted) {
-                    setCurrentUser(null);
-                    toast({
-                        title: "Authentication Error",
-                        description: "Could not fetch your user information. Please try refreshing.",
-                        variant: "destructive"
-                    });
-                }
-            } finally {
-                if (isMounted) {
-                    setLoadingUser(false);
-                }
-            }
+  const handleSendTextMessage = (text: string) => {
+    // This will be handled by the VoiceChat component
+    // when it's connected, otherwise show a message
+    if (!isVoiceConnected) {
+      const newMessage: Message = {
+        id: `msg_${Date.now()}`,
+        type: 'user',
+        content: text,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, newMessage]);
+      
+      // Simulate AI response for demo
+      setTimeout(() => {
+        const aiResponse: Message = {
+          id: `msg_${Date.now() + 1}`,
+          type: 'assistant',
+          content: "Hi! I'm the CineSphere AI assistant. Please start a voice chat session for full conversation capabilities, including real-time voice interaction.",
+          timestamp: new Date()
         };
-
-        fetchUser();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [toast]);
-
-    useEffect(() => {
-        if (!connections || !currentUser) return;
-
-        const fetchConnectionProfiles = async () => {
-            const otherUserIds = connections.map(conn => 
-                conn.follower_id === currentUser.id ? conn.following_id : conn.follower_id
-            );
-
-            if (otherUserIds.length > 0) {
-                const { data: profiles, error } = await supabase
-                    .from('profiles')
-                    .select('id, full_name, avatar_url')
-                    .in('id', otherUserIds);
-
-                if (error) {
-                    console.error("Error fetching connection profiles:", error);
-                } else if (profiles) {
-                    setConnectionProfiles(profiles as ConnectionProfile[]);
-                }
-            } else {
-                setConnectionProfiles([]);
-            }
-        };
-
-        fetchConnectionProfiles();
-    }, [connections, currentUser]);
-
-    useEffect(() => {
-        if (!activeConnection && connectionProfiles.length > 0) {
-            setActiveConnection(connectionProfiles[0]);
-        }
-    }, [connectionProfiles, activeConnection]);
-
-    if (connectionsLoading || loadingUser) {
-        return <div className="flex h-[calc(100vh-4rem)] items-center justify-center"><Spinner /></div>;
+        setMessages(prev => [...prev, aiResponse]);
+      }, 1000);
     }
+  };
 
-    if (!currentUser) {
-        return (
-             <div className="flex h-[calc(100vh-4rem)] items-center justify-center text-center">
-                <div>
-                    <h2 className="text-xl font-semibold text-destructive">Authentication Error</h2>
-                    <p className="text-muted-foreground">We couldn\'t load your user details. Please refresh the page.</p>
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-cinesphere-dark to-black">
+      <main className="pt-24 pb-16 px-4 md:px-8">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <h1 className="text-3xl md:text-4xl font-bold mb-4 flex items-center justify-center gap-3">
+              <MessageSquare className="text-cinesphere-purple" />
+              AI-Powered Chat
+            </h1>
+            <p className="text-gray-300 text-lg max-w-2xl mx-auto">
+              Experience the future of conversation with our AI assistant. Use voice or text to discuss 
+              film industry topics, get career advice, and explore creative ideas.
+            </p>
+          </div>
+
+          {/* Features Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <Card className="glass-card">
+              <CardContent className="p-4 text-center">
+                <Mic className="h-8 w-8 text-cinesphere-purple mx-auto mb-2" />
+                <h3 className="font-semibold mb-1">Voice Conversations</h3>
+                <p className="text-sm text-gray-400">Real-time voice-to-voice AI chat with natural speech patterns</p>
+              </CardContent>
+            </Card>
+            
+            <Card className="glass-card">
+              <CardContent className="p-4 text-center">
+                <Zap className="h-8 w-8 text-cinesphere-purple mx-auto mb-2" />
+                <h3 className="font-semibold mb-1">Instant Responses</h3>
+                <p className="text-sm text-gray-400">Lightning-fast AI responses with industry-specific knowledge</p>
+              </CardContent>
+            </Card>
+            
+            <Card className="glass-card">
+              <CardContent className="p-4 text-center">
+                <Users className="h-8 w-8 text-cinesphere-purple mx-auto mb-2" />
+                <h3 className="font-semibold mb-1">Film Industry Expert</h3>
+                <p className="text-sm text-gray-400">Specialized knowledge about cinema, networking, and career growth</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Chat Interface */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Voice Chat Panel */}
+            <div className="space-y-6">
+              <VoiceChat 
+                onMessageUpdate={(updatedMessages) => {
+                  setMessages(updatedMessages);
+                  setIsVoiceConnected(true);
+                }}
+              />
+              
+              {/* Tips Card */}
+              <Card className="glass-card">
+                <CardHeader>
+                  <CardTitle className="text-lg">💡 Tips for Better Conversations</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-cinesphere-purple rounded-full mt-2 flex-shrink-0"></div>
+                    <p className="text-sm text-gray-300">Speak clearly and at a normal pace for best recognition</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-cinesphere-purple rounded-full mt-2 flex-shrink-0"></div>
+                    <p className="text-sm text-gray-300">Ask about film industry trends, networking, or creative advice</p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-cinesphere-purple rounded-full mt-2 flex-shrink-0"></div>
+                    <p className="text-sm text-gray-300">Use the mute button if you need a moment to think</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Text Chat Panel */}
+            <div>
+              <TextChat 
+                messages={messages}
+                onSendMessage={handleSendTextMessage}
+                isConnected={isVoiceConnected}
+              />
+            </div>
+          </div>
+
+          {/* Sample Questions */}
+          <div className="mt-12">
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-xl text-center">Sample Questions to Get Started</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-cinesphere-purple">Career & Industry</h4>
+                    <ul className="space-y-2 text-sm text-gray-300">
+                      <li>"What are the current trends in independent filmmaking?"</li>
+                      <li>"How can I break into the film industry as a cinematographer?"</li>
+                      <li>"What networking events should I attend in LA?"</li>
+                    </ul>
+                  </div>
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-cinesphere-purple">Creative & Technical</h4>
+                    <ul className="space-y-2 text-sm text-gray-300">
+                      <li>"What camera equipment is best for documentary work?"</li>
+                      <li>"How do I develop a unique directorial style?"</li>
+                      <li>"What are some effective storytelling techniques?"</li>
+                    </ul>
+                  </div>
                 </div>
-            </div>
-        );
-    }
-    
-    const activeRoomId = activeConnection && currentUser ? getOneOnOneRoomId(currentUser.id, activeConnection.id) : null;
-    const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : '';
-
-    return (
-        <div className="flex h-[calc(100vh-4rem)]">
-            <div className="w-1/3 border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <div className="p-4 border-b border-border">
-                    <h2 className="text-xl font-bold">Direct Messages</h2>
-                </div>
-                <ScrollArea className="h-[calc(100%-4rem)]">
-                    {connectionProfiles.length === 0 ? (
-                        <p className="p-4 text-center text-muted-foreground">No connections yet. Visit the Network tab to connect with other users.</p>
-                    ) : (
-                        connectionProfiles.map((conn) => (
-                            <div
-                                key={conn.id}
-                                className={cn(
-                                    "flex items-center p-4 cursor-pointer hover:bg-accent transition-colors",
-                                    activeConnection?.id === conn.id && "bg-accent"
-                                )}
-                                onClick={() => setActiveConnection(conn)}
-                            >
-                                <Avatar className="h-10 w-10 mr-4">
-                                     <AvatarFallback>{getInitials(conn.full_name)}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1">
-                                    <h3 className="font-semibold">{conn.full_name}</h3>
-                                    <p className="text-sm text-muted-foreground truncate">Click to open chat</p>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </ScrollArea>
-            </div>
-
-            <div className="w-2/3 flex flex-col">
-                {activeConnection && activeRoomId ? (
-                    <EnhancedRealTimeChat
-                        key={activeRoomId}
-                        roomId={activeRoomId}
-                        roomTitle={activeConnection.full_name}
-                    />
-                ) : (
-                    <div className="flex-1 flex items-center justify-center bg-muted/20">
-                        <div className="text-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                            <h3 className="mt-2 text-lg font-medium text-foreground">Welcome to your inbox!</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">Select a connection to start a conversation.</p>
-                        </div>
-                    </div>
-                )}
-            </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-    );
+      </main>
+      <Footer />
+    </div>
+  );
 };
 
 export default ChatPage;

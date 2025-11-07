@@ -7,7 +7,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Send, Users, Video, Mic, MicOff, VideoOff, Phone } from 'lucide-react';
-import { isUUID } from '@/utils/uuid';
 
 interface Message {
   id: string;
@@ -98,65 +97,24 @@ const EnhancedRealTimeChat = ({ roomId, roomTitle }: EnhancedRealTimeChatProps) 
         return;
       }
 
-      const messageContent = newMessage.trim();
-      const { error: messageError } = await supabase
+      const { error } = await supabase
         .from('room_messages')
         .insert([
           {
             room_id: roomId,
             user_id: user.id,
-            content: messageContent,
+            content: newMessage.trim(),
             message_type: 'text'
           }
         ]);
 
-      if (messageError) throw messageError;
+      if (error) throw error;
       setNewMessage('');
-
-      let recipientId: string | undefined;
-      const UUID_LENGTH = 36;
-
-      // One-on-one chat room IDs are formed by concatenating two user UUIDs.
-      const isPotentiallyOneOnOne = roomId.length === UUID_LENGTH * 2;
-
-      if (isPotentiallyOneOnOne) {
-        const id1 = roomId.substring(0, UUID_LENGTH);
-        const id2 = roomId.substring(UUID_LENGTH);
-
-        if (isUUID(id1) && isUUID(id2)) {
-          if (user.id === id1) {
-            recipientId = id2;
-          } else if (user.id === id2) {
-            recipientId = id1;
-          }
-        } else {
-          console.warn('Invalid one-on-one chat roomId format:', roomId);
-        }
-      }
-
-      if (recipientId) {
-        const messagePreview = messageContent.length > 30
-          ? `${messageContent.substring(0, 30)}...`
-          : messageContent;
-        const { error: notificationError } = await supabase
-          .from('notifications')
-          .insert({
-            user_id: recipientId,
-            type: 'new_message',
-            message: `New message from ${user?.user_metadata?.full_name || 'a user'}: ${messagePreview}`,
-            link: `/chat`,
-          });
-
-        if (notificationError) {
-          console.error("Error creating notification:", notificationError);
-        }
-      }
-
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error sending message:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to send message",
+        description: "Failed to send message",
         variant: "destructive",
       });
     } finally {

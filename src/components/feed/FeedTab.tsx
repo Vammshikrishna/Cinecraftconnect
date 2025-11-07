@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -12,7 +13,6 @@ import { Card } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import MediaUpload from "./MediaUpload";
 import { z } from "zod";
-import { Post } from "@/types";
 
 const postSchema = z.object({
   content: z.string()
@@ -22,9 +22,30 @@ const postSchema = z.object({
   tags: z.array(z.string().max(50)).max(10).optional()
 });
 
+interface Post {
+  id: string;
+  author_id: string;
+  content: string;
+  media_url?: string;
+  media_type?: string;
+  has_ai_generated: boolean;
+  tags?: string[];
+  like_count: number;
+  comment_count: number;
+  share_count: number;
+  created_at: string;
+  profiles?: {
+    id: string;
+    full_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
+    craft: string | null;
+  };
+}
+
 interface FeedTabProps {
   postRatings: { [postId: string]: number };
-  onRate: (postId: string, rating: number) => void;
+  onRate: (postId: string | number, rating: number) => void;
 }
 
 const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
@@ -170,64 +191,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       });
     }
   };
-  
-  const handleSharePost = async (postId: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "Authentication required",
-          description: "Please log in to share posts",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('shares')
-        .insert([
-          {
-            post_id: postId,
-            user_id: user.id,
-          }
-        ]);
-
-      if (error) {
-        if (error.code === '23505') { // unique_violation
-          toast({
-            title: "Already shared",
-            description: "You have already shared this post.",
-          });
-        } else {
-          throw error;
-        }
-      } else {
-        const shareUrl = `${window.location.origin}/post/${postId}`;
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            toast({
-              title: "Success",
-              description: "Post shared and link copied to clipboard!",
-            });
-        } catch (err) {
-            console.error("Failed to copy link: ", err);
-            toast({
-                title: "Post shared!",
-                description: "Failed to copy link to clipboard.",
-                variant: "default"
-            });
-        }
-        performanceMonitor.logToAnalytics('post_shared', { postId });
-      }
-    } catch (error) {
-      console.error('Error sharing post:', error);
-      toast({
-        title: "Error",
-        description: "Failed to share post",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleMediaUpload = (mediaUrl: string, mediaType: 'image' | 'video') => {
     setPostMediaUrl(mediaUrl);
@@ -363,9 +326,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 hasVideo={post.media_type === 'video'}
                 videoThumbnail={post.media_type === 'video' ? 'Post video' : undefined}
                 isAIGenerated={post.has_ai_generated}
-                like_count={post.like_count}
-                comment_count={post.comment_count}
-                share_count={post.share_count}
+                likes={post.like_count}
+                comments={post.comment_count}
                 tags={post.tags || []}
                 rating={postRatings[post.id]}
                 onRate={onRate}

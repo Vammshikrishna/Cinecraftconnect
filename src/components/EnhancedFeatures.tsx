@@ -50,14 +50,14 @@ const EnhancedFeatures = () => {
   ];
 
   return (
-    <section className="py-20 px-4 md:px-8 bg-gradient-to-b from-cinecraft-connect-dark to-black">
+    <section className="py-20 px-4 md:px-8 bg-gradient-to-b from-cinesphere-dark to-black">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-5xl font-bold mb-6">
             <span className="text-gradient">Everything You Need to Succeed</span>
           </h2>
           <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-            From pre-production to post, CineCraft Connect provides the tools and connections 
+            From pre-production to post, CineSphere provides the tools and connections 
             you need to bring your creative vision to life.
           </p>
         </div>
@@ -81,7 +81,7 @@ const EnhancedFeatures = () => {
                 {feature.description}
               </p>
               
-              <Button asChild variant="ghost" className="text-cinecraft-connect-purple hover:text-white hover:bg-cinecraft-connect-purple/20 p-0">
+              <Button asChild variant="ghost" className="text-cinesphere-purple hover:text-white hover:bg-cinesphere-purple/20 p-0">
                 <Link to={feature.link} className="flex items-center">
                   Learn More <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
@@ -91,7 +91,7 @@ const EnhancedFeatures = () => {
         </div>
 
         <div className="text-center mt-16">
-          <Button asChild size="lg" className="bg-gradient-to-r from-cinecraft-connect-purple to-cinecraft-connect-blue hover:from-cinecraft-connect-purple/90 hover:to-cinecraft-connect-blue/90">
+          <Button asChild size="lg" className="bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue hover:from-cinesphere-purple/90 hover:to-cinesphere-blue/90">
             <Link to="/register">Get Started Today</Link>
           </Button>
         </div>

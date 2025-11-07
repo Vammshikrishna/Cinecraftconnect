@@ -18,6 +18,15 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
 const Profile = () => {
   const { user } = useAuth();
@@ -28,6 +37,16 @@ const Profile = () => {
     const timer = setTimeout(() => setLoading(false), 500);
     return () => clearTimeout(timer);
   }, []);
+
+  const analyticsData = [
+    { name: 'Mon', views: 400, likes: 240 },
+    { name: 'Tue', views: 300, likes: 139 },
+    { name: 'Wed', views: 200, likes: 980 },
+    { name: 'Thu', views: 278, likes: 390 },
+    { name: 'Fri', views: 189, likes: 480 },
+    { name: 'Sat', views: 239, likes: 380 },
+    { name: 'Sun', views: 349, likes: 430 },
+  ];
 
   return (
     <div className="min-h-screen bg-background">

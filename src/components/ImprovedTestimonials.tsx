@@ -9,7 +9,7 @@ const ImprovedTestimonials = () => {
       role: "Director",
       craft: "Direction",
       image: "https://images.unsplash.com/photo-1494790108755-2616c9c2dd6c?w=400&h=400&fit=crop&crop=face",
-      content: "CineCraft Connect transformed how I find collaborators. I've connected with incredibly talented professionals who share my creative vision.",
+      content: "CineSphere transformed how I find collaborators. I've connected with incredibly talented professionals who share my creative vision.",
       rating: 5,
       project: "Award-winning short film 'Echoes'"
     },
@@ -18,7 +18,7 @@ const ImprovedTestimonials = () => {
       role: "Cinematographer", 
       craft: "Cinematography",
       image: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&h=400&fit=crop&crop=face",
-      content: "The quality of projects and professionals on CineCraft Connect is unmatched. It's become my go-to platform for finding meaningful work.",
+      content: "The quality of projects and professionals on CineSphere is unmatched. It's become my go-to platform for finding meaningful work.",
       rating: 5,
       project: "Netflix Original Series"
     },
@@ -27,21 +27,21 @@ const ImprovedTestimonials = () => {
       role: "Producer",
       craft: "Producing", 
       image: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop&crop=face",
-      content: "From indie films to major productions, CineCraft Connect has helped me build teams that exceed expectations every single time.",
+      content: "From indie films to major productions, CineSphere has helped me build teams that exceed expectations every single time.",
       rating: 5,
       project: "Sundance Film Festival Selection"
     }
   ];
 
   return (
-    <section className="py-20 px-4 md:px-8 bg-gradient-to-b from-black to-cinecraft-connect-dark">
+    <section className="py-20 px-4 md:px-8 bg-gradient-to-b from-black to-cinesphere-dark">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold mb-6">
             <span className="text-gradient">Stories from Our Community</span>
           </h2>
           <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-            Hear from the filmmakers, creators, and industry professionals who are bringing their visions to life through CineCraft Connect
+            Hear from the filmmakers, creators, and industry professionals who are bringing their visions to life through CineSphere
           </p>
         </div>
 
@@ -49,11 +49,11 @@ const ImprovedTestimonials = () => {
           {testimonials.map((testimonial, index) => (
             <div 
               key={testimonial.name}
-              className="glass-card p-8 rounded-2xl border border-white/10 hover:border-cinecraft-connect-purple/50 transition-all duration-300 hover:scale-105"
+              className="glass-card p-8 rounded-2xl border border-white/10 hover:border-cinesphere-purple/50 transition-all duration-300 hover:scale-105"
               style={{ animationDelay: `${index * 0.2}s` }}
             >
               <div className="flex items-center mb-6">
-                <Quote className="h-8 w-8 text-cinecraft-connect-purple mb-4" />
+                <Quote className="h-8 w-8 text-cinesphere-purple mb-4" />
               </div>
               
               <p className="text-gray-300 mb-6 leading-relaxed italic">
@@ -73,7 +73,7 @@ const ImprovedTestimonials = () => {
                 </Avatar>
                 <div>
                   <div className="font-semibold text-white">{testimonial.name}</div>
-                  <div className="text-sm text-cinecraft-connect-purple">{testimonial.role}</div>
+                  <div className="text-sm text-cinesphere-purple">{testimonial.role}</div>
                   <div className="text-xs text-gray-400">{testimonial.project}</div>
                 </div>
               </div>

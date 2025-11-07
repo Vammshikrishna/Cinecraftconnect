@@ -30,7 +30,7 @@ const Index = () => {
     releaseDate: "2025-04-10",
     type: "Movie" as const
   }];
-  return <div className="min-h-screen bg-cinecraft-connect-dark">
+  return <div className="min-h-screen bg-cinesphere-dark">
       
       <Breadcrumb />
       <main className="pt-16">
@@ -44,7 +44,7 @@ const Index = () => {
             <Announcements />
             
             {/* Latest Rated Releases Section */}
-            <section className="py-16 px-4 md:px-8 bg-gradient-to-b from-cinecraft-connect-dark to-black">
+            <section className="py-16 px-4 md:px-8 bg-gradient-to-b from-cinesphere-dark to-black">
               <div className="max-w-6xl mx-auto">
                 <div className="text-center mb-12">
                   <h2 className="text-3xl md:text-4xl font-bold mb-4">

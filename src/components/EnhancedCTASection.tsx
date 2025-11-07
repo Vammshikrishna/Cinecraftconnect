@@ -2,11 +2,11 @@ import { ArrowRight, Sparkles, Users, Film } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Link } from 'react-router-dom';
 const EnhancedCTASection = () => {
-  return <section className="py-24 px-4 md:px-8 bg-gradient-to-r from-cinecraft-connect-purple/20 via-cinecraft-connect-dark to-cinecraft-connect-blue/20 relative overflow-hidden">
+  return <section className="py-24 px-4 md:px-8 bg-gradient-to-r from-cinesphere-purple/20 via-cinesphere-dark to-cinesphere-blue/20 relative overflow-hidden">
       {/* Background Elements */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-10 left-10 w-32 h-32 bg-cinecraft-connect-purple rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-10 right-10 w-40 h-40 bg-cinecraft-connect-blue rounded-full blur-3xl animate-pulse" style={{
+        <div className="absolute top-10 left-10 w-32 h-32 bg-cinesphere-purple rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-10 right-10 w-40 h-40 bg-cinesphere-blue rounded-full blur-3xl animate-pulse" style={{
         animationDelay: '1s'
       }}></div>
       </div>
@@ -15,20 +15,20 @@ const EnhancedCTASection = () => {
         
 
         <h2 className="text-4xl md:text-6xl font-bold mb-6 leading-tight">
-          <span className="text-gradient bg-gradient-to-r from-white via-cinecraft-connect-light-purple to-cinecraft-connect-blue bg-clip-text text-transparent">
+          <span className="text-gradient bg-gradient-to-r from-white via-cinesphere-light-purple to-cinesphere-blue bg-clip-text text-transparent">
             Ready to Create Your Next Masterpiece?
           </span>
         </h2>
 
         <p className="text-xl md:text-2xl text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed">
-          Whether you're a seasoned professional or just starting out, CineCraft Connect is where your next great collaboration begins.
+          Whether you're a seasoned professional or just starting out, CineSphere is where your next great collaboration begins.
         </p>
 
         <div className="flex flex-col sm:flex-row gap-6 justify-center mb-16">
-          <Button asChild size="lg" className="bg-gradient-to-r from-cinecraft-connect-purple to-cinecraft-connect-blue hover:from-cinecraft-connect-purple/90 hover:to-cinecraft-connect-blue/90 text-lg px-8 py-4 h-auto shadow-2xl hover:shadow-cinecraft-connect-purple/25">
+          <Button asChild size="lg" className="bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue hover:from-cinesphere-purple/90 hover:to-cinesphere-blue/90 text-lg px-8 py-4 h-auto shadow-2xl hover:shadow-cinesphere-purple/25">
             <Link to="/register" className="flex items-center">
               <Users className="mr-2 h-5 w-5" />
-              Join CineCraft Connect
+              Join CineSphere
               <ArrowRight className="ml-2 h-5 w-5" />
             </Link>
           </Button>
