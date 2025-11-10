@@ -1,169 +1,221 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useConnections } from "@/hooks/useConnections";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
-import Spinner from "@/components/Spinner";
-import EnhancedRealTimeChat from "@/components/chat/EnhancedRealTimeChat";
-import { User } from "@supabase/supabase-js";
-import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect, useRef } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { ArrowLeft } from 'lucide-react';
 
-interface ConnectionProfile {
+// Define types for messages and profiles
+interface Message {
   id: string;
-  full_name: string;
-  avatar_url?: string;
+  content: string;
+  created_at: string;
+  sender_id: string;
+  sender_profile: {
+    full_name: string;
+    avatar_url: string;
+  };
 }
 
-const getOneOnOneRoomId = (userId1: string, userId2: string): string => {
-  return [userId1, userId2].sort().join('');
-};
+interface Profile {
+    id: string;
+    full_name: string;
+    avatar_url: string;
+}
 
 const ChatPage = () => {
-    const [currentUser, setCurrentUser] = useState<User | null>(null);
-    const [loadingUser, setLoadingUser] = useState(true);
-    const { connections, loading: connectionsLoading } = useConnections();
-    const [connectionProfiles, setConnectionProfiles] = useState<ConnectionProfile[]>([]);
-    const [activeConnection, setActiveConnection] = useState<ConnectionProfile | null>(null);
-    const { toast } = useToast();
+  const { conversationId } = useParams<{ conversationId: string }>();
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [partner, setPartner] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        let isMounted = true;
+  useEffect(() => {
+    if (!conversationId || !user) return;
 
-        const fetchUser = async () => {
-            setLoadingUser(true);
-            try {
-                const { data: { user }, error } = await supabase.auth.getUser();
-                if (error) throw error;
-                if (isMounted) {
-                    setCurrentUser(user);
-                }
-            } catch (error) {
-                console.error("Error fetching current user:", error);
-                if (isMounted) {
-                    setCurrentUser(null);
-                    toast({
-                        title: "Authentication Error",
-                        description: "Could not fetch your user information. Please try refreshing.",
-                        variant: "destructive"
-                    });
-                }
-            } finally {
-                if (isMounted) {
-                    setLoadingUser(false);
-                }
+    const fetchChatData = async () => {
+      setLoading(true);
+      
+      // Fetch partner's profile
+      const { data: partnerData, error: partnerError } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .eq('id', conversationId)
+        .single();
+
+      if (partnerError || !partnerData) {
+        console.error('Error fetching partner profile:', partnerError);
+        setLoading(false);
+        return;
+      }
+      setPartner(partnerData);
+
+      // Fetch messages
+      const { data: messageData, error: messageError } = await supabase
+        .from('direct_messages')
+        .select(`
+          id, content, created_at, sender_id,
+          sender_profile:profiles(full_name, avatar_url)
+        `)
+        .or(`(sender_id.eq.${user.id},recipient_id.eq.${conversationId}),(sender_id.eq.${conversationId},recipient_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
+
+      if (messageError) {
+        console.error('Error fetching messages:', messageError);
+      } else {
+        setMessages(messageData as any as Message[]);
+      }
+      setLoading(false);
+    };
+
+    fetchChatData();
+
+    const subscription = supabase
+      .channel(`dm-${user.id}-${conversationId}`)
+      .on('postgres_changes', 
+          { event: 'INSERT', schema: 'public', table: 'direct_messages' }, 
+          async (payload) => {
+            const newMessage = payload.new as { id: string, content: string, created_at: string, sender_id: string };
+            if (newMessage.sender_id === user.id) return; // Ignore messages sent by self that are handled optimistically
+
+            const { data: profile, error } = await supabase
+              .from('profiles')
+              .select('full_name, avatar_url')
+              .eq('id', newMessage.sender_id)
+              .single();
+
+            if (error) {
+              console.error('Error fetching profile for new message:', error);
+              return;
             }
-        };
 
-        fetchUser();
+            const messageWithProfile: Message = {
+              ...newMessage,
+              sender_profile: profile,
+            };
+            setMessages(current => [...current, messageWithProfile]);
+          }
+      )
+      .subscribe();
 
-        return () => {
-            isMounted = false;
-        };
-    }, [toast]);
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [conversationId, user]);
 
-    useEffect(() => {
-        if (!connections || !currentUser) return;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-        const fetchConnectionProfiles = async () => {
-            const otherUserIds = connections.map(conn => 
-                conn.follower_id === currentUser.id ? conn.following_id : conn.follower_id
-            );
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !user || !conversationId) return;
 
-            if (otherUserIds.length > 0) {
-                const { data: profiles, error } = await supabase
-                    .from('profiles')
-                    .select('id, full_name, avatar_url')
-                    .in('id', otherUserIds);
-
-                if (error) {
-                    console.error("Error fetching connection profiles:", error);
-                } else if (profiles) {
-                    setConnectionProfiles(profiles as ConnectionProfile[]);
-                }
-            } else {
-                setConnectionProfiles([]);
-            }
-        };
-
-        fetchConnectionProfiles();
-    }, [connections, currentUser]);
-
-    useEffect(() => {
-        if (!activeConnection && connectionProfiles.length > 0) {
-            setActiveConnection(connectionProfiles[0]);
-        }
-    }, [connectionProfiles, activeConnection]);
-
-    if (connectionsLoading || loadingUser) {
-        return <div className="flex h-[calc(100vh-4rem)] items-center justify-center"><Spinner /></div>;
-    }
-
-    if (!currentUser) {
-        return (
-             <div className="flex h-[calc(100vh-4rem)] items-center justify-center text-center">
-                <div>
-                    <h2 className="text-xl font-semibold text-destructive">Authentication Error</h2>
-                    <p className="text-muted-foreground">We couldn\'t load your user details. Please refresh the page.</p>
-                </div>
-            </div>
-        );
-    }
+    const content = newMessage.trim();
+    const optimisticId = `optimistic-${Date.now()}`;
     
-    const activeRoomId = activeConnection && currentUser ? getOneOnOneRoomId(currentUser.id, activeConnection.id) : null;
-    const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase() : '';
+    const optimisticMessage: Message = {
+      id: optimisticId,
+      content: content,
+      created_at: new Date().toISOString(),
+      sender_id: user.id,
+      sender_profile: {
+        full_name: user.user_metadata.full_name,
+        avatar_url: user.user_metadata.avatar_url,
+      },
+    };
 
-    return (
-        <div className="flex h-[calc(100vh-4rem)]">
-            <div className="w-1/3 border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <div className="p-4 border-b border-border">
-                    <h2 className="text-xl font-bold">Direct Messages</h2>
-                </div>
-                <ScrollArea className="h-[calc(100%-4rem)]">
-                    {connectionProfiles.length === 0 ? (
-                        <p className="p-4 text-center text-muted-foreground">No connections yet. Visit the Network tab to connect with other users.</p>
-                    ) : (
-                        connectionProfiles.map((conn) => (
-                            <div
-                                key={conn.id}
-                                className={cn(
-                                    "flex items-center p-4 cursor-pointer hover:bg-accent transition-colors",
-                                    activeConnection?.id === conn.id && "bg-accent"
-                                )}
-                                onClick={() => setActiveConnection(conn)}
-                            >
-                                <Avatar className="h-10 w-10 mr-4">
-                                     <AvatarFallback>{getInitials(conn.full_name)}</AvatarFallback>
-                                </Avatar>
-                                <div className="flex-1">
-                                    <h3 className="font-semibold">{conn.full_name}</h3>
-                                    <p className="text-sm text-muted-foreground truncate">Click to open chat</p>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </ScrollArea>
-            </div>
+    setMessages(current => [...current, optimisticMessage]);
+    setNewMessage('');
 
-            <div className="w-2/3 flex flex-col">
-                {activeConnection && activeRoomId ? (
-                    <EnhancedRealTimeChat
-                        key={activeRoomId}
-                        roomId={activeRoomId}
-                        roomTitle={activeConnection.full_name}
-                    />
-                ) : (
-                    <div className="flex-1 flex items-center justify-center bg-muted/20">
-                        <div className="text-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-                            <h3 className="mt-2 text-lg font-medium text-foreground">Welcome to your inbox!</h3>
-                            <p className="mt-1 text-sm text-muted-foreground">Select a connection to start a conversation.</p>
-                        </div>
-                    </div>
-                )}
+    const { data, error } = await supabase
+      .from('direct_messages')
+      .insert([{ sender_id: user.id, recipient_id: conversationId, content: content }])
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error('Error sending message:', error);
+      // Revert the optimistic update
+      setMessages(current => current.filter(m => m.id !== optimisticId));
+      setNewMessage(content); // Restore input
+    } else {
+      // The optimistic message is already displayed.
+      // We can update it with the real data from the server.
+      setMessages(current =>
+        current.map(m =>
+          m.id === optimisticId ? { ...m, id: data.id, created_at: data.created_at } : m
+        )
+      );
+    }
+  };
+
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center"><LoadingSpinner /></div>;
+  }
+
+  if (!partner) {
+    return <div className="text-center p-8">Could not load chat partner.</div>;
+  }
+
+  return (
+    <div className="flex flex-col h-screen">
+      <header className="flex items-center gap-4 p-4 border-b bg-card">
+        <Link to="/chats" className="lg:hidden">
+          <Button variant="ghost" size="icon">
+            <ArrowLeft />
+          </Button>
+        </Link>
+        <Avatar>
+          <AvatarImage src={partner.avatar_url} alt={partner.full_name} />
+          <AvatarFallback>{partner.full_name?.charAt(0) || 'U'}</AvatarFallback>
+        </Avatar>
+        <h2 className="font-bold text-lg">{partner.full_name}</h2>
+      </header>
+      
+      <main className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex gap-3 ${msg.sender_id === user?.id ? 'justify-end' : ''}`}>
+            {msg.sender_id !== user?.id && msg.sender_profile && (
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={msg.sender_profile.avatar_url} />
+                <AvatarFallback>{msg.sender_profile.full_name?.charAt(0) || 'U'}</AvatarFallback>
+              </Avatar>
+            )}
+            <div className={`max-w-xs p-3 rounded-lg ${msg.sender_id === user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+              <p>{msg.content}</p>
+              <p className="text-xs opacity-70 mt-1 text-right">{new Date(msg.created_at).toLocaleTimeString()}</p>
             </div>
-        </div>
-    );
+            {msg.sender_id === user?.id && (
+              <Avatar className="h-8 w-8">
+                {/* Assuming user profile is available in useAuth context */}
+                <AvatarImage src={user.user_metadata.avatar_url} />
+                <AvatarFallback>{user.user_metadata.full_name?.charAt(0) || 'Y'}</AvatarFallback>
+              </Avatar>
+            )}
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </main>
+
+      <footer className="p-4 border-t bg-card">
+        <form onSubmit={handleSendMessage} className="flex gap-2">
+          <Input
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
+            autoComplete="off"
+          />
+          <Button type="submit">Send</Button>
+        </form>
+      </footer>
+    </div>
+  );
 };
 
 export default ChatPage;

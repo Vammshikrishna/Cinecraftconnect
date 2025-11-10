@@ -1,64 +1,62 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { MapPin, UserPlus, UserCheck, UserX, Clock, MessageCircle } from 'lucide-react';
-import { UserProfile } from '@/hooks/useUsers';
 import { Link } from 'react-router-dom';
+import { Card } from '../ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
+import { Button } from '../ui/button';
+import { User, MessageCircle, UserPlus, UserCheck, Clock } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface UserCardProps {
-  user: UserProfile;
+  user: {
+    id: string;
+    avatar_url: string;
+    full_name: string;
+    username: string;
+    craft: string;
+    // FINAL FIX: Made connection_status optional to match the UserProfile type.
+    connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
+  };
   onConnect: (userId: string) => void;
-  onCancelRequest: (connectionId: string) => void;
-  onRemoveConnection: (connectionId: string) => void;
+  onAccept: (userId: string) => void;
+  onCancelRequest?: (userId: string) => void;
+  onRemoveConnection?: (userId: string) => void;
 }
 
-export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection }: UserCardProps) => {
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancelRequest, onRemoveConnection }) => {
+  const { user: currentUser } = useAuth();
+
+  const getInitials = (name: string | null | undefined): string => {
+    if (!name) return 'U';
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
   const renderActionButton = () => {
-    switch (user.connection_status) {
+    if (user.id === currentUser?.id) return null;
+
+    // FINAL FIX: Default to 'none' if the status is not provided.
+    const status = user.connection_status || 'none';
+
+    switch (status) {
       case 'connected':
         return (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => user.connection_id && onRemoveConnection(user.connection_id)}
-            className="flex-1 border-border"
-          >
+          <Button size="sm" variant="outline" className="flex-1" onClick={() => onRemoveConnection && onRemoveConnection(user.id)}>
             <UserCheck size={14} className="mr-1" /> Connected
           </Button>
         );
       case 'pending_sent':
         return (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => user.connection_id && onCancelRequest(user.connection_id)}
-            className="flex-1 border-border"
-          >
+          <Button size="sm" variant="outline" className="flex-1" onClick={() => onCancelRequest && onCancelRequest(user.id)}>
             <Clock size={14} className="mr-1" /> Pending
           </Button>
         );
       case 'pending_received':
         return (
-          <Badge variant="secondary" className="flex-1 justify-center py-2">
-            <Clock size={14} className="mr-1" /> Received Request
-          </Badge>
+          <Button size="sm" variant="default" className="flex-1 hover-glow" onClick={() => onAccept(user.id)}>
+            <UserCheck size={14} className="mr-1" /> Accept
+          </Button>
         );
       default:
         return (
-          <Button
-            size="sm"
-            onClick={() => onConnect(user.id)}
-            className="flex-1 btn-primary"
-          >
+          <Button size="sm" variant="default" className="flex-1 hover-glow" onClick={() => onConnect(user.id)}>
             <UserPlus size={14} className="mr-1" /> Connect
           </Button>
         );
@@ -66,51 +64,39 @@ export const UserCard = ({ user, onConnect, onCancelRequest, onRemoveConnection 
   };
 
   return (
-    <div className="bg-card border border-border rounded-2xl p-6 hover:shadow-md transition-all">
-      <div className="flex items-start gap-4">
-        <Link to={`/profile/view?id=${user.id}`}>
-          <Avatar className="h-14 w-14 cursor-pointer hover:ring-2 ring-primary transition-all">
-            <AvatarImage src={user.avatar_url} />
-            <AvatarFallback className="bg-primary/10 text-primary">
-              {getInitials(user.full_name || user.username || 'U')}
-            </AvatarFallback>
-          </Avatar>
-        </Link>
-
-        <div className="flex-1 min-w-0">
-          <Link to={`/profile/view?id=${user.id}`}>
-            <h3 className="text-lg font-semibold text-foreground hover:text-primary transition-colors truncate">
-              {user.full_name || user.username}
-            </h3>
-          </Link>
-          <p className="text-primary text-sm mb-1">{user.craft || 'Filmmaker'}</p>
-          {user.location && (
-            <div className="flex items-center text-sm text-muted-foreground mb-3">
-              <MapPin size={14} className="mr-1 flex-shrink-0" />
-              <span className="truncate">{user.location}</span>
+    <Card className="p-4 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20">
+      <div className="flex items-center space-x-4">
+        <Avatar className="h-16 w-16">
+          <AvatarImage src={user.avatar_url || undefined} alt={user.full_name} />
+          <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1">
+          <div className="flex justify-between items-start">
+            <div>
+              <h3 className="font-bold text-lg">{user.full_name}</h3>
+              <p className="text-sm text-muted-foreground">@{user.username}</p>
+              <p className="text-sm text-primary mt-1">{user.craft}</p>
             </div>
-          )}
-          {user.bio && (
-            <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{user.bio}</p>
-          )}
-
-          <div className="flex gap-2">
-            {renderActionButton()}
-            {user.connection_status === 'connected' && (
-              <Button
-                size="sm"
-                variant="default"
-                className="flex-1"
-                asChild
-              >
-                <Link to={`/chats?user=${user.id}`}>
-                  <MessageCircle size={14} className="mr-1" /> Message
-                </Link>
-              </Button>
-            )}
           </div>
+          <div className="mt-4 flex gap-2">
+              {renderActionButton()}
+              {(user.connection_status || 'none') === 'connected' && (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="flex-1"
+                  asChild
+                >
+                  <Link to={`/dm/${user.id}`}>
+                    <MessageCircle size={14} className="mr-1" /> Message
+                  </Link>
+                </Button>
+              )}
+            </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 };
+
+export default UserCard;

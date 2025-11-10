@@ -1,18 +1,18 @@
 import { Bell, CheckCheck } from 'lucide-react';
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button.tsx";
+import { Badge } from "@/components/ui/badge.tsx";
+
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu.tsx";
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client.ts';
+import { useAuth } from '@/contexts/AuthContext.tsx';
 import { formatDistanceToNow } from 'date-fns';
 
 interface Notification {
@@ -138,7 +138,7 @@ const NotificationsDropdown = () => {
           ) : notifications.length === 0 ? (
             <p className="p-8 text-center text-sm text-muted-foreground">You're all caught up!</p>
           ) : (
-            notifications.map((n) => <NotificationItem key={n.id} notification={n} />)
+            notifications.map((n: Notification) => <NotificationItem key={n.id} notification={n} />)
           )}
         </div>
       </DropdownMenuContent>

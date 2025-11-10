@@ -18,3 +18,15 @@ export interface Post {
     craft: string | null;
   };
 }
+
+export interface Comment {
+  id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profiles?: {
+    full_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
+  };
+}

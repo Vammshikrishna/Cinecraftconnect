@@ -12,7 +12,8 @@ interface Project {
 }
 
 const ProjectDiscussionPage = () => {
-  const { projectId } = useParams<{ projectId: string }>();
+  const { projectId: rawProjectId } = useParams<{ projectId: string }>();
+  const projectId = Array.isArray(rawProjectId) ? rawProjectId[0] : rawProjectId;
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);

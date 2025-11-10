@@ -8,12 +8,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeComments } from "@/hooks/useRealtimeComments";
 import { Trash2 } from "lucide-react";
-import { Post } from "@/types";
+import { Comment } from "@/types";
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [comments, setComments] = useState<Post[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
 
   const fetchComments = useCallback(async () => {
@@ -21,14 +21,14 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
     const { data, error } = await supabase
       .from("post_comments")
-      .select(`id, content, created_at, author_id, profiles (full_name, username, avatar_url)`)
+      .select(`id, content, created_at, user_id, profiles:profiles!inner(full_name, username, avatar_url)`)
       .eq("post_id", postId)
       .order("created_at", { ascending: false });
 
     if (error) {
       toast({ title: "Error fetching comments", description: error.message, variant: "destructive" });
     } else {
-      setComments(data as Post[]);
+      setComments(data as unknown as Comment[]);
     }
   }, [postId, toast]);
 
@@ -39,7 +39,6 @@ const CommentSection = ({ postId }: { postId: string }) => {
   useRealtimeComments({
     postId,
     onInsert: () => {
-      // Refetch to ensure profile data is included and list is ordered correctly
       fetchComments();
     },
     onDelete: (deletedCommentId) => {
@@ -56,21 +55,15 @@ const CommentSection = ({ postId }: { postId: string }) => {
     }
 
     const tempId = crypto.randomUUID();
-    const optimisticComment: Post = {
+    const optimisticComment: Comment = {
       id: tempId,
       content: newComment.trim(),
       created_at: new Date().toISOString(),
-      author_id: user.id,
-      like_count: 0,
-      comment_count: 0,
-      share_count: 0,
-      has_ai_generated: false,
+      user_id: user.id,
       profiles: {
-        id: user.id,
         full_name: user.user_metadata?.full_name || "You",
         username: user.user_metadata?.username || "",
         avatar_url: user.user_metadata?.avatar_url || null,
-        craft: user.user_metadata?.craft || null,
       },
     };
 
@@ -80,7 +73,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
     const { error } = await supabase.from("post_comments").insert({
       post_id: postId,
-      author_id: user.id,
+      user_id: user.id,
       content: originalNewComment.trim(),
     });
 
@@ -136,7 +129,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
               <div className="flex-1">
                 <div className="flex justify-between items-center">
                     <p className="font-semibold text-sm">{authorName}</p>
-                    {user && user.id === comment.author_id && (
+                    {user && user.id === comment.user_id && (
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteComment(comment.id)}>
                             <Trash2 className="h-4 w-4" />
                         </Button>

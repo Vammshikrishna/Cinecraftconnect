@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Film } from 'lucide-react';
@@ -42,15 +43,14 @@ const Navbar = () => {
                   {/* Authenticated user features */}
                   <div className="hidden lg:flex items-center gap-2">
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
-                    <NotificationsDropdown />
                     <ChatMenu />
+                    <NotificationsDropdown />
                     <UserProfileMenu />
                   </div>
                   {/* Mobile: Show only search and profile */}
                   <div className="lg:hidden flex items-center gap-1">
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
                     <NotificationsDropdown />
-                    <ChatMenu />
                     <UserProfileMenu />
                   </div>
                 </> : <>

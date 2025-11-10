@@ -1,17 +1,49 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { serve } from "jsr:@std/http";
+import { createClient } from "@supabase/supabase-js";
+import { corsHeaders } from "../_shared/cors.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // 1. Separate JSON parsing
+  let body;
   try {
+    body = await req.json();
+  } catch (error) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON format' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 2. Validate input fields
+  const { action_type, max_requests = 60, window_minutes = 60 } = body;
+
+  if (!action_type || typeof action_type !== 'string') {
+    return new Response(JSON.stringify({ error: 'The field action_type is required and must be a string.' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (typeof max_requests !== 'number' || max_requests <= 0 || max_requests > 5000) {
+    return new Response(JSON.stringify({ error: 'The field max_requests must be a number between 1 and 5000.' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (typeof window_minutes !== 'number' || window_minutes <= 0 || window_minutes > 1440) {
+    return new Response(JSON.stringify({ error: 'The field window_minutes must be a number between 1 and 1440.' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    // 3. Main logic with runtime error handling
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -34,8 +66,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const { action_type, max_requests = 60, window_minutes = 60 } = await req.json();
 
     // Check rate limit using database function
     const { data, error } = await supabase.rpc('check_rate_limit', {

@@ -1,154 +1,128 @@
+
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { formatDistanceToNow } from 'date-fns';
-import { MessageSquare, Users, Search } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-const fetchConversations = async (userId: string) => {
-    const { data, error } = await supabase
-        .rpc('get_user_conversations_with_profiles', { p_user_id: userId });
+// Define types for conversations and profiles
+interface Profile {
+  id: string;
+  full_name: string;
+  avatar_url: string;
+}
 
-    if (error) {
-        throw new Error(error.message);
-    }
-    return data;
-};
+interface Conversation {
+  partner: Profile;
+  last_message: {
+    content: string;
+    created_at: string;
+  };
+  unread_count: number;
+}
 
 const ChatsList = () => {
-    const { user } = useAuth();
-    const navigate = useNavigate();
-    const queryClient = useQueryClient();
-    const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
-    const { data: conversations, isLoading, isError, error } = useQuery({
-        queryKey: ['conversations', user?.id],
-        queryFn: () => fetchConversations(user!.id),
-        enabled: !!user,
-    });
+  useEffect(() => {
+    const fetchConversations = async () => {
+      if (!user) return;
+      setLoading(true);
+      const { data, error } = await supabase.rpc('get_user_conversations_with_profiles', { p_user_id: user.id });
 
-    useEffect(() => {
-        if (!user) return;
+      if (error) {
+        console.error('Error fetching conversations:', error);
+        setConversations([]);
+      } else if (data) {
+        const processedConversations: Conversation[] = data.map(c => ({
+          partner: {
+            id: c.other_user_id,
+            full_name: c.other_user_full_name,
+            avatar_url: c.other_user_avatar_url,
+          },
+          last_message: {
+            content: c.last_message_content,
+            created_at: c.last_message_created_at,
+          },
+          unread_count: c.unread_count,
+        }));
+        setConversations(processedConversations);
+      }
+      setLoading(false);
+    };
 
-        const handleNewMessage = (payload: any) => {
-            const newMessage = payload.new as { conversation_id: string };
+    if (user) {
+      fetchConversations();
+    }
 
-            if (newMessage?.conversation_id) {
-                const conversations = queryClient.getQueryData<any[]>(['conversations', user.id]);
-                if (conversations && conversations.some(c => c.conversation_id === newMessage.conversation_id)) {
-                    queryClient.invalidateQueries({ queryKey: ['conversations', user.id] });
-                }
-            }
-        };
+    const subscription = supabase
+      .channel('public:direct_messages')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, fetchConversations)
+      .subscribe();
 
-        const channel = supabase
-            .channel('public:messages')
-            .on('postgres_changes', 
-                { event: 'INSERT', schema: 'public', table: 'messages' }, 
-                handleNewMessage
-            )
-            .subscribe();
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [user]);
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [user, queryClient]);
+  const filteredConversations = conversations.filter(c =>
+    c.partner.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-    const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-
-    const filteredConversations = conversations?.filter(convo =>
-        convo.other_user_full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        convo.other_user_username?.toLowerCase().includes(searchTerm.toLowerCase())
-    ) || [];
-
-
-    return (
-        <div className='container mx-auto px-4 py-8 md:py-12'>
-            <Card className='max-w-4xl mx-auto bg-card/80 backdrop-blur-sm border-border'>
-                <CardHeader>
-                    <CardTitle className='text-2xl font-bold text-foreground'>Chat</CardTitle>
-                    <CardDescription>Stay connected with your network</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className='mb-6'>
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                            <Input
-                                type="text"
-                                placeholder="Search conversations..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 bg-background/50 border-border"
-                            />
-                        </div>
-                    </div>
-
-                    {isLoading ? (
-                        <div className='text-center py-12'><LoadingSpinner /></div>
-                    ) : isError ? (
-                        <div className='text-center py-12 text-destructive'>Error: {error.message}</div>
-                    ) : conversations && conversations.length === 0 ? (
-                        <div className='text-center py-16 px-6 bg-background/30 rounded-lg'>
-                            <MessageSquare className='h-16 w-16 mx-auto text-muted-foreground mb-4' />
-                            <h3 className='text-xl font-semibold text-foreground'>No conversations yet</h3>
-                            <p className='text-muted-foreground mt-2 mb-6'>Start networking and send your first message!</p>
-                            <Button onClick={() => navigate('/network/discover')} className='btn-primary'>
-                                <Users className='h-4 w-4 mr-2' />
-                                Find Connections
-                            </Button>
-                        </div>
-                    ) : filteredConversations.length === 0 ? (
-                        <div className='text-center py-16 px-6'><p className='text-muted-foreground'>No conversations match your search.</p></div>
-                    ) : (
-                        <div className='space-y-2'>
-                            {filteredConversations.map(convo => (
-                                <Link to={`/chat/${convo.conversation_id}`} key={convo.conversation_id} className='block hover:bg-muted/50 rounded-lg transition-colors p-3 border border-transparent hover:border-border'>
-                                    <div className='flex items-center gap-4'>
-                                        <Avatar className='h-12 w-12 border-2 border-primary/50'>
-                                            <AvatarImage src={convo.other_user_avatar_url || undefined} alt={convo.other_user_full_name || 'User'} />
-                                            <AvatarFallback className='bg-primary/20 text-primary font-semibold'>
-                                                {getInitials(convo.other_user_full_name || convo.other_user_username || 'U')}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                        <div className='flex-grow overflow-hidden'>
-                                            <div className='flex justify-between items-start'>
-                                                <h4 className='font-semibold text-foreground truncate'>
-                                                    {convo.other_user_full_name || convo.other_user_username}
-                                                </h4>
-                                                {convo.last_message_created_at && (
-                                                    <p className='text-xs text-muted-foreground flex-shrink-0 ml-2'>
-                                                        {formatDistanceToNow(new Date(convo.last_message_created_at), { addSuffix: true })}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <p className='text-sm text-primary'>{convo.other_user_craft}</p>
-                                            <p className='text-sm text-muted-foreground truncate mt-1'>
-                                                {convo.last_message_content ? 
-                                                    (convo.last_message_sender_id === user?.id ? 'You: ' : '') + convo.last_message_content
-                                                    : <span className='italic'>No messages yet.</span>
-                                                }
-                                            </p>
-                                        </div>
-                                        {convo.unread_count > 0 && (
-                                            <div className='w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center flex-shrink-0'>
-                                                {convo.unread_count}
-                                            </div>
-                                        )}
-                                    </div>
-                                </Link>
-                            ))}
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Chats</h1>
+      <Input
+        placeholder="Search chats..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="mb-4"
+      />
+      {loading ? (
+        <div className="flex justify-center items-center h-64">
+          <LoadingSpinner />
         </div>
-    );
+      ) : filteredConversations.length === 0 ? (
+        <div className="text-center text-muted-foreground mt-8">
+          <p>No conversations yet.</p>
+          <p className="text-sm">Start a new chat from a user's profile.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredConversations.map(convo => (
+            <Link to={`/chats/${convo.partner.id}`} key={convo.partner.id} className="block">
+              <div className="flex items-center p-3 bg-card rounded-lg hover:bg-muted transition-colors">
+                <Avatar className="h-12 w-12 mr-4">
+                  <AvatarImage src={convo.partner.avatar_url} alt={convo.partner.full_name} />
+                  <AvatarFallback>{convo.partner.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <div className="flex justify-between">
+                    <h3 className="font-semibold">{convo.partner.full_name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(convo.last_message.created_at).toLocaleTimeString()}
+                    </p>
+                  </div>
+                  <div className="flex justify-between">
+                    <p className="text-sm text-muted-foreground truncate">{convo.last_message.content}</p>
+                    {convo.unread_count > 0 && (
+                      <Badge className="bg-primary text-primary-foreground">{convo.unread_count}</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default ChatsList;

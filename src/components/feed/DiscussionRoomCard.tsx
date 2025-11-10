@@ -1,9 +1,8 @@
-
 import { useState } from "react";
-import { Mic, Video, MessageCircle, Phone, Users } from "lucide-react";
+import { Video, Users, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,7 +44,6 @@ const DiscussionRoomCard = ({
         return;
       }
 
-      // Check if already a member
       const { data: existingMember } = await supabase
         .from('room_members')
         .select('id')
@@ -54,17 +52,9 @@ const DiscussionRoomCard = ({
         .single();
 
       if (!existingMember) {
-        // Join the room
         const { error } = await supabase
           .from('room_members')
-          .insert([
-            {
-              room_id: id,
-              user_id: user.id,
-              role: 'member'
-            }
-          ]);
-
+          .insert([{ room_id: id, user_id: user.id, role: 'member' }]);
         if (error) throw error;
       }
 
@@ -84,6 +74,7 @@ const DiscussionRoomCard = ({
       setIsJoining(false);
     }
   };
+
   return (
     <>
       <div 
@@ -91,7 +82,7 @@ const DiscussionRoomCard = ({
           ${variant === 'purple' 
             ? 'to-cinesphere-purple/10 hover:from-black/30 hover:to-cinesphere-purple/20' 
             : 'to-cinesphere-blue/10 hover:from-black/30 hover:to-cinesphere-blue/20'} 
-          transition-all cursor-pointer`}
+          transition-all`}
       >
         <div className="flex justify-between items-start mb-3">
           <h3 className="font-semibold text-foreground">{title}</h3>
@@ -111,53 +102,40 @@ const DiscussionRoomCard = ({
               </Avatar>
             ))}
           </div>
-          <div className="flex space-x-2">
-            <Dialog open={showChat} onOpenChange={setShowChat}>
-              <DialogTrigger asChild>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="h-8 w-8 p-0"
-                  onClick={joinRoom}
-                  disabled={isJoining}
-                >
-                  <MessageCircle size={16} />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl h-[600px] p-0">
-                <DialogHeader className="p-6 pb-0">
-                  <DialogTitle className="flex items-center gap-2">
-                    <MessageCircle className="h-5 w-5" />
-                    {title} - Chat & Video
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="flex-1 p-6 pt-0">
-                  {id && showChat && (
-                    <EnhancedRealTimeChat roomId={id} roomTitle={title} />
-                  )}
-                </div>
-              </DialogContent>
-            </Dialog>
-            
-            <Button 
-              size="sm" 
-              variant="default" 
-              className="h-8 px-3 bg-gradient-to-r from-primary to-primary/80"
-              onClick={joinRoom}
-              disabled={isJoining}
-            >
-              {isJoining ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-              ) : (
-                <>
-                  <Video size={16} className="mr-1" />
-                  Join
-                </>
-              )}
-            </Button>
-          </div>
+          <Button 
+            size="sm" 
+            variant="default" 
+            className="h-8 px-3 bg-gradient-to-r from-primary to-primary/80"
+            onClick={joinRoom}
+            disabled={isJoining}
+          >
+            {isJoining ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+            ) : (
+              <>
+                <Video size={16} className="mr-1" />
+                Join
+              </> 
+            )}
+          </Button>
         </div>
       </div>
+
+      <Dialog open={showChat} onOpenChange={setShowChat}>
+        <DialogContent className="max-w-4xl h-[90vh] md:h-[600px] flex flex-col p-0">
+          <DialogHeader className="p-4 border-b">
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5" />
+              {title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {id && showChat && (
+              <EnhancedRealTimeChat roomId={id} roomTitle={title} />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

@@ -60,9 +60,10 @@ This document summarizes all the improvements made across all phases of the enha
 
 ### New Routes
 - `/chats` - Full conversations list page (ChatsList.tsx)
+- `/chats/:conversationId` - View a specific conversation (ChatPage.tsx)
 
 ### Modified Routes
-- `/chat` - Now refers to AI Chat page (ChatPage.tsx)
+- `/chat/:conversationId` - Now redirects to `/chats/:conversationId` for URL consistency.
 - Search results navigate via React Router instead of full page reloads
 
 ## Key Features Implemented
@@ -162,10 +163,9 @@ All database queries respect existing RLS policies:
 
 ## Known Limitations
 
-1. **Direct Messaging UI**: Currently shows conversation list only (no chat interface yet)
-2. **Profile Page**: Structure created but needs more content
-3. **Notification Actions**: URLs not yet fully implemented
-4. **Search Filters**: Basic search only (advanced filters planned)
+1. **Profile Page**: Structure created but needs more content
+2. **Notification Actions**: URLs not yet fully implemented
+3. **Search Filters**: Basic search only (advanced filters planned)
 
 ## Performance Metrics
 

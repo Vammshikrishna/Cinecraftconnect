@@ -8,7 +8,7 @@ import { Search, Users, UserPlus, Clock, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { useUsers } from "@/hooks/useUsers";
 import { useConnections } from "@/hooks/useConnections";
-import { UserCard } from "@/components/network/UserCard";
+import UserCard from "@/components/network/UserCard"; // Corrected import path
 import { ConnectionRequestCard } from "@/components/network/ConnectionRequestCard";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Link } from "react-router-dom";
@@ -88,7 +88,6 @@ const Network = () => {
             </TabsList>
 
             <TabsContent value="discover">
-              {/* Search and Filter Bar */}
               <Card className="mb-8 border-border bg-card">
                 <CardContent className="pt-6">
                   <div className="flex flex-col md:flex-row gap-4 mb-4">
@@ -102,8 +101,6 @@ const Network = () => {
                       />
                     </div>
                   </div>
-
-                  {/* Filter Pills */}
                   <div className="flex flex-wrap gap-2">
                     {craftCategories.map((category) => (
                       <Button
@@ -120,7 +117,6 @@ const Network = () => {
                 </CardContent>
               </Card>
 
-              {/* Users Grid */}
               {usersLoading ? (
                 <div className="flex justify-center items-center py-12">
                   <LoadingSpinner size="lg" />
@@ -138,9 +134,9 @@ const Network = () => {
                     <UserCard
                       key={user.id}
                       user={user}
-                      onConnect={sendConnectionRequest}
-                      onCancelRequest={cancelConnectionRequest}
-                      onRemoveConnection={removeConnection}
+                      onConnect={sendConnectionRequest} // This is correct
+                      onAccept={acceptConnectionRequest}  // This is correct for the logic inside UserCard
+                      // onCancelRequest and onRemoveConnection were causing the crash and are not needed here
                     />
                   ))}
                 </div>
@@ -148,8 +144,7 @@ const Network = () => {
             </TabsContent>
 
             <TabsContent value="requests">
-              <div className="space-y-6">
-                {/* Pending Requests */}
+                 <div className="space-y-6">
                 <Card className="border-border bg-card">
                   <CardHeader>
                     <CardTitle className="flex items-center text-foreground">
@@ -187,7 +182,6 @@ const Network = () => {
                   </CardContent>
                 </Card>
 
-                {/* Sent Requests */}
                 <Card className="border-border bg-card">
                   <CardHeader>
                     <CardTitle className="flex items-center text-foreground">
@@ -253,7 +247,7 @@ const Network = () => {
             </TabsContent>
 
             <TabsContent value="connections">
-              <Card className="border-border bg-card">
+                <Card className="border-border bg-card">
                 <CardHeader>
                   <CardTitle className="flex items-center text-foreground">
                     <Users className="mr-2 h-5 w-5" />
@@ -336,6 +330,7 @@ const Network = () => {
                 </CardContent>
               </Card>
             </TabsContent>
+
           </Tabs>
       </main>
       <Footer />

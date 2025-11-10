@@ -1,82 +1,57 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { Button } from "@/components/ui/button";
+
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 const DirectMessagePage = () => {
-  const { userId: recipientId } = useParams();
+  const { userId } = useParams<{ userId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const findOrCreateConversation = async () => {
-      if (!user || !recipientId) {
-        setError("User or recipient not found.");
-        setLoading(false);
+    if (!user || !userId) return;
+
+    const setupConversation = async () => {
+      // Check if a conversation already exists.
+      // A more robust way would be a function that checks for conversation
+      // between two specific users, regardless of who is sender/receiver.
+      const { data, error: rpcError } = await supabase.rpc('get_or_create_conversation', { p_user_id_1: user.id, p_user_id_2: userId });
+
+      if (rpcError) {
+        console.error("Error checking for existing conversation:", rpcError);
+        setError("Could not start a conversation.");
         return;
       }
       
-      // Prevent user from starting a conversation with themselves
-      if (user.id === recipientId) {
-        navigate("/chat"); // Redirect to chat list
-        return;
-      }
-  
-      try {
-        setLoading(true);
-  
-        // Call the RPC function to find or create a conversation
-        const { data, error: rpcError } = await supabase.rpc('get_or_create_conversation', {
-          p_user_id_1: user.id,
-          p_user_id_2: recipientId
-        });
-  
-        if (rpcError) {
-          throw rpcError;
-        }
-  
-        if (data) {
-          // Navigate to the conversation
-          navigate(`/chat/${data}`);
-        } else {
-          throw new Error("Failed to get or create conversation.");
-        }
-        
-      } catch (e: any) {
-        console.error("Error finding or creating conversation:", e);
-        setError("There was an error starting your conversation. Please try again.");
-        setLoading(false);
+      // If conversation exists, redirect to it
+      if (data) {
+        navigate(`/chats/${data}`);
+      } else {
+        // If no conversation, we can either create one here or let ChatPage handle it.
+        // For simplicity, we'll redirect and let ChatPage/ChatList handle showing the new chat.
+        // This page becomes a temporary placeholder to initiate a chat.
+        // A better UX might involve sending the first message right here.
+        navigate(`/chats/${userId}`);
       }
     };
 
-    findOrCreateConversation();
-  }, [user, recipientId, navigate]);
+    setupConversation();
 
-  if (loading) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="text-center">
-            <LoadingSpinner size="lg" />
-            <p className="mt-4 text-muted-foreground">Starting conversation...</p>
-        </div>
-      </div>
-    );
-  }
+  }, [user, userId, navigate]);
 
   if (error) {
-    return (
-      <div className="flex h-screen w-full flex-col items-center justify-center bg-background">
-        <p className="mb-4 text-destructive">{error}</p>
-        <Button onClick={() => navigate('/chat')}>Back to Chats</Button>
-      </div>
-    );
+    return <div className="text-center p-8 text-destructive">{error}</div>;
   }
 
-  return null; // Should not be reached, as it will either be loading, show an error, or navigate away.
+  return (
+    <div className="flex h-screen items-center justify-center">
+      <LoadingSpinner />
+      <p className="ml-4">Starting your conversation...</p>
+    </div>
+  );
 };
 
 export default DirectMessagePage;

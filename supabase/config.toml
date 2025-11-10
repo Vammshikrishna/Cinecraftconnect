@@ -11,3 +11,51 @@ enable_signup = true
 
 [studio]
 port = 54323
+
+[functions.hello-world]
+import_map = "./import_map.json"
+
+[functions.health-check]
+import_map = "./import_map.json"
+
+[functions.rate-limit-check]
+import_map = "./import_map.json"
+
+[functions.process-background-jobs]
+import_map = "./import_map.json"
+
+[functions.realtime-chat]
+import_map = "./import_map.json"
+
+[functions.user-profiles]
+import_map = "./import_map.json"
+
+[functions.webrtc-signaling]
+import_map = "./import_map.json"
+
+[functions."discussion-room/create-room"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/delete-room"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/get-messages"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/get-room"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/get-rooms"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/join-room"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/list-rooms"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/send-message"]
+import_map = "./import_map.json"
+
+[functions."discussion-room/update-room"]
+import_map = "./import_map.json"

@@ -1,3 +1,4 @@
+
 import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -15,16 +16,14 @@ const Projects = lazy(() => import("@/pages/Projects"));
 const ProjectDiscussionPage = lazy(() => import("@/pages/ProjectDiscussionPage"));
 const Jobs = lazy(() => import("@/pages/Jobs"));
 const Network = lazy(() => import("@/pages/Network"));
-const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const Analytics = lazy(() => import("@/pages/Analytics"));
 const LearningPortal = lazy(() => import("@/pages/LearningPortal"));
 const CraftPage = lazy(() => import("@/pages/CraftPage"));
 const AllCraftsPage = lazy(() => import("@/pages/AllCraftsPage"));
 const DiscussionRooms = lazy(() => import("@/pages/DiscussionRooms"));
-
-// Direct Message & Chat
 const ChatsList = lazy(() => import("@/pages/ChatsList"));
+const ChatPage = lazy(() => import("@/pages/ChatPage"));
 const DirectMessagePage = lazy(() => import("@/pages/DirectMessagePage"));
 
 // Custom route for the landing page
@@ -32,7 +31,6 @@ const LandingRoute = () => {
   const { user } = useAuth();
   return user ? <Navigate to="/feed" /> : <Index />;
 };
-
 
 const App = () => {
   return (
@@ -63,8 +61,9 @@ const App = () => {
             <Route path="/learn" element={<LearningPortal />} />
             <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
             <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
-            <Route path="/dm/:userId" element={<ProtectedRoute><DirectMessagePage /></ProtectedRoute>} />
-            <Route path="/chat/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+            <Route path="/chats/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+            <Route path="/messages/:userId" element={<ProtectedRoute><DirectMessagePage /></ProtectedRoute>} />
+            
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
