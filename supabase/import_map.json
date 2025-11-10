@@ -2,7 +2,7 @@
   "imports": {
     "std/": "https://deno.land/std@0.224.0/",
     "jsr:@std/http": "jsr:@std/http@^0.224.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.80.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.42.0",
     "@/components/": "../src/components/",
     "@/lib/utils": "../src/lib/utils.ts",
     "@/contexts/": "../src/contexts/",
