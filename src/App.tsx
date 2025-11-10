@@ -1,10 +1,10 @@
 
 import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import Navbar from "@/components/Navbar";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext.tsx";
+import { LoadingSpinner } from "@/components/ui/loading-spinner.tsx";
+import Navbar from "@/components/Navbar.tsx";
+import ProtectedRoute from "@/components/ProtectedRoute.tsx";
 
 // Page Imports
 const Index = lazy(() => import("@/pages/Index"));
@@ -34,7 +34,7 @@ const LandingRoute = () => {
 
 const App = () => {
   return (
-    <Router>
+    <Router future={{ v7_relativeSplatPath: true }}>
       <AuthProvider>
         <Navbar />
         <Suspense
