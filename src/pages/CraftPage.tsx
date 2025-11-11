@@ -1,138 +1,124 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Container, Grid, Card, CardContent, Avatar, Typography, Box, Chip, Tabs, Tab, IconButton } from '@mui/material';
-import { User, Briefcase, Star, MapPin, ExternalLink } from 'lucide-react';
-
-// import { CraftPageSkeleton } from '@/components/skeletons/CraftPageSkeleton';
-// import { ProjectCard } from '@/components/ProjectCard'; // Assuming this is the correct path
-
-const mockProfessionals = [
-  {
-    id: 1, name: 'Alice Johnson', location: 'Los Angeles, CA', bio: 'Award-winning director with over 10 years of experience in feature films and commercials. Passionate about storytelling and visual arts.',
-    avatar: '/avatars/avatar-1.jpg', skills: ['Directing', 'Editing', 'Writing'], rating: 4.9, projects: 12
-  },
-  {
-    id: 2, name: 'David Lee', location: 'New York, NY', bio: 'Cinematographer known for a unique visual style. Has worked with major brands and independent filmmakers.',
-    avatar: '/avatars/avatar-2.jpg', skills: ['Cinematography', 'Color Grading'], rating: 4.8, projects: 18
-  },
-  {
-    id: 3, name: 'Maria Garcia', location: 'London, UK', bio: 'Creative producer with a knack for bringing ambitious projects to life. Specialties include budgeting and team management.',
-    avatar: '/avatars/avatar-3.jpg', skills: ['Producing', 'Budgeting', 'Casting'], rating: 4.9, projects: 9
-  },
-];
-
-const mockProjects = [
-  {
-    id: 1, title: 'Starlight', description: 'A sci-fi short film about a journey to a distant star.',
-    imageUrl: '/projects/project-1.jpg', author: 'Alice Johnson', authorAvatar: '/avatars/avatar-1.jpg', likes: 120, comments: 15
-  },
-  {
-    id: 2, title: 'Urban Dreams', description: 'A documentary exploring the vibrant street art scene in NYC.',
-    imageUrl: '/projects/project-2.jpg', author: 'David Lee', authorAvatar: '/avatars/avatar-2.jpg', likes: 250, comments: 32
-  },
-  {
-    id: 3, title: 'The Heirloom', description: 'A period drama centered around a mysterious family inheritance.',
-    imageUrl: '/projects/project-3.jpg', author: 'Maria Garcia', authorAvatar: '/avatars/avatar-3.jpg', likes: 180, comments: 22
-  },
-];
+import { supabase } from '@/integrations/supabase/client';
+import { Profile } from '@/types';
+import { Card, CardContent } from '@/components/ui/card';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { Briefcase, MapPin, Globe, User } from 'lucide-react';
 
 const CraftPage = () => {
   const { craftName } = useParams<{ craftName: string }>();
   const [loading, setLoading] = useState(true);
-  const [tabValue, setTabValue] = useState(0);
-  const [professionals, setProfessionals] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
+  const [professionals, setProfessionals] = useState<Profile[]>([]);
+  // Projects functionality will be implemented in a future step.
 
   const formattedCraftName = craftName?.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Craft';
 
   useEffect(() => {
-    // This will now run immediately without an artificial delay.
-    setProfessionals(mockProfessionals);
-    setProjects(mockProjects);
-    setLoading(false);
-  }, [formattedCraftName]);
+    const fetchProfessionals = async () => {
+      if (!craftName) return;
 
-  if (loading) {
-    return <div>Loading...</div>; // Replace with a proper skeleton loader if available
-  }
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('craft', formattedCraftName);
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
+        if (error) throw error;
+        setProfessionals(data || []);
+      } catch (error) {
+        console.error('Error fetching professionals:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const AnyGrid = Grid as any;
+    fetchProfessionals();
+  }, [craftName, formattedCraftName]);
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ textAlign: 'center', mb: 4 }}>
-        <Typography variant="h3" component="h1" gutterBottom>
+    <div className="container mx-auto px-4 py-8">
+      <div className="text-center mb-12">
+        <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl">
           {formattedCraftName}
-        </Typography>
-        <Typography variant="h6" color="text.secondary">
+        </h1>
+        <p className="mt-4 text-lg leading-8 text-gray-400">
           Discover top professionals and noteworthy projects in {formattedCraftName}.
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 4 }}>
-        <Tabs value={tabValue} onChange={handleTabChange} centered>
-          <Tab label="Professionals" icon={<User />} iconPosition="start" />
-          <Tab label="Projects" icon={<Briefcase />} iconPosition="start" />
-        </Tabs>
-      </Box>
+      <Tabs defaultValue="professionals" className="w-full">
+        <TabsList className="grid w-full grid-cols-2 bg-gray-900/80 h-12">
+          <TabsTrigger value="professionals" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/80 rounded-md">
+            <User className="mr-2 h-4 w-4" />
+            Professionals
+          </TabsTrigger>
+          <TabsTrigger value="projects" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/80 rounded-md">
+            <Briefcase className="mr-2 h-4 w-4" />
+            Projects
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="professionals" className="mt-8">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <LoadingSpinner size="lg" />
+            </div>
+          ) : (
+            professionals.length > 0 ? (
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {professionals.map((pro) => (
+                  <Card key={pro.id} className="bg-gray-900/60 border-gray-800 text-white flex flex-col">
+                    <CardContent className="p-6 flex-grow">
+                      <div className="flex items-start gap-4">
+                        <Avatar className="w-16 h-16 border-2 border-gray-700">
+                          <AvatarImage src={pro.avatar_url || ''} alt={pro.username || ''} />
+                          <AvatarFallback>{pro.username?.charAt(0).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-grow">
+                          <h3 className="text-lg font-semibold text-white">{pro.full_name || pro.username}</h3>
+                          {pro.location && (
+                            <div className="flex items-center text-sm text-gray-400 mt-1">
+                              <MapPin className="mr-2 h-4 w-4" />
+                              <span>{pro.location}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {pro.bio && <p className="mt-4 text-sm text-gray-300 line-clamp-3">{pro.bio}</p>}
+                    </CardContent>
+                    <div className="p-6 pt-0 flex items-center justify-between">
+                      {pro.website && (
+                        <a href={pro.website} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">
+                          <Globe className="h-5 w-5" />
+                        </a>
+                      )}
+                       <Button asChild variant="secondary" size="sm" className="ml-auto bg-gray-800 hover:bg-gray-700">
+                        <Link to={`/profile/${pro.username}`}>View Profile</Link>
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-gray-400">No professionals found for this craft yet.</p>
+              </div>
+            )
+          )}
+        </TabsContent>
 
-      {tabValue === 0 && (
-        <AnyGrid container spacing={4}>
-          {professionals.map((pro) => (
-            <AnyGrid xs={12} md={6} lg={4} key={pro.id}>
-              <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Avatar src={pro.avatar} sx={{ width: 60, height: 60, mr: 2 }} />
-                    <Box>
-                      <Typography variant="h6">{pro.name}</Typography>
-                      <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
-                        <MapPin size={16} style={{ marginRight: '4px' }}/>
-                        <Typography variant="body2">{pro.location}</Typography>
-                      </Box>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{pro.bio}</Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 2 }}>
-                    {pro.skills.map((skill: string) => <Chip key={skill} label={skill} size="small" />)}
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'text.secondary' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Star size={16} style={{ marginRight: '4px' }} color="#FFC107"/>
-                      <Typography variant="body2">{pro.rating}</Typography>
-                    </Box>
-                    <Typography variant="body2">{pro.projects} projects</Typography>
-                    <IconButton component={Link} to={`/professionals/${pro.id}`} aria-label={`View profile of ${pro.name}`} size="small">
-                      <ExternalLink size={16} />
-                    </IconButton>
-                  </Box>
-                </CardContent>
-              </Card>
-            </AnyGrid>
-          ))}
-        </AnyGrid>
-      )}
-
-      {tabValue === 1 && (
-        <AnyGrid container spacing={4}>
-          {projects.map((project) => (
-            <AnyGrid xs={12} sm={6} md={4} key={project.id}>
-              {/* Replace with a proper project card component when available */}
-              <Card>
-                <CardContent>
-                  <Typography variant="h6">{project.title}</Typography>
-                  <Typography variant="body2">{project.description}</Typography>
-                </CardContent>
-              </Card>
-            </AnyGrid>
-          ))}
-        </AnyGrid>
-      )}
-    </Container>
+        <TabsContent value="projects" className="mt-8">
+           <div className="text-center py-12">
+              <p className="text-gray-400">Project integration is coming soon. Stay tuned!</p>
+            </div>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 };
 

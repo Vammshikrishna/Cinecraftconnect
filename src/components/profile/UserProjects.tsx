@@ -9,13 +9,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 interface Project {
   id: string;
   title: string;
-  description?: string;
-  status?: string;
-  start_date?: string;
-  end_date?: string;
-  location?: string;
-  genre?: string[];
-  required_roles?: string[];
+  description: string | null;
+  status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  location: string | null;
+  genre: string[] | null;
+  required_roles: string[] | null;
   created_at: string;
 }
 
@@ -33,6 +33,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
     if (!targetUserId) return;
 
     const fetchProjects = async () => {
+      setLoading(true);
       const { data, error } = await supabase
         .from('projects')
         .select('*')
@@ -40,16 +41,15 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setProjects(data);
+        setProjects(data as Project[]);
       }
       setLoading(false);
     };
 
     fetchProjects();
 
-    // Real-time subscription
     const channel = supabase
-      .channel('user-projects')
+      .channel(`user-projects-${targetUserId}`)
       .on(
         'postgres_changes',
         {
@@ -58,14 +58,8 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
           table: 'projects',
           filter: `creator_id=eq.${targetUserId}`
         },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setProjects(prev => [payload.new as Project, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            setProjects(prev => prev.map(p => p.id === payload.new.id ? payload.new as Project : p));
-          } else if (payload.eventType === 'DELETE') {
-            setProjects(prev => prev.filter(p => p.id !== payload.old.id));
-          }
+        () => {
+          fetchProjects();
         }
       )
       .subscribe();
@@ -78,8 +72,16 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
   if (loading) {
     return (
       <div className="space-y-4">
-        {[...Array(3)].map((_, i) => (
-          <Skeleton key={i} className="h-32 w-full" />
+        {[...Array(2)].map((_, i) => (
+            <Card key={i} className="bg-gray-900 border-gray-800 rounded-lg">
+                <CardHeader className="p-4">
+                    <Skeleton className="h-5 w-3/5" />
+                </CardHeader>
+                <CardContent className="p-4 -mt-4">
+                    <Skeleton className="h-4 w-full mb-3" />
+                    <Skeleton className="h-4 w-4/5" />
+                </CardContent>
+            </Card>
         ))}
       </div>
     );
@@ -88,7 +90,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
   if (projects.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
-        No projects yet
+        This user hasn't posted any projects yet.
       </div>
     );
   }
@@ -96,37 +98,37 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
   return (
     <div className="space-y-4">
       {projects.map((project) => (
-        <Card key={project.id}>
-          <CardHeader>
+        <Card key={project.id} className="bg-gray-900 border-gray-800 rounded-lg">
+          <CardHeader className="p-4">
             <div className="flex items-start justify-between">
-              <CardTitle className="text-lg">{project.title}</CardTitle>
+              <CardTitle className="text-lg font-semibold">{project.title}</CardTitle>
               {project.status && (
-                <Badge variant="outline">{project.status}</Badge>
+                <Badge className="text-xs" variant="outline">{project.status}</Badge>
               )}
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-4 -mt-4">
             {project.description && (
-              <p className="text-sm text-muted-foreground mb-3">{project.description}</p>
+              <p className="text-sm text-gray-400 mb-4">{project.description}</p>
             )}
-            <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
               {project.location && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5" />
                   {project.location}
                 </div>
               )}
               {project.start_date && (
-                <div className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5" />
                   {new Date(project.start_date).toLocaleDateString()}
                 </div>
               )}
             </div>
             {project.genre && project.genre.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-3">
+              <div className="flex flex-wrap gap-2 mt-4">
                 {project.genre.map((g, idx) => (
-                  <Badge key={idx} variant="secondary" className="text-xs">
+                  <Badge key={idx} variant="secondary" className="text-xs font-normal">
                     {g}
                   </Badge>
                 ))}

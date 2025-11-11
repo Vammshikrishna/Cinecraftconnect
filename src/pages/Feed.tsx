@@ -39,8 +39,8 @@ const Feed = () => {
             <EnhancedSkeleton className="h-8 w-48" />
             <EnhancedSkeleton className="h-10 w-32" />
           </div>
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-3 space-y-6">
+          <div className="max-w-4xl mx-auto">
+            <div className="space-y-6">
               {[...Array(3)].map((_, i) => <CardSkeleton key={i} className="h-48" />)}
             </div>
           </div>
@@ -52,9 +52,9 @@ const Feed = () => {
   return (
     <div className="min-h-screen bg-background pt-20 relative">
       <div className="container mx-auto px-4 pb-8 animate-fade-in">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="max-w-4xl mx-auto">
           {/* Main Feed */}
-          <div className="lg:col-span-3">
+          <div className="">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList className="flex flex-wrap h-auto w-full mb-6">
                 <TabsTrigger value="all" className="data-[state=active]:bg-primary">

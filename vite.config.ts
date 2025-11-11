@@ -1,15 +1,12 @@
 /// <reference types="vitest" />
-import path from "path"
+/// <reference types="vite/client" />
+import path from "node:path"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vitest/config"
+import { defineConfig, mergeConfig } from "vite"
+import { defineConfig as defineVitestConfig } from "vitest/config"
 
-export default defineConfig({
-  plugins: [react() as any],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/setupTests.ts',
-  },
+const viteConfig = defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -22,8 +19,18 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        rewrite: (path: string) => path.replace(/^\/api/, ''),
       },
     },
   },
-})
+});
+
+const vitestConfig = defineVitestConfig({
+    test: {
+        globals: true,
+        environment: 'jsdom',
+        setupFiles: './src/setupTests.ts',
+    },
+});
+
+export default mergeConfig(viteConfig, vitestConfig);

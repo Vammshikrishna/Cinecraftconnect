@@ -30,3 +30,16 @@ export interface Comment {
     avatar_url: string | null;
   };
 }
+
+export interface Profile {
+  id: string;
+  avatar_url: string | null;
+  bio: string | null;
+  craft: string | null;
+  created_at: string | null;
+  full_name: string | null;
+  location: string | null;
+  updated_at: string | null;
+  username: string | null;
+  website: string | null;
+}

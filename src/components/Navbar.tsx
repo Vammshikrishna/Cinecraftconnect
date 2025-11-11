@@ -50,6 +50,7 @@ const Navbar = () => {
                   {/* Mobile: Show only search and profile */}
                   <div className="lg:hidden flex items-center gap-1">
                     <SearchDialog isOpen={searchOpen} onOpenChange={setSearchOpen} />
+                    <ChatMenu />
                     <NotificationsDropdown />
                     <UserProfileMenu />
                   </div>

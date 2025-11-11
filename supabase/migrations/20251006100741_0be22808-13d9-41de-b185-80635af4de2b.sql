@@ -1,1 +1,0 @@
--- This migration is empty after removing commented-out code.

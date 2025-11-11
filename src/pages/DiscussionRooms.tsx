@@ -19,8 +19,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 interface Category {
   id: string;
   name: string;
-  icon: string;
-  description: string;
+  icon: string | null;
+  description: string | null;
 }
 
 interface Profile {
@@ -34,8 +34,8 @@ interface RawDiscussionRoom {
   id: string;
   title: string;
   description: string;
-  room_type: string;
-  member_count: number;
+  room_type: string | null;
+  member_count: number | null;
   creator_id: string;
   created_at: string;
   last_activity_at: string | null;
@@ -57,10 +57,10 @@ interface SanitizedDiscussionRoom {
   created_at: string;
   last_activity_at: string | null;
   category_id: string | null;
-  tags: string[] | null;
-  creator_profile: Profile | null; // No error union
+  tags: string[];
+  creator_profile: Profile | null;
   room_categories?: Category | null;
-  members: { profiles: Profile }[]; // Guaranteed to be an array of valid profiles
+  members: { profiles: Profile }[];
 }
 
 // Type guard for Profile
@@ -71,10 +71,9 @@ function isProfile(obj: any): obj is Profile {
     'id' in obj && typeof obj.id === 'string' &&
     'full_name' in obj && (typeof obj.full_name === 'string' || obj.full_name === null) &&
     'avatar_url' in obj && (typeof obj.avatar_url === 'string' || obj.avatar_url === null) &&
-    !('error' in obj) // This line ensures objects with an 'error' property return false.
+    !('error' in obj)
   );
 }
-
 
 const DiscussionRooms = () => {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -141,6 +140,9 @@ const DiscussionRooms = () => {
 
         return {
           ...rawRoom,
+          room_type: rawRoom.room_type || 'public',
+          member_count: rawRoom.member_count || 0,
+          tags: rawRoom.tags || [],
           creator_profile: validCreatorProfile,
           members: validMembers,
         };
@@ -168,7 +170,7 @@ const DiscussionRooms = () => {
         const { data, error } = await supabase.from('room_categories').select('*');
         if (error) throw error;
 
-        let categoriesData = data || [];
+        let categoriesData: Category[] = data || [];
         let generalCat = categoriesData.find(cat => cat.name === 'General Discussion');
 
         if (!generalCat) {
@@ -209,6 +211,12 @@ const DiscussionRooms = () => {
       return;
     }
 
+    const finalCategoryId = newRoom.category_id || defaultCategoryId;
+    if (!finalCategoryId) {
+        toast({ title: "Validation Error", description: "Please select a category for the room.", variant: "destructive" });
+        return;
+    }
+
     const title = newRoom.title.trim();
     const description = newRoom.description.trim();
 
@@ -238,12 +246,13 @@ const DiscussionRooms = () => {
         room_title: title,
         room_description: description,
         type: newRoom.room_type,
-        cat_id: newRoom.category_id || defaultCategoryId,
-        room_tags: tags.length > 0 ? tags : null,
+        cat_id: finalCategoryId,
+        room_tags: tags,
         c_id: user.id,
       });
 
       if (error) throw error;
+      if (!newRoomId) throw new Error("Failed to create room: No ID returned.");
       
       const newRoomForUI: SanitizedDiscussionRoom = {
         id: newRoomId,
@@ -254,14 +263,14 @@ const DiscussionRooms = () => {
         creator_id: user.id,
         created_at: new Date().toISOString(),
         last_activity_at: new Date().toISOString(),
-        category_id: newRoom.category_id || defaultCategoryId,
-        tags: tags.length > 0 ? tags : null,
+        category_id: finalCategoryId,
+        tags: tags,
         creator_profile: {
             id: user.id,
             full_name: user.user_metadata.full_name || null,
             avatar_url: user.user_metadata.avatar_url || null
         },
-        room_categories: categories.find(c => c.id === (newRoom.category_id || defaultCategoryId)),
+        room_categories: categories.find(c => c.id === finalCategoryId),
         members: [{ profiles: { id: user.id, full_name: user.user_metadata.full_name || null, avatar_url: user.user_metadata.avatar_url || null } }]
       };
 
@@ -295,20 +304,20 @@ const DiscussionRooms = () => {
     return (
       <Card className={`transition-all duration-300 ease-in-out transform hover:-translate-y-1 hover:shadow-xl ${isFeatured ? 'bg-gradient-to-br from-purple-800 to-indigo-900 border-purple-600' : 'bg-gray-800/80 border-gray-700'}`}>
         <CardHeader>
-          <div className="flex justify-between items-start">
-            <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-              {room.room_type === 'private' ? <Lock className="w-4 h-4 text-yellow-400" /> : <Globe className="w-4 h-4 text-green-400" />}
-              {room.title}
-            </CardTitle>
-            {room.room_categories && (
-              <Badge variant="secondary" className="text-xs flex-shrink-0">{room.room_categories.name}</Badge>
-            )}
-          </div>
-          <p className="text-sm text-gray-400 mt-1 line-clamp-2">{room.description}</p>
+            <div className="flex justify-between items-start">
+                <CardTitle className={`${isFeatured ? 'text-xl font-bold' : 'text-lg font-bold'} text-white flex items-center gap-2`}>
+                    {room.room_type === 'private' ? <Lock className="w-4 h-4 text-yellow-400" /> : <Globe className="w-4 h-4 text-green-400" />}
+                    {room.title}
+                </CardTitle>
+                {room.room_categories && (
+                <Badge variant="secondary" className="text-xs flex-shrink-0">{room.room_categories.name}</Badge>
+                )}
+            </div>
+            <p className="text-sm text-gray-400 mt-1 line-clamp-2">{room.description}</p>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-1 mb-4">
-            {room.tags?.map((tag, idx) => (
+            {room.tags.map((tag, idx) => (
               <Badge key={idx} variant="outline" className="text-xs border-gray-600 text-gray-300"><Tag className="mr-1 h-3 w-3" />{tag}</Badge>
             ))}
           </div>
@@ -318,7 +327,7 @@ const DiscussionRooms = () => {
           </div>
           <div className="flex items-center mb-4">
             <div className="flex -space-x-2 overflow-hidden">
-              {room.members.slice(0, 5).map((member, index) => (
+              {room.members.slice(0, 5).map(member => (
                 <Avatar key={member.profiles.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-gray-800">
                   <AvatarImage src={member.profiles.avatar_url || undefined} />
                   <AvatarFallback>{member.profiles.full_name?.[0] ?? '?'}</AvatarFallback>
@@ -337,10 +346,11 @@ const DiscussionRooms = () => {
     return <div className="flex items-center justify-center h-screen bg-gray-900"><div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-indigo-500"></div></div>;
   }
   
-  return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 lg:p-8 pt-24">
-      <div className="container mx-auto">
-        <header className="flex flex-col md:flex-row justify-between items-center mb-8">
+  return ( 
+  <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 lg:p-8">
+    <div className="container mx-auto pt-24">
+
+        <header className="flex flex-col md:flex-row justify-between items-center mb-12">
             <div className="text-center md:text-left">
                 <h1 className="text-4xl lg:text-5xl font-extrabold text-white flex items-center justify-center md:justify-start gap-3">
                     <MessageCircle className="w-10 h-10 text-indigo-500" /> Discussion Rooms
@@ -363,7 +373,7 @@ const DiscussionRooms = () => {
           </section>
         )}
 
-        <div className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-sm py-4 mb-6">
+        <div className="sticky top-20 z-10 bg-gray-900/80 backdrop-blur-sm py-4 mb-6">
           <div className="flex flex-col md:flex-row items-center gap-4">
             <div className="relative flex-grow w-full"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" /><Input placeholder="Search by title, description, or tag..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 w-full bg-gray-800 border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" /></div>
             <div className="flex items-center gap-4 w-full md:w-auto">

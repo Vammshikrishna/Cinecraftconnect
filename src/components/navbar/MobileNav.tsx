@@ -1,22 +1,10 @@
 
 import { Link, useLocation } from "react-router-dom";
-import { Home, Play, Film, Briefcase, Users, BookOpen, Menu, Settings, MessageSquare } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { 
-  Sheet, 
-  SheetContent, 
-  SheetTrigger,
-  SheetHeader,
-  SheetTitle
-} from "@/components/ui/sheet";
+import { Home, Film, Briefcase, Users, BookOpen, Play } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import UserProfileMenu from "./UserProfileMenu";
-import LogoutButton from "./LogoutButton";
 
 export function MobileNav() {
   const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth();
 
   // Don't render mobile nav for unauthenticated users
@@ -34,7 +22,7 @@ export function MobileNav() {
   const navItems = [
     { to: "/feed", icon: Home },
     { to: "/projects", icon: Film },
-    { to: "/discussion-rooms", icon: MessageSquare },
+    { to: "/discussion-rooms", icon: Play },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users },
     { to: "/learn", icon: BookOpen }
