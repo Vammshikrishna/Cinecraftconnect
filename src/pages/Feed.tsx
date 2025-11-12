@@ -6,10 +6,11 @@ import { Plus } from 'lucide-react';
 
 // Import our tab components
 import FeedTab from '@/components/feed/FeedTab';
-import FollowingFeedTab from '@/components/feed/FollowingFeedTab'; // Import the new component
 import DiscussionRoomsTab from '@/components/feed/DiscussionRoomsTab';
 import AnnouncementsTab from '@/components/feed/AnnouncementsTab';
 import RatingsTab from '@/components/feed/RatingsTab';
+import ProjectsTab from '@/components/feed/ProjectsTab';
+import AllContentTab from '@/components/feed/AllContentTab';
 
 const Feed = () => {
   const [activeTab, setActiveTab] = useState('all');
@@ -58,13 +59,16 @@ const Feed = () => {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList className="flex flex-wrap h-auto w-full mb-6">
                 <TabsTrigger value="all" className="data-[state=active]:bg-primary">
-                  All Posts
+                  All
                 </TabsTrigger>
-                <TabsTrigger value="following" className="data-[state=active]:bg-primary">
-                  Following
+                <TabsTrigger value="posts" className="data-[state=active]:bg-primary">
+                  Posts
                 </TabsTrigger>
                 <TabsTrigger value="discussions" className="data-[state=active]:bg-primary">
                   Discussions
+                </TabsTrigger>
+                <TabsTrigger value="projects" className="data-[state=active]:bg-primary">
+                  Projects
                 </TabsTrigger>
                 <TabsTrigger value="announcements" className="data-[state=active]:bg-primary">
                   Announcements
@@ -75,15 +79,19 @@ const Feed = () => {
               </TabsList>
 
               <TabsContent value="all" className="space-y-6">
-                <FeedTab postRatings={postRatings} onRate={handleRate} />
+                <AllContentTab postRatings={postRatings} onRate={handleRate} />
               </TabsContent>
-              
-              <TabsContent value="following" className="space-y-6">
-                <FollowingFeedTab />
+
+              <TabsContent value="posts" className="space-y-6">
+                <FeedTab postRatings={postRatings} onRate={handleRate} />
               </TabsContent>
               
               <TabsContent value="discussions" className="space-y-6">
                 <DiscussionRoomsTab />
+              </TabsContent>
+
+              <TabsContent value="projects" className="space-y-6">
+                <ProjectsTab />
               </TabsContent>
               
               <TabsContent value="announcements" className="space-y-6">
