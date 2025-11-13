@@ -10,9 +10,9 @@ import {
   DollarSign, 
   Users, 
   Film,
-  MessageCircle,
   Send,
-  Clock
+  Clock,
+  Briefcase
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -198,11 +198,11 @@ export function ProjectDetailDialog({ project, open, onOpenChange }: ProjectDeta
               className="flex-1"
               onClick={() => {
                 onOpenChange(false);
-                navigate(`/projects/${project.id}/discussion`);
+                navigate(`/projects/${project.id}/space`);
               }}
             >
-              <MessageCircle className="mr-2 h-4 w-4" />
-              Go to Discussion Room
+              <Briefcase className="mr-2 h-4 w-4" />
+              Go to Project Space
             </Button>
             <Button variant="outline">
               <Send className="mr-2 h-4 w-4" />

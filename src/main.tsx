@@ -4,6 +4,7 @@ import App from './App.tsx';
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
 
+// Force a hard reload to apply the new styles
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <Suspense fallback={

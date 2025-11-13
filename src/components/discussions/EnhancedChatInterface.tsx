@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,9 +16,9 @@ interface Message {
   room_id: string;
   user_id: string;
   content: string;
-  message_type: string;
-  priority: string;
-  visibility_role: string;
+  message_type: string | null;
+  priority: string | null;
+  visibility_role: string | null;
   media_url: string | null;
   media_type: string | null;
   created_at: string;
@@ -62,7 +61,6 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
           const newMessage = payload.new as Message;
           setMessages((prev) => [...prev, newMessage]);
           
-          // Fetch profile if we don't have it
           if (!profiles[newMessage.user_id]) {
             fetchProfile(newMessage.user_id);
           }
@@ -76,7 +74,6 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
   }, [roomId]);
 
   useEffect(() => {
-    // Auto-scroll to bottom on new messages
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -87,7 +84,7 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
     try {
       const { data } = await supabase
         .from('room_messages')
-        .select('*')
+        .select('id, room_id, user_id, content, message_type, priority, visibility_role, media_url, media_type, created_at')
         .eq('room_id', roomId)
         .order('created_at', { ascending: true });
 
@@ -132,10 +129,8 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
   const handleSendMessage = async (content: string, priority: string, visibilityRole: string) => {
     if (!user) return;
 
-    // Stop typing indicator when sending
     stopTyping();
 
-    // Optimistic update
     const optimisticMessage: Message = {
       id: `temp-${Date.now()}`,
       room_id: roomId,
@@ -161,54 +156,61 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
     });
 
     if (error) {
-      // Remove optimistic message on error
       setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
       console.error('Error sending message:', error);
     }
   };
 
-  const getPriorityStyles = (priority: string) => {
+  const getPriorityStyles = (priority: string | null) => {
     switch (priority) {
       case 'high':
-        return 'border-l-4 border-l-[hsl(var(--accent))] bg-[hsl(var(--accent))]/5';
+        return 'border-l-4 border-l-accent bg-accent/5';
       case 'critical':
-        return 'border-l-4 border-l-[hsl(var(--destructive))] bg-[hsl(var(--destructive))]/5 font-semibold';
+        return 'border-l-4 border-l-destructive bg-destructive/5 font-semibold';
       default:
         return '';
     }
   };
 
-  const getPriorityIcon = (priority: string) => {
+  const getPriorityIcon = (priority: string | null) => {
     switch (priority) {
       case 'high':
-        return <AlertTriangle className="h-4 w-4 text-[hsl(var(--accent))]" />;
+        return <AlertTriangle className="h-4 w-4 text-accent" />;
       case 'critical':
-        return <AlertCircle className="h-4 w-4 text-[hsl(var(--destructive))]" />;
+        return <AlertCircle className="h-4 w-4 text-destructive" />;
       default:
         return null;
     }
   };
 
-  const getVisibilityBadge = (visibilityRole: string) => {
-    if (visibilityRole === 'all') return null;
+  const getVisibilityBadge = (visibilityRole: string | null) => {
+    if (visibilityRole === 'all' || !visibilityRole) return null;
     
     return (
-      <Badge variant="outline" className="ml-2 text-xs gap-1">
+      <Badge variant="outline" className="ml-2 text-xs gap-1 border-border/50">
         <Lock className="h-3 w-3" />
         {visibilityRole}
       </Badge>
     );
   };
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-muted-foreground">Loading messages...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-[600px]">
-      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 className="font-semibold">Discussion</h3>
+    <div className="flex flex-col h-full bg-background">
+      <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
+        <h3 className="font-semibold text-lg">Discussion</h3>
         <OnlinePresence roomId={roomId} />
       </div>
       
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="space-y-4">
+      <ScrollArea className="flex-1 p-6" ref={scrollRef}>
+        <div className="space-y-6">
           {messages.map((message) => {
             const profile = profiles[message.user_id];
             const isOwnMessage = message.user_id === user?.id;
@@ -216,8 +218,8 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
 
             if (isSystemMessage) {
               return (
-                <div key={message.id} className="text-center">
-                  <Badge variant="secondary" className="text-xs">
+                <div key={message.id} className="text-center py-2">
+                  <Badge variant="secondary" className="text-xs font-normal">
                     {message.content}
                   </Badge>
                 </div>
@@ -236,8 +238,8 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
                   </AvatarFallback>
                 </Avatar>
 
-                <div className={`flex-1 max-w-[70%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
-                  <div className="flex items-center gap-2 mb-1">
+                <div className={`flex-1 max-w-[75%] ${isOwnMessage ? 'items-end' : 'items-start'} flex flex-col`}>
+                  <div className={`flex items-center gap-2 mb-1 ${isOwnMessage ? 'flex-row-reverse' : ''}`}>
                     <span className="text-sm font-medium">
                       {profile?.full_name || 'Unknown'}
                     </span>
@@ -247,14 +249,14 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
                     {getVisibilityBadge(message.visibility_role)}
                   </div>
 
-                  <Card className={`p-3 ${getPriorityStyles(message.priority)}`}>
+                  <div className={`p-3 rounded-xl ${isOwnMessage ? 'bg-primary/10' : 'bg-secondary'} ${getPriorityStyles(message.priority)}`}>
                     <div className="flex items-start gap-2">
                       {getPriorityIcon(message.priority)}
                       <p className="text-sm whitespace-pre-wrap break-words">
                         {message.content}
                       </p>
                     </div>
-                  </Card>
+                  </div>
                 </div>
               </div>
             );
@@ -264,7 +266,7 @@ export const EnhancedChatInterface = ({ roomId, userRole }: EnhancedChatInterfac
 
       <TypingIndicator typingUsers={typingUsers} />
 
-      <div className="p-4">
+      <div className="p-4 border-t border-border/50">
         <MessageComposer
           onSend={handleSendMessage}
           userRole={userRole}

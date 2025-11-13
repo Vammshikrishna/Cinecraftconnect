@@ -29,6 +29,31 @@
     --radius: 1rem;
   }
 
+  .light {
+    /* Light Mode - DEFINITIVE HIGH CONTRAST */
+    --background: 210 20% 98%;   /* #FAFBFC - Almost white */
+    --foreground: 224 71% 4%;     /* #020817 - Near black */
+    --card: 0 0% 100%;             /* #FFFFFF */
+    --card-foreground: 224 71% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 4%;
+    --primary: 200 98% 39%;       /* #0077B6 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 13% 91%;     /* #E9ECEF */
+    --secondary-foreground: 224 71% 4%;
+    --muted: 220 13% 91%;
+    --muted-foreground: 220 9% 45%; /* #6C757D - WCAG AA compliant gray */
+    --accent: 220 13% 85%;       /* #D6DBE0 */
+    --accent-foreground: 224 71% 4%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 145 63% 42%;
+    --warning: 38 92% 50%;
+    --border: 220 13% 88%;       /* #DEE2E6 */
+    --input: 220 13% 88%;
+    --ring: 200 98% 39%;
+  }
+
   * {
     @apply border-border selection:bg-primary/20 selection:text-foreground;
   }

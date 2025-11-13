@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +13,8 @@ import { UserPosts } from '@/components/profile/UserPosts';
 import { UserProjects } from '@/components/profile/UserProjects';
 import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
 import EditProfileForm from '@/components/profile/EditProfileForm';
+import Skills from '@/components/profile/Skills';
+import Experience from '@/components/profile/Experience';
 import { 
   Grid, 
   Film, 
@@ -19,7 +22,10 @@ import {
   Rss,
   Briefcase,
   MapPin,
-  Globe
+  Globe,
+  Settings,
+  Award,
+  Building
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -35,14 +41,12 @@ const ProfilePage = () => {
 
   const fetchCounts = useCallback(async () => {
     if (!user) return;
-    // Fetch post count
     const { count: posts } = await supabase
       .from('posts')
       .select('id', { count: 'exact', head: true })
       .eq('author_id', user.id);
     setPostCount(posts || 0);
 
-    // Correctly fetch accepted connections count
     const { count: connections } = await supabase
       .from('user_connections')
       .select('id', { count: 'exact', head: true })
@@ -100,7 +104,6 @@ const ProfilePage = () => {
       )
       .subscribe();
 
-    // Correctly subscribe to all connection changes for the user
     const connectionsChannel = supabase
       .channel(`connections-count-updates:${user.id}`)
       .on(
@@ -150,7 +153,7 @@ const ProfilePage = () => {
 
   return (
     <div className="bg-black text-white min-h-screen flex justify-center pt-20">
-      <div className="w-full max-w-3xl px-4">
+      <div className="w-full max-w-4xl px-4">
         <header className="flex flex-col items-center text-center gap-4 mb-8">
           <Avatar className="w-36 h-36 border-4 border-gray-800">
             <AvatarImage src={profile.avatar_url || ''} alt={profile.username || 'User'} />
@@ -197,36 +200,28 @@ const ProfilePage = () => {
             </div>
 
           </div>
-          <Button className="rounded-full bg-gray-800 hover:bg-gray-700 text-white font-semibold px-8 py-3 mt-4 text-base" onClick={() => setIsEditing(true)}>Edit Profile</Button>
+          <div className="flex items-center justify-center gap-4 mt-4">
+            <Button className="rounded-full bg-gray-800 hover:bg-gray-700 text-white font-semibold px-8 py-3 text-base" onClick={() => setIsEditing(true)}>Edit Profile</Button>
+            <Link to="/settings">
+              <Button variant="outline" size="icon" className="rounded-full bg-gray-800 hover:bg-gray-700 border-gray-700">
+                <Settings className="h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
         </header>
         
         <Tabs defaultValue="posts" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-transparent border-t border-b border-gray-800 h-20 rounded-none">
-            <TabsTrigger value="posts" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/50 rounded-none h-full text-base flex flex-col items-center justify-center gap-1">
-              <Grid size={24} />
-              <span>Posts</span>
-            </TabsTrigger>
-            <TabsTrigger value="portfolio" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/50 rounded-none h-full text-base flex flex-col items-center justify-center gap-1">
-              <Briefcase size={24} />
-              <span>Portfolio</span>
-            </TabsTrigger>
-            <TabsTrigger value="projects" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/50 rounded-none h-full text-base flex flex-col items-center justify-center gap-1">
-              <Film size={24} />
-              <span>Projects</span>
-            </TabsTrigger>
-            <TabsTrigger value="announcements" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/50 rounded-none h-full text-base flex flex-col items-center justify-center gap-1">
-              <Rss size={24} />
-              <span>Announcements</span>
-            </TabsTrigger>
-            <TabsTrigger value="analytics" className="text-gray-400 data-[state=active]:text-white data-[state=active]:bg-gray-800/50 rounded-none h-full text-base flex flex-col items-center justify-center gap-1">
-              <BarChart2 size={24} />
-              <span>Analytics</span>
-            </TabsTrigger>
+          <TabsList className="grid w-full grid-cols-7 bg-transparent border-t border-b border-gray-800 h-20 rounded-none">
+            <TabsTrigger value="posts">Posts</TabsTrigger>
+            <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+            <TabsTrigger value="projects">Projects</TabsTrigger>
+            <TabsTrigger value="announcements">Announcements</TabsTrigger>
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="skills">Skills</TabsTrigger>
+            <TabsTrigger value="experience">Experience</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="posts" className="py-8">
-            <UserPosts targetUserId={user.id} />
-          </TabsContent>
+          <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
           <TabsContent value="portfolio" className="py-8">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">My Portfolio</h2>
@@ -234,15 +229,11 @@ const ProfilePage = () => {
             </div>
             <PortfolioGrid userId={user.id} isOwner={true} onAddNew={() => setPortfolioDialogOpen(true)} />
           </TabsContent>
-          <TabsContent value="projects" className="py-8">
-            <UserProjects userId={user.id} />
-          </TabsContent>
-          <TabsContent value="announcements" className="py-8">
-            <UserAnnouncements />
-          </TabsContent>
-          <TabsContent value="analytics" className="py-8">
-            <RealTimeAnalytics />
-          </TabsContent>
+          <TabsContent value="projects" className="py-8"><UserProjects userId={user.id} /></TabsContent>
+          <TabsContent value="announcements" className="py-8"><UserAnnouncements /></TabsContent>
+          <TabsContent value="analytics" className="py-8"><RealTimeAnalytics /></TabsContent>
+          <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
+          <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
         </Tabs>
 
         <PortfolioUploadDialog isOpen={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen} />

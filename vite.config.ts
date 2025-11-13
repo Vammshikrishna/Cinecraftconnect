@@ -4,12 +4,22 @@ import path from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig, mergeConfig } from "vite"
 import { defineConfig as defineVitestConfig } from "vitest/config"
+import tailwindcss from 'tailwindcss';
+import autoprefixer from 'autoprefixer';
 
 const viteConfig = defineConfig({
   plugins: [react()],
+  css: {
+    postcss: {
+      plugins: [
+        tailwindcss(),
+        autoprefixer(),
+      ],
+    },
+  },
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(process.cwd(), "src"),
     },
   },
   server: {

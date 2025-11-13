@@ -1,5 +1,6 @@
 
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { MultiStepForm } from '@/components/ui/multi-step-form';
@@ -9,9 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, X, Calendar, DollarSign, MapPin, Users } from 'lucide-react';
+import { Plus, Calendar, DollarSign, MapPin, Users } from 'lucide-react';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -20,8 +20,8 @@ interface ProjectCreationModalProps {
 export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   
   const [projectData, setProjectData] = useState({
     title: '',
@@ -77,9 +77,8 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   const handleSubmit = async () => {
     if (!user) return;
     
-    setLoading(true);
     try {
-      const { error } = await supabase
+      const { data: newProject, error } = await supabase
         .from('projects')
         .insert({
           ...projectData,
@@ -88,31 +87,24 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
           budget_max: projectData.budget_max ? parseInt(projectData.budget_max) : null,
           start_date: projectData.start_date || null,
           end_date: projectData.end_date || null,
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
       toast({
         title: "Project Created",
-        description: "Your project and discussion room have been created successfully!",
+        description: "Your project has been created successfully!",
       });
       
       setIsOpen(false);
-      setProjectData({
-        title: '',
-        description: '',
-        genre: [],
-        location: '',
-        budget_min: '',
-        budget_max: '',
-        start_date: '',
-        end_date: '',
-        required_roles: [],
-        status: 'planning',
-        is_public: true,
-      });
-      
       onProjectCreated?.();
+
+      if (newProject) {
+        navigate(`/projects/${newProject.id}/space`);
+      }
+      
     } catch (error) {
       console.error('Error creating project:', error);
       toast({
@@ -120,8 +112,6 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
         description: "There was an error creating your project.",
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   };
 

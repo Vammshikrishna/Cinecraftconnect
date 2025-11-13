@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal';
@@ -64,6 +63,7 @@ const Projects = () => {
   }, [activeTab]);
 
   const fetchProjects = async () => {
+    setLoading(true);
     try {
       let query = supabase
         .from('projects')
@@ -78,7 +78,12 @@ const Projects = () => {
         .order('created_at', { ascending: false });
 
       if (activeTab === 'my') {
-        query = query.eq('creator_id', user?.id);
+        if (user?.id) {
+          query = query.eq('creator_id', user.id);
+        } else {
+          setProjects([]);
+          return;
+        }
       }
 
       const { data, error } = await query;
@@ -158,12 +163,12 @@ const Projects = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex items-center text-muted-foreground text-sm">
+          <div className="flex items-center text-sm text-muted-foreground">
             <DollarSign className="mr-1 h-4 w-4" />
             {formatBudget(project.budget_min, project.budget_max)}
           </div>
           {project.start_date && (
-            <div className="flex items-center text-muted-foreground text-sm">
+            <div className="flex items-center text-sm text-muted-foreground">
               <Calendar className="mr-1 h-4 w-4" />
               {formatDistanceToNow(new Date(project.start_date), { addSuffix: true })}
             </div>
@@ -191,7 +196,7 @@ const Projects = () => {
 
           {project.required_roles && project.required_roles.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2 flex items-center">
+              <p className="text-sm font-medium flex items-center mb-2 text-muted-foreground">
                 <Users className="mr-1 h-4 w-4" />
                 Looking for
               </p>
@@ -212,7 +217,7 @@ const Projects = () => {
         </div>
 
         <div className="flex items-center justify-between pt-4 border-t border-border">
-          <div className="flex items-center text-muted-foreground text-sm">
+          <div className="flex items-center text-sm text-muted-foreground">
             <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">
               {project.profiles?.full_name?.charAt(0) || 'U'}
             </div>
@@ -305,7 +310,7 @@ const Projects = () => {
         ) : (
           <div className="text-center py-12">
             <Film className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground text-lg mb-2">
+            <p className="text-lg mb-2 text-muted-foreground">
               {searchTerm || Object.values(filters).some(f => f.length > 0)
                 ? 'No projects match your filters' 
                 : 'No projects found'}
