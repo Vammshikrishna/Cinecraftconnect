@@ -1,10 +1,11 @@
+// deno-lint-ignore-file
 import { serve } from "jsr:@std/http";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.1";
 import { corsHeaders } from "../../_shared/cors.ts";
 
 const MAX_CONTENT_LENGTH = 10000;
 
-serve(async (req) => {
+serve(async (req: { method: string; headers: { get: (arg0: string) => any; }; json: () => any; }) => {
   // Handle pre-flight OPTIONS request
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });

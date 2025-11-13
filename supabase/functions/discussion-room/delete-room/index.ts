@@ -1,17 +1,32 @@
-import { serve } from "jsr:@std/http";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.80.0";
+import { createClient } from "npm:@supabase/supabase-js@2.80.0";
 import { corsHeaders } from "../../_shared/cors.ts";
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
+    const authHeader = req.headers.get("Authorization") ?? "";
+
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Authorization header must be in the format: Bearer <token>" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use the anon key by default. To bypass RLS, replace with SUPABASE_SERVICE_ROLE_KEY (keep secret).
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } }
+      {
+        global: {
+          headers: {
+            Authorization: authHeader,
+          },
+        },
+      }
     );
 
     const url = new URL(req.url);
@@ -24,7 +39,10 @@ serve(async (req) => {
       });
     }
 
-    const { data: { user } = {}, error: userError } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
 
     if (userError || !user) {
       return new Response(JSON.stringify({ error: "User not authenticated." }), {
@@ -36,10 +54,10 @@ serve(async (req) => {
     const { error } = await supabase
       .from("discussion_rooms")
       .delete()
-      .eq("id", roomId)
-      .eq("created_by", user.id);
+      .match({ id: roomId, created_by: user.id });
 
     if (error) {
+      console.error("delete-discussion-room-db-error", error);
       return new Response(JSON.stringify({ error: error.message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -48,10 +66,11 @@ serve(async (req) => {
 
     return new Response(null, {
       status: 204,
-      headers: corsHeaders,
+      headers: { ...corsHeaders, "Content-Length": "0" },
     });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
+  } catch (err) {
+    console.error("delete-discussion-room-exception", err);
+    return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

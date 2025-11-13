@@ -16,16 +16,10 @@ import EditProfileForm from '@/components/profile/EditProfileForm';
 import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
 import { 
-  Grid, 
-  Film, 
-  BarChart2,
-  Rss,
   Briefcase,
   MapPin,
   Globe,
   Settings,
-  Award,
-  Building
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';

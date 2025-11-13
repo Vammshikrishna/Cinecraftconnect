@@ -1,8 +1,9 @@
-import { serve } from "jsr:@std/http";
-import { createClient } from "@supabase/supabase-js";
+// deno-lint-ignore-file
+// Health check edge function
+import { createClient } from "npm:@supabase/supabase-js@2.25.0";
 import { corsHeaders } from "../_shared/cors.ts";
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -14,71 +15,108 @@ serve(async (req) => {
     checks: {}
   };
 
+  // Validate env
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseUrl || !supabaseKey) {
+    const errBody = {
+      status: 'unhealthy',
+      error: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
+    };
+    return new Response(JSON.stringify(errBody), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
 
     // Database check
     try {
       const dbStart = Date.now();
-      const { error } = await supabase.from('profiles').select('id').limit(1);
+      // Use a lightweight query - limit 1
+      const dbRes = await supabase.from('profiles').select('id').limit(1);
+      const dbError = (dbRes as any).error ?? null;
       checks.checks.database = {
-        status: error ? 'unhealthy' : 'healthy',
+        status: dbError ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - dbStart,
-        error: error?.message
+        error: dbError?.message ?? null
       };
-    } catch (error) {
+      if (dbError) checks.status = 'unhealthy';
+    } catch (err) {
       checks.checks.database = {
         status: 'unhealthy',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: err instanceof Error ? err.message : String(err)
       };
       checks.status = 'unhealthy';
     }
 
-    // Storage check
+    // Storage check - list buckets
     try {
       const storageStart = Date.now();
-      const { data, error } = await supabase.storage.listBuckets();
+      const storageRes = await supabase.storage.listBuckets();
+      const storageError = (storageRes as any).error ?? null;
+      const storageData = (storageRes as any).data ?? null;
       checks.checks.storage = {
-        status: error ? 'unhealthy' : 'healthy',
+        status: storageError ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - storageStart,
-        buckets: data?.length || 0,
-        error: error?.message
+        buckets: Array.isArray(storageData) ? storageData.length : null,
+        error: storageError?.message ?? null
       };
-    } catch (error) {
+      if (storageError) checks.status = 'unhealthy';
+    } catch (err) {
       checks.checks.storage = {
         status: 'unhealthy',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: err instanceof Error ? err.message : String(err)
       };
+      checks.status = 'unhealthy';
     }
 
-    // Background jobs check
+    // Background jobs check - rely on count or data length depending on SDK
     try {
-      const { data: pendingJobs, error } = await supabase
+      // pending
+      const pendingRes = await supabase
         .from('background_jobs')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: false })
         .eq('status', 'pending');
-      
-      const { data: failedJobs } = await supabase
+      const pendingError = (pendingRes as any).error ?? null;
+      const pendingData = (pendingRes as any).data ?? null;
+      const pendingCount = typeof (pendingRes as any).count === 'number'
+        ? (pendingRes as any).count
+        : Array.isArray(pendingData) ? pendingData.length : null;
+
+      // failed
+      const failedRes = await supabase
         .from('background_jobs')
-        .select('id', { count: 'exact' })
+        .select('id', { count: 'exact', head: false })
         .eq('status', 'failed');
+      const failedError = (failedRes as any).error ?? null;
+      const failedData = (failedRes as any).data ?? null;
+      const failedCount = typeof (failedRes as any).count === 'number'
+        ? (failedRes as any).count
+        : Array.isArray(failedData) ? failedData.length : null;
 
-      checks.checks.backgroundJobs = {
-        status: 'healthy',
-        pendingCount: pendingJobs?.length || 0,
-        failedCount: failedJobs?.length || 0
-      };
-
-      if ((failedJobs?.length || 0) > 10) {
-        checks.checks.backgroundJobs.status = 'warning';
+      if (pendingError || failedError) {
+        checks.checks.backgroundJobs = {
+          status: 'unhealthy',
+          error: pendingError?.message ?? failedError?.message ?? null
+        };
+        checks.status = 'unhealthy';
+      } else {
+        checks.checks.backgroundJobs = {
+          status: 'healthy',
+          pendingCount,
+          failedCount
+        };
+        if ((failedCount ?? 0) > 10) checks.checks.backgroundJobs.status = 'warning';
       }
-    } catch (error) {
+    } catch (err) {
       checks.checks.backgroundJobs = {
         status: 'unhealthy',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: err instanceof Error ? err.message : String(err)
       };
+      checks.status = 'unhealthy';
     }
 
     checks.responseTime = Date.now() - startTime;
@@ -87,10 +125,10 @@ serve(async (req) => {
       status: checks.status === 'healthy' ? 200 : 503,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (error) {
+  } catch (err) {
     return new Response(JSON.stringify({
       status: 'unhealthy',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: err instanceof Error ? err.message : String(err),
       timestamp: new Date().toISOString()
     }), {
       status: 503,

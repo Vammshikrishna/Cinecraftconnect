@@ -13,6 +13,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "jsxImportSource": "react",
 
     /* Linting */
     "strict": true,
@@ -24,8 +25,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "types": ["vite/client", "react"]
   },
   "include": ["src"],
+  "exclude": ["supabase"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

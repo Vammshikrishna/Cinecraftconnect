@@ -1,16 +1,16 @@
-
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { Film } from 'lucide-react';
-import { Button } from "@/components/ui/button";
-import { useAuth } from '@/contexts/AuthContext';
+import { Button } from "./ui/button.tsx";
+import { useAuth } from '../contexts/AuthContext.tsx';
 
 // Import the new component files
-import NavLinks from './navbar/NavLinks';
-import NotificationsDropdown from './navbar/NotificationsDropdown';
-import GlobalSearch from '@/components/search/GlobalSearch';
-import UserProfileMenu from './navbar/UserProfileMenu';
-import ChatMenu from './navbar/ChatMenu';
-import { MobileNav } from "./navbar/MobileNav";
+import NavLinks from './navbar/NavLinks.tsx';
+import NotificationsDropdown from './navbar/NotificationsDropdown.tsx';
+import GlobalSearch from './search/GlobalSearch.tsx';
+import UserProfileMenu from './navbar/UserProfileMenu.tsx';
+import ChatMenu from './navbar/ChatMenu.tsx';
+import { MobileNav } from "./navbar/MobileNav.tsx";
 
 const Navbar = () => {
   const { user } = useAuth();

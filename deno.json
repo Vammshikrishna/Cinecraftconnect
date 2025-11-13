@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
+  "imports": {
+    "@/": "./src/"
+  },
+   "exclude": [
+    "src/",
+    "public/"
+  ]
+}
