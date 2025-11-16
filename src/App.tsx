@@ -9,25 +9,24 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ui/error-boundary";
 
 // Page Imports
-const Index = lazy(() => import("./pages/Index.tsx"));
-const Auth = lazy(() => import("./pages/Auth.tsx"));
-const Feed = lazy(() => import("./pages/Feed.tsx"));
-const Profile = lazy(() => import("./pages/Profile.tsx"));
-const PublicProfile = lazy(() => import("./pages/PublicProfile.tsx"));
-const Projects = lazy(() => import("./pages/Projects.tsx"));
-const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage.tsx"));
-const Jobs = lazy(() => import("./pages/Jobs.tsx"));
-const Network = lazy(() => import("./pages/Network.tsx"));
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const Analytics = lazy(() => import("./pages/Analytics.tsx"));
-const LearningPortal = lazy(() => import("./pages/LearningPortal.tsx"));
-const CraftPage = lazy(() => import("./pages/CraftPage.tsx"));
-const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage.tsx"));
-const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms.tsx"));
-const ChatsList = lazy(() => import("./pages/ChatsList.tsx"));
-const ChatPage = lazy(() => import("./pages/ChatPage.tsx"));
-const DirectMessagePage = lazy(() => import("./pages/DirectMessagePage.tsx"));
-const Settings = lazy(() => import("./pages/Settings.tsx"));
+const Index = lazy(() => import("./pages/Index"));
+const Auth = lazy(() => import("./pages/Auth"));
+const Feed = lazy(() => import("./pages/Feed"));
+const Profile = lazy(() => import("./pages/Profile"));
+const PublicProfile = lazy(() => import("./pages/PublicProfile"));
+const Projects = lazy(() => import("./pages/Projects"));
+const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage"));
+const Jobs = lazy(() => import("./pages/Jobs"));
+const Network = lazy(() => import("./pages/Network"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const LearningPortal = lazy(() => import("./pages/LearningPortal"));
+const CraftPage = lazy(() => import("./pages/CraftPage"));
+const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
+const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
+const ChatsList = lazy(() => import("./pages/ChatsList"));
+const ChatPage = lazy(() => import("./pages/ChatPage"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -65,8 +64,7 @@ const App = () => {
             <Route path="/learn" element={<LearningPortal />} />
             <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
             <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
-            <Route path="/chats/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-            <Route path="/messages/:userId" element={<ProtectedRoute><DirectMessagePage /></ProtectedRoute>} />
+            <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             
             <Route path="*" element={<NotFound />} />

@@ -1,24 +1,46 @@
 import { supabase } from '@/integrations/supabase/client';
 
 export const fetchJoinRequests = async (roomId: string) => {
-  const { data, error } = await supabase
+  // First, fetch the join requests for the given room
+  const { data: requests, error: requestsError } = await supabase
     .from('room_join_requests')
-    .select(`
-      id,
-      created_at,
-      status,
-      profiles (
-        user_id,
-        username,
-        avatar_url
-      )
-    `)
+    .select('id, created_at, status, user_id')
     .eq('room_id', roomId)
     .eq('status', 'pending');
 
-  if (error) {
-    throw new Error(`Failed to fetch join requests: ${error.message}`);
+  if (requestsError) {
+    throw new Error(`Failed to fetch join requests: ${requestsError.message}`);
   }
+
+  if (!requests || requests.length === 0) {
+    return [];
+  }
+
+  // Next, extract the user IDs from the requests
+  const userIds = requests.map(req => req.user_id);
+
+  // Then, fetch the profiles for those user IDs
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, username, avatar_url')
+    .in('id', userIds);
+
+  if (profilesError) {
+    throw new Error(`Failed to fetch profiles for join requests: ${profilesError.message}`);
+  }
+
+  // Create a map of profiles by user ID for easy lookup
+  const profilesById = profiles.reduce((acc, profile) => {
+    acc[profile.id] = profile;
+    return acc;
+  }, {} as { [key: string]: { id: string; username: string; avatar_url: string; } });
+
+  // Finally, combine the requests with their corresponding profiles
+  const data = requests.map(req => ({
+    ...req,
+    profiles: profilesById[req.user_id] || null
+  }));
+
   return data;
 };
 

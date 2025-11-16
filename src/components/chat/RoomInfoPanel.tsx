@@ -29,8 +29,9 @@ interface JoinRequest {
   id: number;
   created_at: string;
   status: string;
+  user_id: string;
   profiles: {
-    user_id: string;
+    id: string;
     username: string;
     avatar_url: string;
   } | null;
@@ -224,7 +225,7 @@ const RoomInfoPanel = ({ roomId, roomTitle, roomDescription, onClose, onRoomUpda
                                 <span className="font-medium">{request.profiles?.username}</span>
                             </div>
                             <div className="flex gap-2">
-                                <Button size="sm" variant="ghost" onClick={() => handleApprove(request.id, request.profiles.user_id)}>Approve</Button>
+                                <Button size="sm" variant="ghost" onClick={() => handleApprove(request.id, request.user_id)}>Approve</Button>
                                 <Button size="sm" variant="destructive" onClick={() => handleDeny(request.id)}>Deny</Button>
                             </div>
                         </div>
