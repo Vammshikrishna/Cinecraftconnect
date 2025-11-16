@@ -1,10 +1,10 @@
 import React, { Suspense } from "react";
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AuthProvider } from "./contexts/AuthContext.tsx";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
 
-// Force a hard reload to apply the new styles
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <Suspense fallback={
@@ -12,7 +12,9 @@ createRoot(document.getElementById("root")!).render(
         <LoadingSpinner size="lg" />
       </div>
     }>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </Suspense>
   </React.StrictMode>
 );

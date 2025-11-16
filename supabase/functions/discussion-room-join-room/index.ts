@@ -7,18 +7,29 @@ if (!Deno.env.get("SUPABASE_URL") || !Deno.env.get("SUPABASE_ANON_KEY")) {
 }
 
 Deno.serve(async (req: Request) => {
+  const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
     const auth = req.headers.get("Authorization");
     if (!auth) {
       return new Response(JSON.stringify({ error: "Authorization header is missing" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: jsonHeaders,
         status: 401,
       });
     }
+
+    const parts = auth.split(" ");
+    if (parts.length !== 2 || parts[0] !== "Bearer") {
+      return new Response(JSON.stringify({ error: "Invalid Authorization header format" }), {
+        headers: jsonHeaders,
+        status: 401,
+      });
+    }
+    const token = parts[1];
 
     const body = await req.json().catch(() => ({}));
     const { room_id } = body as { room_id?: string };
@@ -26,7 +37,7 @@ Deno.serve(async (req: Request) => {
     if (!room_id) {
       return new Response(JSON.stringify({ error: "Room ID is required" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: jsonHeaders,
       });
     }
 
@@ -35,63 +46,134 @@ Deno.serve(async (req: Request) => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       return new Response(JSON.stringify({ error: "Server misconfiguration" }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: jsonHeaders,
       });
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: auth } },
+    // Verify user via Supabase Auth REST endpoint
+    const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
     });
 
-    const userRes = await supabase.auth.getUser();
-    const user = (userRes.data as any)?.user ?? null;
-    if (userRes.error || !user) {
-      return new Response(JSON.stringify({ error: userRes.error?.message || "User not authenticated" }), {
+    if (!userResp.ok) {
+      // If unauthorized or token invalid, return 401
+      return new Response(JSON.stringify({ error: "User not authenticated" }), {
         status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: jsonHeaders,
       });
     }
 
-    // Check existing membership with a safe query
-    const existingRes = await supabase
-      .from("room_members")
-      .select("user_id")
-      .eq("room_id", room_id)
-      .eq("user_id", user.id)
-      .maybeSingle(); // returns null data if not found without an error
+    const user = await userResp.json(); // shape: { id, email, ... }
 
-    if (existingRes.error) {
-      return new Response(JSON.stringify({ error: existingRes.error.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // Create a supabase client for DB operations (using anon key + Authorization header)
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
 
-    if (existingRes.data) {
-      return new Response(JSON.stringify({ message: "User is already a member of this room" }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Insert new membership and return the created row
-    const insertRes = await supabase
-      .from("room_members")
-      .insert({ room_id, user_id: user.id })
-      .select()
+    // Fetch room metadata
+    const { data: room, error: roomError } = await supabase
+      .from("discussion_rooms")
+      .select("room_type, creator_id")
+      .eq("id", room_id)
       .single();
 
-    if (insertRes.error) {
-      return new Response(JSON.stringify({ error: insertRes.error.message }), {
+    if (roomError) {
+      return new Response(JSON.stringify({ error: roomError.message }), {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: jsonHeaders,
       });
     }
 
-    return new Response(JSON.stringify(insertRes.data ?? {}), {
-      status: 201,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    if (!room) {
+      return new Response(JSON.stringify({ error: "Room not found" }), {
+        status: 404,
+        headers: jsonHeaders,
+      });
+    }
+
+    if (room.room_type === "private") {
+      // Check for existing join request
+      const { data: existingRequest, error: requestError } = await supabase
+        .from("room_join_requests")
+        .select("id")
+        .eq("room_id", room_id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (requestError) {
+        return new Response(JSON.stringify({ error: requestError.message }), {
+          status: 500,
+          headers: jsonHeaders,
+        });
+      }
+
+      if (existingRequest) {
+        return new Response(JSON.stringify({ message: "Join request already sent" }), {
+          status: 200,
+          headers: jsonHeaders,
+        });
+      }
+
+      // Create join request
+      const { data: requestData, error: insertRequestError } = await supabase
+        .from("room_join_requests")
+        .insert({ room_id, user_id: user.id })
+        .select()
+        .single();
+
+      if (insertRequestError) {
+        return new Response(JSON.stringify({ error: insertRequestError.message }), {
+          status: 500,
+          headers: jsonHeaders,
+        });
+      }
+
+      return new Response(JSON.stringify(requestData), {
+        status: 202,
+        headers: jsonHeaders,
+      });
+    } else {
+      // Public room: add member directly if not present
+      const existingRes = await supabase
+        .from("room_members")
+        .select("user_id")
+        .eq("room_id", room_id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (existingRes.error) {
+        return new Response(JSON.stringify({ error: existingRes.error.message }), {
+          status: 500,
+          headers: jsonHeaders,
+        });
+      }
+
+      if (existingRes.data) {
+        return new Response(JSON.stringify({ message: "User is already a member of this room" }), {
+          status: 200,
+          headers: jsonHeaders,
+        });
+      }
+
+      const insertRes = await supabase
+        .from("room_members")
+        .insert({ room_id, user_id: user.id })
+        .select()
+        .single();
+
+      if (insertRes.error) {
+        return new Response(JSON.stringify({ error: insertRes.error.message }), {
+          status: 500,
+          headers: jsonHeaders,
+        });
+      }
+
+      return new Response(JSON.stringify(insertRes.data ?? {}), {
+        status: 201,
+        headers: jsonHeaders,
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return new Response(JSON.stringify({ error: message }), {

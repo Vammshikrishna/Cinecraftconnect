@@ -8,6 +8,7 @@ port = 54322
 
 [auth]
 enable_signup = true
+email_confirm = false
 
 [studio]
 port = 54323
@@ -33,29 +34,23 @@ import_map = "./import_map.json"
 [functions.webrtc-signaling]
 import_map = "./import_map.json"
 
-[functions."discussion-room/create-room"]
+[functions.discussion-room-create]
 import_map = "./import_map.json"
 
-[functions."discussion-room/delete-room"]
+[functions.discussion-room-get-messages]
 import_map = "./import_map.json"
 
-[functions."discussion-room/get-messages"]
+[functions.discussion-room-join-room]
 import_map = "./import_map.json"
 
-[functions."discussion-room/get-room"]
+[functions.discussion-room-leave-room]
 import_map = "./import_map.json"
 
-[functions."discussion-room/get-rooms"]
+[functions.discussion-room-list-rooms]
 import_map = "./import_map.json"
 
-[functions."discussion-room/join-room"]
+[functions.discussion-room-update-room]
 import_map = "./import_map.json"
 
-[functions."discussion-room/list-rooms"]
-import_map = "./import_map.json"
-
-[functions."discussion-room/send-message"]
-import_map = "./import_map.json"
-
-[functions."discussion-room/update-room"]
+[functions.send-notification]
 import_map = "./import_map.json"

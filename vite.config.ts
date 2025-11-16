@@ -1,25 +1,20 @@
 /// <reference types="vitest" />
 /// <reference types="vite/client" />
-import path from "node:path"
 import react from "@vitejs/plugin-react"
 import { defineConfig, mergeConfig } from "vite"
 import { defineConfig as defineVitestConfig } from "vitest/config"
 import tailwindcss from 'tailwindcss';
 import autoprefixer from 'autoprefixer';
+import tsconfigPaths from 'vite-tsconfig-paths';
 
 const viteConfig = defineConfig({
-  plugins: [react()],
+  plugins: [react(), tsconfigPaths()],
   css: {
     postcss: {
       plugins: [
         tailwindcss(),
         autoprefixer(),
       ],
-    },
-  },
-  resolve: {
-    alias: {
-      "@": path.resolve(process.cwd(), "src"),
     },
   },
   server: {
