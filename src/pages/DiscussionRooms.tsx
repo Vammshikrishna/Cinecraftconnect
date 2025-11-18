@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, Search, MessageSquare, PlusCircle } from 'lucide-react';
-import EnhancedRealTimeChat from '@/components/chat/EnhancedRealTimeChat';
+import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 
 // --- DATA INTERFACES ---
 interface Profile {
@@ -139,15 +139,18 @@ const DiscussionRoomsPage = () => {
 
   if (selectedRoom) {
     return (
-      <div className="fixed inset-0 bg-gray-900 text-white flex flex-col pt-16">
-          <EnhancedRealTimeChat
-            roomId={selectedRoom.id}
-            roomTitle={selectedRoom.title}
-            roomDescription={selectedRoom.description}
-            onClose={() => setSelectedRoom(null)}
-            onRoomUpdated={handleRoomUpdated}
-          />
-      </div>
+        <div className="fixed inset-0 bg-gray-900 text-white flex flex-col pt-16">
+            <DiscussionChatInterface
+                roomId={selectedRoom.id}
+                userRole="member"
+                roomTitle={selectedRoom.title}
+                roomDescription={selectedRoom.description}
+                categoryId={selectedRoom.category_id}
+                categories={categories} 
+                onClose={() => setSelectedRoom(null)}
+                onRoomUpdated={handleRoomUpdated}
+            />
+        </div>
     );
   }
 

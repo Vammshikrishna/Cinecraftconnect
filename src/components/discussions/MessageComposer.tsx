@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Paperclip, Send, Smile } from 'lucide-react';
 import { z } from 'zod';
 
@@ -15,37 +13,26 @@ const messageSchema = z.object({
 });
 
 interface MessageComposerProps {
-  onSend: (content: string, priority: string, visibilityRole: string) => Promise<void>;
-  userRole: 'creator' | 'admin' | 'moderator' | 'member';
+  onSend: (content: string) => Promise<void>;
   disabled?: boolean;
   onTyping?: () => void;
   onStopTyping?: () => void;
 }
 
-export const MessageComposer = ({ onSend, userRole, disabled, onTyping, onStopTyping }: MessageComposerProps) => {
+export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: MessageComposerProps) => {
   const [content, setContent] = useState('');
-  const [priority, setPriority] = useState<string>('normal');
-  const [visibilityRole, setVisibilityRole] = useState<string>('all');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const canSetVisibility = ['creator', 'admin', 'moderator'].includes(userRole);
 
   const handleSend = async () => {
     setError(null);
 
     try {
-      // Validate message
       messageSchema.parse({ content });
-
       setSending(true);
       onStopTyping?.();
-      await onSend(content, priority, visibilityRole);
-      
-      // Reset form
+      await onSend(content);
       setContent('');
-      setPriority('normal');
-      setVisibilityRole('all');
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0].message);
@@ -75,39 +62,6 @@ export const MessageComposer = ({ onSend, userRole, disabled, onTyping, onStopTy
 
   return (
     <div className="space-y-3 border-t border-border pt-4">
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <Label className="text-sm mb-1 block">Priority</Label>
-          <Select value={priority} onValueChange={setPriority}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="normal">Normal</SelectItem>
-              <SelectItem value="high">High Priority</SelectItem>
-              <SelectItem value="critical">Critical</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {canSetVisibility && (
-          <div className="flex-1">
-            <Label className="text-sm mb-1 block">Visible to</Label>
-            <Select value={visibilityRole} onValueChange={setVisibilityRole}>
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Everyone</SelectItem>
-                <SelectItem value="moderator">Moderators+</SelectItem>
-                <SelectItem value="admin">Admins Only</SelectItem>
-                <SelectItem value="creator">Creator Only</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-      </div>
-
       <div className="relative">
         <Textarea
           value={content}

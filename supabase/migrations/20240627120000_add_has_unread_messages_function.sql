@@ -8,7 +8,7 @@ DECLARE
 BEGIN
   SELECT EXISTS (
     -- Unread direct messages
-    (SELECT 1 FROM messages WHERE receiver_id = auth.uid() AND is_read = FALSE LIMIT 1)
+    (SELECT 1 FROM direct_messages WHERE recipient_id = auth.uid() AND sender_id != auth.uid() LIMIT 1)
     UNION ALL
     -- Unread messages in discussion rooms
     (SELECT 1 

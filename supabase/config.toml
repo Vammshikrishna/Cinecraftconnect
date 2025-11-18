@@ -5,10 +5,10 @@ port = 54321
 
 [db]
 port = 54322
+major_version = 15
 
 [auth]
 enable_signup = true
-email_confirm = false
 
 [studio]
 port = 54323

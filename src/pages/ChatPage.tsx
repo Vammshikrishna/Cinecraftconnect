@@ -65,9 +65,10 @@ const ChatPage = () => {
   }
 
   return (
-    <div className="h-screen">
+    <div className="h-screen pt-16">
       <RealTimeChat 
         roomId={channelId} 
+        partnerId={partner.id}
         partnerName={partner.full_name}
         partnerAvatarUrl={partner.avatar_url}
         onBackClick={() => navigate('/chats')}

@@ -48,8 +48,8 @@ export const useUnreadMessages = () => {
     };
 
     const directMessagesChannel = supabase
-      .channel('public:messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, handleNewMessage)
+      .channel('public:direct_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, handleNewMessage)
       .subscribe();
 
     const roomMessagesChannel = supabase

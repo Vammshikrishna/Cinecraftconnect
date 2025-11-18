@@ -1,113 +1,177 @@
 
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { X, LogOut, Loader2, Phone, MessageSquare } from "lucide-react";
-import RealTimeChat from './RealTimeChat';
-import VideoChat from './VideoChat';
-import RoomInfoPanel from './RoomInfoPanel';
+import { useAuth } from '@/contexts/AuthContext';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { Send, ArrowLeft, MoreVertical } from 'lucide-react';
+import { format, isToday, isYesterday } from 'date-fns';
+
+interface Message {
+  id: string;
+  content: string;
+  created_at: string;
+  sender_id: string;
+  sender_profile: {
+    full_name: string;
+    avatar_url: string;
+  } | null;
+}
 
 interface EnhancedRealTimeChatProps {
   roomId: string;
-  roomTitle: string;
-  roomDescription: string | null;
   onClose: () => void;
-  onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
 }
 
-const EnhancedRealTimeChat = ({ roomId, roomTitle, roomDescription, onClose, onRoomUpdated }: EnhancedRealTimeChatProps) => {
+const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) => {
   const { user } = useAuth();
-  const { toast } = useToast();
-  const [isLeaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
-  const [currentView, setCurrentView] = useState('chat');
-  const [currentTitle, setCurrentTitle] = useState(roomTitle);
-  const [currentDescription, setCurrentDescription] = useState(roomDescription);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [recipient, setRecipient] = useState<{ full_name: string, avatar_url: string} | null>(null);
 
-  const handleLeaveRoom = async () => {
-    if (!user) {
-      toast({ title: "Authentication error", description: "You must be logged in to leave a room.", variant: "destructive" });
-      return;
-    }
-    setIsLeaving(true);
-    try {
-      const { error } = await supabase.from('room_members').delete().match({ room_id: roomId, user_id: user.id });
-      if (error) throw error;
-      toast({ title: "Success", description: `You have left the room "${currentTitle}".` });
-      onClose();
-    } catch (error: any) {
-      toast({ title: "Error leaving room", description: error.message, variant: "destructive" });
-    } finally {
-      setIsLeaving(false);
-      setLeaveConfirmOpen(false);
-    }
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  const handleRoomUpdated = (newTitle: string, newDescription: string) => {
-    setCurrentTitle(newTitle);
-    setCurrentDescription(newDescription);
-    onRoomUpdated(roomId, newTitle, newDescription);
-  }
-
-  const renderContent = () => {
-    switch (currentView) {
-      case 'info':
-        return <RoomInfoPanel roomId={roomId} roomTitle={currentTitle} roomDescription={currentDescription} onClose={() => setCurrentView('chat')} onRoomUpdated={handleRoomUpdated} />;
-      case 'video':
-        return <VideoChat roomId={roomId} roomTitle={currentTitle} />;
-      case 'chat':
-      default:
-        return (
-            <div className="flex-1 overflow-auto bg-gray-900/50" style={{ backgroundImage: "url('/img/chat-bg.png')", backgroundSize: '350px', backgroundBlendMode: 'overlay' }}>
-                <RealTimeChat roomId={roomId} />
-            </div>
-        )
+  const fetchMessages = useCallback(async () => {
+    if (!roomId) return;
+    const { data, error } = await supabase.rpc('get_messages_for_channel', { p_channel_id: roomId });
+    if (error) {
+      console.error('Error fetching messages:', error);
+      setMessages([]);
+    } else {
+      setMessages(data as Message[]);
     }
-  }
+    setLoading(false);
+  }, [roomId]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const fetchRecipient = async () => {
+        const { data, error } = await supabase.rpc('get_other_user_in_channel', { p_channel_id: roomId, p_user_id: user?.id });
+        if (error) console.error('Error fetching recipient:', error);
+        else setRecipient(data[0]);
+    };
+
+    fetchRecipient();
+
+    const channel = supabase
+      .channel(`realtime-chat:${roomId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        (payload) => {
+          fetchMessages();
+        }
+      ).subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, fetchMessages, user?.id]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newMessage.trim() === '' || !user || !roomId) return;
+
+    const { error } = await supabase.from('direct_messages').insert({
+      content: newMessage.trim(),
+      sender_id: user.id,
+      channel_id: roomId,
+      recipient_id: '' // This should be determined server-side or via another method
+    });
+
+    if (error) {
+      console.error('Error sending message:', error);
+    } else {
+      setNewMessage('');
+    }
+  };
+  
+    const formatTimestamp = (timestamp: string) => {
+        const date = new Date(timestamp);
+        if (isToday(date)) {
+        return format(date, 'p'); // e.g., 5:30 PM
+        } else if (isYesterday(date)) {
+        return 'Yesterday';
+        } else {
+        return format(date, 'MMM d'); // e.g., Jul 23
+        }
+    };
+
 
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
-      <div className="flex-shrink-0 flex justify-between items-center p-4 pl-6 border-b border-gray-700 bg-gray-800">
-        <div onClick={() => setCurrentView(currentView === 'info' ? 'chat' : 'info')} className="cursor-pointer">
-          <h2 className="text-xl font-bold">{currentTitle}</h2>
-          {currentDescription && (
-            <p className="text-sm text-gray-400 mt-1 max-w-md truncate">{currentDescription}</p>
-          )}
+      <header className="flex items-center justify-between p-4 border-b border-gray-700">
+        <div className="flex items-center gap-3">
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-800">
+                <ArrowLeft className="h-6 w-6" />
+            </button>
+            {recipient && (
+                <>
+                    <Avatar>
+                        <AvatarImage src={recipient.avatar_url} />
+                        <AvatarFallback>{recipient.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                    </Avatar>
+                    <h2 className="font-bold text-lg">{recipient.full_name}</h2>
+                </>
+            )}
         </div>
-        <div className="flex items-center gap-2">
-           <Button onClick={() => setCurrentView(currentView === 'video' ? 'chat' : 'video')} variant="ghost" size="icon" className="text-gray-400 hover:text-white" title={currentView === 'video' ? "Switch to Chat" : "Switch to Video Call"}>
-                {currentView === 'video' ? <MessageSquare className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
+        <button className="p-2 rounded-full hover:bg-gray-800">
+            <MoreVertical className="h-6 w-6" />
+        </button>
+      </header>
+      
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
+      ) : (
+        <>
+          <div className="flex-1 overflow-y-auto p-4 pr-4">
+              {messages.map((message) => {
+                const isSender = message.sender_id === user?.id;
+                return (
+                  <div key={message.id} className={`flex items-end gap-3 my-4 ${isSender ? 'flex-row-reverse' : ''}`}>
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={message.sender_profile?.avatar_url} />
+                      <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                    </Avatar>
+                    <div className={`p-3 rounded-2xl max-w-xs lg:max-w-md ${isSender ? 'bg-primary text-primary-foreground' : 'bg-gray-700'}`}>
+                      <p className="text-sm break-words">{message.content}</p>
+                    </div>
+                     <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
+                  </div>
+                );
+              })}
+              <div ref={messagesEndRef} />
+          </div>
+          <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-4 border-t border-gray-700">
+            <Input
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Send a message..."
+              className="flex-1 bg-gray-800 border-gray-600 rounded-full"
+              autoComplete="off"
+            />
+            <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>
+              <Send className="h-5 w-5" />
             </Button>
-          <Dialog open={isLeaveConfirmOpen} onOpenChange={setLeaveConfirmOpen}>
-            <DialogTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-red-500/80 hover:text-red-500 hover:bg-red-500/10" title="Leave Room">
-                <LogOut className="h-5 w-5" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-gray-800 border-gray-700 text-white">
-              <DialogHeader>
-                <DialogTitle>Leave Room</DialogTitle>
-                <DialogDescription className="text-gray-400 pt-2">
-                  Are you sure you want to leave "{currentTitle}"? You may need to be re-invited if this is a private room.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="ghost" onClick={() => setLeaveConfirmOpen(false)}>Cancel</Button>
-                <Button variant="destructive" onClick={handleLeaveRoom} disabled={isLeaving}>
-                  {isLeaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Leave
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-          <Button onClick={onClose} variant="ghost" size="icon" className="text-gray-400 hover:text-white ml-2" title="Close">
-            <X className="h-6 w-6" />
-          </Button>
-        </div>
-      </div>
-      {renderContent()}
+          </form>
+        </>
+      )}
     </div>
   );
 };

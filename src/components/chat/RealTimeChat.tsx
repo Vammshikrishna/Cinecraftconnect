@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { Send, Sparkles, ArrowLeft } from 'lucide-react';
+import { Send, ArrowLeft } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 
 interface Message {
@@ -22,12 +22,13 @@ interface Message {
 
 interface RealTimeChatProps {
   roomId: string;
+  partnerId: string;
   partnerName: string;
   partnerAvatarUrl: string;
   onBackClick: () => void;
 }
 
-const RealTimeChat = ({ roomId, partnerName, partnerAvatarUrl, onBackClick }: RealTimeChatProps) => {
+const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBackClick }: RealTimeChatProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -72,20 +73,8 @@ const RealTimeChat = ({ roomId, partnerName, partnerAvatarUrl, onBackClick }: Re
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim() === '' || !user || !roomId) return;
-    const { error } = await supabase.from('direct_messages').insert({ content: newMessage.trim(), sender_id: user.id, channel_id: roomId, recipient_id: partnerName }); // Note: recipientId logic might need adjustment
+    const { error } = await supabase.from('direct_messages').insert({ content: newMessage.trim(), sender_id: user.id, channel_id: roomId, recipient_id: partnerId }); // Note: recipientId logic might need adjustment
     if (error) console.error('Error sending message:', error); else setNewMessage('');
-  };
-
-  const getSuggestedReply = async (lastMessage: string): Promise<string> => {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return `That's interesting! Can you tell me more about "${lastMessage.substring(0, 20)}..."?`;
-  };
-
-  const handleSuggestReply = async () => {
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage) return;
-    const suggestion = await getSuggestedReply(lastMessage.content);
-    setNewMessage(suggestion);
   };
 
   const formatTimestamp = (timestamp: string) => {
@@ -142,9 +131,6 @@ const RealTimeChat = ({ roomId, partnerName, partnerAvatarUrl, onBackClick }: Re
               className="flex-1 bg-gray-800 border-gray-600 rounded-full"
               autoComplete="off"
             />
-            <Button type="button" size="icon" className="rounded-full bg-purple-600 hover:bg-purple-700" onClick={handleSuggestReply} disabled={messages.length === 0}>
-              <Sparkles className="h-5 w-5" />
-            </Button>
             <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>
               <Send className="h-5 w-5" />
             </Button>

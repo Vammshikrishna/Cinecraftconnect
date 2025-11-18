@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   MessageCircle, 
   CheckSquare, 
@@ -12,7 +12,14 @@ import {
   ChevronRight,
   ArrowLeft
 } from 'lucide-react';
-import { EnhancedChatInterface } from '@/components/discussions/EnhancedChatInterface';
+import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
+import Tasks from '@/components/projects/Tasks';
+import Files from '@/components/projects/Files';
+import CallSheet from '@/components/projects/CallSheet';
+import ShotList from '@/components/projects/ShotList';
+import LegalDocs from '@/components/projects/LegalDocs';
+import BudgetSched from '@/components/projects/BudgetSched';
+import Team from '@/components/projects/Team';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -21,19 +28,20 @@ interface ProjectSpaceProps {
   projectId: string;
   projectTitle: string;
   projectDescription: string;
-  roomId: string;
+  roomId: string; // Keep roomId specifically for the chat interface
 }
 
 type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched';
 
 export const ProjectSpace = ({ 
+  projectId,
   projectTitle,
   projectDescription,
-  roomId
+  roomId,
 }: ProjectSpaceProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [userRole, setUserRole] = useState<'creator' | 'admin' | 'moderator' | 'member'>('member');
+  const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member'>('member');
   const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
@@ -68,16 +76,20 @@ export const ProjectSpace = ({
     }
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // CORRECTED: Fetch user role from the new project_members table
   useEffect(() => {
     const fetchUserRole = async () => {
-      if (!user || !roomId) return;
+      if (!user || !projectId) return;
       try {
-        const { data: membership } = await supabase
-          .from('room_members')
+        const { data: membership, error } = await supabase
+          .from('project_members')
           .select('role')
-          .eq('room_id', roomId)
+          .eq('project_id', projectId)
           .eq('user_id', user.id)
           .single();
+
+        if (error) throw error;
+
         if (membership) {
           setUserRole(membership.role as any);
         }
@@ -86,7 +98,7 @@ export const ProjectSpace = ({
       }
     };
     fetchUserRole();
-  }, [roomId, user]);
+  }, [projectId, user]);
 
   const collaborationNavItems = [
     { id: 'chat' as ActiveSection, label: 'Chat', icon: MessageCircle },
@@ -105,22 +117,26 @@ export const ProjectSpace = ({
       { id: 'team' as ActiveSection, label: 'Team', icon: Users },
   ]
 
+  // CORRECTED: Pass projectId to all child components except for the chat.
   const renderContent = () => {
     switch (activeSection) {
       case 'chat':
-        return <EnhancedChatInterface roomId={roomId} userRole={userRole} />;
+        // The chat interface is the only component that still needs the specific roomId.
+        return <ProjectChatInterface roomId={roomId} userRole={userRole} roomTitle={projectTitle} roomDescription={projectDescription} onClose={() => navigate('/projects')} />;
       case 'tasks':
+        return <Tasks project_id={projectId} />;
       case 'files':
+        return <Files project_id={projectId} />;
       case 'call-sheet':
+        return <CallSheet project_id={projectId} />;
       case 'shot-list':
+        return <ShotList project_id={projectId} />;
       case 'legal-docs':
+        return <LegalDocs project_id={projectId} />;
       case 'budget-sched':
+        return <BudgetSched project_id={projectId} />;
       case 'team':
-        return (
-          <div className="p-8 h-full flex items-center justify-center bg-background">
-            <h3 className="text-xl font-semibold">{activeSection.replace('-', ' ')} functionality is coming soon.</h3>
-          </div>
-        );
+        return <Team project_id={projectId} />;
       default:
         return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
     }
