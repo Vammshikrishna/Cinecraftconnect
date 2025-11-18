@@ -8,20 +8,16 @@ interface Task {
     completed: boolean;
 }
 
-// CORRECTED: Props interface now expects project_id
 interface TasksProps {
     project_id: string;
 }
 
-// CORRECTED: Component now accepts project_id
 const Tasks = ({ project_id }: TasksProps) => {
-    // CORRECTED: useRealtimeData is now called with project_id
-    const { data: tasks, error } = useRealtimeData<Task>('tasks', project_id);
+    const { data: tasks, error } = useRealtimeData<Task>('tasks', 'project_id', project_id);
     const [newTask, setNewTask] = useState('');
 
     const handleAddTask = async () => {
         if (newTask.trim() === '') return;
-        // CORRECTED: The insert query now uses the correct project_id column
         await supabase
             .from('tasks')
             .insert([{ title: newTask, completed: false, project_id: project_id }]);

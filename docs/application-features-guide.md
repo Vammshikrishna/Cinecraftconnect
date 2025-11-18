@@ -91,35 +91,52 @@ This is a comprehensive creative collaboration platform designed for artists, fi
 - Follow other creators
 - Engage with platform announcements
 
-### 3. Discussion Rooms & Chat
-**Location**: `src/pages/DiscussionRooms.tsx`, `src/components/chat/`
+### 3. Collaboration & Communication
+This platform offers two primary modes of real-time interaction: general Discussion Rooms and project-specific Project Spaces.
+
+#### a. Discussion Rooms
+**Location**: `src/pages/DiscussionRooms.tsx`
+
+This feature provides a lobby of general-purpose chat rooms where users can create or join discussions on a variety of topics. They are not tied to specific projects and serve as a community hub for networking and topic-based conversations.
 
 **Features**:
-- Video-enabled discussion rooms
+- Public and private room creation
+- Browseable and searchable list of rooms
 - Real-time text chat
-- Audio/video call functionality
-- Room member management
-- Presence tracking (online users)
-- Message history and persistence
-
-**Components**:
-- `EnhancedRealTimeChat` - Full-featured chat interface
-- `DiscussionRoomCard` - Room preview and joining
-- `VoiceChat` - Audio communication
-- `TextChat` - Text messaging
+- User presence and typing indicators
 
 **Use Cases**:
-- Host virtual creative sessions
-- Collaborate on projects in real-time
-- Conduct video meetings
-- Create topic-specific discussion spaces
-- Network with other professionals
+- Host virtual Q&A sessions or workshops.
+- Create topic-specific discussion spaces (e.g., 'Cinematography Tips', 'Screenwriting Feedback').
+- Network with other professionals in a casual setting.
+
+#### b. Project Spaces
+**Location**: `src/pages/ProjectSpacePage.tsx`, `src/components/projects/ProjectSpace.tsx`
+
+When a new project is created, a dedicated "Project Space" is automatically generated for it. This space serves as the central collaboration hub for all project members.
+
+**Features**:
+- A dedicated chat interface integrated within the project view.
+- Real-time text chat, audio/video calling, and file sharing specifically for the project team.
+- Seamless integration with other project management tools like Tasks, Files, and Budgets.
+- Access is restricted to members of the project, ensuring privacy.
+
+**Components**:
+- `ProjectSpace` - The main container for the project collaboration tools.
+- `DiscussionChatInterface` - The core chat UI used within Project Spaces.
+- `VideoCallManager` - Manages video and audio calls for the team.
+
+**Use Cases**:
+- Centralized communication for a film crew during production.
+- Real-time collaboration on a design project.
+- Private meetings and discussions for project stakeholders.
 
 ### 4. Projects & Portfolio Management
-**Location**: `src/pages/Projects.tsx`, `src/components/portfolio/`
+**Location**: `src/pages/Projects.tsx`, `src/pages/ProjectSpacePage.tsx`, `src/components/portfolio/`
 
 **Features**:
 - Project creation and management
+- **Dedicated Project Space for each project**, providing integrated real-time chat, video calls, and collaboration tools.
 - Portfolio grid display
 - File upload and organization
 - Project collaboration tools
@@ -353,13 +370,14 @@ This is a comprehensive creative collaboration platform designed for artists, fi
 ### Database Schema
 **Key Tables**:
 - `profiles` - User profile information
-- `posts` - Feed content and updates
-- `discussion_rooms` - Chat room metadata
-- `room_messages` - Chat messages
-- `room_members` - Room membership
-- `notifications` - User notifications
-- `projects` - Project information
-- `portfolio_items` - Portfolio pieces
+- `projects` - Core project data.
+- `project_members` - Links users to projects.
+- `project_spaces` - General discussion rooms and project-specific collaboration spaces.
+- `project_space_messages` - Messages within any project_space.
+- `project_space_members` - Links users to project_spaces.
+- `posts` - Feed content and updates.
+- `notifications` - User notifications.
+- `portfolio_items` - Portfolio pieces.
 
 ### Security Features
 - Row Level Security (RLS) policies

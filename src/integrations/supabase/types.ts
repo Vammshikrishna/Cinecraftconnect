@@ -1,3 +1,4 @@
+
 export type Json =
   | string
   | number
@@ -7,213 +8,136 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
-      comments: {
+      project_spaces: {
         Row: {
-          content: string
-          created_at: string
           id: string
-          parent_comment_id: string | null
-          post_id: string
-          user_id: string
+          name: string
+          description: string | null
+          creator_id: string
+          created_at: string
         }
         Insert: {
-          content: string
-          created_at?: string
           id?: string
-          parent_comment_id?: string | null
-          post_id: string
-          user_id: string
+          name: string
+          description?: string | null
+          creator_id: string
+          created_at?: string
         }
         Update: {
+          id?: string
+          name?: string
+          description?: string | null
+          creator_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_spaces_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      project_space_members: {
+        Row: {
+          project_space_id: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          project_space_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          project_space_id?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_space_members_project_space_id_fkey"
+            columns: ["project_space_id"]
+            isOneToOne: false
+            referencedRelation: "project_spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_space_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      project_space_messages: {
+        Row: {
+          id: string
+          project_space_id: string
+          user_id: string
+          content: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_space_id: string
+          user_id: string
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_space_id?: string
+          user_id?: string
           content?: string
           created_at?: string
-          id?: string
-          parent_comment_id?: string | null
-          post_id?: string
-          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "comments_parent_comment_id_fkey"
-            columns: ["parent_comment_id"]
+            foreignKeyName: "project_space_messages_project_space_id_fkey"
+            columns: ["project_space_id"]
             isOneToOne: false
-            referencedRelation: "comments"
+            referencedRelation: "project_spaces"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      conversations: {
-        Row: {
-          created_at: string
-          id: string
-          updated_at: string
-          user1_id: string
-          user2_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user1_id: string
-          user2_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          updated_at?: string
-          user1_id?: string
-          user2_id?: string
-        }
-        Relationships: []
-      }
-      discussion_rooms: {
-        Row: {
-          category_id: string | null
-          created_at: string
-          creator_id: string | null
-          description: string | null
-          id: string
-          last_activity_at: string | null
-          name: string
-          room_type: Database["public"]["Enums"]["room_type"] | null
-          tags: string[] | null
-        }
-        Insert: {
-          category_id?: string | null
-          created_at?: string
-          creator_id?: string | null
-          description?: string | null
-          id?: string
-          last_activity_at?: string | null
-          name: string
-          room_type?: Database["public"]["Enums"]["room_type"] | null
-          tags?: string[] | null
-        }
-        Update: {
-          category_id?: string | null
-          created_at?: string
-          creator_id?: string | null
-          description?: string | null
-          id?: string
-          last_activity_at?: string | null
-          name?: string
-          room_type?: Database["public"]["Enums"]["room_type"] | null
-          tags?: string[] | null
-        }
-        Relationships: [
           {
-            foreignKeyName: "discussion_rooms_category_id_fkey"
-            columns: ["category_id"]
+            foreignKeyName: "project_space_messages_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
-            referencedRelation: "room_categories"
+            referencedRelation: "users"
             referencedColumns: ["id"]
-          },
-        ]
-      }
-      likes: {
-        Row: {
-          created_at: string
-          id: string
-          post_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          post_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          post_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      message_reactions: {
-        Row: {
-          created_at: string
-          emoji: string
-          id: string
-          message_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          emoji: string
-          id?: string
-          message_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          emoji?: string
-          id?: string
-          message_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "message_reactions_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "room_messages"
-            referencedColumns: ["id"]
-          },
+          }
         ]
       }
       messages: {
         Row: {
-          content: string
-          conversation_id: string
-          created_at: string
           id: string
-          is_read: boolean | null
+          conversation_id: string
           sender_id: string
+          content: string
+          created_at: string
+          is_read: boolean
         }
         Insert: {
-          content: string
-          conversation_id: string
-          created_at?: string
           id?: string
-          is_read?: boolean | null
+          conversation_id: string
           sender_id: string
+          content: string
+          created_at?: string
+          is_read?: boolean
         }
         Update: {
-          content?: string
-          conversation_id?: string
-          created_at?: string
           id?: string
-          is_read?: boolean | null
+          conversation_id?: string
           sender_id?: string
+          content?: string
+          created_at?: string
+          is_read?: boolean
         }
         Relationships: [
           {
@@ -223,258 +147,194 @@ export type Database = {
             referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
         ]
       }
-      profiles: {
+      conversations: {
         Row: {
-          about_me: string | null
-          avatar_url: string | null
-          experience: string | null
           id: string
-          instagram_url: string | null
-          updated_at: string | null
-          username: string | null
-          website: string | null
-          youtube_url: string | null
-        }
-        Insert: {
-          about_me?: string | null
-          avatar_url?: string | null
-          experience?: string | null
-          id: string
-          instagram_url?: string | null
-          updated_at?: string | null
-          username?: string | null
-          website?: string | null
-          youtube_url?: string | null
-        }
-        Update: {
-          about_me?: string | null
-          avatar_url?: string | null
-          experience?: string | null
-          id?: string
-          instagram_url?: string | null
-          updated_at?: string | null
-          username?: string | null
-          website?: string | null
-          youtube_url?: string | null
-        }
-        Relationships: []
-      }
-      room_categories: {
-        Row: {
-          description: string | null
-          id: string
-          name: string
-        }
-        Insert: {
-          description?: string | null
-          id?: string
-          name: string
-        }
-        Update: {
-          description?: string | null
-          id?: string
-          name?: string
-        }
-        Relationships: []
-      }
-      room_join_requests: {
-        Row: {
+          user1_id: string
+          user2_id: string
           created_at: string
-          id: number
-          room_id: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user1_id: string
+          user2_id: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user1_id?: string
+          user2_id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_user1_id_fkey"
+            columns: ["user1_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_user2_id_fkey"
+            columns: ["user2_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      calls: {
+        Row: {
+          id: string
+          project_space_id: string
+          created_by: string
+          type: "audio" | "video"
+          status: "active" | "ended"
+          created_at: string
+          ended_at: string | null
+        }
+        Insert: {
+          id?: string
+          project_space_id: string
+          created_by: string
+          type: "audio" | "video"
+          status?: "active" | "ended"
+          created_at?: string
+          ended_at?: string | null
+        }
+        Update: {
+          id?: string
+          project_space_id?: string
+          created_by?: string
+          type?: "audio" | "video"
+          status?: "active" | "ended"
+          created_at?: string
+          ended_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_project_space_id_fkey"
+            columns: ["project_space_id"]
+            isOneToOne: false
+            referencedRelation: "project_spaces"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      call_participants: {
+        Row: {
+          id: string
+          call_id: string
+          user_id: string
+          joined_at: string
+          left_at: string | null
+        }
+        Insert: {
+          id?: string
+          call_id: string
+          user_id: string
+          joined_at?: string
+          left_at?: string | null
+        }
+        Update: {
+          id?: string
+          call_id?: string
+          user_id?: string
+          joined_at?: string
+          left_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_participants_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "calls"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      tasks: {
+        Row: {
+          id: string
+          project_space_id: string
+          title: string
+          description: string | null
+          due_date: string | null
           status: string
-          user_id: string
+          assignee_id: string | null
+          creator_id: string
+          created_at: string
         }
         Insert: {
-          created_at?: string
-          id?: number
-          room_id: string
-          status?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          room_id?: string
-          status?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "room_join_requests_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "discussion_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "room_join_requests_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      room_members: {
-        Row: {
-          created_at: string
-          room_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          room_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          room_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "room_members_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "discussion_rooms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "room_members_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      room_messages: {
-        Row: {
-          content: string
-          created_at: string
-          id: string
-          is_read: boolean | null
-          room_id: string
-          user_id: string
-        }
-        Insert: {
-          content: string
-          created_at?: string
           id?: string
-          is_read?: boolean | null
-          room_id: string
-          user_id: string
-        }
-        Update: {
-          content?: string
-          created_at?: string
-          id?: string
-          is_read?: boolean | null
-          room_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "room_messages_room_id_fkey"
-            columns: ["room_id"]
-            isOneToOne: false
-            referencedRelation: "discussion_rooms"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      shares: {
-        Row: {
-          created_at: string
-          id: string
-          post_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          post_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          post_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
-      user_experience: {
-        Row: {
-          company: string
-          created_at: string
-          description: string | null
-          end_date: string | null
-          id: number
-          start_date: string
+          project_space_id: string
           title: string
-          user_id: string
-        }
-        Insert: {
-          company: string
-          created_at?: string
           description?: string | null
-          end_date?: string | null
-          id?: number
-          start_date: string
-          title: string
-          user_id: string
+          due_date?: string | null
+          status?: string
+          assignee_id?: string | null
+          creator_id: string
+          created_at?: string
         }
         Update: {
-          company?: string
-          created_at?: string
-          description?: string | null
-          end_date?: string | null
-          id?: number
-          start_date?: string
+          id?: string
+          project_space_id?: string
           title?: string
-          user_id?: string
+          description?: string | null
+          due_date?: string | null
+          status?: string
+          assignee_id?: string | null
+          creator_id?: string
+          created_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "user_experience_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "tasks_project_space_id_fkey"
+            columns: ["project_space_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "project_spaces"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      user_skills: {
-        Row: {
-          created_at: string
-          id: number
-          skill_name: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: number
-          skill_name: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: number
-          skill_name?: string
-          user_id?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "user_skills_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "tasks_assignee_id_fkey"
+            columns: ["assignee_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "tasks_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
         ]
       }
     }
@@ -482,28 +342,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      create_room_and_category: {
-        Args: {
-          p_category_name: string
-          p_description: string
-          p_name: string
-          p_room_type: Database["public"]["Enums"]["room_type"]
-        }
-        Returns: string
-      }
-      get_user_conversations: {
-        Args: { p_user_id: string }
-        Returns: {
-          conversation_id: string
-          last_message_content: string
-          last_message_created_at: string
-          other_user_id: string
-          other_user_username: string
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: {
-      room_type: "public" | "private" | "secret"
+      call_status: "active" | "ended"
+      call_type: "audio" | "video"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -511,33 +354,27 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type PublicSchema = Database[Extract<keyof Database, "public">]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+        Database[PublicTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+      Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -545,24 +382,20 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -570,24 +403,20 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -595,47 +424,29 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof Database[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+    | keyof PublicSchema["CompositeTypes"]
+    | { schema: keyof Database },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof Database
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
+    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
-
-export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
-  public: {
-    Enums: {
-      room_type: ["public", "private", "secret"],
-    },
-  },
-} as const
-

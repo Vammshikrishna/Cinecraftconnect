@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ActiveSpeaker from './ActiveSpeaker';
 
 export interface Call {
   id: string;
@@ -16,11 +17,19 @@ interface VideoCallInterfaceProps {
   onLeave: () => void;
 }
 
+// Mock participant data
+const mockParticipants = [
+  { id: '1', name: 'Alice', audioLevel: 0.8 },
+  { id: '2', name: 'Bob', audioLevel: 0.3 },
+  { id: '3', name: 'Charlie', audioLevel: 0.1 },
+];
+
 export const VideoCallInterface = ({ call, onLeave }: VideoCallInterfaceProps) => {
   const [isMuted, setMuted] = useState(false);
   const [isVideoEnabled, setVideoEnabled] = useState(call.call_type === 'video');
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const [participants, setParticipants] = useState(mockParticipants);
 
   useEffect(() => {
     // MOCK: In a real app, you would set up WebRTC connections here.
@@ -44,10 +53,21 @@ export const VideoCallInterface = ({ call, onLeave }: VideoCallInterfaceProps) =
     };
     getMockStream();
 
+    // MOCK: Simulate audio level changes
+    const interval = setInterval(() => {
+      setParticipants(prevParticipants =>
+        prevParticipants.map(p => ({
+          ...p,
+          audioLevel: Math.random(),
+        }))
+      );
+    }, 1000);
+
     return () => {
       // Clean up the stream.
       const stream = localVideoRef.current?.srcObject as MediaStream;
       stream?.getTracks().forEach(track => track.stop());
+      clearInterval(interval);
     };
   }, [isVideoEnabled]);
 
@@ -62,6 +82,11 @@ export const VideoCallInterface = ({ call, onLeave }: VideoCallInterfaceProps) =
 
         {/* Local Video */}
         <video ref={localVideoRef} autoPlay playsInline muted className="absolute w-48 h-32 bottom-4 right-4 border-2 border-white rounded-lg" />
+        
+        {/* Active Speaker */}
+        <div className="absolute top-4 left-4">
+          <ActiveSpeaker participants={participants} />
+        </div>
       </div>
 
       {/* Controls */}

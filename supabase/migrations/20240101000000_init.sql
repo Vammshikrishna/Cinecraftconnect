@@ -1,35 +1,35 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Enum Types
-CREATE TYPE public.room_type AS ENUM (
+CREATE TYPE public.project_space_type AS ENUM (
     'public',
     'private',
     'secret'
 );
 
 -- Tables
-CREATE TABLE IF NOT EXISTS public.room_categories (
+CREATE TABLE IF NOT EXISTS public.project_space_categories (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     name text NOT NULL UNIQUE,
     description text
 );
 
-CREATE TABLE IF NOT EXISTS public.discussion_rooms (
+CREATE TABLE IF NOT EXISTS public.project_spaces (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
     name text NOT NULL,
     description text,
     creator_id uuid REFERENCES auth.users(id) ON DELETE CASCADE,
-    category_id uuid REFERENCES public.room_categories(id) ON DELETE SET NULL,
+    category_id uuid REFERENCES public.project_space_categories(id) ON DELETE SET NULL,
     tags text[],
     last_activity_at timestamp with time zone DEFAULT now(),
-    room_type public.room_type DEFAULT 'public'::room_type
+    project_space_type public.project_space_type DEFAULT 'public'::project_space_type
 );
 
-CREATE TABLE IF NOT EXISTS public.room_messages (
+CREATE TABLE IF NOT EXISTS public.project_space_messages (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
-    room_id uuid NOT NULL REFERENCES public.discussion_rooms(id) ON DELETE CASCADE,
+    project_space_id uuid NOT NULL REFERENCES public.project_spaces(id) ON DELETE CASCADE,
     user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     content text NOT NULL,
     is_read boolean DEFAULT false
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS public.room_messages (
 
 CREATE TABLE IF NOT EXISTS public.message_reactions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    message_id uuid NOT NULL REFERENCES public.room_messages(id) ON DELETE CASCADE,
+    message_id uuid NOT NULL REFERENCES public.project_space_messages(id) ON DELETE CASCADE,
     user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     emoji text NOT NULL,
     created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -153,57 +153,57 @@ ALTER TABLE ONLY "public"."user_experience"
 ALTER TABLE ONLY "public"."user_skills"
     ADD CONSTRAINT "user_skills_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
-CREATE TABLE "public"."room_members" (
-    "room_id" uuid NOT NULL,
+CREATE TABLE "public"."project_space_members" (
+    "project_space_id" uuid NOT NULL,
     "user_id" uuid NOT NULL,
     "created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 
-ALTER TABLE "public"."room_members" OWNER TO "postgres";
+ALTER TABLE "public"."project_space_members" OWNER TO "postgres";
 
-ALTER TABLE ONLY "public"."room_members"
-    ADD CONSTRAINT "room_members_pkey" PRIMARY KEY ("room_id", "user_id");
+ALTER TABLE ONLY "public"."project_space_members"
+    ADD CONSTRAINT "project_space_members_pkey" PRIMARY KEY ("project_space_id", "user_id");
 
-ALTER TABLE ONLY "public"."room_members"
-    ADD CONSTRAINT "room_members_room_id_fkey" FOREIGN KEY (room_id) REFERENCES public.discussion_rooms(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."project_space_members"
+    ADD CONSTRAINT "project_space_members_project_space_id_fkey" FOREIGN KEY (project_space_id) REFERENCES public.project_spaces(id) ON DELETE CASCADE;
 
-ALTER TABLE ONLY "public"."room_members"
-    ADD CONSTRAINT "room_members_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."project_space_members"
+    ADD CONSTRAINT "project_space_members_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
--- Create a new table to manage join requests for private rooms
-CREATE TABLE "public"."room_join_requests" (
+-- Create a new table to manage join requests for private project_spaces
+CREATE TABLE "public"."project_space_join_requests" (
     "id" bigint NOT NULL,
     "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-    "room_id" uuid NOT NULL,
+    "project_space_id" uuid NOT NULL,
     "user_id" uuid NOT NULL,
     "status" text DEFAULT 'pending'::text NOT NULL
 );
 
-ALTER TABLE "public"."room_join_requests" OWNER TO "postgres";
-CREATE SEQUENCE "public"."room_join_requests_id_seq"
+ALTER TABLE "public"."project_space_join_requests" OWNER TO "postgres";
+CREATE SEQUENCE "public"."project_space_join_requests_id_seq"
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-ALTER TABLE "public"."room_join_requests_id_seq" OWNER TO "postgres";
-ALTER SEQUENCE "public"."room_join_requests_id_seq" OWNED BY "public"."room_join_requests"."id";
-ALTER TABLE ONLY "public"."room_join_requests" ALTER COLUMN "id" SET DEFAULT nextval('public.room_join_requests_id_seq'::regclass);
-ALTER TABLE ONLY "public"."room_join_requests"
-    ADD CONSTRAINT "room_join_requests_pkey" PRIMARY KEY ("id");
-ALTER TABLE ONLY "public"."room_join_requests"
-    ADD CONSTRAINT "room_join_requests_room_id_fkey" FOREIGN KEY (room_id) REFERENCES public.discussion_rooms(id) ON DELETE CASCADE;
-ALTER TABLE ONLY "public"."room_join_requests"
-    ADD CONSTRAINT "room_join_requests_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+ALTER TABLE "public"."project_space_join_requests_id_seq" OWNER TO "postgres";
+ALTER SEQUENCE "public"."project_space_join_requests_id_seq" OWNED BY "public"."project_space_join_requests"."id";
+ALTER TABLE ONLY "public"."project_space_join_requests" ALTER COLUMN "id" SET DEFAULT nextval('public.project_space_join_requests_id_seq'::regclass);
+ALTER TABLE ONLY "public"."project_space_join_requests"
+    ADD CONSTRAINT "project_space_join_requests_pkey" PRIMARY KEY ("id");
+ALTER TABLE ONLY "public"."project_space_join_requests"
+    ADD CONSTRAINT "project_space_join_requests_project_space_id_fkey" FOREIGN KEY (project_space_id) REFERENCES public.project_spaces(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."project_space_join_requests"
+    ADD CONSTRAINT "project_space_join_requests_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 -- Functions
-CREATE OR REPLACE FUNCTION public.update_room_last_activity()
+CREATE OR REPLACE FUNCTION public.update_project_space_last_activity()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE public.discussion_rooms
+    UPDATE public.project_spaces
     SET last_activity_at = now()
-    WHERE id = NEW.room_id;
+    WHERE id = NEW.project_space_id;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -232,21 +232,21 @@ BEGIN
 END; 
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION public.create_room_and_category(p_name text, p_description text, p_category_name text, p_room_type public.room_type)
+CREATE OR REPLACE FUNCTION public.create_project_space_and_category(p_name text, p_description text, p_category_name text, p_project_space_type public.project_space_type)
 RETURNS uuid AS $$
 DECLARE
     v_category_id uuid;
-    v_room_id uuid;
+    v_project_space_id uuid;
 BEGIN
     -- Upsert category
-    INSERT INTO public.room_categories (name) VALUES (p_category_name) ON CONFLICT (name) DO UPDATE SET name = p_category_name RETURNING id INTO v_category_id;
+    INSERT INTO public.project_space_categories (name) VALUES (p_category_name) ON CONFLICT (name) DO UPDATE SET name = p_category_name RETURNING id INTO v_category_id;
     
-    -- Insert room
-    INSERT INTO public.discussion_rooms (name, description, creator_id, category_id, room_type) 
-    VALUES (p_name, p_description, auth.uid(), v_category_id, p_room_type)
-    RETURNING id INTO v_room_id;
+    -- Insert project_space
+    INSERT INTO public.project_spaces (name, description, creator_id, category_id, project_space_type) 
+    VALUES (p_name, p_description, auth.uid(), v_category_id, p_project_space_type)
+    RETURNING id INTO v_project_space_id;
     
-    RETURN v_room_id;
+    RETURN v_project_space_id;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -260,46 +260,46 @@ end;
 $$ language plpgsql security definer;
 
 -- Triggers
-CREATE TRIGGER on_new_message_update_room_activity
-AFTER INSERT ON public.room_messages
+CREATE TRIGGER on_new_message_update_project_space_activity
+AFTER INSERT ON public.project_space_messages
 FOR EACH ROW
-EXECUTE FUNCTION public.update_room_last_activity();
+EXECUTE FUNCTION public.update_project_space_last_activity();
 
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 
 -- RLS Policies
-ALTER TABLE public.discussion_rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.room_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_spaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_space_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."user_skills" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."user_experience" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."room_members" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."project_space_members" ENABLE ROW LEVEL SECURITY;
 
--- Policies for discussion_rooms
-CREATE POLICY "Users can view all public rooms" ON public.discussion_rooms FOR SELECT USING (room_type = 'public');
-CREATE POLICY "Users can create rooms" ON public.discussion_rooms FOR INSERT WITH CHECK (auth.uid() = creator_id);
-CREATE POLICY "Creators can update their own rooms" ON public.discussion_rooms FOR UPDATE USING (auth.uid() = creator_id);
-CREATE POLICY "Creators can delete their own rooms" ON public.discussion_rooms FOR DELETE USING (auth.uid() = creator_id);
-CREATE POLICY "Users can view private rooms they are members of" ON public.discussion_rooms FOR SELECT
-    USING ((room_type = 'private' AND (EXISTS ( SELECT 1
-   FROM public.room_members
-  WHERE ((room_members.room_id = discussion_rooms.id) AND (room_members.user_id = auth.uid()))))) OR (EXISTS ( SELECT 1
-   FROM public.room_join_requests
-  WHERE ((room_join_requests.room_id = discussion_rooms.id) AND (room_join_requests.user_id = auth.uid())))));
+-- Policies for project_spaces
+CREATE POLICY "Users can view all public project_spaces" ON public.project_spaces FOR SELECT USING (project_space_type = 'public');
+CREATE POLICY "Users can create project_spaces" ON public.project_spaces FOR INSERT WITH CHECK (auth.uid() = creator_id);
+CREATE POLICY "Creators can update their own project_spaces" ON public.project_spaces FOR UPDATE USING (auth.uid() = creator_id);
+CREATE POLICY "Creators can delete their own project_spaces" ON public.project_spaces FOR DELETE USING (auth.uid() = creator_id);
+CREATE POLICY "Users can view private project_spaces they are members of" ON public.project_spaces FOR SELECT
+    USING ((project_space_type = 'private' AND (EXISTS ( SELECT 1
+   FROM public.project_space_members
+  WHERE ((project_space_members.project_space_id = project_spaces.id) AND (project_space_members.user_id = auth.uid()))))) OR (EXISTS ( SELECT 1
+   FROM public.project_space_join_requests
+  WHERE ((project_space_join_requests.project_space_id = project_spaces.id) AND (project_space_join_requests.user_id = auth.uid())))));
 
 
--- Policies for room_messages
-CREATE POLICY "Users in a room can view messages" ON public.room_messages FOR SELECT USING (
-  (room_id IN (SELECT id FROM public.discussion_rooms WHERE room_type = 'public')) OR
-  (EXISTS (SELECT 1 FROM public.discussion_rooms WHERE id = room_id AND creator_id = auth.uid()))
+-- Policies for project_space_messages
+CREATE POLICY "Users in a project_space can view messages" ON public.project_space_messages FOR SELECT USING (
+  (project_space_id IN (SELECT id FROM public.project_spaces WHERE project_space_type = 'public')) OR
+  (EXISTS (SELECT 1 FROM public.project_spaces WHERE id = project_space_id AND creator_id = auth.uid()))
 );
-CREATE POLICY "Users can send messages in rooms they are part of" ON public.room_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can delete their own messages" ON public.room_messages FOR DELETE USING (auth.uid() = user_id);
+CREATE POLICY "Users can send messages in project_spaces they are part of" ON public.project_space_messages FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can delete their own messages" ON public.project_space_messages FOR DELETE USING (auth.uid() = user_id);
 
 -- Policies for message_reactions
 CREATE POLICY "Users can view all reactions" ON public.message_reactions FOR SELECT USING (true);
@@ -330,24 +330,24 @@ CREATE POLICY "Enable insert for authenticated users only" ON "public"."user_exp
 CREATE POLICY "Enable update for users based on user_id" ON "public"."user_experience" FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "Enable delete for users based on user_id" ON "public"."user_experience" FOR DELETE USING (auth.uid() = user_id);
 
--- Policies for room_members
-CREATE POLICY "Users can view members of rooms they are in" ON "public"."room_members" FOR SELECT USING (room_id IN (SELECT room_id FROM public.room_members WHERE user_id = auth.uid()));
-CREATE POLICY "Room creators can add members" ON "public"."room_members" FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM public.discussion_rooms WHERE id = room_id AND creator_id = auth.uid()));
-CREATE POLICY "Users can leave rooms" ON "public"."room_members" FOR DELETE USING (user_id = auth.uid());
+-- Policies for project_space_members
+CREATE POLICY "Users can view members of project_spaces they are in" ON "public"."project_space_members" FOR SELECT USING (project_space_id IN (SELECT project_space_id FROM public.project_space_members WHERE user_id = auth.uid()));
+CREATE POLICY "Project_space creators can add members" ON "public"."project_space_members" FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM public.project_spaces WHERE id = project_space_id AND creator_id = auth.uid()));
+CREATE POLICY "Users can leave project_spaces" ON "public"."project_space_members" FOR DELETE USING (user_id = auth.uid());
 
 
 -- Add policies for the new table
-CREATE POLICY "Users can create their own join requests" ON public.room_join_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Room creators can view join requests" ON public.room_join_requests FOR SELECT USING (
-    (EXISTS (SELECT 1 FROM public.discussion_rooms WHERE id = room_id AND creator_id = auth.uid()))
+CREATE POLICY "Users can create their own join requests" ON public.project_space_join_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Project_space creators can view join requests" ON public.project_space_join_requests FOR SELECT USING (
+    (EXISTS (SELECT 1 FROM public.project_spaces WHERE id = project_space_id AND creator_id = auth.uid()))
 );
-CREATE POLICY "Room creators can update join requests" ON public.room_join_requests FOR UPDATE USING (
-    (EXISTS (SELECT 1 FROM public.discussion_rooms WHERE id = room_id AND creator_id = auth.uid()))
+CREATE POLICY "Project_space creators can update join requests" ON public.project_space_join_requests FOR UPDATE USING (
+    (EXISTS (SELECT 1 FROM public.project_spaces WHERE id = project_space_id AND creator_id = auth.uid()))
 );
-CREATE POLICY "Room creators can delete join requests" ON public.room_join_requests FOR DELETE USING (
-    (EXISTS (SELECT 1 FROM public.discussion_rooms WHERE id = room_id AND creator_id = auth.uid()))
+CREATE POLICY "Project_space creators can delete join requests" ON public.project_space_join_requests FOR DELETE USING (
+    (EXISTS (SELECT 1 FROM public.project_spaces WHERE id = project_space_id AND creator_id = auth.uid()))
 );
 
 -- Default Category
-INSERT INTO public.room_categories (name, description) VALUES ('General', 'General discussions') ON CONFLICT (name) DO NOTHING;
-UPDATE public.discussion_rooms SET category_id = (SELECT id FROM public.room_categories WHERE name = 'General') WHERE category_id IS NULL;
+INSERT INTO public.project_space_categories (name, description) VALUES ('General', 'General discussions') ON CONFLICT (name) DO NOTHING;
+UPDATE public.project_spaces SET category_id = (SELECT id FROM public.project_space_categories WHERE name = 'General') WHERE category_id IS NULL;
