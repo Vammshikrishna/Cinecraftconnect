@@ -1,114 +1,97 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
-import { Plus } from 'lucide-react';
+import { Plus, MessageSquare, Briefcase, Star, Rss, LayoutGrid } from 'lucide-react';
 
-// Import our tab components
-import FeedTab from '@/components/feed/FeedTab';
-import DiscussionRoomsTab from '@/components/feed/DiscussionRoomsTab';
-import AnnouncementsTab from '@/components/feed/AnnouncementsTab';
-import RatingsTab from '@/components/feed/RatingsTab';
-import ProjectsTab from '@/components/feed/ProjectsTab';
-import AllContentTab from '@/components/feed/AllContentTab';
+// Lazy load tab components
+const AllContentTab = lazy(() => import('@/components/feed/AllContentTab'));
+const FeedTab = lazy(() => import('@/components/feed/FeedTab'));
+const DiscussionRoomsTab = lazy(() => import('@/components/feed/DiscussionRoomsTab'));
+const ProjectsTab = lazy(() => import('@/components/feed/ProjectsTab'));
+const AnnouncementsTab = lazy(() => import('@/components/feed/AnnouncementsTab'));
+const RatingsTab = lazy(() => import('@/components/feed/RatingsTab'));
+
+const TABS = [
+  { value: 'all', label: 'All', Icon: LayoutGrid, Component: AllContentTab },
+  { value: 'posts', label: 'Posts', Icon: Rss, Component: FeedTab },
+  { value: 'discussions', label: 'Discussions', Icon: MessageSquare, Component: DiscussionRoomsTab },
+  { value: 'projects', label: 'Projects', Icon: Briefcase, Component: ProjectsTab },
+  { value: 'announcements', label: 'Announcements', Icon: Star, Component: AnnouncementsTab },
+  { value: 'ratings', label: 'Ratings', Icon: Star, Component: RatingsTab },
+];
+
+const FeedSkeleton = () => (
+  <div className="min-h-screen bg-background pt-20">
+    <div className="container mx-auto px-4 pb-8">
+      <div className="max-w-4xl mx-auto">
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-24" />)}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="border p-4 rounded-lg">
+                <div className="flex items-center space-x-4 mb-4">
+                  <Skeleton className="h-12 w-12 rounded-full" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-[250px]" />
+                    <Skeleton className="h-4 w-[200px]" />
+                  </div>
+                </div>
+                <Skeleton className="h-32 w-full" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  </div>
+);
 
 const Feed = () => {
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState(TABS[0].value);
   const [loading, setLoading] = useState(true);
-  const [postRatings, setPostRatings] = useState<{
-    [postId: string]: number;
-  }>({});
+  const [postRatings, setPostRatings] = useState<{ [postId: string]: number }>({});
 
   useEffect(() => {
-    // Simulate loading
     const timer = setTimeout(() => setLoading(false), 800);
     return () => clearTimeout(timer);
   }, []);
 
   const handleRate = (postId: string | number, rating: number) => {
-    setPostRatings(curr => ({
-      ...curr,
-      [String(postId)]: rating
-    }));
+    setPostRatings(curr => ({ ...curr, [String(postId)]: rating }));
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background pt-20">
-        <div className="container mx-auto px-4 pb-8">
-          <div className="flex items-center justify-between mb-8">
-            <EnhancedSkeleton className="h-8 w-48" />
-            <EnhancedSkeleton className="h-10 w-32" />
-          </div>
-          <div className="max-w-4xl mx-auto">
-            <div className="space-y-6">
-              {[...Array(3)].map((_, i) => <CardSkeleton key={i} className="h-48" />)}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <FeedSkeleton />;
   }
 
   return (
     <div className="min-h-screen bg-background pt-20 relative">
       <div className="container mx-auto px-4 pb-8 animate-fade-in">
         <div className="max-w-4xl mx-auto">
-          {/* Main Feed */}
-          <div className="">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="flex flex-wrap h-auto w-full mb-6">
-                <TabsTrigger value="all" className="data-[state=active]:bg-primary">
-                  All
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 h-auto">
+              {TABS.map(({ value, label, Icon }) => (
+                <TabsTrigger key={value} value={value} className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Icon className="mr-2 h-4 w-4" /> {label}
                 </TabsTrigger>
-                <TabsTrigger value="posts" className="data-[state=active]:bg-primary">
-                  Posts
-                </TabsTrigger>
-                <TabsTrigger value="discussions" className="data-[state=active]:bg-primary">
-                  Discussions
-                </TabsTrigger>
-                <TabsTrigger value="projects" className="data-[state=active]:bg-primary">
-                  Projects
-                </TabsTrigger>
-                <TabsTrigger value="announcements" className="data-[state=active]:bg-primary">
-                  Announcements
-                </TabsTrigger>
-                <TabsTrigger value="ratings" className="data-[state=active]:bg-primary">
-                  Ratings
-                </TabsTrigger>
-              </TabsList>
+              ))}
+            </TabsList>
 
-              <TabsContent value="all" className="space-y-6">
-                <AllContentTab postRatings={postRatings} onRate={handleRate} />
-              </TabsContent>
-
-              <TabsContent value="posts" className="space-y-6">
-                <FeedTab postRatings={postRatings} onRate={handleRate} />
-              </TabsContent>
-              
-              <TabsContent value="discussions" className="space-y-6">
-                <DiscussionRoomsTab />
-              </TabsContent>
-
-              <TabsContent value="projects" className="space-y-6">
-                <ProjectsTab />
-              </TabsContent>
-              
-              <TabsContent value="announcements" className="space-y-6">
-                <AnnouncementsTab />
-              </TabsContent>
-              
-              <TabsContent value="ratings" className="space-y-6">
-                <RatingsTab />
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          {/* Sidebar */}
-          
+            <Suspense fallback={<FeedSkeleton />}>
+              {TABS.map(({ value, Component }) => (
+                <TabsContent key={value} value={value} className="space-y-6">
+                  <Component postRatings={postRatings} onRate={handleRate} />
+                </TabsContent>
+              ))}
+            </Suspense>
+          </Tabs>
         </div>
-        
-        {/* Floating Action Button */}
         <FloatingActionButton icon={Plus} onClick={() => console.log('Create new post')} label="Create Post" variant="primary" />
       </div>
     </div>

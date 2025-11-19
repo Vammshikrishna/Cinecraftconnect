@@ -13,15 +13,32 @@ interface TasksProps {
 }
 
 const Tasks = ({ project_id }: TasksProps) => {
-    const { data: tasks, error } = useRealtimeData<Task>('tasks', 'project_id', project_id);
+    const { data: tasks, error: realtimeError, setData } = useRealtimeData<Task>('tasks', 'project_id', project_id);
     const [newTask, setNewTask] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
 
     const handleAddTask = async () => {
         if (newTask.trim() === '') return;
-        await supabase
-            .from('tasks')
-            .insert([{ title: newTask, completed: false, project_id: project_id }]);
-        setNewTask('');
+        setLoading(true);
+        setError(null);
+        try {
+            const { data, error: insertError } = await supabase
+                .from('tasks')
+                .insert([{ title: newTask, completed: false, project_id: project_id }])
+                .select();
+
+            if (insertError) throw insertError;
+
+            if (data) {
+                setData(prevTasks => [...(prevTasks || []), ...data]);
+            }
+            setNewTask('');
+        } catch (err: any) {
+            setError(err);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const handleToggleTask = async (id: number, completed: boolean) => {
@@ -31,8 +48,8 @@ const Tasks = ({ project_id }: TasksProps) => {
             .eq('id', id);
     };
 
-    if (error) {
-        return <div>Error loading tasks: {error.message}</div>;
+    if (realtimeError) {
+        return <div>Error loading tasks: {realtimeError.message}</div>;
     }
 
     return (
@@ -46,8 +63,15 @@ const Tasks = ({ project_id }: TasksProps) => {
                     placeholder="Add a new task"
                     className="border p-2 rounded w-full"
                 />
-                <button onClick={handleAddTask} className="bg-blue-500 text-white p-2 rounded">Add Task</button>
+                <button
+                    onClick={handleAddTask}
+                    className="bg-blue-500 text-white p-2 rounded"
+                    disabled={loading}
+                >
+                    {loading ? 'Adding...' : 'Add Task'}
+                </button>
             </div>
+            {error && <div className="text-red-500">{error.message}</div>}
             <ul>
                 {tasks && tasks.map(task => (
                     <li key={task.id} className="flex items-center gap-2 mb-2">

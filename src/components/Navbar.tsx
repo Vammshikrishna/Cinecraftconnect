@@ -3,8 +3,6 @@ import { Link } from 'react-router-dom';
 import { Film } from 'lucide-react';
 import { Button } from "./ui/button.tsx";
 import { useAuth } from '../contexts/AuthContext.tsx';
-
-// Import the new component files
 import NavLinks from './navbar/NavLinks.tsx';
 import NotificationsDropdown from './navbar/NotificationsDropdown.tsx';
 import GlobalSearch from './search/GlobalSearch.tsx';
@@ -44,32 +42,28 @@ const Navbar = () => {
                   <div className="hidden lg:flex items-center gap-4">
                     <NavLinks />
                     <ChatMenu />
-                    <NotificationsDropdown />
-                    <UserProfileMenu />
                   </div>
-                  {/* Mobile: Show only search and hamburger */}
-                  <div className="lg:hidden flex items-center gap-1 flex-1">
+                  
+                  {/* Mobile: Show only search */}
+                  <div className="lg:hidden flex items-center flex-1">
                     <div className="w-full px-2">
                       <GlobalSearch />
                     </div>
-                    <NotificationsDropdown />
-                    <UserProfileMenu />
                   </div>
+
+                  {/* Icons for both mobile and desktop */}
+                  <NotificationsDropdown />
+                  <UserProfileMenu />
                 </>
               ) : (
                 <>
                   {/* Unauthenticated user buttons */}
-                  <div className="hidden sm:flex items-center gap-2">
+                  <div className="flex items-center gap-2">
                     <Button variant="ghost" size="sm" asChild className="px-3">
                       <Link to="/auth">Login</Link>
                     </Button>
                     <Button size="sm" asChild className="btn-primary px-3">
                       <Link to="/auth">Sign Up</Link>
-                    </Button>
-                  </div>
-                  <div className="sm:hidden flex items-center gap-1">
-                    <Button className="btn-primary text-xs px-2 py-1 h-8" size="sm" asChild>
-                      <Link to="/auth">Login</Link>
                     </Button>
                   </div>
                 </>

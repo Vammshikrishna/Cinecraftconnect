@@ -19,6 +19,9 @@ import {
   ArrowLeft
 } from 'lucide-react';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
+import { UserProjects } from '@/components/profile/UserProjects';
+import { UserPosts } from '@/components/profile/UserPosts';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface Profile {
   id: string;
@@ -35,7 +38,7 @@ interface Profile {
 const PublicProfile = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const userId = searchParams.get('user'); // Changed from 'id' to 'user' to match search
+  const userId = searchParams.get('user');
   const { user } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -98,7 +101,6 @@ const PublicProfile = () => {
         setConnectionStatus('none');
       }
     } catch (error) {
-      // No connection found, which is a normal state
       setConnectionStatus('none');
     }
   };
@@ -196,8 +198,22 @@ const PublicProfile = () => {
         </Card>
 
         <div className="mt-8">
-          <h2 className="text-2xl font-bold mb-4 flex items-center"><Briefcase className="mr-3"/>Portfolio</h2>
-          <PortfolioGrid userId={profile.id} isOwner={false} />
+          <Tabs defaultValue="portfolio" className="w-full">
+            <TabsList className="grid w-full grid-cols-3 bg-muted/50">
+              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+              <TabsTrigger value="projects">Projects</TabsTrigger>
+              <TabsTrigger value="posts">Posts</TabsTrigger>
+            </TabsList>
+            <TabsContent value="portfolio" className="py-6">
+              <PortfolioGrid userId={profile.id} isOwner={false} />
+            </TabsContent>
+            <TabsContent value="projects" className="py-6">
+              <UserProjects userId={profile.id} />
+            </TabsContent>
+            <TabsContent value="posts" className="py-6">
+              <UserPosts targetUserId={profile.id} />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

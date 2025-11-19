@@ -1,0 +1,2 @@
+DROP POLICY IF EXISTS "Allow members to manage project tasks" ON public.tasks;
+CREATE POLICY "Allow members to manage project tasks" ON "public"."tasks" AS PERMISSIVE FOR ALL TO public USING (EXISTS (SELECT 1 FROM project_space_members pm WHERE ((pm.project_space_id = tasks.project_space_id) AND (pm.user_id = auth.uid())))) WITH CHECK (EXISTS (SELECT 1 FROM project_space_members pm WHERE ((pm.project_space_id = tasks.project_space_id) AND (pm.user_id = auth.uid()))));

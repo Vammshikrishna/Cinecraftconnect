@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { Send, ArrowLeft, MoreVertical } from 'lucide-react';
+import { Send, ArrowLeft, MoreVertical, Smile } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
+import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 
 interface Message {
   id: string;
@@ -22,17 +23,19 @@ interface Message {
 
 interface EnhancedRealTimeChatProps {
   roomId: string;
-  onClose: () => void;
+  partnerId: string;
+  partnerName: string;
+  partnerAvatarUrl: string;
+  onBackClick: () => void;
 }
 
-const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) => {
+const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBackClick }: EnhancedRealTimeChatProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [recipient, setRecipient] = useState<{ full_name: string, avatar_url: string} | null>(null);
-
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,17 +61,8 @@ const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) =>
     scrollToBottom();
   }, [messages]);
 
-
   useEffect(() => {
     if (!roomId) return;
-
-    const fetchRecipient = async () => {
-        const { data, error } = await supabase.rpc('get_other_user_in_channel', { p_channel_id: roomId, p_user_id: user?.id });
-        if (error) console.error('Error fetching recipient:', error);
-        else setRecipient(data[0]);
-    };
-
-    fetchRecipient();
 
     const channel = supabase
       .channel(`realtime-chat:${roomId}`)
@@ -92,16 +86,21 @@ const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) =>
       content: newMessage.trim(),
       sender_id: user.id,
       channel_id: roomId,
-      recipient_id: '' // This should be determined server-side or via another method
+      recipient_id: partnerId
     });
 
     if (error) {
       console.error('Error sending message:', error);
     } else {
       setNewMessage('');
+      setShowEmojiPicker(false);
     }
   };
   
+    const onEmojiClick = (emojiObject: EmojiClickData) => {
+        setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
+    };
+
     const formatTimestamp = (timestamp: string) => {
         const date = new Date(timestamp);
         if (isToday(date)) {
@@ -113,25 +112,24 @@ const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) =>
         }
     };
 
-
   return (
     <div className="flex flex-col h-full bg-gray-900 text-white">
       <header className="flex items-center justify-between p-4 border-b border-gray-700">
         <div className="flex items-center gap-3">
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-800">
+            <button onClick={onBackClick} className="p-2 rounded-full hover:bg-gray-800">
                 <ArrowLeft className="h-6 w-6" />
             </button>
-            {recipient && (
+            {partnerName && (
                 <>
                     <Avatar>
-                        <AvatarImage src={recipient.avatar_url} />
-                        <AvatarFallback>{recipient.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                        <AvatarImage src={partnerAvatarUrl} />
+                        <AvatarFallback>{partnerName?.charAt(0) || 'U'}</AvatarFallback>
                     </Avatar>
-                    <h2 className="font-bold text-lg">{recipient.full_name}</h2>
+                    <h2 className="font-bold text-lg">{partnerName}</h2>
                 </>
             )}
         </div>
-        <button className="p-2 rounded-full hover:bg-gray-800">
+        <button onClick={() => console.log('Dot menu clicked')} className="p-2 rounded-full hover:bg-gray-800">
             <MoreVertical className="h-6 w-6" />
         </button>
       </header>
@@ -158,18 +156,34 @@ const EnhancedRealTimeChat = ({ roomId, onClose }: EnhancedRealTimeChatProps) =>
               })}
               <div ref={messagesEndRef} />
           </div>
-          <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-4 border-t border-gray-700">
-            <Input
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Send a message..."
-              className="flex-1 bg-gray-800 border-gray-600 rounded-full"
-              autoComplete="off"
-            />
-            <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>
-              <Send className="h-5 w-5" />
-            </Button>
-          </form>
+          <div className="p-4 border-t border-gray-700">
+            {showEmojiPicker && (
+                <div className="absolute bottom-20 z-10">
+                    <EmojiPicker onEmojiClick={onEmojiClick} />
+                </div>
+            )}
+            <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    className="rounded-full"
+                >
+                    <Smile className="h-5 w-5" />
+                </Button>
+                <Input
+                value={newMessage}
+                onChange={(e) => setNewMessage(e.target.value)}
+                placeholder="Send a message..."
+                className="flex-1 bg-gray-800 border-gray-600 rounded-full"
+                autoComplete="off"
+                />
+                <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>
+                <Send className="h-5 w-5" />
+                </Button>
+            </form>
+          </div>
         </>
       )}
     </div>

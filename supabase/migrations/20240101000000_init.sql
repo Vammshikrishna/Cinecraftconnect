@@ -26,6 +26,17 @@ CREATE TABLE IF NOT EXISTS public.project_spaces (
     project_space_type public.project_space_type DEFAULT 'public'::project_space_type
 );
 
+CREATE TABLE IF NOT EXISTS public.tasks (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_space_id uuid NOT NULL REFERENCES public.project_spaces(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    description text,
+    due_date date,
+    assignee_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+    is_completed boolean DEFAULT false,
+    created_at timestamp with time zone NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.project_space_messages (
     id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -271,6 +282,7 @@ create trigger on_auth_user_created
 
 -- RLS Policies
 ALTER TABLE public.project_spaces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_space_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.message_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
@@ -291,6 +303,12 @@ CREATE POLICY "Users can view private project_spaces they are members of" ON pub
   WHERE ((project_space_members.project_space_id = project_spaces.id) AND (project_space_members.user_id = auth.uid()))))) OR (EXISTS ( SELECT 1
    FROM public.project_space_join_requests
   WHERE ((project_space_join_requests.project_space_id = project_spaces.id) AND (project_space_join_requests.user_id = auth.uid())))));
+
+-- Policies for tasks
+CREATE POLICY "Members can view tasks in their project spaces" ON public.tasks FOR SELECT USING (project_space_id IN (SELECT project_space_id FROM public.project_space_members WHERE user_id = auth.uid()));
+CREATE POLICY "Members can create tasks in their project spaces" ON public.tasks FOR INSERT WITH CHECK (project_space_id IN (SELECT project_space_id FROM public.project_space_members WHERE user_id = auth.uid()));
+CREATE POLICY "Assignees can update tasks" ON public.tasks FOR UPDATE USING (assignee_id = auth.uid());
+CREATE POLICY "Creators can delete tasks" ON public.tasks FOR DELETE USING (project_space_id IN (SELECT id FROM public.project_spaces WHERE creator_id = auth.uid()));
 
 
 -- Policies for project_space_messages

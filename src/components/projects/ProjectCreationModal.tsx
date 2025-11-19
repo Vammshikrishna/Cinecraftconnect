@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Calendar, DollarSign, MapPin, Users } from 'lucide-react';
+import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon } from 'lucide-react';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -24,7 +24,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   const [isOpen, setIsOpen] = useState(false);
   
   const [projectData, setProjectData] = useState({
-    title: '',
+    name: '',
     description: '',
     genre: [] as string[],
     location: '',
@@ -36,6 +36,8 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
     status: 'planning',
     is_public: true,
   });
+  const [projectImage, setProjectImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const availableGenres = [
     'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi', 'Romance', 
@@ -47,6 +49,14 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
     'Production Designer', 'Costume Designer', 'Makeup Artist', 'Actor',
     'Screenwriter', 'Composer', 'VFX Artist', 'Gaffer', 'Script Supervisor'
   ];
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setProjectImage(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
 
   const handleGenreToggle = (genre: string) => {
     setProjectData(prev => ({
@@ -67,7 +77,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   };
 
   const validateBasicInfo = () => {
-    return projectData.title.trim() !== '' && projectData.description.trim() !== '';
+    return projectData.name.trim() !== '' && projectData.description.trim() !== '';
   };
 
   const validateGenreAndRoles = () => {
@@ -78,11 +88,26 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
     if (!user) return;
     
     try {
+      let imageUrl: string | undefined = undefined;
+      if (projectImage) {
+        const fileExt = projectImage.name.split('.').pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('project-images')
+          .upload(fileName, projectImage);
+
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage.from('project-images').getPublicUrl(fileName);
+        imageUrl = urlData.publicUrl;
+      }
+
       const { data: newProject, error } = await supabase
-        .from('projects')
+        .from('project_spaces')
         .insert({
           ...projectData,
           creator_id: user.id,
+          image_url: imageUrl,
           budget_min: projectData.budget_min ? parseInt(projectData.budget_min) : null,
           budget_max: projectData.budget_max ? parseInt(projectData.budget_max) : null,
           start_date: projectData.start_date || null,
@@ -120,39 +145,35 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       title: "Basic Information",
       validation: validateBasicInfo,
       component: (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="title">Project Title *</Label>
-            <Input
-              id="title"
-              value={projectData.title}
-              onChange={(e) => setProjectData(prev => ({ ...prev, title: e.target.value }))}
-              placeholder="Enter your project title"
-              className="bg-input border-border"
-            />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Project Name *</Label>
+              <Input id="name" value={projectData.name} onChange={(e) => setProjectData(prev => ({ ...prev, name: e.target.value }))} placeholder="Enter your project name" className="bg-input border-border" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description *</Label>
+              <Textarea id="description" value={projectData.description} onChange={(e) => setProjectData(prev => ({ ...prev, description: e.target.value }))} placeholder="Describe your project vision..." className="bg-input border-border min-h-[100px]" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="location" className="flex items-center"><MapPin className="mr-1 h-4 w-4" />Location</Label>
+              <Input id="location" value={projectData.location} onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))} placeholder="Filming location" className="bg-input border-border" />
+            </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="description">Description *</Label>
-            <Textarea
-              id="description"
-              value={projectData.description}
-              onChange={(e) => setProjectData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Describe your project vision..."
-              className="bg-input border-border min-h-[100px]"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="location" className="flex items-center">
-              <MapPin className="mr-1 h-4 w-4" />
-              Location
-            </Label>
-            <Input
-              id="location"
-              value={projectData.location}
-              onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))}
-              placeholder="Filming location"
-              className="bg-input border-border"
-            />
+            <Label>Project Image</Label>
+            <div className="w-full h-48 border-2 border-dashed border-border rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/50 transition-colors cursor-pointer relative" onClick={() => document.getElementById('image-upload')?.click()}>
+              {!imagePreview ? (
+                <div className="text-center">
+                  <ImageIcon className="mx-auto h-10 w-10 mb-2" />
+                  <p>Click to upload an image</p>
+                  <p className="text-xs">Recommended: 16:9 aspect ratio</p>
+                </div>
+              ) : (
+                <img src={imagePreview} alt="Project preview" className="object-cover w-full h-full rounded-lg" />
+              )}
+              <Input id="image-upload" type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
+            </div>
           </div>
         </div>
       )
@@ -166,41 +187,15 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
             <Label className="text-foreground">Project Genre *</Label>
             <div className="flex flex-wrap gap-2">
               {availableGenres.map((genre) => (
-                <Badge
-                  key={genre}
-                  variant={projectData.genre.includes(genre) ? "default" : "outline"}
-                  className={`cursor-pointer transition-colors ${
-                    projectData.genre.includes(genre)
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border-white/20 hover:bg-white/10'
-                  }`}
-                  onClick={() => handleGenreToggle(genre)}
-                >
-                  {genre}
-                </Badge>
+                <Badge key={genre} variant={projectData.genre.includes(genre) ? "default" : "outline"} className={`cursor-pointer transition-colors ${projectData.genre.includes(genre) ? 'bg-primary text-primary-foreground' : 'border-white/20 hover:bg-white/10'}`} onClick={() => handleGenreToggle(genre)}>{genre}</Badge>
               ))}
             </div>
           </div>
-
           <div className="space-y-3">
-            <Label className="text-foreground flex items-center">
-              <Users className="mr-1 h-4 w-4" />
-              Required Roles *
-            </Label>
+            <Label className="text-foreground flex items-center"><Users className="mr-1 h-4 w-4" />Required Roles *</Label>
             <div className="flex flex-wrap gap-2">
               {availableRoles.map((role) => (
-                <Badge
-                  key={role}
-                  variant={projectData.required_roles.includes(role) ? "default" : "outline"}
-                  className={`cursor-pointer transition-colors ${
-                    projectData.required_roles.includes(role)
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'border-white/20 hover:bg-white/10'
-                  }`}
-                  onClick={() => handleRoleToggle(role)}
-                >
-                  {role}
-                </Badge>
+                <Badge key={role} variant={projectData.required_roles.includes(role) ? "default" : "outline"} className={`cursor-pointer transition-colors ${projectData.required_roles.includes(role) ? 'bg-secondary text-secondary-foreground' : 'border-white/20 hover:bg-white/10'}`} onClick={() => handleRoleToggle(role)}>{role}</Badge>
               ))}
             </div>
           </div>
@@ -213,55 +208,22 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="budget_min" className="flex items-center">
-                <DollarSign className="mr-1 h-4 w-4" />
-                Minimum Budget
-              </Label>
-              <Input
-                id="budget_min"
-                type="number"
-                value={projectData.budget_min}
-                onChange={(e) => setProjectData(prev => ({ ...prev, budget_min: e.target.value }))}
-                placeholder="0"
-                className="bg-input border-border"
-              />
+              <Label htmlFor="budget_min" className="flex items-center"><DollarSign className="mr-1 h-4 w-4" />Minimum Budget</Label>
+              <Input id="budget_min" type="number" value={projectData.budget_min} onChange={(e) => setProjectData(prev => ({ ...prev, budget_min: e.target.value }))} placeholder="0" className="bg-input border-border" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="budget_max">Maximum Budget</Label>
-              <Input
-                id="budget_max"
-                type="number"
-                value={projectData.budget_max}
-                onChange={(e) => setProjectData(prev => ({ ...prev, budget_max: e.target.value }))}
-                placeholder="0"
-                className="bg-input border-border"
-              />
+              <Input id="budget_max" type="number" value={projectData.budget_max} onChange={(e) => setProjectData(prev => ({ ...prev, budget_max: e.target.value }))} placeholder="0" className="bg-input border-border" />
             </div>
           </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="start_date" className="flex items-center">
-                <Calendar className="mr-1 h-4 w-4" />
-                Start Date
-              </Label>
-              <Input
-                id="start_date"
-                type="date"
-                value={projectData.start_date}
-                onChange={(e) => setProjectData(prev => ({ ...prev, start_date: e.target.value }))}
-                className="bg-input border-border"
-              />
+              <Label htmlFor="start_date" className="flex items-center"><Calendar className="mr-1 h-4 w-4" />Start Date</Label>
+              <Input id="start_date" type="date" value={projectData.start_date} onChange={(e) => setProjectData(prev => ({ ...prev, start_date: e.target.value }))} className="bg-input border-border" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="end_date">End Date</Label>
-              <Input
-                id="end_date"
-                type="date"
-                value={projectData.end_date}
-                onChange={(e) => setProjectData(prev => ({ ...prev, end_date: e.target.value }))}
-                className="bg-input border-border"
-              />
+              <Input id="end_date" type="date" value={projectData.end_date} onChange={(e) => setProjectData(prev => ({ ...prev, end_date: e.target.value }))} className="bg-input border-border" />
             </div>
           </div>
         </div>
@@ -272,22 +234,13 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <div className="mb-6">
-          <Button className="bg-primary hover:bg-primary/90">
-            <Plus className="mr-2 h-4 w-4" />
-            Create Project
-          </Button>
-        </div>
+        <Button className="bg-primary hover:bg-primary/90"><Plus className="mr-2 h-4 w-4" />Create Project</Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl bg-background border-border">
         <DialogHeader>
           <DialogTitle className="text-foreground text-2xl">Create New Project</DialogTitle>
         </DialogHeader>
-        <MultiStepForm
-          steps={steps}
-          onComplete={handleSubmit}
-          className="w-full"
-        />
+        <MultiStepForm steps={steps} onComplete={handleSubmit} className="w-full" />
       </DialogContent>
     </Dialog>
   );

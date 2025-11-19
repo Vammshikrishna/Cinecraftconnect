@@ -54,6 +54,7 @@
       "npm:cmdk@^1.0.0": "npm:cmdk@1.1.1_react@18.3.1_react-dom@18.3.1__react@18.3.1_@types+react@18.3.26_@types+react-dom@18.3.7__@types+react@18.3.26",
       "npm:date-fns@^3.6.0": "npm:date-fns@3.6.0",
       "npm:embla-carousel-react@^8.3.0": "npm:embla-carousel-react@8.6.0_react@18.3.1_embla-carousel@8.6.0",
+      "npm:emoji-picker-react@^4.15.1": "npm:emoji-picker-react@4.15.1_react@18.3.1",
       "npm:eslint-plugin-react-hooks@^5.1.0-rc.0": "npm:eslint-plugin-react-hooks@5.2.0_eslint@9.39.1",
       "npm:eslint-plugin-react-refresh@^0.4.9": "npm:eslint-plugin-react-refresh@0.4.24_eslint@9.39.1",
       "npm:eslint@^9.9.0": "npm:eslint@9.39.1",
@@ -3174,6 +3175,13 @@
         "integrity": "sha512-DeWwawk6r5yR9jFgnDKYt4sLS0LmHJJi3ZOnb5/JdbYwj3nW+FxQnHIjhBKz8YLC7oRNPVM9NQ47I3CVx34eqQ==",
         "dependencies": {}
       },
+      "emoji-picker-react@4.15.1_react@18.3.1": {
+        "integrity": "sha512-RYeAgutdYGbKAyLrOHLsSUubGhg6q8sK889k7G8ofWxzqUzeY2i9WR4+Fj8gsP7oPYTfFPFCG7P6/Tl5TWnqOA==",
+        "dependencies": {
+          "flairup": "flairup@1.0.0",
+          "react": "react@18.3.1"
+        }
+      },
       "emoji-regex@8.0.0": {
         "integrity": "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==",
         "dependencies": {}
@@ -3456,6 +3464,10 @@
           "locate-path": "locate-path@6.0.0",
           "path-exists": "path-exists@4.0.0"
         }
+      },
+      "flairup@1.0.0": {
+        "integrity": "sha512-IKlE+pNvL2R+kVL1kEhUYqRxVqeFnjiIvHWDMLFXNaqyUdFXQM2wte44EfMYJNHkW16X991t2Zg8apKkhv7OBA==",
+        "dependencies": {}
       },
       "flat-cache@4.0.1": {
         "integrity": "sha512-f7ccFPK3SXFHpx15UIGyRJ/FJQctuKZ0zVuN3frBo4HnK3cay9VEW0R6yPYFHC0AgqhukPzKjq22t5DmAyqGyw==",
@@ -5502,6 +5514,7 @@
         "npm:cmdk@^1.0.0",
         "npm:date-fns@^3.6.0",
         "npm:embla-carousel-react@^8.3.0",
+        "npm:emoji-picker-react@^4.15.1",
         "npm:eslint-plugin-react-hooks@^5.1.0-rc.0",
         "npm:eslint-plugin-react-refresh@^0.4.9",
         "npm:eslint@^9.9.0",

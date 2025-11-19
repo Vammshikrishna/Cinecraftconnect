@@ -10,7 +10,8 @@ import {
   Briefcase,
   DollarSign,
   ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  UserPlus
 } from 'lucide-react';
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
 import Tasks from '@/components/projects/Tasks';
@@ -20,6 +21,7 @@ import ShotList from '@/components/projects/ShotList';
 import LegalDocs from '@/components/projects/LegalDocs';
 import BudgetSched from '@/components/projects/BudgetSched';
 import Team from '@/components/projects/Team';
+import ProjectApplicants from '@/components/projects/ProjectApplicants';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -28,10 +30,10 @@ interface ProjectSpaceProps {
   projectId: string;
   projectTitle: string;
   projectDescription: string;
-  roomId: string; // Keep roomId specifically for the chat interface
+  roomId: string;
 }
 
-type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched';
+type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched' | 'applicants';
 
 export const ProjectSpace = ({ 
   projectId,
@@ -58,7 +60,7 @@ export const ProjectSpace = ({
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (isResizing) {
       const newWidth = e.clientX;
-      if (newWidth > 240 && newWidth < 500) { // Min and max width
+      if (newWidth > 240 && newWidth < 500) {
         setSidebarWidth(newWidth);
       }
     }
@@ -76,7 +78,6 @@ export const ProjectSpace = ({
     }
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
-  // CORRECTED: Fetch user role from the new project_members table
   useEffect(() => {
     const fetchUserRole = async () => {
       if (!user || !projectId) return;
@@ -88,10 +89,20 @@ export const ProjectSpace = ({
           .eq('user_id', user.id)
           .single();
 
-        if (error) throw error;
+        if (error && error.code !== 'PGRST116') throw error;
 
         if (membership) {
           setUserRole(membership.role as any);
+        } else {
+            const { data: project, error: projectError } = await supabase
+                .from('projects')
+                .select('creator_id')
+                .eq('id', projectId)
+                .single();
+            if (projectError) throw projectError;
+            if (project && project.creator_id === user.id) {
+                setUserRole('creator');
+            }
         }
       } catch (error) {
         console.error('Error fetching user role:', error);
@@ -115,13 +126,15 @@ export const ProjectSpace = ({
 
   const teamNavItems = [
       { id: 'team' as ActiveSection, label: 'Team', icon: Users },
-  ]
+  ];
 
-  // CORRECTED: Pass projectId to all child components except for the chat.
+  if (userRole === 'creator' || userRole === 'admin') {
+    teamNavItems.push({ id: 'applicants' as ActiveSection, label: 'Applicants', icon: UserPlus });
+  }
+
   const renderContent = () => {
     switch (activeSection) {
       case 'chat':
-        // The chat interface is the only component that still needs the specific roomId.
         return <ProjectChatInterface roomId={roomId} userRole={userRole} roomTitle={projectTitle} roomDescription={projectDescription} onClose={() => navigate('/projects')} />;
       case 'tasks':
         return <Tasks project_id={projectId} />;
@@ -137,6 +150,8 @@ export const ProjectSpace = ({
         return <BudgetSched project_id={projectId} />;
       case 'team':
         return <Team project_id={projectId} />;
+      case 'applicants':
+        return <ProjectApplicants projectId={projectId} />;
       default:
         return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
     }
@@ -154,7 +169,6 @@ export const ProjectSpace = ({
               Back to Projects
             </Button>
         </header>
-      {/* Sidebar */}
       <div className="flex flex-1 overflow-hidden">
         <div 
           className="flex flex-col border-r border-border/50 bg-slate-900/50"
@@ -240,13 +254,11 @@ export const ProjectSpace = ({
           </nav>
         </div>
 
-        {/* Resizer */}
         <div 
           className="w-1 cursor-col-resize hover:bg-primary transition-colors"
           onMouseDown={handleMouseDown}
         />
 
-        {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden">
           {renderContent()}
         </main>

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Paperclip, Send, Smile } from 'lucide-react';
 import { z } from 'zod';
+import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 
 const messageSchema = z.object({
   content: z.string()
@@ -23,6 +24,8 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: Me
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const handleSend = async () => {
     setError(null);
@@ -33,6 +36,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: Me
       onStopTyping?.();
       await onSend(content);
       setContent('');
+      setShowEmojiPicker(false);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0].message);
@@ -56,6 +60,23 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: Me
     }
   };
 
+  const handleEmojiClick = (emojiData: EmojiClickData) => {
+    setContent(prevContent => prevContent + emojiData.emoji);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   const charCount = content.length;
   const isNearLimit = charCount > 1800;
   const isOverLimit = charCount > 2000;
@@ -63,6 +84,11 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: Me
   return (
     <div className="space-y-3 border-t border-border pt-4">
       <div className="relative">
+        {showEmojiPicker && (
+            <div ref={emojiPickerRef} className="absolute bottom-full right-0 mb-2 z-10">
+                <EmojiPicker onEmojiClick={handleEmojiClick} />
+            </div>
+        )}
         <Textarea
           value={content}
           onChange={handleContentChange}
@@ -87,7 +113,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping }: Me
             size="icon"
             variant="ghost"
             className="h-8 w-8"
-            disabled
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
           >
             <Smile className="h-4 w-4" />
           </Button>

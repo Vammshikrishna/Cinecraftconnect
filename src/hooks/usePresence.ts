@@ -1,55 +1,45 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '@/contexts/AuthContext';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-interface PresenceState {
-  [key: string]: Array<{
-    presence_ref: string;
-    user_id?: string;
-    online_at?: string;
-    [key: string]: any;
-  }>;
-}
-
-export const usePresence = (roomId: string) => {
+export const usePresence = (channelName: string) => {
   const { user } = useAuth();
-  const [onlineUsers, setOnlineUsers] = useState<PresenceState>({});
+  const [presence, setPresence] = useState<any>({});
   const [channel, setChannel] = useState<RealtimeChannel | null>(null);
 
   useEffect(() => {
-    if (!user || !roomId) return;
+    if (!user) return;
 
-    const presenceChannel = supabase.channel(`presence-${roomId}`);
+    const newChannel = supabase.channel(channelName, {
+      config: {
+        presence: {
+          key: user.id,
+        },
+      },
+    });
 
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const newState = presenceChannel.presenceState();
-        console.log('Presence sync:', newState);
-        setOnlineUsers(newState);
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('User joined:', key, newPresences);
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('User left:', key, leftPresences);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({
-            user_id: user.id,
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
+    newChannel.on('presence', { event: 'sync' }, () => {
+      const newState = newChannel.presenceState();
+      setPresence(newState);
+    });
 
-    setChannel(presenceChannel);
+    newChannel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await newChannel.track({ online_at: new Date().toISOString() });
+      }
+    });
+
+    setChannel(newChannel);
 
     return () => {
-      presenceChannel.untrack();
-      supabase.removeChannel(presenceChannel);
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [user, roomId]);
+  }, [user, channelName]);
 
-  return { onlineUsers, channel };
+  const onlineUserIds = Object.keys(presence);
+
+  return { onlineUserIds };
 };

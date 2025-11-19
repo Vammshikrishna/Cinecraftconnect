@@ -55,7 +55,7 @@ const DiscussionRoomsPage = () => {
       const [roomsRes, categoriesRes] = await Promise.all([
         supabase
           .from('discussion_rooms')
-          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count:room_members(count), room_categories!discussion_rooms_category_id_fkey(name)'),
+          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count:room_members(count), room_categories(name)'),
         supabase.from('room_categories').select('id, name')
       ]);
 
@@ -302,7 +302,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
             // 2. Fetch the full room data to update the UI
             const { data: newRoomData, error: fetchError } = await supabase
                 .from('discussion_rooms')
-                .select('id, title, description, created_at, category_id, room_type, creator_id, room_categories!discussion_rooms_category_id_fkey(name)')
+                .select('id, title, description, created_at, category_id, room_type, creator_id, room_categories(name)')
                 .eq('id', newRoomId)
                 .single();
 

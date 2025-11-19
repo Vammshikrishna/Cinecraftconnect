@@ -10,7 +10,7 @@ import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
   description: string;
   status: string;
   location: string;
@@ -26,7 +26,7 @@ interface Project {
 
 interface DiscussionRoom {
     id: string;
-    title: string;
+    name: string;
     description: string;
     member_count: number;
     created_at: string;
@@ -62,7 +62,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
       try {
         const [posts, projects, discussions, announcements] = await Promise.all([
           supabase.from('posts').select('*, profiles:author_id(id, full_name, username, avatar_url, craft)').order('created_at', { ascending: false }).limit(20),
-          supabase.from('projects').select('*, profiles:creator_id(full_name)').order('created_at', { ascending: false }).limit(10),
+          supabase.from('project_spaces').select('*, profiles:creator_id(full_name)').order('created_at', { ascending: false }).limit(10),
           supabase.from('discussion_rooms').select('*').order('created_at', { ascending: false }).limit(5),
           supabase.from('announcements').select('*').order('posted_at', { ascending: false }).limit(5)
         ]);
@@ -118,7 +118,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
                     <div className="flex items-start gap-4">
                         <Film className="h-8 w-8 text-primary mt-1" />
                         <div className="flex-1">
-                            <h3 className="text-lg font-semibold">Project: {item.title}</h3>
+                            <h3 className="text-lg font-semibold">Project: {item.name}</h3>
                             <p className="text-gray-300 text-sm mt-1">{item.description.substring(0, 150)}...</p>
                             <div className="space-y-3 mt-4">
                                 <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -156,7 +156,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
                     <div className="flex items-start gap-4">
                         <MessageCircle className="h-8 w-8 text-primary mt-1" />
                         <div className="flex-1">
-                            <h3 className="text-lg font-semibold">Discussion: {item.title}</h3>
+                            <h3 className="text-lg font-semibold">Discussion: {item.name}</h3>
                             <p className="text-gray-300 text-sm mt-1">{item.description.substring(0, 150)}...</p>
                             <div className="flex items-center justify-between pt-3 mt-3 text-xs text-muted-foreground">
                                 <div className='flex items-center'>

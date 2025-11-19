@@ -19,12 +19,14 @@ import {
   Calendar, 
   DollarSign, 
   Users, 
-  Film
+  Film,
+  ImageIcon,
+  Bookmark
 } from 'lucide-react';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
   description: string;
   status: string;
   location: string;
@@ -36,11 +38,7 @@ interface Project {
   end_date?: string;
   creator_id: string;
   created_at: string;
-  profiles?: {
-    full_name: string;
-    avatar_url: string;
-    craft?: string;
-  } | null;
+  project_space_bookmarks?: { user_id: string }[];
 }
 
 const Projects = () => {
@@ -60,35 +58,30 @@ const Projects = () => {
 
   useEffect(() => {
     fetchProjects();
-  }, [activeTab]);
+  }, [activeTab, user]);
 
   const fetchProjects = async () => {
     setLoading(true);
     try {
+      const isBookmarkedTab = activeTab === 'bookmarked';
       let query = supabase
-        .from('projects')
+        .from('project_spaces')
         .select(`
           *,
-          profiles!creator_id (
-            full_name,
-            avatar_url,
-            craft
-          )
-        `)
-        .order('created_at', { ascending: false });
+          project_space_bookmarks!${isBookmarkedTab ? 'inner' : 'left'}(user_id)
+        `);
 
       if (activeTab === 'my') {
-        if (user?.id) {
-          query = query.eq('creator_id', user.id);
-        } else {
-          setProjects([]);
-          return;
-        }
+        if (!user) { setProjects([]); return; }
+        query = query.eq('creator_id', user.id);
+      } else if (isBookmarkedTab) {
+        if (!user) { setProjects([]); return; }
+        query = query.eq('project_space_bookmarks.user_id', user.id);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error && error.code !== 'PGRST116') throw error; 
       setProjects((data || []) as any);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -101,166 +94,87 @@ const Projects = () => {
       setLoading(false);
     }
   };
-
+  
   const filteredProjects = projects.filter(project => {
-    // Search filter
     const matchesSearch = 
-      project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (project.description && project.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
       project.location?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    // Status filter
-    const matchesStatus = filters.status.length === 0 || 
-      filters.status.includes(project.status);
-
-    // Genre filter
-    const matchesGenre = filters.genres.length === 0 ||
-      (project.genre && filters.genres.some(g => project.genre.includes(g)));
-
-    // Role filter
-    const matchesRole = filters.roles.length === 0 ||
-      (project.required_roles && filters.roles.some(r => project.required_roles.includes(r)));
-
+    const matchesStatus = filters.status.length === 0 || filters.status.includes(project.status);
+    const matchesGenre = filters.genres.length === 0 || (project.genre && filters.genres.some(g => project.genre.includes(g)));
+    const matchesRole = filters.roles.length === 0 || (project.required_roles && filters.roles.some(r => project.required_roles.includes(r)));
     return matchesSearch && matchesStatus && matchesGenre && matchesRole;
   });
 
-  const formatBudget = (min?: number, max?: number) => {
-    if (!min && !max) return 'Budget TBD';
-    if (min && max) return `$${min.toLocaleString()} - $${max.toLocaleString()}`;
-    if (min) return `$${min.toLocaleString()}+`;
-    return `Up to $${max?.toLocaleString()}`;
-  };
+  const handleBookmarkToggle = async (project: Project, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) return;
 
-  const getStatusVariant = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'planning': return 'secondary';
-      case 'in-production': return 'default';
-      case 'post-production': return 'outline';
-      case 'completed': return 'secondary';
-      default: return 'outline';
+    const isBookmarked = project.project_space_bookmarks?.some(b => b.user_id === user.id);
+    const newProjects = [...projects];
+    const projectIndex = newProjects.findIndex(p => p.id === project.id);
+
+    if (isBookmarked) {
+      const { error } = await supabase.from('project_space_bookmarks').delete().match({ project_space_id: project.id, user_id: user.id });
+      if (!error) {
+        newProjects[projectIndex].project_space_bookmarks = newProjects[projectIndex].project_space_bookmarks?.filter(b => b.user_id !== user.id);
+        setProjects(newProjects);
+        toast({ title: "Bookmark removed" });
+      }
+    } else {
+      const { error } = await supabase.from('project_space_bookmarks').insert({ project_space_id: project.id, user_id: user.id });
+      if (!error) {
+        if (!newProjects[projectIndex].project_space_bookmarks) newProjects[projectIndex].project_space_bookmarks = [];
+        newProjects[projectIndex].project_space_bookmarks?.push({ user_id: user.id });
+        setProjects(newProjects);
+        toast({ title: "Project bookmarked!" });
+      }
     }
   };
 
-  const ProjectCard = ({ project }: { project: Project }) => (
-    <InteractiveCard
-      title={project.title}
-      description={project.description?.substring(0, 100) + (project.description?.length > 100 ? '...' : '')}
-      variant="hover-lift"
-      className="h-full cursor-pointer"
-      onClick={() => setSelectedProject(project)}
-    >
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Badge variant={getStatusVariant(project.status)} className="capitalize">
-            {project.status}
-          </Badge>
-          {project.location && (
-            <div className="flex items-center text-muted-foreground text-sm">
-              <MapPin className="mr-1 h-3 w-3" />
-              {project.location}
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="flex items-center text-sm text-muted-foreground">
-            <DollarSign className="mr-1 h-4 w-4" />
-            {formatBudget(project.budget_min, project.budget_max)}
-          </div>
-          {project.start_date && (
-            <div className="flex items-center text-sm text-muted-foreground">
-              <Calendar className="mr-1 h-4 w-4" />
-              {formatDistanceToNow(new Date(project.start_date), { addSuffix: true })}
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-3">
-          {project.genre && project.genre.length > 0 && (
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-2">Genres</p>
-              <div className="flex flex-wrap gap-1">
-                {project.genre.slice(0, 3).map((g) => (
-                  <Badge key={g} variant="secondary" className="text-xs">
-                    {g}
-                  </Badge>
-                ))}
-                {project.genre.length > 3 && (
-                  <Badge variant="secondary" className="text-xs">
-                    +{project.genre.length - 3} more
-                  </Badge>
-                )}
-              </div>
-            </div>
-          )}
-
-          {project.required_roles && project.required_roles.length > 0 && (
-            <div>
-              <p className="text-sm font-medium flex items-center mb-2 text-muted-foreground">
-                <Users className="mr-1 h-4 w-4" />
-                Looking for
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {project.required_roles.slice(0, 3).map((role) => (
-                  <Badge key={role} variant="outline" className="text-xs">
-                    {role}
-                  </Badge>
-                ))}
-                {project.required_roles.length > 3 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{project.required_roles.length - 3} more
-                  </Badge>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between pt-4 border-t border-border">
-          <div className="flex items-center text-sm text-muted-foreground">
-            <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">
-              {project.profiles?.full_name?.charAt(0) || 'U'}
-            </div>
-            {project.profiles?.full_name || 'Unknown'}
-          </div>
-          <span className="text-xs text-muted-foreground">
-            {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
-          </span>
-        </div>
-      </div>
-    </InteractiveCard>
-  );
-
-  if (loading) {
+  const ProjectCard = ({ project }: { project: Project }) => {
+    const isBookmarked = project.project_space_bookmarks?.some(b => b.user_id === user?.id);
     return (
-      <div className="min-h-screen bg-background pt-20">
-        <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <EnhancedSkeleton className="h-8 w-48 mb-2" />
-              <EnhancedSkeleton className="h-4 w-64" />
+      <InteractiveCard
+        variant="hover-lift"
+        className="h-full cursor-pointer flex flex-col"
+        onClick={() => setSelectedProject(project)}
+      >
+        <div className="w-full h-40 bg-muted rounded-t-lg overflow-hidden flex items-center justify-center relative">
+          <ImageIcon className="w-12 h-12 text-muted-foreground" />
+          <button onClick={(e) => handleBookmarkToggle(project, e)} className="absolute top-2 right-2 p-1.5 bg-background/70 backdrop-blur-sm rounded-full hover:bg-background transition-colors">
+            <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-primary text-primary' : 'text-foreground'}`} />
+          </button>
+        </div>
+        <div className="p-4 flex-grow flex flex-col justify-between">
+          <div>
+            <h3 className="font-bold text-lg truncate mb-2">{project.name}</h3>
+            <div className="flex items-center justify-between mb-3">
+              <Badge variant={getStatusVariant(project.status)} className="capitalize">{project.status}</Badge>
+              {project.location && <div className="flex items-center text-muted-foreground text-sm"><MapPin className="mr-1 h-3 w-3" />{project.location}</div>}
             </div>
-            <EnhancedSkeleton className="h-10 w-32" />
+            <p className="text-sm text-muted-foreground mb-4 h-10 overflow-hidden">{project.description?.substring(0, 80) + (project.description?.length > 80 ? '...' : '')}</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[...Array(6)].map((_, i) => (
-              <CardSkeleton key={i} />
-            ))}
+          <div className="flex items-center justify-between pt-4 border-t border-border">
+            <div className="flex items-center text-sm text-muted-foreground">
+                <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">U</div>
+                Unknown
+            </div>
+            <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
           </div>
         </div>
-      </div>
+      </InteractiveCard>
     );
-  }
+  };
+
+  // Other components (loading, header, etc.) remain largely the same...
 
   return (
     <div className="min-h-screen bg-background pt-20">
       <div className="container mx-auto px-4 py-8 animate-fade-in">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 space-y-4 lg:space-y-0">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
-              <Film className="mr-3 h-8 w-8 text-primary" />
-              Projects
-            </h1>
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center"><Film className="mr-3 h-8 w-8 text-primary" />Projects</h1>
             <p className="text-muted-foreground">Discover and collaborate on film projects</p>
           </div>
           <ProjectCreationModal onProjectCreated={fetchProjects} />
@@ -270,70 +184,48 @@ const Projects = () => {
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search projects..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10"/>
             </div>
-            <ProjectFilters 
-              onFiltersChange={setFilters}
-              activeFilters={filters}
-            />
+            <ProjectFilters onFiltersChange={setFilters} activeFilters={filters} />
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="bg-card border border-border">
-              <TabsTrigger 
-                value="all" 
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                All Projects ({projects.length})
-              </TabsTrigger>
-              <TabsTrigger 
-                value="my"
-                className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-              >
-                My Projects
-              </TabsTrigger>
+              <TabsTrigger value="all" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All Projects</TabsTrigger>
+              {user && <TabsTrigger value="my" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
+              {user && <TabsTrigger value="bookmarked" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}
             </TabsList>
           </Tabs>
         </div>
 
-        {filteredProjects.length > 0 ? (
-          <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6}>
-            {filteredProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </ResponsiveGrid>
-        ) : (
-          <div className="text-center py-12">
-            <Film className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-            <p className="text-lg mb-2 text-muted-foreground">
-              {searchTerm || Object.values(filters).some(f => f.length > 0)
-                ? 'No projects match your filters' 
-                : 'No projects found'}
-            </p>
-            <p className="text-muted-foreground/80 mb-4">
-              {searchTerm || Object.values(filters).some(f => f.length > 0)
-                ? 'Try adjusting your filters or search terms' 
-                : 'Be the first to create a project'}
-            </p>
-            {!searchTerm && Object.values(filters).every(f => f.length === 0) && (
-              <ProjectCreationModal onProjectCreated={fetchProjects} />
-            )}
-          </div>
+        {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
+          filteredProjects.length > 0 ? (
+            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6}>
+              {filteredProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
+            </ResponsiveGrid>
+          ) : (
+            <div className="text-center py-12">
+              <Film className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
+              <p className="text-lg mb-2 text-muted-foreground">No projects found</p>
+              <p className="text-muted-foreground/80 mb-4">Try adjusting your filters or create a new project.</p>
+            </div>
+          )
         )}
 
-        <ProjectDetailDialog 
-          project={selectedProject}
-          open={!!selectedProject}
-          onOpenChange={(open) => !open && setSelectedProject(null)}
-        />
+        <ProjectDetailDialog project={selectedProject} open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)} />
       </div>
     </div>
   );
 };
 
 export default Projects;
+
+function getStatusVariant(status: string) {
+  switch (status.toLowerCase()) {
+      case 'planning': return 'secondary';
+      case 'in-production': return 'default';
+      case 'post-production': return 'outline';
+      case 'completed': return 'secondary';
+      default: return 'outline';
+  }
+}

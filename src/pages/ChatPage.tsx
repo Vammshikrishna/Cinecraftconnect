@@ -1,9 +1,8 @@
-
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import RealTimeChat from '@/components/chat/RealTimeChat';
+import EnhancedRealTimeChat from '@/components/chat/EnhancedRealTimeChat';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 interface Profile {
@@ -66,7 +65,7 @@ const ChatPage = () => {
 
   return (
     <div className="h-screen pt-16">
-      <RealTimeChat 
+      <EnhancedRealTimeChat 
         roomId={channelId} 
         partnerId={partner.id}
         partnerName={partner.full_name}

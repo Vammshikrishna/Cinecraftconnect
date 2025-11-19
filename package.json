@@ -53,6 +53,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
+    "emoji-picker-react": "^4.15.1",
     "framer-motion": "^12.23.24",
     "input-otp": "^1.2.4",
     "jest": "^30.2.0",

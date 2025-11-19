@@ -11,27 +11,22 @@ interface Shot {
     description: string;
 }
 
-// CORRECTED: Props interface now expects project_id
 interface ShotListProps {
     project_id: string;
 }
 
-// CORRECTED: Component now accepts project_id
 const ShotList = ({ project_id }: ShotListProps) => {
-    // CORRECTED: useRealtimeData is now called with project_id
-    const { data: shots, error } = useRealtimeData<Shot>('shot_list', project_id);
+    const { data: shots, error } = useRealtimeData<Shot>('shot_list', 'project_id', project_id);
     const [newScene, setNewScene] = useState(1);
     const [newShot, setNewShot] = useState(1);
     const [newDescription, setNewDescription] = useState('');
 
     const handleAddShot = async () => {
         if (newDescription.trim() === '') return;
-        // CORRECTED: The insert query now uses the correct project_id column
         await supabase
             .from('shot_list')
             .insert([{ scene: newScene, shot: newShot, description: newDescription, project_id: project_id }]);
         setNewDescription('');
-        // Consider auto-incrementing shot number as a UX improvement
         setNewShot(prev => prev + 1);
     };
 

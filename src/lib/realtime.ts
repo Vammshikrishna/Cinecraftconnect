@@ -1,60 +1,48 @@
 
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useEffect, useState } from 'react';
 
-export const useRealtimeData = <T extends { [key: string]: any }>(table: string, filterColumn: string, filterValue: string) => {
-    const [data, setData] = useState<T[]>([]);
-    const [error, setError] = useState<any>(null);
+export const useRealtimeData = <T extends { id: any }>(
+  tableName: string, 
+  filterColumn: string, 
+  filterValue: string
+) => {
+  const [data, setData] = useState<T[] | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
-    useEffect(() => {
-        if (!filterValue) {
-            setData([]);
-            return;
+  const fetchData = useCallback(async () => {
+    const { data, error } = await supabase
+      .from(tableName)
+      .select('*')
+      .eq(filterColumn, filterValue);
+
+    if (error) {
+      console.error(`Error fetching ${tableName}:`, error);
+      setError(error);
+    } else {
+      setData(data as T[]);
+    }
+  }, [tableName, filterColumn, filterValue]);
+
+  useEffect(() => {
+    fetchData();
+
+    const channel = supabase
+      .channel(`realtime-${tableName}-${filterValue}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tableName, filter: `${filterColumn}=eq.${filterValue}` },
+        (payload) => {
+            console.log('Change received!', payload);
+            fetchData(); // Refetch data on any change
         }
+      )
+      .subscribe();
 
-        const fetchData = async () => {
-            const { data, error } = await supabase
-                .from(table)
-                .select('*')
-                .eq(filterColumn, filterValue);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tableName, filterColumn, filterValue, fetchData]);
 
-            if (error) {
-                console.error('Error fetching data:', error)
-                setError(error);
-            } else {
-                setData(data as T[]);
-            }
-        };
-
-        fetchData();
-
-        const channel = supabase.channel(`${table}-${filterColumn}-${filterValue}`);
-
-        const subscription = channel.on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table, filter: `${filterColumn}=eq.${filterValue}` },
-                (payload) => {
-                    if (payload.eventType === 'INSERT') {
-                        setData((currentData) => [payload.new as T, ...currentData]);
-                    } else if (payload.eventType === 'UPDATE') {
-                        setData((currentData) =>
-                            currentData.map((item) =>
-                                item.id === payload.new.id ? { ...item, ...payload.new } : item
-                            )
-                        );
-                    } else if (payload.eventType === 'DELETE') {
-                        setData((currentData) =>
-                            currentData.filter((item) => item.id !== payload.old.id)
-                        );
-                    }
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [table, filterColumn, filterValue]);
-
-    return { data, error };
+  return { data, error, setData };
 };
