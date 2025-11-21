@@ -28,12 +28,14 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
 -- Users can view their own notifications
+DROP POLICY IF EXISTS "Users can view their own notifications" ON public.notifications;
 CREATE POLICY "Users can view their own notifications" 
     ON public.notifications 
     FOR SELECT 
     USING (auth.uid() = user_id);
 
 -- Users can update their own notifications (e.g., mark as read)
+DROP POLICY IF EXISTS "Users can update their own notifications" ON public.notifications;
 CREATE POLICY "Users can update their own notifications" 
     ON public.notifications 
     FOR UPDATE 
@@ -41,6 +43,7 @@ CREATE POLICY "Users can update their own notifications"
     WITH CHECK (auth.uid() = user_id);
 
 -- Only authenticated users can insert notifications (typically done by triggers/functions)
+DROP POLICY IF EXISTS "Authenticated users can insert notifications" ON public.notifications;
 CREATE POLICY "Authenticated users can insert notifications" 
     ON public.notifications 
     FOR INSERT 
@@ -56,6 +59,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to automatically update updated_at
+DROP TRIGGER IF EXISTS update_notifications_updated_at_trigger ON public.notifications;
 CREATE TRIGGER update_notifications_updated_at_trigger
     BEFORE UPDATE ON public.notifications
     FOR EACH ROW

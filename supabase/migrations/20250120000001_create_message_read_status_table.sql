@@ -17,7 +17,9 @@ CREATE INDEX IF NOT EXISTS idx_message_read_status_read_at ON public.project_spa
 ALTER TABLE public.project_space_message_read_status ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
+-- RLS Policies
 -- Users can view read status for messages in project spaces they're members of
+DROP POLICY IF EXISTS "Users can view read status in their project spaces" ON public.project_space_message_read_status;
 CREATE POLICY "Users can view read status in their project spaces" 
     ON public.project_space_message_read_status 
     FOR SELECT 
@@ -33,12 +35,14 @@ CREATE POLICY "Users can view read status in their project spaces"
     );
 
 -- Users can create read status entries for themselves
+DROP POLICY IF EXISTS "Users can create their own read status" ON public.project_space_message_read_status;
 CREATE POLICY "Users can create their own read status" 
     ON public.project_space_message_read_status 
     FOR INSERT 
     WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own read status
+DROP POLICY IF EXISTS "Users can update their own read status" ON public.project_space_message_read_status;
 CREATE POLICY "Users can update their own read status" 
     ON public.project_space_message_read_status 
     FOR UPDATE 
@@ -46,6 +50,7 @@ CREATE POLICY "Users can update their own read status"
     WITH CHECK (auth.uid() = user_id);
 
 -- Users can delete their own read status
+DROP POLICY IF EXISTS "Users can delete their own read status" ON public.project_space_message_read_status;
 CREATE POLICY "Users can delete their own read status" 
     ON public.project_space_message_read_status 
     FOR DELETE 
