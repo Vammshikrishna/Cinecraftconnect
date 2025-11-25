@@ -1,38 +1,61 @@
-
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface Post {
-  id: string;
-  content: string;
-  media_url?: string;
-  media_type?: string;
-}
+import PostCard from '@/components/feed/PostCard';
+import { useAuth } from '@/contexts/AuthContext';
+import { formatDistanceToNow } from 'date-fns';
+import { Post } from '@/types';
 
 interface UserPostsProps {
   targetUserId: string;
 }
 
+interface ExtendedPost extends Post {
+  profiles: {
+    id: string;
+    full_name: string;
+    username: string;
+    avatar_url: string;
+    craft: string;
+  };
+}
+
 export const UserPosts = ({ targetUserId }: UserPostsProps) => {
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [posts, setPosts] = useState<ExtendedPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!targetUserId) return;
 
     const fetchPosts = async () => {
       setLoading(true);
+
+      // Fetch posts
       const { data, error } = await supabase
         .from('posts')
-        .select('id, content, media_url, media_type')
+        .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
         .eq('author_id', targetUserId)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setPosts(data as any);
+        setPosts(data as unknown as ExtendedPost[]);
       }
+
+      // Fetch liked posts for the current user
+      if (user) {
+        const { data: likesData } = await supabase
+          .from('post_likes' as any)
+          .select('post_id')
+          .eq('user_id', user.id);
+
+        if (likesData) {
+          setLikedPostIds(new Set((likesData as any[]).map(l => l.post_id)));
+        }
+      }
+
       setLoading(false);
     };
 
@@ -57,7 +80,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [targetUserId]);
+  }, [targetUserId, user]);
 
   if (loading) {
     return (
@@ -81,32 +104,37 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
   }
 
   return (
-    <div className="space-y-4">
-      {posts.map((post) => (
-        <Card key={post.id} className="bg-gray-900 border-gray-800 rounded-lg">
-          <CardContent className="p-4">
-            {post.content && <p className="text-gray-300 mb-4">{post.content}</p>}
-            
-            {post.media_url && (
-              <div className="rounded-lg overflow-hidden">
-                {post.media_type?.startsWith('image') ? (
-                  <img 
-                    src={post.media_url} 
-                    alt="Post media" 
-                    className="w-full h-auto object-contain"
-                  />
-                ) : post.media_type?.startsWith('video') ? (
-                  <video 
-                    src={post.media_url} 
-                    controls
-                    className="w-full h-auto rounded-lg"
-                  />
-                ) : null}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+    <div className="space-y-6">
+      {posts.map((post) => {
+        const author = post.profiles;
+        const authorName = author?.full_name || author?.username || 'Anonymous User';
+        const authorRole = author?.craft || 'Creator';
+        const getInitials = (name: string) =>
+          name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
+
+        return (
+          <PostCard
+            key={post.id}
+            id={post.id}
+            author={{
+              id: post.author_id,
+              name: authorName,
+              role: authorRole,
+              initials: getInitials(authorName),
+              avatar: author?.avatar_url || undefined
+            }}
+            timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+            content={post.content}
+            mediaUrl={post.media_url}
+            hasImage={post.media_type === 'image'}
+            hasVideo={post.media_type === 'video'}
+            like_count={post.like_count}
+            comment_count={post.comment_count}
+            share_count={post.share_count}
+            currentUserLiked={likedPostIds.has(post.id)}
+          />
+        );
+      })}
     </div>
   );
 };

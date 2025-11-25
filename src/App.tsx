@@ -7,6 +7,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ui/error-boundary";
+import "@/test-supabase";
 
 // Page Imports
 const Index = lazy(() => import("./pages/Index"));
@@ -27,6 +28,12 @@ const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
 const ChatsList = lazy(() => import("./pages/ChatsList"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const Settings = lazy(() => import("./pages/Settings"));
+const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
+const Vendors = lazy(() => import("./pages/Vendors"));
+const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
+const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
+const SearchPage = lazy(() => import("./pages/SearchPage"));
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -35,10 +42,11 @@ const LandingRoute = () => {
 };
 
 const App = () => {
+  const { user, profile } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Toaster />
-      <Navbar />
+      {user && profile?.onboarding_completed && <Navbar />}
       <ErrorBoundary>
         <Suspense
           fallback={
@@ -66,7 +74,13 @@ const App = () => {
             <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
             <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            
+            <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
+            <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
+            <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+            <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
+            <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+            <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>

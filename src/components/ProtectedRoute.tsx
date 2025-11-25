@@ -9,7 +9,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, profile } = useAuth();
   const location = useLocation();
 
   // Show loading spinner while checking authentication
@@ -24,6 +24,12 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   // Redirect to auth page if not authenticated
   if (!user) {
     return <Navigate to="/auth" state={{ from: location }} replace />;
+  }
+
+  // Redirect to profile completion if onboarding not completed
+  // Allow access to complete-profile and auth pages
+  if (profile && !(profile as any).onboarding_completed && location.pathname !== '/complete-profile') {
+    return <Navigate to="/complete-profile" replace />;
   }
 
   return <>{children}</>;

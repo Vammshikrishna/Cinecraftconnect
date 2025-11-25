@@ -19,6 +19,12 @@ const profileFormSchema = z.object({
   craft: z.string().max(1000, "Craft must be 1000 characters or less").optional(),
   location: z.string().max(100, "Location must be 100 characters or less").optional(),
   website: z.string().url("Please enter a valid URL").optional().or(z.literal('')),
+  social_links: z.object({
+    instagram: z.string().url("Invalid URL").optional().or(z.literal('')),
+    linkedin: z.string().url("Invalid URL").optional().or(z.literal('')),
+    twitter: z.string().url("Invalid URL").optional().or(z.literal('')),
+    facebook: z.string().url("Invalid URL").optional().or(z.literal('')),
+  }).optional(),
 });
 
 interface EditProfileFormProps {
@@ -42,6 +48,12 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       craft: profile.craft || "",
       location: profile.location || "",
       website: profile.website || "",
+      social_links: {
+        instagram: profile.social_links?.instagram || "",
+        linkedin: profile.social_links?.linkedin || "",
+        twitter: profile.social_links?.twitter || "",
+        facebook: profile.social_links?.facebook || "",
+      },
     },
   });
 
@@ -93,25 +105,25 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       });
     } else if (data) {
       toast({ title: "Profile updated successfully!" });
-      onUpdate(data);
+      onUpdate(data as unknown as Profile);
       setEditing(false);
     }
   };
 
   return (
     <Form {...form}>
-        <div className="flex flex-col items-center gap-4 mb-8">
-            <Avatar className="w-36 h-36 border-4 border-gray-800">
-                <AvatarImage src={avatarPreview || ''} alt="Avatar Preview" />
-                <AvatarFallback className="bg-gray-700 text-5xl">
-                    {profile.username?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-            </Avatar>
-            <div>
-                <FormLabel htmlFor="avatar-upload" className="cursor-pointer text-blue-500 hover:underline font-semibold">Change Photo</FormLabel>
-                <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
-            </div>
+      <div className="flex flex-col items-center gap-4 mb-8">
+        <Avatar className="w-36 h-36 border-4 border-gray-800">
+          <AvatarImage src={avatarPreview || ''} alt="Avatar Preview" />
+          <AvatarFallback className="bg-gray-700 text-5xl">
+            {profile.username?.charAt(0).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <FormLabel htmlFor="avatar-upload" className="cursor-pointer text-blue-500 hover:underline font-semibold">Change Photo</FormLabel>
+          <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
         </div>
+      </div>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -155,7 +167,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
             </FormItem>
           )}
         />
-         <FormField
+        <FormField
           control={form.control}
           name="craft"
           render={({ field }) => (
@@ -196,7 +208,65 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
             )}
           />
         </div>
-        
+
+        <div className="space-y-4 pt-4 border-t border-gray-800">
+          <h3 className="text-lg font-semibold">Social Media</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField
+              control={form.control}
+              name="social_links.instagram"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Instagram</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="Instagram profile URL" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="social_links.linkedin"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>LinkedIn</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="LinkedIn profile URL" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="social_links.twitter"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Twitter / X</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="Twitter profile URL" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="social_links.facebook"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Facebook</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="Facebook profile URL" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+        </div>
+
         <div className="flex justify-end gap-2 pt-6 border-t border-gray-800">
           <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
             Cancel

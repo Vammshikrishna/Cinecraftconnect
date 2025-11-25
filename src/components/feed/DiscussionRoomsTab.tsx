@@ -25,9 +25,7 @@ interface DiscussionRoom {
   title: string;
   description: string;
   creator_id: string;
-  member_count: number;
-  is_active: boolean;
-  room_type: string;
+  member_count: number | null;
   created_at: string;
 }
 
@@ -39,13 +37,11 @@ const DiscussionRoomsTab = () => {
   const [newRoomDescription, setNewRoomDescription] = useState("");
   const { toast } = useToast();
 
-  // Fetch discussion rooms
   const fetchRooms = async () => {
     try {
       const { data, error } = await supabase
         .from('discussion_rooms')
         .select('*')
-        .eq('is_active', true)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -62,10 +58,8 @@ const DiscussionRoomsTab = () => {
     }
   };
 
-  // Create new discussion room
   const createRoom = async () => {
     try {
-      // Validate input
       const validation = roomSchema.safeParse({
         title: newRoomTitle,
         description: newRoomDescription
@@ -101,28 +95,6 @@ const DiscussionRoomsTab = () => {
         ]);
 
       if (error) throw error;
-
-      // Get the created room ID and join as creator
-      const { data: roomData } = await supabase
-        .from('discussion_rooms')
-        .select('id')
-        .eq('title', newRoomTitle)
-        .eq('creator_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (roomData) {
-        await supabase
-          .from('room_members')
-          .insert([
-            {
-              room_id: roomData.id,
-              user_id: user.id,
-              role: 'creator'
-            }
-          ]);
-      }
 
       setNewRoomTitle("");
       setNewRoomDescription("");
@@ -177,7 +149,7 @@ const DiscussionRoomsTab = () => {
     <div className="glass-card rounded-xl p-6">
       <h2 className="text-xl font-bold mb-4 text-gradient">Discussion Rooms</h2>
       <p className="mb-6 text-gray-300">Connect with other filmmakers in virtual rooms to discuss projects, share ideas, and collaborate.</p>
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {rooms.length === 0 ? (
           <div className="col-span-2 text-center py-8 text-gray-400">
@@ -185,23 +157,23 @@ const DiscussionRoomsTab = () => {
           </div>
         ) : (
           rooms.map((room, index) => (
-            <DiscussionRoomCard 
+            <DiscussionRoomCard
               key={room.id}
               id={room.id}
               title={room.title}
               description={room.description}
-              memberCount={room.member_count}
+              memberCount={room.member_count || 0}
               members={[
                 { initials: "U1", color: "bg-primary/50" },
                 { initials: "U2", color: "bg-primary/70" },
-                { initials: `+${Math.max(0, room.member_count - 2)}`, color: "bg-primary/80" }
+                { initials: `+${Math.max(0, (room.member_count || 0) - 2)}`, color: "bg-primary/80" }
               ]}
               variant={index % 2 === 0 ? "purple" : "blue"}
             />
           ))
         )}
       </div>
-      
+
       <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
         <DialogTrigger asChild>
           <Button className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70">
@@ -229,7 +201,7 @@ const DiscussionRoomsTab = () => {
               <Button variant="outline" onClick={() => setShowCreateForm(false)}>
                 Cancel
               </Button>
-              <Button 
+              <Button
                 onClick={createRoom}
                 className="bg-gradient-to-r from-primary to-primary/80"
               >

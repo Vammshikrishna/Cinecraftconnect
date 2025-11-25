@@ -37,11 +37,9 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('project_space_applications').insert({
+      const { error } = await supabase.from('project_space_join_requests').insert({
         project_space_id: project.id,
         user_id: user.id,
-        role: selectedRole,
-        message: message,
         status: 'pending',
       });
 
@@ -72,7 +70,7 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
                 <SelectValue placeholder="Select a role..." />
               </SelectTrigger>
               <SelectContent>
-                {project?.required_roles.map(role => (
+                {(project?.required_roles || []).map(role => (
                   <SelectItem key={role} value={role}>{role}</SelectItem>
                 ))}
               </SelectContent>

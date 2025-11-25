@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'moderator' | 'user';
+export type UserRole = 'creator' | 'admin' | 'member' | 'moderator' | 'user';
 
 export interface Message {
   id: string;
@@ -10,4 +10,13 @@ export interface Message {
     username: string | null;
     avatar_url: string | null;
   };
+}
+
+export interface Call {
+  id: string;
+  room_id: string;
+  created_by: string;
+  call_type: 'audio' | 'video';
+  status: string;
+  created_at: string;
 }

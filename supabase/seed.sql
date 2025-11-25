@@ -20,21 +20,23 @@ SET
     username = 'testuser',
     full_name = 'Test User',
     avatar_url = 'https://i.pravatar.cc/150?u=testuser',
-    about_me = 'I am a test user for this amazing app.',
+    bio = 'I am a test user for this amazing app.',
+    location = 'Los Angeles, CA',
     craft = 'QA Tester'
 WHERE id = '8a76e641-9494-4369-a864-d249b5c393a5';
 
 -- Seed the project_spaces table
-INSERT INTO public.project_spaces (name, description, creator_id, is_public)
+INSERT INTO public.project_spaces (name, description, creator_id, project_space_type, status)
 SELECT
     'Project ' || i,
     'This is a description for project ' || i,
     '8a76e641-9494-4369-a864-d249b5c393a5',
-    true
+    'public',
+    'In-Production'
 FROM generate_series(1, 10) AS i;
 
 -- Seed the posts table
-INSERT INTO public.posts (user_id, content)
+INSERT INTO public.posts (author_id, content)
 SELECT
     '8a76e641-9494-4369-a864-d249b5c393a5',
     'This is a post with some interesting content: ' || md5(random()::text)
@@ -53,15 +55,19 @@ INSERT INTO public.likes (post_id, user_id)
 VALUES ((SELECT id FROM public.posts LIMIT 1), '8a76e641-9494-4369-a864-d249b5c393a5');
 
 -- Seed discussion_rooms table
-INSERT INTO public.discussion_rooms (name, description)
+INSERT INTO public.discussion_rooms (title, name, description, creator_id, is_public)
 SELECT
     'Discussion Room ' || i,
-    'This is a description for discussion room ' || i
+    'Discussion Room ' || i,
+    'This is a description for discussion room ' || i,
+    '8a76e641-9494-4369-a864-d249b5c393a5',
+    true
 FROM generate_series(1, 5) AS i;
 
 -- Seed announcements table
-INSERT INTO public.announcements (title, content)
+INSERT INTO public.announcements (title, content, author_id)
 SELECT
     'Announcement ' || i,
-    'This is the content for announcement ' || i
+    'This is the content for announcement ' || i,
+    '8a76e641-9494-4369-a864-d249b5c393a5'
 FROM generate_series(1, 5) AS i;

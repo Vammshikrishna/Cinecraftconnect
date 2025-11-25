@@ -17,7 +17,6 @@ const ProjectSpacePage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
-  const [roomId, setRoomId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,11 +27,11 @@ const ProjectSpacePage = () => {
       return;
     }
 
-    const fetchProjectAndRoom = async () => {
+    const fetchProject = async () => {
       try {
         const { data: projectData, error: projectError } = await supabase
-          .from('projects')
-          .select('id, title, description')
+          .from('project_spaces')
+          .select('id, name, description')
           .eq('id', projectId)
           .single();
 
@@ -41,29 +40,17 @@ const ProjectSpacePage = () => {
           setError('Project not found');
           return;
         }
-        setProject(projectData);
-
-        const { data: roomData, error: roomError } = await supabase
-          .from('discussion_rooms')
-          .select('id')
-          .eq('project_id', projectId)
-          .single();
-
-        if (roomError && roomError.code !== 'PGRST116') throw roomError;
-
-        if (roomData) {
-          setRoomId(roomData.id);
-        }
+        setProject({ id: projectData.id, title: projectData.name, description: projectData.description });
 
       } catch (err) {
-        console.error('Error fetching project space data:', err);
+        console.error('Error fetching project:', err);
         setError('Failed to load project space');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchProjectAndRoom();
+    fetchProject();
   }, [projectId]);
 
   if (loading) {
@@ -88,30 +75,14 @@ const ProjectSpacePage = () => {
       </div>
     );
   }
-  
-  if (!roomId) {
-    return (
-        <div className="h-screen w-screen bg-background flex flex-col items-center justify-center">
-            <div className="text-center">
-                <h1 className="text-2xl font-bold mb-4">Project Space Not Found</h1>
-                <p className="text-muted-foreground mb-6">This project does not have an associated collaboration space.</p>
-                <Button onClick={() => navigate('/projects')} className="gap-2">
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to Projects
-                </Button>
-            </div>
-        </div>
-    );
-  }
 
   return (
     <div className="h-screen w-screen bg-background flex flex-col p-4 pt-20">
-        <ProjectSpace
-            projectId={project.id}
-            projectTitle={project.title}
-            projectDescription={project.description || ''}
-            roomId={roomId}
-        />
+      <ProjectSpace
+        projectId={project.id}
+        projectTitle={project.title}
+        projectDescription={project.description || ''}
+      />
     </div>
   );
 };

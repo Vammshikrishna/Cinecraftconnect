@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-interface File {
+interface ProjectFile {
     id: number;
     name: string;
     size: number;
@@ -19,7 +19,7 @@ interface FilesProps {
 // CORRECTED: Component now accepts project_id
 const Files = ({ project_id }: FilesProps) => {
     // CORRECTED: useRealtimeData is now called with project_id
-    const { data: files, error } = useRealtimeData<File>('files', project_id);
+    const { data: files, error } = useRealtimeData<ProjectFile>('files', 'project_id', project_id);
     const [uploading, setUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -54,7 +54,7 @@ const Files = ({ project_id }: FilesProps) => {
             .getPublicUrl(filePath);
 
         // CORRECTED: The insert query now uses the correct project_id column
-        await supabase.from('files').insert([
+        await supabase.from('files' as any).insert([
             {
                 name: selectedFile.name,
                 size: selectedFile.size,
@@ -68,12 +68,12 @@ const Files = ({ project_id }: FilesProps) => {
     };
 
     const formatBytes = (bytes: number, decimals = 2) => {
-      if (bytes === 0) return '0 Bytes';
-      const k = 1024;
-      const dm = decimals < 0 ? 0 : decimals;
-      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
     if (error) {

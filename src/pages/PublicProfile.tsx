@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  MapPin, 
-  Globe, 
-  Briefcase, 
-  MessageCircle, 
-  UserPlus, 
+import {
+  MapPin,
+  Globe,
+  MessageCircle,
+  UserPlus,
   UserCheck,
   Clock,
-  ArrowLeft
+  ArrowLeft,
+  Instagram,
+  Linkedin,
+  Twitter,
+  Facebook,
 } from 'lucide-react';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import { UserProjects } from '@/components/profile/UserProjects';
@@ -36,9 +39,8 @@ interface Profile {
 }
 
 const PublicProfile = () => {
-  const [searchParams] = useSearchParams();
+  const { userId } = useParams();
   const navigate = useNavigate();
-  const userId = searchParams.get('user');
   const { user } = useAuth();
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -55,7 +57,7 @@ const PublicProfile = () => {
       fetchProfile();
       fetchConnectionStatus();
     } else {
-        setLoading(false);
+      setLoading(false);
     }
   }, [userId, user, navigate]);
 
@@ -65,11 +67,12 @@ const PublicProfile = () => {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', userId || '')
         .single();
 
       if (error || !data) throw error || new Error('Profile not found');
-      setProfile(data);
+      // Cast data to Profile type, ensuring skills is treated as string[]
+      setProfile({ ...data, skills: [] } as unknown as Profile);
     } catch (error) {
       console.error('Error fetching profile:', error);
       toast({ title: 'Error', description: 'Failed to load profile', variant: 'destructive' });
@@ -83,16 +86,18 @@ const PublicProfile = () => {
 
     try {
       const { data } = await supabase
-        .from('user_connections')
+        .from('user_connections' as any)
         .select('id, status, follower_id')
         .or(`and(follower_id.eq.${user.id},following_id.eq.${userId}),and(follower_id.eq.${userId},following_id.eq.${user.id})`)
         .single();
 
-      if (data) {
-        setConnectionId(data.id);
-        if (data.status === 'accepted') {
+      const connectionData = data as any;
+
+      if (connectionData) {
+        setConnectionId(connectionData.id);
+        if (connectionData.status === 'accepted') {
           setConnectionStatus('connected');
-        } else if (data.follower_id === user.id) {
+        } else if (connectionData.follower_id === user.id) {
           setConnectionStatus('pending_sent');
         } else {
           setConnectionStatus('pending_received');
@@ -108,7 +113,7 @@ const PublicProfile = () => {
   const handleConnect = async () => {
     if (!user || !userId) return;
     try {
-      const { error } = await supabase.from('user_connections').insert({ follower_id: user.id, following_id: userId, status: 'pending' });
+      const { error } = await supabase.from('user_connections' as any).insert({ follower_id: user.id, following_id: userId, status: 'pending' });
       if (error) throw error;
       toast({ title: 'Success', description: 'Connection request sent' });
       fetchConnectionStatus();
@@ -120,7 +125,7 @@ const PublicProfile = () => {
   const handleCancelRequest = async () => {
     if (!connectionId) return;
     try {
-      const { error } = await supabase.from('user_connections').delete().eq('id', connectionId);
+      const { error } = await supabase.from('user_connections' as any).delete().eq('id', connectionId);
       if (error) throw error;
       toast({ title: 'Success', description: 'Connection request cancelled' });
       setConnectionStatus('none');
@@ -161,24 +166,49 @@ const PublicProfile = () => {
                 <h1 className="text-3xl font-bold">{profile.full_name || profile.username}</h1>
                 <p className="text-muted-foreground">@{profile.username}</p>
                 {profile.craft && <Badge className="mt-2">{profile.craft}</Badge>}
-                
+
                 <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground justify-center md:justify-start">
-                  {profile.location && <span className="flex items-center"><MapPin className="mr-1.5 h-4 w-4"/>{profile.location}</span>}
-                  {profile.website && <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-primary"><Globe className="mr-1.5 h-4 w-4"/>{profile.website}</a>}
+                  {profile.location && <span className="flex items-center"><MapPin className="mr-1.5 h-4 w-4" />{profile.location}</span>}
+                  {profile.website && <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center hover:text-primary"><Globe className="mr-1.5 h-4 w-4" />{profile.website}</a>}
                 </div>
+
+                {(profile as any).social_links && (
+                  <div className="flex items-center justify-center md:justify-start gap-4 mt-4">
+                    {(profile as any).social_links.instagram && (
+                      <a href={(profile as any).social_links.instagram} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-pink-500 transition-colors">
+                        <Instagram size={20} />
+                      </a>
+                    )}
+                    {(profile as any).social_links.linkedin && (
+                      <a href={(profile as any).social_links.linkedin} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-blue-500 transition-colors">
+                        <Linkedin size={20} />
+                      </a>
+                    )}
+                    {(profile as any).social_links.twitter && (
+                      <a href={(profile as any).social_links.twitter} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-blue-400 transition-colors">
+                        <Twitter size={20} />
+                      </a>
+                    )}
+                    {(profile as any).social_links.facebook && (
+                      <a href={(profile as any).social_links.facebook} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-blue-600 transition-colors">
+                        <Facebook size={20} />
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="mt-6 pt-6 border-t">
               {profile.bio && <p className="text-center md:text-left">{profile.bio}</p>}
-              
+
               {profile.skills && profile.skills.length > 0 && (
-                  <div className="mt-4">
-                      <h3 className="font-semibold mb-2 text-center md:text-left">Skills</h3>
-                      <div className="flex flex-wrap gap-2 justify-center md:justify-start">
-                          {profile.skills.map(skill => <Badge key={skill} variant="secondary">{skill}</Badge>)}
-                      </div>
+                <div className="mt-4">
+                  <h3 className="font-semibold mb-2 text-center md:text-left">Skills</h3>
+                  <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+                    {profile.skills.map((skill: string) => <Badge key={skill} variant="secondary">{skill}</Badge>)}
                   </div>
+                </div>
               )}
             </div>
 

@@ -55,14 +55,12 @@ Deno.serve(async (req: Request) => {
     // Get room creator to prevent creator from leaving
     const roomRes = await supabase
       .from("discussion_rooms")
-      .select("created_by")
+      .select("creator_id")
       .eq("id", room_id)
       .single();
 
     if (roomRes.error) {
-      // If no rows found, return 404; otherwise return the error message
       const msg = roomRes.error.message ?? "Failed to fetch room";
-      // PostgREST returns 404-like messages for not found; best effort to detect
       const notFound = /No row/gi.test(msg) || /Not found/gi.test(msg);
       return new Response(JSON.stringify({ error: msg }), {
         status: notFound ? 404 : 500,
@@ -70,16 +68,16 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const room = roomRes.data as { created_by?: string };
+    const room = roomRes.data as { creator_id?: string };
 
-    if (String(room.created_by) === String(user.id)) {
+    if (String(room.creator_id) === String(user.id)) {
       return new Response(JSON.stringify({ error: "The creator of a room cannot leave it." }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Perform delete; use returning to know how many rows deleted
+    // Perform delete
     const delRes = await supabase
       .from("room_members")
       .delete()
@@ -96,7 +94,6 @@ Deno.serve(async (req: Request) => {
 
     const deletedRows = Array.isArray(delRes.data) ? delRes.data.length : 0;
     if (deletedRows === 0) {
-      // Membership did not exist
       return new Response(JSON.stringify({ error: "Membership not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

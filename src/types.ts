@@ -42,4 +42,10 @@ export interface Profile {
   updated_at: string | null;
   username: string | null;
   website: string | null;
+  social_links: {
+    instagram?: string;
+    linkedin?: string;
+    twitter?: string;
+    facebook?: string;
+  } | null;
 }

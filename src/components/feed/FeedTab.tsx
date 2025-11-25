@@ -15,10 +15,7 @@ import { z } from "zod";
 import { Post } from "@/types";
 
 const postSchema = z.object({
-  content: z.string()
-    .trim()
-    .min(1, 'Content cannot be empty')
-    .max(5000, 'Content must be less than 5000 characters'),
+  content: z.string().trim().optional(),
   tags: z.array(z.string().max(50)).max(10).optional()
 });
 
@@ -60,7 +57,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   // Fetch posts from database with author profile data
   const fetchPosts = async () => {
     const stopTimer = performanceMonitor.startTimer('fetch-posts');
-    
+
     // Check cache first
     const cached = cacheManager.get<Post[]>('posts-feed');
     if (cached) {
@@ -86,11 +83,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      
+
       const posts = (data as any) || [];
       setPosts(posts);
       cacheManager.set('posts-feed', posts, 300); // 5 minutes
-      
+
       performanceMonitor.logToAnalytics('posts_fetched', {
         count: posts.length
       });
@@ -111,7 +108,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const createPost = async () => {
     try {
       // Validate input
-      const validation = postSchema.safeParse({ 
+      const validation = postSchema.safeParse({
         content: newPostContent,
         tags: []
       });
@@ -120,6 +117,15 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         toast({
           title: "Validation error",
           description: validation.error.issues[0].message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!validation.data.content && !postMediaUrl) {
+        toast({
+          title: "Empty post",
+          description: "Please add some text or attach media to create a post",
           variant: "destructive",
         });
         return;
@@ -140,7 +146,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .insert([
           {
             author_id: user.id,
-            content: validation.data.content,
+            content: validation.data.content || "",
             media_url: postMediaUrl || null,
             media_type: postMediaType || null,
             tags: validation.data.tags || [],
@@ -159,71 +165,13 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         title: "Success",
         description: "Post created successfully!",
       });
-      
+
       performanceMonitor.logToAnalytics('post_created');
     } catch (error) {
       console.error('Error creating post:', error);
       toast({
         title: "Error",
         description: "Failed to create post",
-        variant: "destructive",
-      });
-    }
-  };
-  
-  const handleSharePost = async (postId: string) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast({
-          title: "Authentication required",
-          description: "Please log in to share posts",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('shares')
-        .insert([
-          {
-            post_id: postId,
-            user_id: user.id,
-          }
-        ]);
-
-      if (error) {
-        if (error.code === '23505') { // unique_violation
-          toast({
-            title: "Already shared",
-            description: "You have already shared this post.",
-          });
-        } else {
-          throw error;
-        }
-      } else {
-        const shareUrl = `${window.location.origin}/post/${postId}`;
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            toast({
-              title: "Success",
-              description: "Post shared and link copied to clipboard!",
-            });
-        } catch (err) {
-            console.error("Failed to copy link: ", err);
-            toast({
-                title: "Post shared!",
-                description: "Failed to copy link to clipboard.",
-                variant: "default"
-            });
-        }
-        performanceMonitor.logToAnalytics('post_shared', { postId });
-      }
-    } catch (error) {
-      console.error('Error sharing post:', error);
-      toast({
-        title: "Error",
-        description: "Failed to share post",
         variant: "destructive",
       });
     }
@@ -272,7 +220,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         activeFilter={activeFilter}
         onFilterChange={setActiveFilter}
       />
-      
+
       {/* Create Post Card */}
       <Card className="glass-card p-6">
         {!showCreatePost ? (
@@ -292,12 +240,12 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               onChange={(e) => setNewPostContent(e.target.value)}
               className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
             />
-            
-            <MediaUpload 
+
+            <MediaUpload
               onMediaUpload={handleMediaUpload}
               disabled={false}
             />
-            
+
             <div className="flex justify-between items-center">
               <div className="text-xs text-muted-foreground">
                 {postMediaUrl && `${postMediaType} attached`}
@@ -316,7 +264,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 </Button>
                 <Button
                   onClick={createPost}
-                  disabled={!newPostContent.trim()}
+                  disabled={!newPostContent.trim() && !postMediaUrl}
                   className="bg-gradient-to-r from-primary to-primary/80"
                 >
                   Post
@@ -326,7 +274,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
           </div>
         )}
       </Card>
-      
+
       {/* Posts Feed */}
       <div className="space-y-6">
         {posts.length === 0 ? (

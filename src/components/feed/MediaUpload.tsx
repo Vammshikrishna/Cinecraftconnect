@@ -11,7 +11,7 @@ interface MediaUploadProps {
 
 const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
   const [uploading, setUploading] = useState(false);
-  const [uploadedMedia, setUploadedMedia] = useState<{url: string, type: 'image' | 'video'} | null>(null);
+  const [uploadedMedia, setUploadedMedia] = useState<{ url: string, type: 'image' | 'video' } | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -19,7 +19,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
   const uploadFile = async (file: File, type: 'image' | 'video') => {
     try {
       setUploading(true);
-      
+
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -33,7 +33,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
 
       // Upload file to storage
       const { error: uploadError } = await supabase.storage
-        .from('portfolios') // Using existing portfolios bucket
+        .from('portfolios')
         .upload(filePath, file);
 
       if (uploadError) {
@@ -123,7 +123,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
   const removeMedia = () => {
     setUploadedMedia(null);
     onMediaUpload('', 'image');
-    
+
     // Reset file inputs
     if (imageInputRef.current) imageInputRef.current.value = '';
     if (videoInputRef.current) videoInputRef.current.value = '';
@@ -149,7 +149,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
           className="hidden"
           disabled={disabled || uploading}
         />
-        
+
         <Button
           type="button"
           variant="outline"
@@ -165,7 +165,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
           )}
           Image
         </Button>
-        
+
         <Button
           type="button"
           variant="outline"
@@ -195,7 +195,7 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
           >
             <X className="h-3 w-3" />
           </Button>
-          
+
           {uploadedMedia.type === 'image' ? (
             <img
               src={uploadedMedia.url}

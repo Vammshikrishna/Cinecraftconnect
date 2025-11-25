@@ -20,8 +20,8 @@ const CommentSection = ({ postId }: { postId: string }) => {
     if (!postId) return;
 
     const { data, error } = await supabase
-      .from("post_comments")
-      .select(`id, content, created_at, user_id, profiles:profiles!inner(full_name, username, avatar_url)`)
+      .from("post_comments" as any)
+      .select(`id, content, created_at, user_id, profiles:profiles!post_comments_user_id_fkey_profiles(full_name, username, avatar_url)`)
       .eq("post_id", postId)
       .order("created_at", { ascending: false });
 
@@ -71,7 +71,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
     const originalNewComment = newComment;
     setNewComment("");
 
-    const { error } = await supabase.from("post_comments").insert({
+    const { error } = await supabase.from("post_comments" as any).insert({
       post_id: postId,
       user_id: user.id,
       content: originalNewComment.trim(),
@@ -88,14 +88,14 @@ const CommentSection = ({ postId }: { postId: string }) => {
     const originalComments = [...comments];
     setComments((prev) => prev.filter((c) => c.id !== commentId));
 
-    const { error } = await supabase.from("post_comments").delete().eq("id", commentId);
+    const { error } = await supabase.from("post_comments" as any).delete().eq("id", commentId);
 
     if (error) {
       toast({ title: "Failed to delete comment", description: error.message, variant: "destructive" });
       setComments(originalComments); // Rollback
     }
   };
-  
+
   const getInitials = (name: string) => {
     return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
   };
@@ -128,12 +128,12 @@ const CommentSection = ({ postId }: { postId: string }) => {
               </Avatar>
               <div className="flex-1">
                 <div className="flex justify-between items-center">
-                    <p className="font-semibold text-sm">{authorName}</p>
-                    {user && user.id === comment.user_id && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteComment(comment.id)}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                    )}
+                  <p className="font-semibold text-sm">{authorName}</p>
+                  {user && user.id === comment.user_id && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteComment(comment.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
                 <p className="text-sm">{comment.content}</p>
               </div>

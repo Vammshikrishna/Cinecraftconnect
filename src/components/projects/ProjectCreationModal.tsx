@@ -22,7 +22,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
-  
+
   const [projectData, setProjectData] = useState({
     name: '',
     description: '',
@@ -40,7 +40,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
   const availableGenres = [
-    'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi', 'Romance', 
+    'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi', 'Romance',
     'Documentary', 'Animation', 'Fantasy', 'Mystery', 'Adventure', 'Musical'
   ];
 
@@ -86,7 +86,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
 
   const handleSubmit = async () => {
     if (!user) return;
-    
+
     try {
       let imageUrl: string | undefined = undefined;
       if (projectImage) {
@@ -105,9 +105,14 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       const { data: newProject, error } = await supabase
         .from('project_spaces')
         .insert({
-          ...projectData,
+          name: projectData.name,
+          description: projectData.description,
           creator_id: user.id,
-          image_url: imageUrl,
+          genre: projectData.genre,
+          location: projectData.location,
+          required_roles: projectData.required_roles,
+          status: projectData.status,
+          project_space_type: projectData.is_public ? 'public' : 'private',
           budget_min: projectData.budget_min ? parseInt(projectData.budget_min) : null,
           budget_max: projectData.budget_max ? parseInt(projectData.budget_max) : null,
           start_date: projectData.start_date || null,
@@ -122,19 +127,20 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
         title: "Project Created",
         description: "Your project has been created successfully!",
       });
-      
+
       setIsOpen(false);
       onProjectCreated?.();
 
       if (newProject) {
         navigate(`/projects/${newProject.id}/space`);
       }
-      
+
     } catch (error) {
       console.error('Error creating project:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       toast({
         title: "Creation Failed",
-        description: "There was an error creating your project.",
+        description: error instanceof Error ? error.message : "There was an error creating your project.",
         variant: "destructive",
       });
     }

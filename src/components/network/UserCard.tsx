@@ -66,33 +66,39 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
   return (
     <Card className="p-4 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20">
       <div className="flex items-center space-x-4">
-        <Avatar className="h-16 w-16">
-          <AvatarImage src={user.avatar_url || undefined} alt={user.full_name} />
-          <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
-        </Avatar>
+        <Link to={`/profile/${user.id}`} className="hover:opacity-80 transition-opacity">
+          <Avatar className="h-16 w-16">
+            <AvatarImage src={user.avatar_url || undefined} alt={user.full_name} />
+            <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
+          </Avatar>
+        </Link>
         <div className="flex-1">
           <div className="flex justify-between items-start">
             <div>
-              <h3 className="font-bold text-lg">{user.full_name}</h3>
-              <p className="text-sm text-muted-foreground">@{user.username}</p>
+              <Link to={`/profile/${user.id}`} className="hover:underline decoration-primary underline-offset-4">
+                <h3 className="font-bold text-lg">{user.full_name}</h3>
+              </Link>
+              <Link to={`/profile/${user.id}`} className="hover:text-primary transition-colors">
+                <p className="text-sm text-muted-foreground">@{user.username}</p>
+              </Link>
               <p className="text-sm text-primary mt-1">{user.craft}</p>
             </div>
           </div>
           <div className="mt-4 flex gap-2">
-              {renderActionButton()}
-              {(user.connection_status || 'none') === 'connected' && (
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="flex-1"
-                  asChild
-                >
-                  <Link to={`/dm/${user.id}`}>
-                    <MessageCircle size={14} className="mr-1" /> Message
-                  </Link>
-                </Button>
-              )}
-            </div>
+            {renderActionButton()}
+            {(user.connection_status || 'none') === 'connected' && (
+              <Button
+                size="sm"
+                variant="default"
+                className="flex-1"
+                asChild
+              >
+                <Link to={`/dm/${user.id}`}>
+                  <MessageCircle size={14} className="mr-1" /> Message
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </Card>

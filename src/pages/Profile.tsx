@@ -7,7 +7,7 @@ import { Profile } from '@/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
-import PortfolioUploadDialog from '@/components/portfolio/PortfolioUploadDialog';
+
 import { UserAnnouncements } from '@/components/profile/UserAnnouncements';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { UserProjects } from '@/components/profile/UserProjects';
@@ -15,11 +15,15 @@ import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
 import EditProfileForm from '@/components/profile/EditProfileForm';
 import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
-import { 
+import {
   Briefcase,
   MapPin,
   Globe,
   Settings,
+  Instagram,
+  Linkedin,
+  Twitter,
+  Facebook,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -29,7 +33,7 @@ const ProfilePage = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false);
+
   const [postCount, setPostCount] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
 
@@ -83,7 +87,7 @@ const ProfilePage = () => {
         (payload) => {
           setProfile(prevProfile => {
             if (!prevProfile) return null;
-            return { ...prevProfile, ...payload.new } as Profile;
+            return { ...prevProfile, ...(payload.new as Partial<Profile>) } as Profile;
           });
         }
       )
@@ -135,10 +139,10 @@ const ProfilePage = () => {
     return (
       <div className="bg-black text-white min-h-screen flex justify-center py-12 pt-20">
         <div className="w-full max-w-3xl px-4">
-          <EditProfileForm 
+          <EditProfileForm
             profile={profile}
-            onUpdate={handleProfileUpdate} 
-            setEditing={setIsEditing} 
+            onUpdate={handleProfileUpdate}
+            setEditing={setIsEditing}
           />
         </div>
       </div>
@@ -167,31 +171,56 @@ const ProfilePage = () => {
                 <span className="font-bold text-white">{connectionsCount}</span> Connections
               </span>
             </div>
-            
+
             {profile.bio && (
               <p className="text-gray-300 mt-4 max-w-prose">{profile.bio}</p>
             )}
 
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 mt-4 text-gray-400">
-                {profile.craft && (
-                    <Link to={`/learning-portal?craft=${encodeURIComponent(profile.craft)}`} className="flex items-center gap-2 hover:text-white transition-colors">
-                        <Briefcase size={16} />
-                        <span>{profile.craft}</span>
-                    </Link>
-                )}
-                {profile.location && (
-                    <div className="flex items-center gap-2">
-                        <MapPin size={16} />
-                        <span>{profile.location}</span>
-                    </div>
-                )}
-                {profile.website && (
-                    <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
-                        <Globe size={16} />
-                        <span>{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
-                    </a>
-                )}
+              {profile.craft && (
+                <Link to={`/learning-portal?craft=${encodeURIComponent(profile.craft)}`} className="flex items-center gap-2 hover:text-white transition-colors">
+                  <Briefcase size={16} />
+                  <span>{profile.craft}</span>
+                </Link>
+              )}
+              {profile.location && (
+                <div className="flex items-center gap-2">
+                  <MapPin size={16} />
+                  <span>{profile.location}</span>
+                </div>
+              )}
+              {profile.website && (
+                <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-white transition-colors">
+                  <Globe size={16} />
+                  <span>{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
+                </a>
+              )}
             </div>
+
+            {profile.social_links && (
+              <div className="flex items-center justify-center gap-4 mt-4">
+                {profile.social_links.instagram && (
+                  <a href={profile.social_links.instagram} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-pink-500 transition-colors">
+                    <Instagram size={20} />
+                  </a>
+                )}
+                {profile.social_links.linkedin && (
+                  <a href={profile.social_links.linkedin} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-500 transition-colors">
+                    <Linkedin size={20} />
+                  </a>
+                )}
+                {profile.social_links.twitter && (
+                  <a href={profile.social_links.twitter} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-400 transition-colors">
+                    <Twitter size={20} />
+                  </a>
+                )}
+                {profile.social_links.facebook && (
+                  <a href={profile.social_links.facebook} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-blue-600 transition-colors">
+                    <Facebook size={20} />
+                  </a>
+                )}
+              </div>
+            )}
 
           </div>
           <div className="flex items-center justify-center gap-4 mt-4">
@@ -203,7 +232,7 @@ const ProfilePage = () => {
             </Link>
           </div>
         </header>
-        
+
         <Tabs defaultValue="posts" className="w-full">
           <TabsList className="grid w-full grid-cols-7 bg-transparent border-t border-b border-gray-800 h-20 rounded-none">
             <TabsTrigger value="posts">Posts</TabsTrigger>
@@ -217,11 +246,7 @@ const ProfilePage = () => {
 
           <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
           <TabsContent value="portfolio" className="py-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">My Portfolio</h2>
-              <Button onClick={() => setPortfolioDialogOpen(true)}>+ Add New Item</Button>
-            </div>
-            <PortfolioGrid userId={user.id} isOwner={true} onAddNew={() => setPortfolioDialogOpen(true)} />
+            <PortfolioGrid userId={user.id} isOwner={true} />
           </TabsContent>
           <TabsContent value="projects" className="py-8"><UserProjects userId={user.id} /></TabsContent>
           <TabsContent value="announcements" className="py-8"><UserAnnouncements /></TabsContent>
@@ -230,7 +255,7 @@ const ProfilePage = () => {
           <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
         </Tabs>
 
-        <PortfolioUploadDialog isOpen={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen} />
+
       </div>
     </div>
   );

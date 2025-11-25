@@ -1,11 +1,11 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
-import { Film } from 'lucide-react';
+import { Film, Search } from 'lucide-react';
 import { Button } from "./ui/button.tsx";
 import { useAuth } from '../contexts/AuthContext.tsx';
 import NavLinks from './navbar/NavLinks.tsx';
 import NotificationsDropdown from './navbar/NotificationsDropdown.tsx';
-import GlobalSearch from './search/GlobalSearch.tsx';
+
+import MoreMenu from './navbar/MoreMenu.tsx';
 import UserProfileMenu from './navbar/UserProfileMenu.tsx';
 import ChatMenu from './navbar/ChatMenu.tsx';
 import { MobileNav } from "./navbar/MobileNav.tsx";
@@ -21,16 +21,20 @@ const Navbar = () => {
             {/* Logo */}
             <Link to="/" className="flex items-center flex-shrink-0 group min-w-0">
               <Film className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-primary mr-1 sm:mr-2 group-hover:scale-110 transition-transform duration-200" />
-              <span className="text-base sm:text-lg lg:text-2xl font-bold text-gradient whitespace-nowrap">
+              <span className="text-base sm:text-lg lg:text-xl xl:text-2xl font-bold text-gradient whitespace-nowrap">
                 <span className="hidden md:inline">CineCraft Connect</span>
                 <span className="md:hidden">CCC</span>
               </span>
             </Link>
 
-            {/* Global Search (Center) - Only for authenticated users */}
+            {/* Global Search (Left side) - Only for authenticated users */}
             {user && (
-              <div className="hidden lg:flex flex-1 justify-center px-8">
-                <GlobalSearch />
+              <div className="hidden lg:flex items-center ml-4">
+                <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
+                  <Link to="/search">
+                    <Search className="h-5 w-5" />
+                  </Link>
+                </Button>
               </div>
             )}
 
@@ -39,19 +43,26 @@ const Navbar = () => {
               {user ? (
                 <>
                   {/* Desktop: Links and other icons */}
-                  <div className="hidden lg:flex items-center gap-4">
+                  <div className="hidden lg:flex items-center gap-2 xl:gap-4">
                     <NavLinks />
-                    <ChatMenu />
                   </div>
-                  
+
                   {/* Mobile: Show only search */}
                   <div className="lg:hidden flex items-center flex-1">
-                    <div className="w-full px-2">
-                      <GlobalSearch />
+                    <div className="w-full px-2 flex justify-end">
+                      <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
+                        <Link to="/search">
+                          <Search className="h-5 w-5" />
+                        </Link>
+                      </Button>
                     </div>
                   </div>
 
                   {/* Icons for both mobile and desktop */}
+                  <div className="hidden lg:block">
+                    <MoreMenu />
+                  </div>
+                  <ChatMenu />
                   <NotificationsDropdown />
                   <UserProfileMenu />
                 </>

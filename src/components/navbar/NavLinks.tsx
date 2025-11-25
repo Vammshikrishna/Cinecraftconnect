@@ -1,12 +1,13 @@
 
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Play, Film, Briefcase, Users, BookOpen, MessageSquare } from 'lucide-react';
+import { Home, Play, Film, Briefcase, Users, BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+
 
 const NavLinks = () => {
   const location = useLocation();
   const { user } = useAuth();
-  
+
   // Function to check if a path is active
   const isActive = (path: string) => {
     if (path === '/') {
@@ -19,28 +20,26 @@ const NavLinks = () => {
     { path: '/feed', icon: Home, label: 'Home' },
     { path: '/', icon: Play, label: 'Landing' },
     { path: '/projects', icon: Film, label: 'Projects' },
-    { path: '/discussion-rooms', icon: Play, label: 'Discussion Rooms' },
+    { path: '/discussion-rooms', icon: Play, label: 'Discussions' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' },
-    { path: '/chats', icon: MessageSquare, label: 'Chat' },
     { path: '/learn', icon: BookOpen, label: 'Learn' }
   ];
 
   // Show different items based on authentication status
-  const navItems = user 
+  const navItems = user
     ? allNavItems.filter(item => item.path !== '/') // Hide Landing for authenticated users
     : allNavItems.filter(item => item.path === '/'); // Show only Landing for unauthenticated users
 
   return (
-    <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide w-full">
+    <nav className="flex items-center gap-1 w-full">
       <div className="flex items-center gap-1 min-w-max">
         {navItems.map(({ path, icon: Icon, label }) => (
-          <Link 
+          <Link
             key={path}
-            to={path} 
-            className={`nav-item px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${
-              isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
-            }`}
+            to={path}
+            className={`nav-item px-2 lg:px-2 xl:px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
+              }`}
           >
             <Icon size={18} className="flex-shrink-0" />
             <span className="font-medium text-sm">{label}</span>

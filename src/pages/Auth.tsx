@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Film, Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Film, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,8 +16,7 @@ const loginSchema = z.object({
 });
 const signUpSchema = z.object({
   email: z.string().trim().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  fullName: z.string().trim().min(2, "Full name must be at least 2 characters").max(100, "Full name must be less than 100 characters")
+  password: z.string().min(6, "Password must be at least 6 characters")
 });
 
 // Constants
@@ -27,7 +26,6 @@ const FORM_FIELDS = {
     { name: 'password', placeholder: 'Password', type: 'password', icon: Lock },
   ],
   SIGNUP: [
-    { name: 'fullName', placeholder: 'Full Name', type: 'text', icon: User },
     { name: 'email', placeholder: 'Email', type: 'email', icon: Mail },
     { name: 'password', placeholder: 'Password', type: 'password', icon: Lock },
   ]
@@ -37,7 +35,7 @@ const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({ email: '', password: '', fullName: '' });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
@@ -64,7 +62,7 @@ const Auth = () => {
     try {
       const { error } = action === 'signIn'
         ? await signIn(formData.email, formData.password)
-        : await signUp(formData.email, formData.password, formData.fullName);
+        : await signUp(formData.email, formData.password);
 
       if (error) {
         setErrors({ form: error.message });
@@ -73,9 +71,9 @@ const Auth = () => {
           toast({ title: "Welcome back!", description: "You have successfully signed in." });
           navigate('/feed', { replace: true });
         } else {
-          toast({ title: "Account created!", description: "Please check your email to confirm your account." });
-          setIsLogin(true);
-          setFormData({ email: '', password: '', fullName: '' });
+          toast({ title: "Account created!", description: "Please complete your profile." });
+          navigate('/complete-profile', { replace: true });
+          setFormData({ email: '', password: '' });
         }
       }
     } catch (err) {
@@ -84,12 +82,11 @@ const Auth = () => {
       setIsLoading(false);
     }
   };
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     handleAuthAction(isLogin ? 'signIn' : 'signUp');
   };
-
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -101,7 +98,7 @@ const Auth = () => {
   const toggleFormType = () => {
     setIsLogin(!isLogin);
     setErrors({});
-    setFormData({ email: '', password: '', fullName: '' });
+    setFormData({ email: '', password: '' });
   };
 
   return (
@@ -135,11 +132,16 @@ const Auth = () => {
                       placeholder={placeholder}
                       value={formData[name as keyof typeof formData]}
                       onChange={e => handleInputChange(name, e.target.value)}
-                      className="pl-10 pr-10" // Added pr-10 for password visibility toggle
+                      className="pl-10 pr-10"
                       disabled={isLoading}
                     />
                     {type === 'password' && (
-                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground" disabled={isLoading}>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        disabled={isLoading}
+                      >
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     )}
@@ -152,7 +154,12 @@ const Auth = () => {
               </Button>
             </form>
             <div className="mt-6 text-center">
-              <button type="button" onClick={toggleFormType} className="text-sm text-muted-foreground hover:text-primary transition-colors" disabled={isLoading}>
+              <button
+                type="button"
+                onClick={toggleFormType}
+                className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                disabled={isLoading}
+              >
                 {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
               </button>
             </div>
