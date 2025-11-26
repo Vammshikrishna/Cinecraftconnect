@@ -3,6 +3,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('call-sheets', 'call-sheets', false);
 
 -- Policy: Project members can view call sheets
+DROP POLICY IF EXISTS "Project members can view call sheets" ON storage.objects;
 CREATE POLICY "Project members can view call sheets"
 ON storage.objects FOR SELECT
 USING (
@@ -24,6 +25,7 @@ USING (
 );
 
 -- Policy: Project members can upload call sheets
+DROP POLICY IF EXISTS "Project members can upload call sheets" ON storage.objects;
 CREATE POLICY "Project members can upload call sheets"
 ON storage.objects FOR INSERT
 WITH CHECK (
@@ -32,6 +34,7 @@ WITH CHECK (
 );
 
 -- Policy: Project members can update call sheets
+DROP POLICY IF EXISTS "Project members can update call sheets" ON storage.objects;
 CREATE POLICY "Project members can update call sheets"
 ON storage.objects FOR UPDATE
 USING (
@@ -40,6 +43,7 @@ USING (
 );
 
 -- Policy: Uploaders and project creators can delete call sheets
+DROP POLICY IF EXISTS "Uploaders can delete call sheets" ON storage.objects;
 CREATE POLICY "Uploaders can delete call sheets"
 ON storage.objects FOR DELETE
 USING (

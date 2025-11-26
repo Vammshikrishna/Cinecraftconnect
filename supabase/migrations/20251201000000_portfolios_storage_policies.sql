@@ -5,6 +5,11 @@
 
 -- Note: RLS on storage.objects is already enabled by Supabase.
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "authenticated read portfolios" ON storage.objects;
+DROP POLICY IF EXISTS "authenticated upload portfolios" ON storage.objects;
+DROP POLICY IF EXISTS "owner delete portfolios" ON storage.objects;
+
 -- SELECT policy: only authenticated users can read objects in 'portfolios'
 CREATE POLICY "authenticated read portfolios"
   ON storage.objects

@@ -13,12 +13,12 @@ import { InteractiveCard } from '@/components/ui/interactive-card';
 import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  Search, 
-  MapPin, 
-  Calendar, 
-  DollarSign, 
-  Users, 
+import {
+  Search,
+  MapPin,
+  Calendar,
+  DollarSign,
+  Users,
   Film,
   ImageIcon,
   Bookmark
@@ -64,25 +64,46 @@ const Projects = () => {
     setLoading(true);
     try {
       const isBookmarkedTab = activeTab === 'bookmarked';
+
+      // Fetch projects
       let query = supabase
         .from('project_spaces')
-        .select(`
-          *,
-          project_space_bookmarks!${isBookmarkedTab ? 'inner' : 'left'}(user_id)
-        `);
+        .select('*');
 
       if (activeTab === 'my') {
-        if (!user) { setProjects([]); return; }
+        if (!user) { setProjects([]); setLoading(false); return; }
         query = query.eq('creator_id', user.id);
-      } else if (isBookmarkedTab) {
-        if (!user) { setProjects([]); return; }
-        query = query.eq('project_space_bookmarks.user_id', user.id);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const { data: projectsData, error: projectsError } = await query.order('created_at', { ascending: false });
 
-      if (error && error.code !== 'PGRST116') throw error; 
-      setProjects((data || []) as any);
+      if (projectsError && projectsError.code !== 'PGRST116') throw projectsError;
+
+      // Fetch bookmarks for the current user
+      let projectsWithBookmarks = projectsData || [];
+
+      if (user) {
+        const { data: bookmarksData, error: bookmarksError } = await supabase
+          .from('project_space_bookmarks')
+          .select('project_space_id, user_id')
+          .eq('user_id', user.id);
+
+        if (!bookmarksError && bookmarksData) {
+          // Merge bookmarks into projects
+          projectsWithBookmarks = (projectsData || []).map(project => ({
+            ...project,
+            project_space_bookmarks: bookmarksData.filter(b => b.project_space_id === project.id)
+          }));
+
+          // Filter for bookmarked tab
+          if (isBookmarkedTab) {
+            const bookmarkedIds = new Set(bookmarksData.map(b => b.project_space_id));
+            projectsWithBookmarks = projectsWithBookmarks.filter(p => bookmarkedIds.has(p.id));
+          }
+        }
+      }
+
+      setProjects(projectsWithBookmarks as any);
     } catch (error) {
       console.error('Error fetching projects:', error);
       toast({
@@ -94,9 +115,9 @@ const Projects = () => {
       setLoading(false);
     }
   };
-  
+
   const filteredProjects = projects.filter(project => {
-    const matchesSearch = 
+    const matchesSearch =
       project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (project.description && project.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
       project.location?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -157,8 +178,8 @@ const Projects = () => {
           </div>
           <div className="flex items-center justify-between pt-4 border-t border-border">
             <div className="flex items-center text-sm text-muted-foreground">
-                <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">U</div>
-                Unknown
+              <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">U</div>
+              Unknown
             </div>
             <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
           </div>
@@ -184,7 +205,7 @@ const Projects = () => {
           <div className="flex flex-col sm:flex-row gap-4 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10"/>
+              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
             </div>
             <ProjectFilters onFiltersChange={setFilters} activeFilters={filters} />
           </div>
@@ -222,10 +243,10 @@ export default Projects;
 
 function getStatusVariant(status: string) {
   switch (status.toLowerCase()) {
-      case 'planning': return 'secondary';
-      case 'in-production': return 'default';
-      case 'post-production': return 'outline';
-      case 'completed': return 'secondary';
-      default: return 'outline';
+    case 'planning': return 'secondary';
+    case 'in-production': return 'default';
+    case 'post-production': return 'outline';
+    case 'completed': return 'secondary';
+    default: return 'outline';
   }
 }

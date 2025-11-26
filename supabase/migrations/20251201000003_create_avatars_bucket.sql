@@ -6,6 +6,12 @@ ON CONFLICT (id) DO NOTHING;
 
 -- 2. RLS Policies for 'avatars'
 
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Public can view avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated can upload avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Owners can update avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Owners can delete avatars" ON storage.objects;
+
 -- SELECT: Public access (anyone can view avatars)
 CREATE POLICY "Public can view avatars"
 ON storage.objects FOR SELECT

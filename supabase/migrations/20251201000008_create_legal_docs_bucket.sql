@@ -6,6 +6,7 @@ VALUES ('legal-documents', 'legal-documents', false);
 -- RLS is already enabled globally, we just need policies
 
 -- Policy: Project members can view legal documents
+DROP POLICY IF EXISTS "Project members can view legal documents" ON storage.objects;
 CREATE POLICY "Project members can view legal documents"
 ON storage.objects FOR SELECT
 USING (
@@ -27,6 +28,7 @@ USING (
 );
 
 -- Policy: Project members can upload legal documents
+DROP POLICY IF EXISTS "Project members can upload legal documents" ON storage.objects;
 CREATE POLICY "Project members can upload legal documents"
 ON storage.objects FOR INSERT
 WITH CHECK (
@@ -35,6 +37,7 @@ WITH CHECK (
 );
 
 -- Policy: Project members can update legal documents
+DROP POLICY IF EXISTS "Project members can update legal documents" ON storage.objects;
 CREATE POLICY "Project members can update legal documents"
 ON storage.objects FOR UPDATE
 USING (
@@ -56,6 +59,7 @@ USING (
 );
 
 -- Policy: Document uploaders and project creators can delete legal documents
+DROP POLICY IF EXISTS "Document uploaders can delete legal documents" ON storage.objects;
 CREATE POLICY "Document uploaders can delete legal documents"
 ON storage.objects FOR DELETE
 USING (
