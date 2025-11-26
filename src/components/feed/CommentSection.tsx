@@ -21,7 +21,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
     const { data, error } = await supabase
       .from("post_comments" as any)
-      .select(`id, content, created_at, user_id, profiles:profiles!post_comments_user_id_fkey_profiles(full_name, username, avatar_url)`)
+      .select(`id, content, created_at, user_id, profiles:profiles(full_name, username, avatar_url)`)
       .eq("post_id", postId)
       .order("created_at", { ascending: false });
 

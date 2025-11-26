@@ -25,7 +25,7 @@ interface Applicant {
 }
 
 interface Member {
-  id: string;
+  user_id: string;
   role: string;
   profiles: {
     id: string;
@@ -53,9 +53,9 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
       setApplicants(applicantsData as any);
 
       const { data: membersData, error: membersError } = await supabase
-        .from('project_members')
-        .select('id, role, profiles (*)')
-        .eq('project_id', projectId);
+        .from('project_space_members')
+        .select('user_id, role, profiles (*)')
+        .eq('project_space_id', projectId);
       if (membersError) throw membersError;
       setMembers(membersData as any);
 
@@ -73,7 +73,7 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
   const handleApplication = async (applicationId: string, applicantProfile: Applicant['profiles'], role: string, accept: boolean) => {
     if (!applicantProfile) return;
     if (accept) {
-      const { error: insertError } = await supabase.from('project_members').insert({ project_id: projectId, user_id: applicantProfile.id, role });
+      const { error: insertError } = await supabase.from('project_space_members').insert({ project_space_id: projectId, user_id: applicantProfile.id, role });
       if (insertError) {
         toast({ title: 'Error', description: 'Failed to add member.', variant: 'destructive' });
         return;
@@ -90,7 +90,7 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    const { error } = await supabase.from('project_members').delete().eq('id', memberId);
+    const { error } = await supabase.from('project_space_members').delete().eq('user_id', memberId).eq('project_space_id', projectId);
     if (error) {
       toast({ title: 'Error', description: 'Failed to remove member.', variant: 'destructive' });
     } else {
@@ -131,7 +131,7 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
         <CardHeader><CardTitle>Team Members ({members.length})</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {members.length === 0 ? <p className="text-muted-foreground">No team members yet.</p> : members.map(member => (
-            <div key={member.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <div key={member.user_id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-3">
                 <Avatar><AvatarImage src={member.profiles?.avatar_url} /><AvatarFallback>{member.profiles?.full_name[0]}</AvatarFallback></Avatar>
                 <div>
@@ -140,7 +140,7 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
                 </div>
                 <Badge variant="outline">{member.role}</Badge>
               </div>
-              {isOwner && <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-red-500" onClick={() => handleRemoveMember(member.id)}><UserX className="h-4 w-4" /></Button>}
+              {isOwner && <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-red-500" onClick={() => handleRemoveMember(member.user_id)}><UserX className="h-4 w-4" /></Button>}
             </div>
           ))}
         </CardContent>

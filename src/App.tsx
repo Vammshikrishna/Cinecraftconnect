@@ -71,6 +71,7 @@ const App = () => {
             <Route path="/craft/all" element={<AllCraftsPage />} />
             <Route path="/learn" element={<LearningPortal />} />
             <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
+            <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
             <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
             <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />

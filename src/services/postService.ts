@@ -22,7 +22,8 @@ export const togglePostLike = async (postId: string, isLiked: boolean): Promise<
 
     if (!data || data.length === 0) {
       console.warn(`Inconsistency: Attempted to unlike post ${postId} but no like was found.`);
-      throw new Error("Like not found. The post may have been unliked already.");
+      // Treat as success since the goal (unliking) is achieved
+      return false;
     }
 
     return false;

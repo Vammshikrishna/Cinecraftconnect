@@ -27,6 +27,7 @@ interface FeedTabProps {
 const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [activeFilter, setActiveFilter] = useState("All");
   const [posts, setPosts] = useState<Post[]>([]);
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [newPostContent, setNewPostContent] = useState("");
   const [showCreatePost, setShowCreatePost] = useState(false);
@@ -83,6 +84,19 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+
+      // Fetch user likes
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: likes } = await supabase
+          .from('post_likes')
+          .select('post_id')
+          .eq('user_id', user.id);
+
+        if (likes) {
+          setLikedPostIds(new Set(likes.map(l => l.post_id)));
+        }
+      }
 
       const posts = (data as any) || [];
       setPosts(posts);
@@ -214,6 +228,28 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
     );
   }
 
+  const handleLikeToggle = (postId: string, isLiked: boolean) => {
+    setLikedPostIds(prev => {
+      const newSet = new Set(prev);
+      if (isLiked) {
+        newSet.add(postId);
+      } else {
+        newSet.delete(postId);
+      }
+      return newSet;
+    });
+
+    setPosts(prev => prev.map(p => {
+      if (p.id === postId) {
+        return {
+          ...p,
+          like_count: isLiked ? p.like_count + 1 : Math.max(0, p.like_count - 1)
+        };
+      }
+      return p;
+    }));
+  };
+
   return (
     <>
       <CraftFilters
@@ -316,7 +352,9 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 share_count={post.share_count}
                 tags={post.tags || []}
                 rating={postRatings[post.id]}
+                currentUserLiked={likedPostIds.has(post.id)}
                 onRate={onRate}
+                onLikeToggle={handleLikeToggle}
                 mediaUrl={post.media_url}
               />
             );

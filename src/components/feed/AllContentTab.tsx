@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import PostCard from './PostCard';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
-import { MapPin, Users, Megaphone, Film, MessageCircle, Star } from 'lucide-react';
+import { MapPin, Users, Megaphone, Film, MessageCircle, Star, Lock } from 'lucide-react';
 import { Post } from '@/types';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 
@@ -18,6 +19,7 @@ interface Project {
   creator_id: string;
   created_at: string;
   itemType: 'project';
+  project_space_type?: 'public' | 'private' | 'secret';
 }
 
 interface DiscussionRoom {
@@ -27,6 +29,7 @@ interface DiscussionRoom {
   member_count: number | null;
   created_at: string;
   itemType: 'discussion';
+  room_type?: 'public' | 'private' | 'secret';
 }
 
 interface Announcement {
@@ -139,6 +142,28 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
     fetchAllContent();
   }, [toast, user]);
 
+  const handleLikeToggle = (postId: string, isLiked: boolean) => {
+    setLikedPostIds(prev => {
+      const newSet = new Set(prev);
+      if (isLiked) {
+        newSet.add(postId);
+      } else {
+        newSet.delete(postId);
+      }
+      return newSet;
+    });
+
+    setFeed(prev => prev.map(item => {
+      if (item.itemType === 'post' && item.id === postId) {
+        return {
+          ...item,
+          like_count: isLiked ? item.like_count + 1 : Math.max(0, item.like_count - 1)
+        };
+      }
+      return item;
+    }));
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -174,59 +199,78 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
               rating={postRatings[item.id]}
               onRate={onRate}
               currentUserLiked={likedPostIds.has(item.id)}
+              onLikeToggle={handleLikeToggle}
             />
           );
         } else if (item.itemType === 'project') {
           return (
-            <div key={`project-${item.id}`} className="glass-card rounded-xl p-6">
-              <div className="flex items-start gap-4">
-                <Film className="h-8 w-8 text-primary mt-1" />
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">Project: {item.name}</h3>
-                  <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150) || 'No description'}...</p>
-                  <div className="space-y-3 mt-4">
-                    {item.status && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Badge>{item.status}</Badge>
-                        {item.location && (
-                          <div className="flex items-center">
-                            <MapPin className="mr-1 h-3 w-3" />
-                            {item.location}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/50 text-xs text-muted-foreground">
-                      <div className="flex items-center">
-                        <div className="w-5 h-5 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xxs">
-                          P
+            <Link to={`/projects/${item.id}/space`} key={`project-${item.id}`} className="block">
+              <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
+                <div className="flex items-start gap-4">
+                  <Film className="h-8 w-8 text-primary mt-1" />
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">Project: {item.name}</h3>
+                    <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150) || 'No description'}...</p>
+                    <div className="space-y-3 mt-4">
+                      {item.status && (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge>{item.status}</Badge>
+                          {item.project_space_type === 'private' && (
+                            <Badge variant="secondary" className="flex items-center gap-1">
+                              <Lock className="h-3 w-3" />
+                              Private
+                            </Badge>
+                          )}
+                          {item.location && (
+                            <div className="flex items-center">
+                              <MapPin className="mr-1 h-3 w-3" />
+                              {item.location}
+                            </div>
+                          )}
                         </div>
-                        Project
+                      )}
+                      <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/50 text-xs text-muted-foreground">
+                        <div className="flex items-center">
+                          <div className="w-5 h-5 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xxs">
+                            P
+                          </div>
+                          Project Creator
+                        </div>
+                        <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Link>
+          );
+        } else if (item.itemType === 'discussion') {
+          return (
+            <Link to={`/discussion-rooms/${item.id}`} key={`discussion-${item.id}`} className="block">
+              <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
+                <div className="flex items-start gap-4">
+                  <MessageCircle className="h-8 w-8 text-primary mt-1" />
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold">Discussion: {item.title}</h3>
+                    <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150)}...</p>
+                    <div className="flex items-center justify-between pt-3 mt-3 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center">
+                          <Users className="mr-1 h-3 w-3" /> {item.member_count || 0} members
+                        </div>
+                        {item.room_type === 'private' && (
+                          <Badge variant="secondary" className="flex items-center gap-1">
+                            <Lock className="h-3 w-3" />
+                            Private
+                          </Badge>
+                        )}
                       </div>
                       <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        } else if (item.itemType === 'discussion') {
-          return (
-            <div key={`discussion-${item.id}`} className="glass-card rounded-xl p-6">
-              <div className="flex items-start gap-4">
-                <MessageCircle className="h-8 w-8 text-primary mt-1" />
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">Discussion: {item.title}</h3>
-                  <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150)}...</p>
-                  <div className="flex items-center justify-between pt-3 mt-3 text-xs text-muted-foreground">
-                    <div className="flex items-center">
-                      <Users className="mr-1 h-3 w-3" /> {item.member_count || 0} members
-                    </div>
-                    <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            </Link>
           );
         } else if (item.itemType === 'announcement') {
           return (

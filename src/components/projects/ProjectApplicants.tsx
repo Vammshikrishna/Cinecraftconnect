@@ -80,30 +80,30 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
 
     if (newStatus === 'approved') {
       const { error: insertError } = await supabase
-        .from('project_members')
-        .upsert({ 
-            project_id: projectId, 
-            user_id: userId, 
-            role: 'member' 
+        .from('project_space_members')
+        .upsert({
+          project_space_id: projectId,
+          user_id: userId,
+          role: 'member'
         });
 
       if (insertError) {
         toast({
-            title: "Error",
-            description: "Application was approved, but failed to add the user to the project team.",
-            variant: "destructive",
+          title: "Error",
+          description: "Application was approved, but failed to add the user to the project team.",
+          variant: "destructive",
         });
       } else {
         toast({
-            title: "Success",
-            description: "Application approved and user added to the project team.",
+          title: "Success",
+          description: "Application approved and user added to the project team.",
         });
       }
     } else {
-        toast({
-            title: "Success",
-            description: "Application has been rejected.",
-        });
+      toast({
+        title: "Success",
+        description: "Application has been rejected.",
+      });
     }
 
     setProcessingId(null);
@@ -118,9 +118,9 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
     <div className="space-y-4">
       {applicants.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
-            <User className="mx-auto h-12 w-12 mb-4" />
-            <h3 className="text-lg font-semibold">No Applicants Yet</h3>
-            <p className="text-sm">Check back later to see who has applied to your project.</p>
+          <User className="mx-auto h-12 w-12 mb-4" />
+          <h3 className="text-lg font-semibold">No Applicants Yet</h3>
+          <p className="text-sm">Check back later to see who has applied to your project.</p>
         </div>
       ) : (
         applicants.map(applicant => (
@@ -136,32 +136,32 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-                {applicant.status === 'pending' ? (
-                    <>
-                        <Button 
-                            size="sm" 
-                            variant="outline" 
-                            onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
-                            disabled={processingId === applicant.id}
-                        >
-                            <Check className="h-4 w-4 mr-2" />
-                            Approve
-                        </Button>
-                        <Button 
-                            size="sm" 
-                            variant="destructive" 
-                            onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
-                            disabled={processingId === applicant.id}
-                        >
-                            <X className="h-4 w-4 mr-2" />
-                            Reject
-                        </Button>
-                    </>
-                ) : (
-                    <p className={`text-sm font-semibold ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
-                        {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
-                    </p>
-                )}
+              {applicant.status === 'pending' ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
+                    disabled={processingId === applicant.id}
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
+                    disabled={processingId === applicant.id}
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Reject
+                  </Button>
+                </>
+              ) : (
+                <p className={`text-sm font-semibold ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
+                  {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
+                </p>
+              )}
             </div>
           </div>
         ))

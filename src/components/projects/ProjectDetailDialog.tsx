@@ -2,14 +2,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { formatDistanceToNow } from 'date-fns';
-import { 
-  MapPin, 
-  Calendar, 
-  DollarSign, 
-  Users, 
-  Film,
+// import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'; // Unused
+// import { formatDistanceToNow } from 'date-fns'; // Unused
+import {
+  // MapPin, // Unused
+  // Calendar, // Unused
+  // DollarSign, // Unused
+  // Users, // Unused
+  // Film, // Unused
   Briefcase,
   Bookmark
 } from 'lucide-react';
@@ -65,7 +65,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
 
   const checkApplication = async () => {
     if (!project || !user) return;
-    const { data } = await supabase.from('project_space_applications').select('id').eq('project_space_id', project.id).eq('user_id', user.id).single();
+    const { data } = await supabase.from('project_applications').select('id').eq('project_id', project.id).eq('user_id', user.id).maybeSingle();
     setHasApplied(!!data);
   };
 
@@ -133,8 +133,8 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
           </div>
         </DialogContent>
       </Dialog>
-      
-      <ProjectApplicationDialog 
+
+      <ProjectApplicationDialog
         project={project}
         open={isApplicationDialogOpen}
         onOpenChange={setIsApplicationDialogOpen}
@@ -146,10 +146,10 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
 
 function getStatusVariant(status: string) {
   switch (status.toLowerCase()) {
-      case 'planning': return 'secondary';
-      case 'in-production': return 'default';
-      case 'post-production': return 'outline';
-      case 'completed': return 'secondary';
-      default: return 'outline';
+    case 'planning': return 'secondary';
+    case 'in-production': return 'default';
+    case 'post-production': return 'outline';
+    case 'completed': return 'secondary';
+    default: return 'outline';
   }
 }

@@ -85,7 +85,7 @@ export const ProjectSpace = ({
           .select('*')
           .eq('project_space_id', projectId)
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (error && error.code !== 'PGRST116') throw error;
 

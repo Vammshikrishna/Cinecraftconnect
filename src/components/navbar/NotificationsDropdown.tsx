@@ -2,7 +2,6 @@
 import {
   Bell,
   CheckCheck,
-  MessageSquare,
   UserPlus,
   Briefcase,
   Megaphone
@@ -23,12 +22,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 
-// Expanded Notification type
+// Notification type (excluding new_message which is handled by MessageSquare icon)
 interface Notification {
   id: string;
   user_id: string;
   trigger_user_id?: string; // User who caused the notification
-  type: 'new_message' | 'new_follower' | 'project_invite' | 'system_announcement' | 'generic';
+  type: 'new_follower' | 'project_invite' | 'system_announcement' | 'generic';
   title: string;
   message: string;
   action_url: string | null;
@@ -40,7 +39,6 @@ interface Notification {
 const NotificationIcon = ({ type, is_read }: { type: Notification['type'], is_read: boolean }) => {
   const commonClass = `h-5 w-5 ${is_read ? 'text-muted-foreground' : 'text-primary'}`;
   switch (type) {
-    case 'new_message': return <MessageSquare className={commonClass} />;
     case 'new_follower': return <UserPlus className={commonClass} />;
     case 'project_invite': return <Briefcase className={commonClass} />;
     case 'system_announcement': return <Megaphone className={commonClass} />;
@@ -64,11 +62,12 @@ const NotificationsDropdown = () => {
           .from('notifications')
           .select('*')
           .eq('user_id', user.id)
+          .neq('type', 'new_message') // Exclude message notifications - they show in MessageSquare icon
           .order('created_at', { ascending: false })
           .limit(20);
 
         if (error) throw error;
-        setNotifications(data || []);
+        setNotifications((data || []) as Notification[]);
         setUnreadCount(data?.filter(n => !n.is_read).length || 0);
       } catch (error) {
         console.error('Error fetching notifications:', error);
@@ -105,7 +104,7 @@ const NotificationsDropdown = () => {
     if (!user || unreadCount === 0) return;
     try {
       await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
-      setNotifications(notifications.map(n => ({...n, is_read: true})));
+      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {
       console.error('Error marking all as read:', error);
@@ -116,13 +115,12 @@ const NotificationsDropdown = () => {
     <Link
       to={notification.action_url || '#'}
       onClick={() => markAsRead(notification.id)}
-      className={`block p-3 hover:bg-accent/50 transition-colors ${
-        !notification.is_read ? 'bg-accent/20' : ''
-      }`}
+      className={`block p-3 hover:bg-accent/50 transition-colors ${!notification.is_read ? 'bg-accent/20' : ''
+        }`}
     >
       <div className="flex items-start gap-4">
         <div className="mt-1 flex-shrink-0">
-            <NotificationIcon type={notification.type} is_read={notification.is_read} />
+          <NotificationIcon type={notification.type} is_read={notification.is_read} />
         </div>
         <div className="flex-1">
           <p className={`text-sm font-semibold ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}>{notification.title}</p>
@@ -131,7 +129,7 @@ const NotificationsDropdown = () => {
             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
           </p>
         </div>
-        {!notification.is_read && <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0"/>}
+        {!notification.is_read && <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
       </div>
     </Link>
   );
@@ -150,14 +148,14 @@ const NotificationsDropdown = () => {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 md:w-96">
         <div className="flex items-center justify-between p-3">
-            <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
-            {unreadCount > 0 &&
-                <Button variant="ghost" size="sm" onClick={markAllAsRead} className="text-xs h-auto py-1 px-2">
-                    <CheckCheck className="h-3 w-3 mr-1.5"/> Mark all as read
-                </Button>
-            }
+          <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+          {unreadCount > 0 &&
+            <Button variant="ghost" size="sm" onClick={markAllAsRead} className="text-xs h-auto py-1 px-2">
+              <CheckCheck className="h-3 w-3 mr-1.5" /> Mark all as read
+            </Button>
+          }
         </div>
-        <DropdownMenuSeparator/>
+        <DropdownMenuSeparator />
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
           {loading ? (
             <p className="p-4 text-center text-sm text-muted-foreground">Loading...</p>

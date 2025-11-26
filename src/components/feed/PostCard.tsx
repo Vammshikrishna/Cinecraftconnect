@@ -1,7 +1,6 @@
 import { Heart, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import StarRating from "@/components/StarRating";
 import { Link } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import CommentSection from "./CommentSection";
@@ -34,26 +33,28 @@ interface PostProps {
   rating?: number;
   currentUserLiked?: boolean;
   onRate?: (postId: string, rating: number) => void;
+  onLikeToggle?: (postId: string, isLiked: boolean) => void;
   mediaUrl?: string;
 }
 
-const PostCard = ({ 
-  id, 
-  author, 
-  timeAgo, 
-  content, 
-  hasImage, 
-  imageAlt, 
-  hasVideo, 
+const PostCard = ({
+  id,
+  author,
+  timeAgo,
+  content,
+  hasImage,
+  imageAlt,
+  hasVideo,
   videoThumbnail,
-  isAIGenerated, 
+  isAIGenerated,
   like_count,
-  comment_count, 
+  comment_count,
   share_count,
   tags,
-  rating,
+  // rating, // Unused
   currentUserLiked,
-  onRate,
+  // onRate, // Unused
+  onLikeToggle,
   mediaUrl
 }: PostProps) => {
 
@@ -87,6 +88,7 @@ const PostCard = ({
     // Optimistic UI update
     setIsLiked(!originalLiked);
     setLikeCount(originalLiked ? originalLikeCount - 1 : originalLikeCount + 1);
+    onLikeToggle?.(id, !originalLiked);
 
     try {
       // Use the imported service function
@@ -113,7 +115,7 @@ const PostCard = ({
   const handleComment = () => {
     setShowComments(!showComments);
   };
-  
+
   return (
     <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
       <div className="flex items-center mb-4">
@@ -136,15 +138,15 @@ const PostCard = ({
           </div>
         </div>
       </div>
-      
+
       <p className="mb-4">{content}</p>
-      
+
       {hasImage && (
         <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
           {mediaUrl ? (
-            <img 
-              src={mediaUrl} 
-              alt={imageAlt || "Post image"} 
+            <img
+              src={mediaUrl}
+              alt={imageAlt || "Post image"}
               className="w-full h-auto object-contain max-h-[600px]"
             />
           ) : (
@@ -159,13 +161,13 @@ const PostCard = ({
           )}
         </div>
       )}
-      
+
       {hasVideo && (
         <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
           {mediaUrl ? (
-            <video 
-              src={mediaUrl} 
-              controls 
+            <video
+              src={mediaUrl}
+              controls
               className="w-full h-auto object-contain max-h-[600px]"
               preload="metadata"
             >
@@ -186,18 +188,18 @@ const PostCard = ({
           )}
         </div>
       )}
-      
+
       <div className="flex flex-wrap gap-2 mb-4">
         {tags && tags.map((tag) => (
-            <span 
-            key={tag} 
+          <span
+            key={tag}
             className="text-xs px-2 py-1 bg-muted/20 rounded-full text-muted-foreground hover:bg-primary/20 cursor-pointer"
           >
             #{tag}
           </span>
         ))}
       </div>
-      
+
       <div className="flex items-center justify-between pt-4 border-t border-border">
         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleLike} disabled={isLiking}>
           <Heart size={18} className={`mr-1 ${isLiked ? 'text-red-500 fill-current' : ''}`} />

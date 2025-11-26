@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon } from 'lucide-react';
+import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Globe } from 'lucide-react';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -88,7 +89,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
     if (!user) return;
 
     try {
-      let imageUrl: string | undefined = undefined;
+      // let imageUrl: string | undefined = undefined; // Unused - image upload prepared for future use
       if (projectImage) {
         const fileExt = projectImage.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
@@ -99,7 +100,8 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
         if (uploadError) throw uploadError;
 
         const { data: urlData } = supabase.storage.from('project-images').getPublicUrl(fileName);
-        imageUrl = urlData.publicUrl;
+        // imageUrl = urlData.publicUrl; // Prepared for future use
+        console.log('Project image uploaded:', urlData.publicUrl);
       }
 
       const { data: newProject, error } = await supabase
@@ -164,6 +166,26 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
             <div className="space-y-2">
               <Label htmlFor="location" className="flex items-center"><MapPin className="mr-1 h-4 w-4" />Location</Label>
               <Input id="location" value={projectData.location} onChange={(e) => setProjectData(prev => ({ ...prev, location: e.target.value }))} placeholder="Filming location" className="bg-input border-border" />
+            </div>
+            <div className="space-y-2">
+              <Label className="flex items-center">
+                {projectData.is_public ? <Globe className="mr-1 h-4 w-4" /> : <Lock className="mr-1 h-4 w-4" />}
+                Project Visibility
+              </Label>
+              <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/20">
+                <div className="flex-1">
+                  <p className="font-medium">{projectData.is_public ? 'Public Project' : 'Private Project'}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {projectData.is_public
+                      ? 'Visible to everyone. Anyone can view and apply to join.'
+                      : 'Only visible to invited members. Others cannot see this project.'}
+                  </p>
+                </div>
+                <Switch
+                  checked={projectData.is_public}
+                  onCheckedChange={(checked) => setProjectData(prev => ({ ...prev, is_public: checked }))}
+                />
+              </div>
             </div>
           </div>
           <div className="space-y-2">
