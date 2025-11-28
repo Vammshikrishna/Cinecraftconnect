@@ -77,7 +77,7 @@ const ProjectSpacePage = () => {
   }
 
   return (
-    <div className="h-screen w-screen bg-background flex flex-col p-4 pt-20">
+    <div className="h-screen w-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col p-0 lg:p-4 pt-0 lg:pt-20 pb-0 lg:pb-4">
       <ProjectSpace
         projectId={project.id}
         projectTitle={project.title}

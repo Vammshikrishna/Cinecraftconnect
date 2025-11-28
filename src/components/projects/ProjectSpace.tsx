@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle,
@@ -11,8 +11,10 @@ import {
   DollarSign,
   ChevronRight,
   ArrowLeft,
-  UserPlus
+  UserPlus,
+  Settings
 } from 'lucide-react';
+
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
 import Tasks from '@/components/projects/Tasks';
 import Files from '@/components/projects/Files';
@@ -22,9 +24,11 @@ import LegalDocs from '@/components/projects/LegalDocs';
 import BudgetSched from '@/components/projects/BudgetSched';
 import Team from '@/components/projects/Team';
 import ProjectApplicants from '@/components/projects/ProjectApplicants';
+import ProjectSettings from '@/components/projects/ProjectSettings';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ProjectSpaceProps {
   projectId: string;
@@ -32,7 +36,7 @@ interface ProjectSpaceProps {
   projectDescription: string;
 }
 
-type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched' | 'applicants';
+type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched' | 'applicants' | 'settings';
 
 export const ProjectSpace = ({
   projectId,
@@ -45,6 +49,21 @@ export const ProjectSpace = ({
   const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll active tab into view
+  useEffect(() => {
+    const element = document.getElementById(`tab-${activeSection}`);
+    if (element && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const elementRect = element.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      // Calculate center position
+      const scrollLeft = element.offsetLeft - (containerRect.width / 2) + (elementRect.width / 2);
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+    }
+  }, [activeSection]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -90,7 +109,6 @@ export const ProjectSpace = ({
         if (error && error.code !== 'PGRST116') throw error;
 
         if (membership) {
-          // Member exists, default to member role
           setUserRole('member');
         } else {
           const { data: project, error: projectError } = await supabase
@@ -129,7 +147,14 @@ export const ProjectSpace = ({
 
   if (userRole === 'creator' || userRole === 'admin') {
     teamNavItems.push({ id: 'applicants' as ActiveSection, label: 'Applicants', icon: UserPlus });
+    teamNavItems.push({ id: 'settings' as ActiveSection, label: 'Settings', icon: Settings });
   }
+
+  const allNavItems = [
+    ...collaborationNavItems,
+    ...productionOfficeNavItems,
+    ...teamNavItems
+  ];
 
   const renderContent = () => {
     switch (activeSection) {
@@ -151,36 +176,97 @@ export const ProjectSpace = ({
         return <Team project_id={projectId} />;
       case 'applicants':
         return <ProjectApplicants projectId={projectId} />;
+      case 'settings':
+        return <ProjectSettings projectId={projectId} />;
       default:
         return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
     }
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-background text-foreground border border-border/50 rounded-lg overflow-hidden">
-      <header className="px-4 py-3 border-b border-border/50 flex items-center">
-        <Button
-          variant="outline"
-          onClick={() => navigate('/projects')}
-          className="gap-2 text-sm"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Projects
-        </Button>
-      </header>
-      <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-white/20 lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
+      {/* Mobile Header & Navigation */}
+      <div className="lg:hidden flex flex-col border-b border-white/10 bg-background/80 backdrop-blur-xl z-30 shrink-0 sticky top-0">
+        <div className="flex items-center justify-between p-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/projects')}
+            className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="text-center overflow-hidden px-2">
+            <h2 className="text-sm font-semibold truncate leading-tight">{projectTitle}</h2>
+            <p className="text-[10px] text-muted-foreground truncate leading-tight opacity-70">Project Space</p>
+          </div>
+          <div className="w-9 shrink-0" /> {/* Spacer for balance */}
+        </div>
+
+        <div className="relative w-full">
+          <div
+            ref={scrollContainerRef}
+            className="flex overflow-x-auto gap-2 px-4 pb-3 scrollbar-hide w-full"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {allNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeSection === item.id;
+              return (
+                <button
+                  id={`tab-${item.id}`}
+                  key={item.id}
+                  onClick={() => setActiveSection(item.id)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-300 border shrink-0",
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] scale-105"
+                      : "bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {item.label}
+                </button>
+              );
+            })}
+            <div className="w-4 shrink-0" /> {/* End padding */}
+          </div>
+          {/* Gradient fade for scroll hint */}
+          <div className="absolute right-0 top-0 bottom-3 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+          <div className="absolute left-0 top-0 bottom-3 w-4 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Desktop Sidebar */}
         <div
-          className="flex flex-col border-r border-border/50 bg-slate-900/50"
+          className="hidden lg:flex flex-col border-r border-white/20 bg-card/95 backdrop-blur-xl relative z-0 h-full"
           style={{ width: sidebarWidth }}
         >
-          <div className="p-4 border-b border-border/50">
-            <h2 className="text-lg font-semibold px-2">{projectTitle}</h2>
-            <p className="text-xs text-muted-foreground px-2 pt-1">{projectDescription}</p>
+          <div className="p-4 border-b border-white/20 bg-gradient-to-b from-white/5 to-transparent flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/projects')}
+              className="h-8 w-8 rounded-full hover:bg-white/10 shrink-0 text-muted-foreground hover:text-primary transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="overflow-hidden">
+              <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400 truncate">
+                {projectTitle}
+              </h2>
+              <p className="text-xs text-muted-foreground truncate">
+                {projectDescription}
+              </p>
+            </div>
           </div>
 
-          <nav className="flex-1 p-2 space-y-4 text-sm">
+          <nav className="flex-1 p-4 space-y-8 overflow-y-auto custom-scrollbar">
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">COLLABORATION</h3>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Collaboration
+              </h3>
               <div className="space-y-1">
                 {collaborationNavItems.map((item) => {
                   const Icon = item.icon;
@@ -188,14 +274,16 @@ export const ProjectSpace = ({
                   return (
                     <Button
                       key={item.id}
-                      variant={isActive ? "secondary" : "ghost"}
-                      className={`w-full justify-start gap-3 h-10 px-2 font-normal ${isActive ? 'text-foreground' : 'text-muted-foreground'
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
+                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
                         }`}
                       onClick={() => setActiveSection(item.id)}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
                       <span>{item.label}</span>
-                      {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
                     </Button>
                   );
                 })}
@@ -203,7 +291,9 @@ export const ProjectSpace = ({
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">PRODUCTION OFFICE</h3>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Production Office
+              </h3>
               <div className="space-y-1">
                 {productionOfficeNavItems.map((item) => {
                   const Icon = item.icon;
@@ -211,14 +301,16 @@ export const ProjectSpace = ({
                   return (
                     <Button
                       key={item.id}
-                      variant={isActive ? "secondary" : "ghost"}
-                      className={`w-full justify-start gap-3 h-10 px-2 font-normal ${isActive ? 'text-foreground' : 'text-muted-foreground'
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
+                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
                         }`}
                       onClick={() => setActiveSection(item.id)}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
                       <span>{item.label}</span>
-                      {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
                     </Button>
                   );
                 })}
@@ -226,7 +318,9 @@ export const ProjectSpace = ({
             </div>
 
             <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-2">TEAM</h3>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Team
+              </h3>
               <div className="space-y-1">
                 {teamNavItems.map((item) => {
                   const Icon = item.icon;
@@ -234,14 +328,16 @@ export const ProjectSpace = ({
                   return (
                     <Button
                       key={item.id}
-                      variant={isActive ? "secondary" : "ghost"}
-                      className={`w-full justify-start gap-3 h-10 px-2 font-normal ${isActive ? 'text-foreground' : 'text-muted-foreground'
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
+                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
                         }`}
                       onClick={() => setActiveSection(item.id)}
                     >
-                      <Icon className="h-5 w-5" />
+                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
                       <span>{item.label}</span>
-                      {isActive && <ChevronRight className="h-4 w-4 ml-auto" />}
+                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
                     </Button>
                   );
                 })}
@@ -251,11 +347,12 @@ export const ProjectSpace = ({
         </div>
 
         <div
-          className="w-1 cursor-col-resize hover:bg-primary transition-colors"
+          className="hidden lg:block w-1 cursor-col-resize hover:bg-primary/50 transition-colors bg-white/10"
           onMouseDown={handleMouseDown}
         />
 
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden bg-background/50 relative w-full">
+          <div className="absolute inset-0 bg-[radial-gradient(#ffffff15_1px,transparent_1px)] [background-size:16px_16px] opacity-30 pointer-events-none" />
           {renderContent()}
         </main>
       </div>

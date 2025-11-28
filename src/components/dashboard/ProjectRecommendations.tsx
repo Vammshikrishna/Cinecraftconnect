@@ -4,15 +4,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { formatDistanceToNow } from 'date-fns';
-import { Film, MapPin, Calendar, DollarSign, Users, ExternalLink } from 'lucide-react';
+import { Film, MapPin, DollarSign, Users, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
   description: string;
   genre: string[];
   location: string;
@@ -44,7 +43,7 @@ export const ProjectRecommendations = () => {
         .select('*')
         .eq('id', user?.id)
         .single();
-      
+
       setUserProfile(data);
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -55,19 +54,19 @@ export const ProjectRecommendations = () => {
     try {
       // Fetch public projects, excluding user's own projects
       const { data, error } = await supabase
-        .from('projects')
+        .from('project_spaces')
         .select('*')
-        .eq('is_public', true)
+        .eq('project_space_type', 'public')
         .neq('creator_id', user?.id)
         .eq('status', 'planning')
         .order('created_at', { ascending: false })
         .limit(10);
 
       if (error) throw error;
-      
+
       // Simple recommendation logic based on user's craft
-      let filteredProjects = data || [];
-      
+      let filteredProjects = (data as any[]) || [];
+
       if (userProfile?.craft) {
         // Prioritize projects that need the user's craft
         filteredProjects = filteredProjects.sort((a, b) => {
@@ -77,7 +76,10 @@ export const ProjectRecommendations = () => {
         });
       }
 
-      setRecommendations(filteredProjects.slice(0, 6));
+      setRecommendations(filteredProjects.slice(0, 6).map(p => ({
+        ...p,
+        name: p.name || p.title // Fallback if name is missing but title exists in some old data
+      })));
     } catch (error) {
       console.error('Error fetching recommendations:', error);
     } finally {
@@ -94,20 +96,20 @@ export const ProjectRecommendations = () => {
 
   const getRecommendationScore = (project: Project) => {
     let score = 0;
-    
+
     // Higher score if user's craft is needed
     if (userProfile?.craft && project.required_roles?.includes(userProfile.craft)) {
       score += 3;
     }
-    
+
     // Higher score for newer projects
     const daysOld = Math.floor((Date.now() - new Date(project.created_at).getTime()) / (1000 * 60 * 60 * 24));
     if (daysOld < 7) score += 2;
     else if (daysOld < 30) score += 1;
-    
+
     // Higher score for projects with budget
     if (project.budget_min || project.budget_max) score += 1;
-    
+
     return score;
   };
 
@@ -157,18 +159,17 @@ export const ProjectRecommendations = () => {
             {recommendations.map((project, index) => {
               const score = getRecommendationScore(project);
               const isHighMatch = score >= 3;
-              
+
               return (
                 <div key={project.id}>
-                  <div className={`p-4 rounded-lg border transition-all hover:border-cinesphere-purple/50 ${
-                    isHighMatch 
-                      ? 'border-cinesphere-purple/30 bg-cinesphere-purple/5' 
+                  <div className={`p-4 rounded-lg border transition-all hover:border-cinesphere-purple/50 ${isHighMatch
+                      ? 'border-cinesphere-purple/30 bg-cinesphere-purple/5'
                       : 'border-white/10 hover:bg-white/5'
-                  }`}>
+                    }`}>
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-semibold text-white">{project.title}</h4>
+                          <h4 className="font-semibold text-white">{project.name}</h4>
                           {isHighMatch && (
                             <Badge variant="secondary" className="text-xs bg-cinesphere-purple/20 text-cinesphere-purple">
                               High Match
@@ -180,7 +181,7 @@ export const ProjectRecommendations = () => {
                         </p>
                       </div>
                       <Button asChild variant="ghost" size="sm">
-                        <Link to={`/projects/${project.id}`}>
+                        <Link to={`/projects/${project.id}/space`}>
                           <ExternalLink className="h-4 w-4" />
                         </Link>
                       </Button>
@@ -193,7 +194,7 @@ export const ProjectRecommendations = () => {
                           <span>{project.location}</span>
                         </div>
                       )}
-                      
+
                       <div className="flex items-center text-gray-300">
                         <DollarSign className="mr-1 h-3 w-3" />
                         <span>{formatBudget(project.budget_min, project.budget_max)}</span>
@@ -208,14 +209,13 @@ export const ProjectRecommendations = () => {
                         </p>
                         <div className="flex flex-wrap gap-1">
                           {project.required_roles.slice(0, 3).map((role) => (
-                            <Badge 
-                              key={role} 
-                              variant="outline" 
-                              className={`text-xs ${
-                                userProfile?.craft === role 
-                                  ? 'border-cinesphere-purple text-cinesphere-purple' 
+                            <Badge
+                              key={role}
+                              variant="outline"
+                              className={`text-xs ${userProfile?.craft === role
+                                  ? 'border-cinesphere-purple text-cinesphere-purple'
                                   : ''
-                              }`}
+                                }`}
                             >
                               {role}
                             </Badge>
@@ -244,7 +244,7 @@ export const ProjectRecommendations = () => {
                         Posted {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
                       </p>
                       <Button asChild size="sm" variant="outline">
-                        <Link to={`/projects/${project.id}`}>
+                        <Link to={`/projects/${project.id}/space`}>
                           View Details
                         </Link>
                       </Button>

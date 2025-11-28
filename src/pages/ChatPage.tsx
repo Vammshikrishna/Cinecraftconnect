@@ -37,7 +37,7 @@ const ChatPage = () => {
         setError('Could not load user profile. The chat cannot be started.');
         setPartner(null);
       } else {
-        setPartner(data);
+        setPartner(data as any);
       }
       setLoading(false);
     };
@@ -64,9 +64,9 @@ const ChatPage = () => {
   }
 
   return (
-    <div className="h-screen pt-16">
-      <EnhancedRealTimeChat 
-        roomId={channelId} 
+    <div className="h-screen pt-0 lg:pt-16">
+      <EnhancedRealTimeChat
+        roomId={channelId}
         partnerId={partner.id}
         partnerName={partner.full_name}
         partnerAvatarUrl={partner.avatar_url}

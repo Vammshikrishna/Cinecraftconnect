@@ -119,27 +119,29 @@ const PostCard = ({
   return (
     <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
       <div className="flex items-center mb-4">
-        <Avatar className="h-10 w-10 mr-3">
-          <AvatarImage src={author.avatar || "/placeholder.svg"} />
-          <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">{author.initials}</AvatarFallback>
-        </Avatar>
+        <Link to={`/profile/${author.id}`} className="hover:opacity-80 transition-opacity">
+          <Avatar className="h-10 w-10 mr-3">
+            <AvatarImage src={author.avatar || "/placeholder.svg"} />
+            <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">{author.initials}</AvatarFallback>
+          </Avatar>
+        </Link>
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <div>
               {author.id ? (
-                <Link to={`/profile/view?id=${author.id}`} className="hover:text-primary transition-colors">
-                  <p className="font-semibold">{author.name}</p>
+                <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors min-w-0">
+                  <p className="font-semibold truncate">{author.name}</p>
                 </Link>
               ) : (
-                <p className="font-semibold">{author.name}</p>
+                <p className="font-semibold truncate">{author.name}</p>
               )}
-              <p className="text-xs text-muted-foreground">{author.role} • {timeAgo}</p>
+              <p className="text-xs text-muted-foreground truncate">{author.role} • {timeAgo}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <p className="mb-4">{content}</p>
+      <p className="mb-4 break-words whitespace-pre-wrap">{content}</p>
 
       {hasImage && (
         <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">

@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Film, Search } from 'lucide-react';
 import { Button } from "./ui/button.tsx";
 import { useAuth } from '../contexts/AuthContext.tsx';
@@ -12,18 +12,25 @@ import { MobileNav } from "./navbar/MobileNav.tsx";
 
 const Navbar = () => {
   const { user } = useAuth();
+  const location = useLocation();
+
+  // Check if we are in an immersive route (Project Space, Discussion Room, Chat DM)
+  const isImmersiveRoute =
+    /^\/projects\/[^/]+\/space/.test(location.pathname) ||
+    /^\/discussion-rooms\/[^/]+$/.test(location.pathname) ||
+    /^\/messages\/[^/]+$/.test(location.pathname);
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden">
+      <header className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden ${isImmersiveRoute ? 'hidden lg:block' : ''}`}>
         <div className="w-full px-2 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-2 sm:gap-4">
             {/* Logo */}
             <Link to="/" className="flex items-center flex-shrink-0 group min-w-0">
               <Film className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-primary mr-1 sm:mr-2 group-hover:scale-110 transition-transform duration-200" />
               <span className="text-base sm:text-lg lg:text-xl xl:text-2xl font-bold text-gradient whitespace-nowrap">
-                <span className="hidden md:inline">CineCraft Connect</span>
-                <span className="md:hidden">CCC</span>
+                <span className="hidden xl:inline">CineCraft Connect</span>
+                <span className="xl:hidden">CCC</span>
               </span>
             </Link>
 

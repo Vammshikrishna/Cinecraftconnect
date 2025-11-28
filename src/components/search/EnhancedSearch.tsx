@@ -109,7 +109,7 @@ const EnhancedSearch = ({ onSearch, onSaveSearch }: EnhancedSearchProps) => {
       // Search projects
       if (!searchFilters.contentType.length || searchFilters.contentType.includes('projects')) {
         let projectsQuery = supabase
-          .from('projects')
+          .from('project_spaces')
           .select(`
             *,
             profiles:creator_id (
@@ -121,7 +121,7 @@ const EnhancedSearch = ({ onSearch, onSaveSearch }: EnhancedSearchProps) => {
           `);
 
         if (searchFilters.query) {
-          projectsQuery = projectsQuery.or(`title.ilike.%${searchFilters.query}%,description.ilike.%${searchFilters.query}%`);
+          projectsQuery = projectsQuery.or(`name.ilike.%${searchFilters.query}%,description.ilike.%${searchFilters.query}%`);
         }
 
         if (searchFilters.location) {
@@ -185,7 +185,7 @@ const EnhancedSearch = ({ onSearch, onSaveSearch }: EnhancedSearchProps) => {
       case 'popular':
         return results.sort((a, b) => (b.like_count || 0) - (a.like_count || 0));
       case 'alphabetical':
-        return results.sort((a, b) => (a.title || a.full_name || '').localeCompare(b.title || b.full_name || ''));
+        return results.sort((a, b) => (a.name || a.title || a.full_name || '').localeCompare(b.name || b.title || b.full_name || ''));
       default:
         return results;
     }
@@ -205,7 +205,7 @@ const EnhancedSearch = ({ onSearch, onSaveSearch }: EnhancedSearchProps) => {
   const handleContentTypeChange = (typeId: string, checked: boolean) => {
     setFilters(prev => ({
       ...prev,
-      contentType: checked 
+      contentType: checked
         ? [...prev.contentType, typeId]
         : prev.contentType.filter(id => id !== typeId)
     }));

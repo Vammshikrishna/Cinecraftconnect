@@ -101,9 +101,42 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
         }
     };
 
-    const filteredConnections = connections.filter(c =>
-        c.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const [searchResults, setSearchResults] = useState<Connection[]>([]);
+
+    // Search profiles when query changes
+    useEffect(() => {
+        const searchProfiles = async () => {
+            if (!searchQuery.trim()) {
+                setSearchResults([]);
+                return;
+            }
+
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, full_name, username, avatar_url')
+                .ilike('full_name', `%${searchQuery}%`)
+                .limit(10);
+
+            if (error) {
+                console.error("Error searching profiles:", error);
+                return;
+            }
+
+            if (data) {
+                setSearchResults(data.map(p => ({
+                    id: p.id,
+                    full_name: p.full_name || 'Unknown',
+                    username: p.username || '',
+                    avatar_url: p.avatar_url
+                })));
+            }
+        };
+
+        const timeoutId = setTimeout(searchProfiles, 300);
+        return () => clearTimeout(timeoutId);
+    }, [searchQuery]);
+
+    const displayList = searchQuery.trim() ? searchResults : connections;
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -125,10 +158,10 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
                 <div className="max-h-[300px] overflow-y-auto space-y-2">
                     {loading ? (
                         <div className="text-center py-4 text-gray-400">Loading connections...</div>
-                    ) : filteredConnections.length === 0 ? (
+                    ) : displayList.length === 0 ? (
                         <div className="text-center py-4 text-gray-400">No connections found</div>
                     ) : (
-                        filteredConnections.map((connection) => (
+                        displayList.map((connection) => (
                             <div key={connection.id} className="flex items-center justify-between p-2 hover:bg-white/5 rounded-lg transition-colors">
                                 <div className="flex items-center gap-3">
                                     <Avatar className="h-10 w-10">

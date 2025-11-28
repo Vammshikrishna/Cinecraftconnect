@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 interface Project {
   id: string;
-  title: string;
+  name: string;
   description: string | null;
   status: string | null;
   start_date: string | null;
@@ -35,7 +35,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
     const fetchProjects = async () => {
       setLoading(true);
       const { data, error } = await supabase
-        .from('projects')
+        .from('project_spaces')
         .select('*')
         .eq('creator_id', targetUserId)
         .order('created_at', { ascending: false });
@@ -55,7 +55,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
         {
           event: '*',
           schema: 'public',
-          table: 'projects',
+          table: 'project_spaces',
           filter: `creator_id=eq.${targetUserId}`
         },
         () => {
@@ -73,15 +73,15 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
     return (
       <div className="space-y-4">
         {[...Array(2)].map((_, i) => (
-            <Card key={i} className="bg-gray-900 border-gray-800 rounded-lg">
-                <CardHeader className="p-4">
-                    <Skeleton className="h-5 w-3/5" />
-                </CardHeader>
-                <CardContent className="p-4 -mt-4">
-                    <Skeleton className="h-4 w-full mb-3" />
-                    <Skeleton className="h-4 w-4/5" />
-                </CardContent>
-            </Card>
+          <Card key={i} className="bg-gray-900 border-gray-800 rounded-lg">
+            <CardHeader className="p-4">
+              <Skeleton className="h-5 w-3/5" />
+            </CardHeader>
+            <CardContent className="p-4 -mt-4">
+              <Skeleton className="h-4 w-full mb-3" />
+              <Skeleton className="h-4 w-4/5" />
+            </CardContent>
+          </Card>
         ))}
       </div>
     );
@@ -101,7 +101,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
         <Card key={project.id} className="bg-gray-900 border-gray-800 rounded-lg">
           <CardHeader className="p-4">
             <div className="flex items-start justify-between">
-              <CardTitle className="text-lg font-semibold">{project.title}</CardTitle>
+              <CardTitle className="text-lg font-semibold">{project.name}</CardTitle>
               {project.status && (
                 <Badge className="text-xs" variant="outline">{project.status}</Badge>
               )}

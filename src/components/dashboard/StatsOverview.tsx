@@ -31,36 +31,37 @@ export const StatsOverview = () => {
   }, [user]);
 
   const fetchStats = async () => {
+    if (!user) return;
     try {
       // Fetch projects created
       const { data: projects } = await supabase
-        .from('projects')
+        .from('project_spaces')
         .select('id')
-        .eq('creator_id', user?.id);
+        .eq('creator_id', user.id);
 
       // Fetch collaborations posted
-      const { data: collaborations } = await supabase
-        .from('collaborations')
-        .select('id')
-        .eq('poster_id', user?.id);
+      // const { data: collaborations } = await supabase
+      //   .from('collaborations')
+      //   .select('id')
+      //   .eq('poster_id', user.id);
 
       // Fetch portfolio items
       const { data: portfolioItems } = await supabase
         .from('portfolio_items')
         .select('id')
-        .eq('user_id', user?.id);
+        .eq('user_id', user.id);
 
       // Fetch movie ratings
-      const { data: ratings } = await supabase
-        .from('movie_ratings')
-        .select('id')
-        .eq('user_id', user?.id);
+      // const { data: ratings } = await supabase
+      //   .from('movie_ratings')
+      //   .select('id')
+      //   .eq('user_id', user.id);
 
       setStats({
         projectsCreated: projects?.length || 0,
-        collaborations: collaborations?.length || 0,
+        collaborations: 0, // collaborations?.length || 0,
         portfolioItems: portfolioItems?.length || 0,
-        ratingsGiven: ratings?.length || 0,
+        ratingsGiven: 0, // ratings?.length || 0,
         profileViews: Math.floor(Math.random() * 50) + 10 // Mock data for profile views
       });
     } catch (error) {

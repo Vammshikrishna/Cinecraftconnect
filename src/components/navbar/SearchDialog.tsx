@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -64,12 +64,12 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
       // Search Projects
       if (filter === 'all' || filter === 'project') {
         const { data } = await supabase
-          .from('projects')
-          .select('id, title, status')
-          .ilike('title', `%${query}%`)
-          .eq('is_public', true)
+          .from('project_spaces')
+          .select('id, name, status')
+          .ilike('name', `%${query}%`)
+          .eq('project_space_type', 'public')
           .limit(5);
-        data?.forEach(p => results.push({ type: 'project', id: p.id, title: p.title, subtitle: `Status: ${p.status}`, icon: Briefcase }));
+        data?.forEach(p => results.push({ type: 'project', id: p.id, title: p.name, subtitle: `Status: ${p.status}`, icon: Briefcase }));
       }
 
       // Search Posts
@@ -99,7 +99,7 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
     onOpenChange(false);
     switch (result.type) {
       case 'user': return navigate(`/profile/view?user=${result.id}`);
-      case 'project': return navigate(`/projects/${result.id}`);
+      case 'project': return navigate(`/projects/${result.id}/space`);
       case 'post': return navigate(`/feed?highlight=${result.id}`);
       case 'hashtag': return navigate(`/feed?tag=${result.id}`);
     }
@@ -116,41 +116,41 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
         <div className="flex items-center p-4 border-b">
-            <Search className="h-5 w-5 text-muted-foreground mr-3" />
-            <Input
-              placeholder="Search CineCraft Connect..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="border-0 focus-visible:ring-0 shadow-none p-0 text-base h-auto bg-transparent"
-              autoFocus
-            />
-            {searchQuery && (
-                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setSearchQuery('')}>
-                    <X className="h-4 w-4"/>
-                </Button>
-            )}
+          <Search className="h-5 w-5 text-muted-foreground mr-3" />
+          <Input
+            placeholder="Search CineCraft Connect..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="border-0 focus-visible:ring-0 shadow-none p-0 text-base h-auto bg-transparent"
+            autoFocus
+          />
+          {searchQuery && (
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setSearchQuery('')}>
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         <div className="p-2 border-b">
-            <div className="flex items-center gap-2">
-                <span className="text-sm font-medium px-2">Filters:</span>
-                {filterOptions.map(opt => (
-                    <Button 
-                        key={opt.id} 
-                        variant={activeFilter === opt.id ? 'secondary' : 'ghost'} 
-                        size="sm"
-                        onClick={() => setActiveFilter(opt.id)}
-                        className="text-xs h-7"
-                    >
-                        {opt.label}
-                    </Button>
-                ))}
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium px-2">Filters:</span>
+            {filterOptions.map(opt => (
+              <Button
+                key={opt.id}
+                variant={activeFilter === opt.id ? 'secondary' : 'ghost'}
+                size="sm"
+                onClick={() => setActiveFilter(opt.id)}
+                className="text-xs h-7"
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto">
           {loading && <div className="p-8 flex justify-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div></div>}
-          
+
           {!loading && searchQuery && (
             searchResults.length > 0 ? (
               <ul className="py-2">
@@ -179,8 +179,8 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
 
           {!searchQuery && !loading && (
             <div className="p-8 text-center text-sm text-muted-foreground">
-                <p>Find professionals, projects, and discussions.</p>
-                <p className="text-xs mt-2">Use # to search for specific tags.</p>
+              <p>Find professionals, projects, and discussions.</p>
+              <p className="text-xs mt-2">Use # to search for specific tags.</p>
             </div>
           )}
         </div>

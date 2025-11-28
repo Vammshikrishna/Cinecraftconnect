@@ -45,7 +45,11 @@ const DiscussionRoomsTab = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setRooms(data || []);
+      setRooms((data || []).map(room => ({
+        ...room,
+        description: room.description || '',
+        creator_id: room.creator_id || ''
+      })));
     } catch (error) {
       console.error('Error fetching rooms:', error);
       toast({
@@ -89,6 +93,7 @@ const DiscussionRoomsTab = () => {
         .insert([
           {
             title: validation.data.title,
+            name: validation.data.title,
             description: validation.data.description,
             creator_id: user.id,
           }

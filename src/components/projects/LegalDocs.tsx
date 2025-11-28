@@ -134,14 +134,14 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
     }
 
     return (
-        <div className="p-8">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Legal Documents</h1>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h1 className="text-xl sm:text-2xl font-bold">Legal Documents</h1>
                 <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                     <DialogTrigger asChild>
-                        <Button><Plus className="h-4 w-4 mr-2" />Upload Document</Button>
+                        <Button className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />Upload Document</Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="w-[95vw] rounded-lg">
                         <DialogHeader>
                             <DialogTitle>Upload Legal Document</DialogTitle>
                         </DialogHeader>

@@ -33,10 +33,10 @@ const SearchResults = ({ query, filters, loading }: SearchResultsProps) => {
           .limit(10);
 
         const projectsPromise = supabase
-          .from('projects')
-          .select('id, title, description, created_at')
-          .ilike('title', `%${query}%`)
-          .eq('is_public', true)
+          .from('project_spaces')
+          .select('id, name, description, created_at')
+          .ilike('name', `%${query}%`)
+          .eq('project_space_type', 'public')
           .limit(10);
 
         const [{ data: posts, error: pErr }, { data: projects, error: prErr }] = await Promise.all([postsPromise, projectsPromise]);
@@ -45,7 +45,7 @@ const SearchResults = ({ query, filters, loading }: SearchResultsProps) => {
 
         const mapped: ResultItem[] = [
           ...(posts || []).map((p: any) => ({ id: p.id, type: 'post' as const, title: 'Post', snippet: p.content, created_at: p.created_at })),
-          ...(projects || []).map((pr: any) => ({ id: pr.id, type: 'project' as const, title: pr.title, snippet: pr.description || '', created_at: pr.created_at })),
+          ...(projects || []).map((pr: any) => ({ id: pr.id, type: 'project' as const, title: pr.name, snippet: pr.description || '', created_at: pr.created_at })),
         ];
         setResults(mapped);
       } finally {

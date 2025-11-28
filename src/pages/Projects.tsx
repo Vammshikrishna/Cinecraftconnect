@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -8,20 +9,17 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal';
 import { ProjectDetailDialog } from '@/components/projects/ProjectDetailDialog';
 import { ProjectFilters, FilterState } from '@/components/projects/ProjectFilters';
-import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
-import { InteractiveCard } from '@/components/ui/interactive-card';
+import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Search,
   MapPin,
-  Calendar,
-  DollarSign,
-  Users,
   Film,
   ImageIcon,
-  Bookmark
+  Bookmark,
+  ChevronRight
 } from 'lucide-react';
 
 interface Project {
@@ -39,6 +37,11 @@ interface Project {
   creator_id: string;
   created_at: string;
   project_space_bookmarks?: { user_id: string }[];
+  profiles?: {
+    full_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
+  };
 }
 
 const Projects = () => {
@@ -66,9 +69,22 @@ const Projects = () => {
       const isBookmarkedTab = activeTab === 'bookmarked';
 
       // Fetch projects
+      // Fetch projects
+      // Note: project_spaces relates to projects, which relates to profiles (creator)
+      // We need to fetch the project details and the creator's profile
       let query = supabase
         .from('project_spaces')
-        .select('*');
+        .select(`
+          *,
+          projects (
+            *,
+            profiles (
+              full_name,
+              username,
+              avatar_url
+            )
+          )
+        `);
 
       if (activeTab === 'my') {
         if (!user) { setProjects([]); setLoading(false); return; }
@@ -89,11 +105,26 @@ const Projects = () => {
           .eq('user_id', user.id);
 
         if (!bookmarksError && bookmarksData) {
-          // Merge bookmarks into projects
-          projectsWithBookmarks = (projectsData || []).map(project => ({
-            ...project,
-            project_space_bookmarks: bookmarksData.filter(b => b.project_space_id === project.id)
-          }));
+          // Merge bookmarks and map nested data
+          projectsWithBookmarks = (projectsData || []).map((space: any) => {
+            const project = space.projects;
+            const profile = project?.profiles;
+
+            return {
+              ...space,
+              // Map fields from the parent 'projects' table if needed, or keep using 'project_spaces' fields
+              // Assuming 'project_spaces' has the main display fields, but if they are on 'projects', map them here:
+              // status: project?.status || space.status,
+              // location: project?.location || space.location,
+
+              project_space_bookmarks: bookmarksData.filter(b => b.project_space_id === space.id),
+              profiles: profile ? {
+                full_name: profile.full_name,
+                username: profile.username,
+                avatar_url: profile.avatar_url
+              } : null
+            };
+          });
 
           // Filter for bookmarked tab
           if (isBookmarkedTab) {
@@ -155,36 +186,86 @@ const Projects = () => {
 
   const ProjectCard = ({ project }: { project: Project }) => {
     const isBookmarked = project.project_space_bookmarks?.some(b => b.user_id === user?.id);
+    const navigate = useNavigate();
+
+    const handleCardClick = () => {
+      navigate(`/projects/${project.id}/space`);
+    };
+
+    const handleBookmarkClick = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      await handleBookmarkToggle(project, e);
+    };
+
     return (
-      <InteractiveCard
-        variant="hover-lift"
-        className="h-full cursor-pointer flex flex-col"
-        onClick={() => setSelectedProject(project)}
+      <div
+        onClick={handleCardClick}
+        className="group relative bg-card border border-border rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1"
       >
-        <div className="w-full h-40 bg-muted rounded-t-lg overflow-hidden flex items-center justify-center relative">
-          <ImageIcon className="w-12 h-12 text-muted-foreground" />
-          <button onClick={(e) => handleBookmarkToggle(project, e)} className="absolute top-2 right-2 p-1.5 bg-background/70 backdrop-blur-sm rounded-full hover:bg-background transition-colors">
-            <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-primary text-primary' : 'text-foreground'}`} />
+        {/* Image Section */}
+        <div className="relative w-full h-48 bg-gradient-to-br from-primary/20 via-secondary/20 to-primary/10 overflow-hidden">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <ImageIcon className="w-16 h-16 text-muted-foreground/30" />
+          </div>
+
+          {/* Bookmark Button */}
+          <button
+            onClick={handleBookmarkClick}
+            className="absolute top-3 right-3 p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 z-10"
+          >
+            <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-primary text-primary' : 'text-muted-foreground'}`} />
           </button>
-        </div>
-        <div className="p-4 flex-grow flex flex-col justify-between">
-          <div>
-            <h3 className="font-bold text-lg truncate mb-2">{project.name}</h3>
-            <div className="flex items-center justify-between mb-3">
-              <Badge variant={getStatusVariant(project.status)} className="capitalize">{project.status}</Badge>
-              {project.location && <div className="flex items-center text-muted-foreground text-sm"><MapPin className="mr-1 h-3 w-3" />{project.location}</div>}
-            </div>
-            <p className="text-sm text-muted-foreground mb-4 h-10 overflow-hidden">{project.description?.substring(0, 80) + (project.description?.length > 80 ? '...' : '')}</p>
-          </div>
-          <div className="flex items-center justify-between pt-4 border-t border-border">
-            <div className="flex items-center text-sm text-muted-foreground">
-              <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xs">U</div>
-              Unknown
-            </div>
-            <span className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
+
+          {/* Status Badge */}
+          <div className="absolute bottom-3 left-3">
+            <Badge variant={getStatusVariant(project.status)} className="capitalize shadow-lg">
+              {project.status}
+            </Badge>
           </div>
         </div>
-      </InteractiveCard>
+
+        {/* Content Section */}
+        <div className="p-5 space-y-3">
+          {/* Title */}
+          <h3 className="font-bold text-xl text-foreground line-clamp-1 group-hover:text-primary transition-colors">
+            {project.name}
+          </h3>
+
+          {/* Description */}
+          <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
+            {project.description || 'No description provided'}
+          </p>
+
+          {/* Metadata */}
+          <div className="flex flex-wrap items-center gap-3 pt-2 text-xs text-muted-foreground">
+            {project.location && (
+              <div className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{project.location}</span>
+              </div>
+            )}
+
+            {project.genre && project.genre.length > 0 && (
+              <div className="flex items-center gap-1">
+                <Film className="w-3.5 h-3.5" />
+                <span className="line-clamp-1">{project.genre.slice(0, 2).join(', ')}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between pt-3 border-t border-border/50">
+            <span className="text-xs text-muted-foreground">
+              {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+            </span>
+
+            <div className="flex items-center gap-1 text-xs text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+              <span>View Project</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -192,7 +273,7 @@ const Projects = () => {
 
   return (
     <div className="min-h-screen bg-background pt-20">
-      <div className="container mx-auto px-4 py-8 animate-fade-in">
+      <div className="container mx-auto px-4 pt-8 pb-24 animate-fade-in">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 space-y-4 lg:space-y-0">
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center"><Film className="mr-3 h-8 w-8 text-primary" />Projects</h1>

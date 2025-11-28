@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, Building2, MessageSquare, ChevronDown } from 'lucide-react';
+import { ShoppingBag, Building2, ChevronDown, BookOpen } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,7 +13,8 @@ const MoreMenu = () => {
 
     const moreItems = [
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
-        { path: '/vendors', icon: Building2, label: 'Vendors' }
+        { path: '/vendors', icon: Building2, label: 'Vendors' },
+        { path: '/learn', icon: BookOpen, label: 'Learn' }
     ];
 
     // Check if any of the "more" items is active

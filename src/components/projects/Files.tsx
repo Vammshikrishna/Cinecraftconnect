@@ -81,21 +81,21 @@ const Files = ({ project_id }: FilesProps) => {
     }
 
     return (
-        <div className="p-8">
-            <h1 className="text-2xl font-bold mb-4">Files</h1>
-            <div className="flex gap-2 mb-4">
-                <Input type="file" onChange={handleFileChange} />
-                <Button onClick={handleUpload} disabled={uploading || !selectedFile}>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+            <h1 className="text-xl sm:text-2xl font-bold mb-4">Files</h1>
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
+                <Input type="file" onChange={handleFileChange} className="w-full" />
+                <Button onClick={handleUpload} disabled={uploading || !selectedFile} className="w-full sm:w-auto">
                     {uploading ? 'Uploading...' : 'Upload'}
                 </Button>
             </div>
-            <ul>
+            <ul className="space-y-2">
                 {files && files.map(file => (
-                    <li key={file.id} className="flex justify-between items-center p-2 border-b">
-                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                    <li key={file.id} className="flex justify-between items-center p-3 border-b bg-card/50 rounded-lg">
+                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline truncate mr-4 max-w-[200px] sm:max-w-none">
                             {file.name}
                         </a>
-                        <span className="text-gray-500">{formatBytes(file.size)}</span>
+                        <span className="text-gray-500 text-sm whitespace-nowrap">{formatBytes(file.size)}</span>
                     </li>
                 ))}
             </ul>

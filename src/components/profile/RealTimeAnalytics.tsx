@@ -55,18 +55,18 @@ export const RealTimeAnalytics = () => {
 
         // Fetch projects count
         const { count: projectsCount } = await supabase
-          .from('projects')
+          .from('project_spaces')
           .select('*', { count: 'exact', head: true })
           .eq('creator_id', user.id);
 
         // Fetch engagement score
-        const { data: engagementData } = await supabase
-          .from('user_engagement_scores')
-          .select('engagement_score')
-          .eq('user_id', user.id)
-          .order('date', { ascending: false })
-          .limit(1)
-          .single();
+        // const { data: engagementData } = await supabase
+        //   .from('user_engagement_scores')
+        //   .select('engagement_score')
+        //   .eq('user_id', user.id)
+        //   .order('date', { ascending: false })
+        //   .limit(1)
+        //   .single();
 
         setAnalytics({
           totalPosts: postsCount || 0,
@@ -74,7 +74,7 @@ export const RealTimeAnalytics = () => {
           totalComments,
           totalFollowers: followersCount || 0,
           totalProjects: projectsCount || 0,
-          engagementScore: engagementData?.engagement_score || 0
+          engagementScore: 0 // engagementData?.engagement_score || 0
         });
 
         setLoading(false);

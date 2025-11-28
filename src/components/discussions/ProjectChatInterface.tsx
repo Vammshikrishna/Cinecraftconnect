@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Send, Phone, Video } from 'lucide-react';
+import { Phone, Video } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useCall } from '@/hooks/useCall';
 import { CallContainer } from '@/components/calls/CallContainer';
+import { MessageComposer } from './MessageComposer';
+import { PostShareCard } from '@/components/chat/PostShareCard';
 
 interface Message {
   id: string;
@@ -28,7 +29,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inCall, setInCall] = useState(false);
@@ -86,8 +86,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSend = async () => {
-    if (!newMessage.trim() || sending) return;
+  const handleSendMessage = async (content: string) => {
+    if (!content.trim() || sending || !user) return;
 
     setSending(true);
     try {
@@ -96,23 +96,49 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         .insert([{
           project_id: projectId,
           user_id: user?.id,
-          content: newMessage.trim()
+          content: content.trim()
         }]);
 
       if (error) throw error;
-
-      setNewMessage('');
     } catch (err: any) {
-      toast({ title: "Error", description: "Failed to send message", variant: "destructive" });
+      console.error('Send message error:', err);
+      toast({
+        title: "Error",
+        description: err.message || err.error_description || "Failed to send message",
+        variant: "destructive"
+      });
     } finally {
       setSending(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  const handleAttach = async (file: File) => {
+    if (!user || !projectId) return;
+    setSending(true);
+    try {
+      const filePath = `${projectId}/${Date.now()}_${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('project-files')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Send message with file reference
+      const { error: msgError } = await supabase
+        .from('project_messages' as any)
+        .insert({
+          project_id: projectId,
+          user_id: user.id,
+          content: `Shared a file: ${file.name}`
+        });
+
+      if (msgError) throw msgError;
+
+      toast({ title: "Success", description: "File uploaded successfully" });
+    } catch (error: any) {
+      toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
+    } finally {
+      setSending(false);
     }
   };
 
@@ -161,7 +187,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   // Otherwise show chat interface
   return (
     <div className="flex flex-col h-full">
-      <div className="flex justify-between items-center p-4 border-b border-border">
+      <div className="flex flex-wrap justify-between items-center p-4 border-b border-border gap-2">
         <h2 className="text-lg font-semibold">Project Chat</h2>
         <div className="flex gap-2">
           {activeCall ? (
@@ -198,16 +224,24 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                   </AvatarFallback>
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[70%]`}>
-                  <div className={`rounded-lg px-4 py-2 ${isOwn
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted'
-                    }`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `rounded-lg px-4 py-2 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
                     {!isOwn && (
                       <p className="text-xs font-semibold mb-1">
                         {message.profiles?.full_name || 'Unknown User'}
                       </p>
                     )}
-                    <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    {message.content.startsWith('POST_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
+                          return <PostShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
+                        }
+                      })()
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground mt-1">
                     {formatTime(message.created_at)}
@@ -221,18 +255,11 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       </div>
 
       <div className="p-4 border-t border-border">
-        <div className="flex gap-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a message..."
-            disabled={sending}
-          />
-          <Button onClick={handleSend} disabled={sending || !newMessage.trim()}>
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+        <MessageComposer
+          onSend={handleSendMessage}
+          onAttach={handleAttach}
+          disabled={sending}
+        />
       </div>
     </div>
   );

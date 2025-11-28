@@ -20,3 +20,10 @@ export interface Call {
   status: string;
   created_at: string;
 }
+
+export interface Category {
+  id: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+}

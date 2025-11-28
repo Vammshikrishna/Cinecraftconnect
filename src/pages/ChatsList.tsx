@@ -18,13 +18,13 @@ const ChatsList = () => {
     const fetchConversations = async () => {
       if (!user) return;
       setLoading(true);
-      const { data, error } = await supabase.rpc('get_user_conversations_with_profiles', { p_user_id: user.id });
+      const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
 
       if (error) {
         console.error('Error fetching conversations:', error);
         setConversations([]);
       } else if (data) {
-        const processedConversations: Conversation[] = data.map(c => ({
+        const processedConversations: Conversation[] = (data as any[]).map((c: any) => ({
           partner: {
             id: c.other_user_id,
             full_name: c.other_user_full_name,
@@ -60,7 +60,7 @@ const ChatsList = () => {
   );
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 min-h-screen bg-gray-900 text-white pt-24">
+    <div className="container mx-auto p-4 sm:p-6 lg:p-8 min-h-screen bg-gray-900 text-white pt-24 pb-24">
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold">Inbox</h1>

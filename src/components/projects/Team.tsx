@@ -194,13 +194,13 @@ const Team = ({ project_id }: TeamProps) => {
     }
 
     return (
-        <div className="p-8">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Team Management</h1>
-                <div className="flex gap-2">
+        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h1 className="text-xl sm:text-2xl font-bold">Team Management</h1>
+                <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button variant="outline"><LinkIcon className="h-4 w-4 mr-2" />Invite Link</Button>
+                            <Button variant="outline" className="flex-1 sm:flex-none"><LinkIcon className="h-4 w-4 mr-2" />Invite Link</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogHeader>
@@ -237,7 +237,7 @@ const Team = ({ project_id }: TeamProps) => {
 
                     <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button><UserPlus className="h-4 w-4 mr-2" />Add Member</Button>
+                            <Button className="flex-1 sm:flex-none"><UserPlus className="h-4 w-4 mr-2" />Add Member</Button>
                         </DialogTrigger>
                         <DialogContent>
                             <DialogHeader>

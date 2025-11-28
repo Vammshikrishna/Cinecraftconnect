@@ -72,16 +72,28 @@ const Feed = () => {
 
   return (
     <div className="min-h-screen bg-background pt-20 relative">
-      <div className="container mx-auto px-4 pb-8 animate-fade-in">
+      <div className="container mx-auto px-4 pb-24 animate-fade-in">
         <div className="max-w-4xl mx-auto">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 h-auto">
-              {TABS.map(({ value, label, Icon }) => (
-                <TabsTrigger key={value} value={value} className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Icon className="mr-2 h-4 w-4" /> {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+            <div className="relative w-full mb-6">
+              <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide w-full" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                <TabsList className="flex h-auto bg-transparent gap-2 p-0">
+                  {TABS.map(({ value, label, Icon }) => (
+                    <TabsTrigger
+                      key={value}
+                      value={value}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <div className="w-4 shrink-0" />
+              </div>
+              <div className="absolute right-0 top-0 bottom-2 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+              <div className="absolute left-0 top-0 bottom-2 w-4 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+            </div>
 
             <Suspense fallback={<FeedSkeleton />}>
               {TABS.map(({ value, Component }) => (

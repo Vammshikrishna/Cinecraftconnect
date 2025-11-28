@@ -115,7 +115,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 h-full overflow-y-auto p-4 sm:p-8">
       {applicants.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <User className="mx-auto h-12 w-12 mb-4" />
@@ -124,7 +124,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
         </div>
       ) : (
         applicants.map(applicant => (
-          <div key={applicant.id} className="flex items-center justify-between p-4 rounded-lg bg-card border">
+          <div key={applicant.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg bg-card border gap-4">
             <div className="flex items-center gap-4">
               <Avatar>
                 <AvatarImage src={applicant.profiles?.avatar_url} />
@@ -135,7 +135,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                 <p className="text-sm text-muted-foreground">{applicant.profiles?.craft || 'No craft specified'}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               {applicant.status === 'pending' ? (
                 <>
                   <Button
@@ -143,6 +143,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                     variant="outline"
                     onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
                     disabled={processingId === applicant.id}
+                    className="flex-1 sm:flex-none"
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Approve
@@ -152,13 +153,14 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                     variant="destructive"
                     onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
                     disabled={processingId === applicant.id}
+                    className="flex-1 sm:flex-none"
                   >
                     <X className="h-4 w-4 mr-2" />
                     Reject
                   </Button>
                 </>
               ) : (
-                <p className={`text-sm font-semibold ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
+                <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
                   {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
                 </p>
               )}

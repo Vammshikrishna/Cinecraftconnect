@@ -18,6 +18,16 @@ export function MobileNav() {
     return null;
   }
 
+  // Check if we are in an immersive route (Project Space, Discussion Room, Chat DM)
+  const isImmersiveRoute =
+    /^\/projects\/[^/]+\/space/.test(location.pathname) ||
+    /^\/discussion-rooms\/[^/]+$/.test(location.pathname) ||
+    /^\/messages\/[^/]+$/.test(location.pathname);
+
+  if (isImmersiveRoute) {
+    return null;
+  }
+
   const isActive = (path: string) => {
     if (path === "/") {
       return location.pathname === path;
@@ -56,10 +66,10 @@ export function MobileNav() {
             <DropdownMenuTrigger asChild>
               <button
                 className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${location.pathname.startsWith("/learn") ||
-                    location.pathname.startsWith("/marketplace") ||
-                    location.pathname.startsWith("/vendors")
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
+                  location.pathname.startsWith("/marketplace") ||
+                  location.pathname.startsWith("/vendors")
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
                   }`}
               >
                 <MoreHorizontal size={20} />

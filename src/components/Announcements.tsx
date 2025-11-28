@@ -41,12 +41,12 @@ export default function Announcements() {
   useEffect(() => {
     fetchAnnouncements();
   }, []);
-  
+
   useEffect(() => {
     const subscription = supabase
       .channel('announcements')
-      .on('postgres_changes', 
-        { event: 'INSERT', schema: 'public', table: 'announcements' }, 
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'announcements' },
         (payload) => {
           fetchAnnouncementWithAuthor(payload.new as Announcement);
         }
@@ -63,10 +63,7 @@ export default function Announcements() {
     try {
       const { data, error } = await supabase
         .from("announcements")
-        .select(`
-          *,
-          author:profiles!author_id (id, username, full_name, avatar_url)
-        `)
+        .select('*')
         .order("posted_at", { ascending: false });
 
       if (error) throw error;
@@ -85,43 +82,43 @@ export default function Announcements() {
         acc[p.id] = p;
         return acc;
       }, {});
-      
+
       setProfiles(profilesMap);
       setAnnouncements(announcementsData.map((a: any) => ({ ...a, author: profilesMap[a.author_id] })));
-      
+
     } catch (error) {
       console.error("Error fetching announcements:", error);
     }
   };
 
-    const fetchAnnouncementWithAuthor = async (newAnnouncement: Announcement) => {
-        try {
-          if (!profiles[newAnnouncement.author_id]) {
-            const { data: profileData, error: profileError } = await supabase
-              .from('profiles')
-              .select('id, username, full_name, avatar_url')
-              .eq('id', newAnnouncement.author_id)
-              .single();
-              
-            if (profileError) throw profileError;
-            
-            setProfiles(current => ({
-              ...current,
-              [profileData.id]: profileData as Profile
-            }));
-          }
-          
-          setAnnouncements(current => [
-            {
-              ...newAnnouncement,
-              author: profiles[newAnnouncement.author_id] || undefined
-            },
-            ...current
-          ]);
-        } catch (error) {
-          console.error("Error fetching announcement author:", error);
-        }
-      };
+  const fetchAnnouncementWithAuthor = async (newAnnouncement: Announcement) => {
+    try {
+      if (!profiles[newAnnouncement.author_id]) {
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, username, full_name, avatar_url')
+          .eq('id', newAnnouncement.author_id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        setProfiles(current => ({
+          ...current,
+          [profileData.id]: profileData as Profile
+        }));
+      }
+
+      setAnnouncements(current => [
+        {
+          ...newAnnouncement,
+          author: profiles[newAnnouncement.author_id] || undefined
+        },
+        ...current
+      ]);
+    } catch (error) {
+      console.error("Error fetching announcement author:", error);
+    }
+  };
 
 
   const handlePost = async () => {
@@ -149,7 +146,7 @@ export default function Announcements() {
       setIsPosting(false);
     }
   };
-  
+
   const handleTextareaFocus = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "120px";
@@ -209,12 +206,12 @@ export default function Announcements() {
                   {announcement.content}
                 </p>
                 <div className="mt-3 space-y-2 text-sm text-muted-foreground">
-                    {announcement.event_date && (
-                        <div className="flex items-center"><Calendar className="mr-2 h-4 w-4"/> {format(parseISO(announcement.event_date), "eeee, MMMM d, yyyy 'at' h:mm a")}</div>
-                    )}
-                    {announcement.event_location && (
-                        <div className="flex items-center"><MapPin className="mr-2 h-4 w-4"/> {announcement.event_location}</div>
-                    )}
+                  {announcement.event_date && (
+                    <div className="flex items-center"><Calendar className="mr-2 h-4 w-4" /> {format(parseISO(announcement.event_date), "eeee, MMMM d, yyyy 'at' h:mm a")}</div>
+                  )}
+                  {announcement.event_location && (
+                    <div className="flex items-center"><MapPin className="mr-2 h-4 w-4" /> {announcement.event_location}</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -222,9 +219,9 @@ export default function Announcements() {
         </div>
       </CardContent>
       {announcements.length > 5 && (
-          <CardFooter className="text-center justify-center pt-4">
-              <Button variant="link">View all</Button>
-          </CardFooter>
+        <CardFooter className="text-center justify-center pt-4">
+          <Button variant="link">View all</Button>
+        </CardFooter>
       )}
     </Card>
   );

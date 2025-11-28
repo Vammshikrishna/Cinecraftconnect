@@ -35,8 +35,9 @@ interface Project {
   creator_id: string;
   created_at: string;
   profiles?: {
-    full_name: string;
-    avatar_url: string;
+    full_name: string | null;
+    username: string | null;
+    avatar_url: string | null;
     craft?: string;
   } | null;
   project_space_bookmarks?: { user_id: string }[];

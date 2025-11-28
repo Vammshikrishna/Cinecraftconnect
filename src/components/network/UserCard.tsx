@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '../ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
-import { User, MessageCircle, UserPlus, UserCheck, Clock } from 'lucide-react';
+import { MessageCircle, UserPlus, UserCheck, Clock } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface UserCardProps {

@@ -237,18 +237,18 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
     }
 
     return (
-        <div className="p-8">
-            <h1 className="text-2xl font-bold mb-6">Budget & Schedule</h1>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+            <h1 className="text-xl sm:text-2xl font-bold mb-6">Budget & Schedule</h1>
             <div className="space-y-8">
                 {/* Budget Section */}
-                <div className="bg-slate-800/50 p-6 rounded-lg shadow-md">
-                    <div className="flex justify-between items-center mb-4">
+                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h2 className="text-xl font-semibold">Budget Overview</h2>
                         <Dialog open={budgetDialogOpen} onOpenChange={(open) => { setBudgetDialogOpen(open); if (!open) resetBudgetForm(); }}>
                             <DialogTrigger asChild>
-                                <Button size="sm"><Plus className="h-4 w-4 mr-2" />Add Budget Item</Button>
+                                <Button size="sm" className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />Add Budget Item</Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="w-[95vw] rounded-lg">
                                 <DialogHeader>
                                     <DialogTitle>{editingBudget ? 'Edit' : 'Add'} Budget Item</DialogTitle>
                                     <DialogDescription>Enter the details for this budget item.</DialogDescription>
@@ -285,32 +285,32 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                     </div>
                     {budgetData && budgetData.length > 0 ? (
                         <>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-900/50 rounded">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 p-4 bg-slate-900/50 rounded">
                                 <div>
                                     <p className="text-sm text-muted-foreground">Total Estimated</p>
-                                    <p className="text-2xl font-bold">${totalEstimated.toLocaleString()}</p>
+                                    <p className="text-xl sm:text-2xl font-bold">${totalEstimated.toLocaleString()}</p>
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">Total Spent</p>
-                                    <p className="text-2xl font-bold">${totalActual.toLocaleString()}</p>
+                                    <p className="text-xl sm:text-2xl font-bold">${totalActual.toLocaleString()}</p>
                                 </div>
                                 <div>
                                     <p className="text-sm text-muted-foreground">Remaining</p>
-                                    <p className="text-2xl font-bold">${(totalEstimated - totalActual).toLocaleString()}</p>
+                                    <p className="text-xl sm:text-2xl font-bold">${(totalEstimated - totalActual).toLocaleString()}</p>
                                 </div>
                             </div>
                             <div className="space-y-2">
                                 {budgetData.map(item => (
-                                    <div key={item.id} className="flex justify-between items-center p-3 bg-slate-900/50 rounded hover:bg-slate-900/70">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2">
+                                    <div key={item.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-slate-900/50 rounded hover:bg-slate-900/70 gap-3">
+                                        <div className="flex-1 w-full">
+                                            <div className="flex items-center gap-2 flex-wrap">
                                                 <p className="font-medium">{item.item_name}</p>
                                                 <span className="text-xs px-2 py-1 bg-primary/20 rounded">{item.category}</span>
                                             </div>
                                             {item.notes && <p className="text-sm text-muted-foreground mt-1">{item.notes}</p>}
                                         </div>
-                                        <div className="flex items-center gap-4">
-                                            <div className="text-right">
+                                        <div className="flex items-center justify-between w-full sm:w-auto gap-4">
+                                            <div className="text-left sm:text-right">
                                                 <p className="text-sm text-muted-foreground">Est: ${(item.estimated_cost || 0).toLocaleString()}</p>
                                                 <p className="text-sm">Actual: ${(item.actual_cost || 0).toLocaleString()}</p>
                                             </div>
@@ -333,14 +333,14 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                 </div>
 
                 {/* Schedule Section */}
-                <div className="bg-slate-800/50 p-6 rounded-lg shadow-md">
-                    <div className="flex justify-between items-center mb-4">
+                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h2 className="text-xl font-semibold">Schedule Overview</h2>
                         <Dialog open={scheduleDialogOpen} onOpenChange={(open) => { setScheduleDialogOpen(open); if (!open) resetScheduleForm(); }}>
                             <DialogTrigger asChild>
-                                <Button size="sm"><Plus className="h-4 w-4 mr-2" />Add Schedule Item</Button>
+                                <Button size="sm" className="w-full sm:w-auto"><Plus className="h-4 w-4 mr-2" />Add Schedule Item</Button>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="w-[95vw] rounded-lg">
                                 <DialogHeader>
                                     <DialogTitle>{editingSchedule ? 'Edit' : 'Add'} Schedule Item</DialogTitle>
                                     <DialogDescription>Enter the details for this schedule item.</DialogDescription>
@@ -389,9 +389,9 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                         <div className="space-y-3">
                             {scheduleData.map(item => (
                                 <div key={item.id} className="p-4 bg-slate-900/50 rounded hover:bg-slate-900/70">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-2">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                                        <div className="flex-1 w-full">
+                                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                                                 <p className="font-medium text-lg">{item.title}</p>
                                                 <span className={`text-xs px-2 py-1 rounded ${item.status === 'completed' ? 'bg-green-500/20 text-green-400' :
                                                     item.status === 'in-progress' ? 'bg-blue-500/20 text-blue-400' :
@@ -402,7 +402,7 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                             {item.description && <p className="text-sm text-muted-foreground mb-2">{item.description}</p>}
                                             <p className="text-sm text-muted-foreground">{formatDateRange(item.start_date, item.end_date)}</p>
                                         </div>
-                                        <div className="flex gap-2">
+                                        <div className="flex gap-2 w-full sm:w-auto justify-end">
                                             <Button size="sm" variant="ghost" onClick={() => openEditSchedule(item)}>
                                                 <Pencil className="h-4 w-4" />
                                             </Button>

@@ -8,8 +8,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 // Basic type definitions for search results
 interface ProjectResult {
-  id: number;
-  title: string;
+  id: string; // Changed to string as project_spaces id is uuid
+  name: string;
   description: string;
   type: 'project';
 }
@@ -37,7 +37,7 @@ const GlobalSearch = () => {
     setLoading(true);
     try {
       const [projectsRes, usersRes] = await Promise.all([
-        supabase.from('projects').select('id, title, description').textSearch('title', searchQuery, { type: 'websearch' }),
+        supabase.from('project_spaces').select('id, name, description').textSearch('name', searchQuery, { type: 'websearch' }),
         supabase.from('profiles').select('id, username, full_name, avatar_url').textSearch('username', searchQuery, { type: 'websearch' })
       ]);
 
@@ -76,8 +76,8 @@ const GlobalSearch = () => {
               {results.map(result => (
                 <li key={`${result.type}-${result.id}`}>
                   {result.type === 'project' ? (
-                    <Link to={`/projects/${result.id}`} className="block p-4 hover:bg-gray-700">
-                      <h4 className="font-bold">{result.title}</h4>
+                    <Link to={`/projects/${result.id}/space`} className="block p-4 hover:bg-gray-700">
+                      <h4 className="font-bold">{result.name}</h4>
                       <p className="text-sm text-gray-400 truncate">{result.description}</p>
                     </Link>
                   ) : (

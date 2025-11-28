@@ -82,7 +82,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
   };
 
   const validateGenreAndRoles = () => {
-    return projectData.genre.length > 0 && projectData.required_roles.length > 0;
+    return projectData.genre.length > 0;
   };
 
   const handleSubmit = async () => {
@@ -220,7 +220,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
             </div>
           </div>
           <div className="space-y-3">
-            <Label className="text-foreground flex items-center"><Users className="mr-1 h-4 w-4" />Required Roles *</Label>
+            <Label className="text-foreground flex items-center"><Users className="mr-1 h-4 w-4" />Required Roles</Label>
             <div className="flex flex-wrap gap-2">
               {availableRoles.map((role) => (
                 <Badge key={role} variant={projectData.required_roles.includes(role) ? "default" : "outline"} className={`cursor-pointer transition-colors ${projectData.required_roles.includes(role) ? 'bg-secondary text-secondary-foreground' : 'border-white/20 hover:bg-white/10'}`} onClick={() => handleRoleToggle(role)}>{role}</Badge>
@@ -264,9 +264,9 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       <DialogTrigger asChild>
         <Button className="bg-primary hover:bg-primary/90"><Plus className="mr-2 h-4 w-4" />Create Project</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-4xl bg-background border-border">
-        <DialogHeader>
-          <DialogTitle className="text-foreground text-2xl">Create New Project</DialogTitle>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border p-4 sm:p-6">
+        <DialogHeader className="mb-4">
+          <DialogTitle className="text-foreground text-xl sm:text-2xl">Create New Project</DialogTitle>
         </DialogHeader>
         <MultiStepForm steps={steps} onComplete={handleSubmit} className="w-full" />
       </DialogContent>

@@ -1,28 +1,23 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+
 import { supabase } from '@/integrations/supabase/client';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
     Search,
     Filter,
-    MapPin,
-    DollarSign,
     Camera,
     Home,
-    Plus,
-    Star
+    Plus
 } from 'lucide-react';
 import { MarketplaceListing, ListingType } from '@/types/marketplace';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { ListingCard } from '@/components/marketplace/ListingCard';
-import Footer from '@/components/Footer';
+
 
 const Marketplace = () => {
-    const { user } = useAuth();
     const { toast } = useToast();
     const [listings, setListings] = useState<MarketplaceListing[]>([]);
     const [loading, setLoading] = useState(true);
@@ -40,12 +35,12 @@ const Marketplace = () => {
 
             const { data, error } = await supabase
                 .rpc('search_marketplace_listings', {
-                    search_query: searchQuery || null,
+                    search_query: searchQuery || undefined,
                     filter_type: activeTab,
-                    filter_category: null,
-                    filter_location: null,
-                    min_price: null,
-                    max_price: null
+                    filter_category: undefined,
+                    filter_location: undefined,
+                    min_price: undefined,
+                    max_price: undefined
                 });
 
             if (error) throw error;
@@ -61,7 +56,14 @@ const Marketplace = () => {
 
                     return {
                         ...listing,
-                        profiles: profile
+                        profiles: profile ? {
+                            username: profile.username || '',
+                            avatar_url: profile.avatar_url || '',
+                            full_name: profile.full_name || ''
+                        } : undefined,
+                        specifications: {},
+                        availability_calendar: [],
+                        updated_at: listing.created_at
                     };
                 })
             );
@@ -90,7 +92,7 @@ const Marketplace = () => {
 
     return (
         <div className="min-h-screen bg-background">
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                     <div>
@@ -201,7 +203,7 @@ const Marketplace = () => {
                 </Tabs>
             </main>
 
-            <Footer />
+
 
             {/* Create Listing Modal */}
             <ListingCreationModal

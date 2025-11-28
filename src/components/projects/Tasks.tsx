@@ -73,10 +73,10 @@ const Tasks = ({ project_id }: TasksProps) => {
     }
 
     return (
-        <div className="p-6 max-w-3xl mx-auto">
-            <h1 className="text-2xl font-bold mb-6">Tasks</h1>
+        <div className="p-4 sm:p-6 max-w-3xl mx-auto w-full h-full overflow-y-auto">
+            <h1 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Tasks</h1>
 
-            <div className="flex gap-3 mb-8">
+            <div className="flex flex-col sm:flex-row gap-3 mb-6 sm:mb-8">
                 <Input
                     type="text"
                     value={newTask}
@@ -88,6 +88,7 @@ const Tasks = ({ project_id }: TasksProps) => {
                 <Button
                     onClick={handleAddTask}
                     disabled={loading || !newTask.trim()}
+                    className="w-full sm:w-auto"
                 >
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
                     {loading ? 'Adding...' : 'Add Task'}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import Footer from "@/components/Footer";
+
 import { Search, MapPin, Clock, Briefcase, Filter, ArrowUpDown, Building2, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,7 +101,7 @@ const Jobs = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold mb-2">Jobs</h1>
@@ -252,7 +252,6 @@ const Jobs = () => {
           />
         )}
       </main>
-      <Footer />
     </div>
   );
 };

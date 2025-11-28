@@ -1,18 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import {
     Search,
     Filter,
-    MapPin,
-    Star,
-    Phone,
-    Mail,
-    Globe,
     Plus,
     CheckCircle2,
     Building2
@@ -20,10 +14,9 @@ import {
 import { Vendor } from '@/types/marketplace';
 import { VendorRegistrationModal } from '@/components/vendors/VendorRegistrationModal';
 import { VendorCard } from '@/components/vendors/VendorCard';
-import Footer from '@/components/Footer';
+
 
 const Vendors = () => {
-    const { user } = useAuth();
     const { toast } = useToast();
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
@@ -40,15 +33,18 @@ const Vendors = () => {
 
             const { data, error } = await supabase
                 .rpc('search_vendors', {
-                    search_query: searchQuery || null,
-                    filter_category: null,
-                    filter_location: null,
+                    search_query: searchQuery || undefined,
+                    filter_category: undefined,
+                    filter_location: undefined,
                     verified_only: false
                 });
 
             if (error) throw error;
 
-            setVendors(data || []);
+            setVendors((data || []).map(v => ({
+                ...v,
+                updated_at: v.created_at
+            })));
         } catch (error: any) {
             console.error('Error fetching vendors:', error);
             toast({
@@ -72,7 +68,7 @@ const Vendors = () => {
 
     return (
         <div className="min-h-screen bg-background">
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24">
                 {/* Header */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                     <div>
@@ -158,7 +154,7 @@ const Vendors = () => {
                 </div>
             </main>
 
-            <Footer />
+
 
             {/* Vendor Registration Modal */}
             <VendorRegistrationModal

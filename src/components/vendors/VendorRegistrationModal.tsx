@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { VENDOR_CATEGORIES } from '@/types/marketplace';
-import { Upload, X, Building2 } from 'lucide-react';
+import { X, Building2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface VendorRegistrationModalProps {
@@ -77,7 +77,7 @@ export const VendorRegistrationModal = ({
         const fileExt = logo.name.split('.').pop();
         const fileName = `${user.id}/logo-${Date.now()}.${fileExt}`;
 
-        const { data, error } = await supabase.storage
+        const { error } = await supabase.storage
             .from('vendor-images')
             .upload(fileName, logo);
 

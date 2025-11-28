@@ -100,7 +100,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
         // Fetch liked posts for the current user
         if (user) {
           const { data: likesData } = await supabase
-            .from('post_likes' as any)
+            .from('post_likes')
             .select('post_id')
             .eq('user_id', user.id);
 
@@ -109,7 +109,12 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
           }
         }
 
-        const typedPosts: UnifiedPost[] = (postsRes.data || []).map(p => ({ ...p, itemType: 'post' })) as unknown as UnifiedPost[];
+        const typedPosts: UnifiedPost[] = (postsRes.data || []).map((p: any) => ({
+          ...p,
+          itemType: 'post',
+          like_count: p.like_count || 0
+        })) as unknown as UnifiedPost[];
+
         const typedProjects: Project[] = (projectsRes.data || []).map(p => ({ ...p, itemType: 'project' })) as unknown as Project[];
         const typedDiscussions: DiscussionRoom[] = (discussionsRes.data || []).map(d => ({ ...d, itemType: 'discussion' })) as unknown as DiscussionRoom[];
         const typedAnnouncements: Announcement[] = (announcementsRes.data || []).map(a => ({
@@ -229,14 +234,14 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
                           )}
                         </div>
                       )}
-                      <div className="flex items-center justify-between pt-3 mt-3 border-t border-border/50 text-xs text-muted-foreground">
-                        <div className="flex items-center">
+                      <div className="flex flex-wrap items-center justify-between pt-3 mt-3 border-t border-border/50 text-xs text-muted-foreground gap-y-2">
+                        <div className="flex items-center whitespace-nowrap">
                           <div className="w-5 h-5 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xxs">
                             P
                           </div>
                           Project Creator
                         </div>
-                        <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
+                        <span className="whitespace-nowrap ml-auto">{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
                       </div>
                     </div>
                   </div>
@@ -253,19 +258,19 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold">Discussion: {item.title}</h3>
                     <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150)}...</p>
-                    <div className="flex items-center justify-between pt-3 mt-3 text-xs text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center">
+                    <div className="flex flex-wrap items-center justify-between pt-3 mt-3 text-xs text-muted-foreground gap-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center whitespace-nowrap">
                           <Users className="mr-1 h-3 w-3" /> {item.member_count || 0} members
                         </div>
                         {item.room_type === 'private' && (
-                          <Badge variant="secondary" className="flex items-center gap-1">
+                          <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
                             <Lock className="h-3 w-3" />
                             Private
                           </Badge>
                         )}
                       </div>
-                      <span>{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
+                      <span className="whitespace-nowrap ml-auto">{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
                     </div>
                   </div>
                 </div>

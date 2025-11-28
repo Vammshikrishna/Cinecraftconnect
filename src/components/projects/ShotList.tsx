@@ -164,34 +164,38 @@ const ShotList = ({ project_id }: ShotListProps) => {
     if (error) return <div className="p-8 text-destructive">Error loading shot list: {error.message}</div>;
 
     return (
-        <div className="p-8 flex flex-col h-full">
-            <h1 className="text-2xl font-bold mb-6">Shot List</h1>
-            <div className="flex gap-4 mb-6 items-center">
-                <Input
-                    type="number"
-                    value={newScene}
-                    onChange={(e) => setNewScene(parseInt(e.target.value) || 1)}
-                    placeholder="Scene"
-                    className="w-24"
-                />
-                <Input
-                    type="number"
-                    value={newShot}
-                    onChange={(e) => setNewShot(parseInt(e.target.value) || 1)}
-                    placeholder="Shot"
-                    className="w-24"
-                />
+        <div className="p-4 sm:p-8 flex flex-col h-full">
+            <h1 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Shot List</h1>
+            <div className="flex flex-col sm:flex-row gap-4 mb-6 items-start sm:items-center bg-card/50 p-4 rounded-lg">
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <Input
+                        type="number"
+                        value={newScene}
+                        onChange={(e) => setNewScene(parseInt(e.target.value) || 1)}
+                        placeholder="Scene"
+                        className="w-20 sm:w-24"
+                    />
+                    <Input
+                        type="number"
+                        value={newShot}
+                        onChange={(e) => setNewShot(parseInt(e.target.value) || 1)}
+                        placeholder="Shot"
+                        className="w-20 sm:w-24"
+                    />
+                </div>
                 <Input
                     type="text"
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     placeholder="Description of the shot..."
-                    className="flex-grow"
+                    className="flex-grow w-full"
                 />
-                <Button onClick={handleAddShot}>Add Shot</Button>
+                <Button onClick={handleAddShot} className="w-full sm:w-auto">Add Shot</Button>
             </div>
+
             <div className="flex-grow overflow-y-auto">
-                <table className="w-full border-collapse table-fixed">
+                {/* Desktop Table View */}
+                <table className="w-full border-collapse table-fixed hidden md:table">
                     <thead className="sticky top-0 bg-background z-10">
                         <tr className="border-b border-border">
                             <th className="p-3 text-left w-20 font-semibold">Scene</th>
@@ -288,6 +292,100 @@ const ShotList = ({ project_id }: ShotListProps) => {
                         )}
                     </tbody>
                 </table>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden space-y-4">
+                    {shots && shots.length > 0 ? (
+                        shots.map(shot => (
+                            <div key={shot.id} className="bg-card border border-border/50 rounded-lg p-4 space-y-3">
+                                {editingId === shot.id ? (
+                                    <div className="space-y-3">
+                                        <div className="flex gap-2">
+                                            <div className="w-1/2">
+                                                <label className="text-xs text-muted-foreground">Scene</label>
+                                                <Input
+                                                    type="number"
+                                                    value={editScene}
+                                                    onChange={(e) => setEditScene(parseInt(e.target.value) || 1)}
+                                                />
+                                            </div>
+                                            <div className="w-1/2">
+                                                <label className="text-xs text-muted-foreground">Shot</label>
+                                                <Input
+                                                    type="number"
+                                                    value={editShot}
+                                                    onChange={(e) => setEditShot(parseInt(e.target.value) || 1)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-muted-foreground">Description</label>
+                                            <Input
+                                                value={editDescription}
+                                                onChange={(e) => setEditDescription(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-muted-foreground">Status</label>
+                                            <Select value={editStatus} onValueChange={setEditStatus}>
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="pending">Pending</SelectItem>
+                                                    <SelectItem value="in-progress">In Progress</SelectItem>
+                                                    <SelectItem value="completed">Completed</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="flex gap-2 pt-2">
+                                            <Button size="sm" onClick={() => handleSaveEdit(shot.id)} className="flex-1">Save</Button>
+                                            <Button size="sm" variant="outline" onClick={() => setEditingId(null)} className="flex-1">Cancel</Button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex gap-3">
+                                                <div className="bg-primary/10 text-primary px-2 py-1 rounded text-sm font-medium">
+                                                    Sc {shot.scene}
+                                                </div>
+                                                <div className="bg-secondary text-secondary-foreground px-2 py-1 rounded text-sm font-medium">
+                                                    Sh {shot.shot}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(shot)}>
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => handleDelete(shot.id)}>
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                        <p className="text-sm">{shot.description}</p>
+                                        <div className="pt-2 border-t border-border/50">
+                                            <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)}>
+                                                <SelectTrigger className="w-full h-8 text-xs">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="pending">Pending</SelectItem>
+                                                    <SelectItem value="in-progress">In Progress</SelectItem>
+                                                    <SelectItem value="completed">Completed</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        ))
+                    ) : (
+                        <div className="p-8 text-center text-muted-foreground bg-card/30 rounded-lg border border-dashed border-border">
+                            No shots have been added yet.
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

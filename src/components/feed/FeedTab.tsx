@@ -98,7 +98,10 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         }
       }
 
-      const posts = (data as any) || [];
+      const posts = ((data as any) || []).map((post: any) => ({
+        ...post,
+        like_count: post.like_count || 0
+      }));
       setPosts(posts);
       cacheManager.set('posts-feed', posts, 300); // 5 minutes
 

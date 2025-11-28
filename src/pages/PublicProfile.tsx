@@ -144,7 +144,7 @@ const PublicProfile = () => {
       <div className="flex h-screen items-center justify-center text-center">
         <div>
           <h2 className="text-2xl font-bold mb-4">Profile Not Found</h2>
-          <Button asChild variant="outline"><Link to="/network"><ArrowLeft className="mr-2 h-4 w-4" />Back to Network</Link></Button>
+          <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="mr-2 h-4 w-4" />Go Back</Button>
         </div>
       </div>
     );
@@ -152,8 +152,8 @@ const PublicProfile = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-4xl mx-auto px-4 py-16 md:py-24">
-        <Link to="/network" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6"><ArrowLeft className="mr-2 h-4 w-4" />Back to Network</Link>
+      <div className="max-w-4xl mx-auto px-4 pt-16 pb-24 md:py-24">
+        <button onClick={() => navigate(-1)} className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6 hover:underline bg-transparent border-0 p-0 cursor-pointer"><ArrowLeft className="mr-2 h-4 w-4" />Go Back</button>
 
         <Card>
           <CardContent className="p-6 md:p-8">

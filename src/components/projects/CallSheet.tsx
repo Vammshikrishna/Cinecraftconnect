@@ -171,21 +171,21 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     }
 
     return (
-        <div className="p-8">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Call Sheet</h1>
-                <div className="flex gap-2">
+        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h1 className="text-xl sm:text-2xl font-bold">Call Sheet</h1>
+                <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
-                            <Button><Plus className="h-4 w-4 mr-2" />Create Call Sheet</Button>
+                            <Button className="flex-1 sm:flex-none"><Plus className="h-4 w-4 mr-2" />Create Call Sheet</Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
+                        <DialogContent className="max-w-2xl w-[95vw] rounded-lg">
                             <DialogHeader>
                                 <DialogTitle>Create Call Sheet</DialogTitle>
                                 <DialogDescription>Fill in the details below to create a new call sheet.</DialogDescription>
                             </DialogHeader>
-                            <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-                                <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <Label>Date *</Label>
                                         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -199,7 +199,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                     <Label>Location</Label>
                                     <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio A, 123 Main St" />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <Label>Director</Label>
                                         <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Director name" />
@@ -209,7 +209,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                         <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="Phone number" />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <Label>Producer</Label>
                                         <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Producer name" />
@@ -232,9 +232,9 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
 
                     <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
-                            <Button variant="outline"><Upload className="h-4 w-4 mr-2" />Upload PDF</Button>
+                            <Button variant="outline" className="flex-1 sm:flex-none"><Upload className="h-4 w-4 mr-2" />Upload PDF</Button>
                         </DialogTrigger>
-                        <DialogContent>
+                        <DialogContent className="w-[95vw] rounded-lg">
                             <DialogHeader>
                                 <DialogTitle>Upload Call Sheet</DialogTitle>
                                 <DialogDescription>Upload an existing call sheet file (PDF, Image).</DialogDescription>

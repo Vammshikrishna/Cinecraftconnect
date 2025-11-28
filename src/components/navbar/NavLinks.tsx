@@ -1,6 +1,6 @@
 
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Play, Film, Briefcase, Users, BookOpen } from 'lucide-react';
+import { Home, Play, Film, Briefcase, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -22,8 +22,7 @@ const NavLinks = () => {
     { path: '/projects', icon: Film, label: 'Projects' },
     { path: '/discussion-rooms', icon: Play, label: 'Discussions' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
-    { path: '/network', icon: Users, label: 'Network' },
-    { path: '/learn', icon: BookOpen, label: 'Learn' }
+    { path: '/network', icon: Users, label: 'Network' }
   ];
 
   // Show different items based on authentication status

@@ -36,13 +36,16 @@ export interface Profile {
   avatar_url: string | null;
   bio: string | null;
   craft: string | null;
-  created_at: string | null;
+  experience: string | null;
   full_name: string | null;
   location: string | null;
+  onboarding_completed: boolean | null;
   updated_at: string | null;
   username: string | null;
   website: string | null;
-  social_links: {
+  instagram_url: string | null;
+  youtube_url: string | null;
+  social_links?: {
     instagram?: string;
     linkedin?: string;
     twitter?: string;

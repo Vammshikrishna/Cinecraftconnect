@@ -1,5 +1,6 @@
 
 import { useState, useEffect, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,13 +123,17 @@ const CommentSection = ({ postId }: { postId: string }) => {
           const authorName = comment.profiles?.full_name || comment.profiles?.username || "Anonymous";
           return (
             <div key={comment.id} className="flex items-start space-x-3">
-              <Avatar className="h-9 w-9">
-                {comment.profiles?.avatar_url && <AvatarImage src={comment.profiles.avatar_url} />}
-                <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
-              </Avatar>
+              <Link to={`/profile/${comment.user_id}`}>
+                <Avatar className="h-9 w-9 hover:opacity-80 transition-opacity">
+                  {comment.profiles?.avatar_url && <AvatarImage src={comment.profiles.avatar_url} />}
+                  <AvatarFallback>{getInitials(authorName)}</AvatarFallback>
+                </Avatar>
+              </Link>
               <div className="flex-1">
                 <div className="flex justify-between items-center">
-                  <p className="font-semibold text-sm">{authorName}</p>
+                  <Link to={`/profile/${comment.user_id}`} className="hover:underline">
+                    <p className="font-semibold text-sm">{authorName}</p>
+                  </Link>
                   {user && user.id === comment.user_id && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteComment(comment.id)}>
                       <Trash2 className="h-4 w-4" />

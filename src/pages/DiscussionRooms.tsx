@@ -13,15 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe } from 'lucide-react';
+import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 
 // --- DATA INTERFACES ---
 
-
-interface Category {
-  id: string;
-  name: string;
-}
 
 interface Room {
   id: string;
@@ -76,7 +72,7 @@ const DiscussionRoomsPage = () => {
       }));
 
       setRooms(formattedRooms);
-      setCategories(categoriesRes.data || []);
+      setCategories((categoriesRes.data || []).map(c => ({ ...c, description: null, icon: null })));
     } catch (error: any) {
       toast({ title: "Error fetching data", description: error.message, variant: "destructive" });
     } finally {
@@ -154,7 +150,7 @@ const DiscussionRoomsPage = () => {
 
   if (selectedRoom) {
     return (
-      <div className="fixed inset-0 bg-gray-900 text-white flex flex-col pt-16">
+      <div className="fixed inset-0 bg-gray-900 text-white flex flex-col pt-0 lg:pt-16 z-50">
         <DiscussionChatInterface
           roomId={selectedRoom.id}
           userRole="member"
@@ -174,7 +170,7 @@ const DiscussionRoomsPage = () => {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 lg:p-8">
-      <div className="container mx-auto pt-16">
+      <div className="container mx-auto pt-16 pb-24">
         {/* Header and Controls */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <h1 className="text-4xl font-bold text-white">Discussion Rooms</h1>
@@ -255,14 +251,14 @@ const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; 
   return (
     <Card className="bg-gray-800 border-gray-700 flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden">
       <CardContent className="p-5">
-        <div className="flex justify-between items-start mb-3">
-          <h3 className="text-lg font-bold text-white truncate pr-2">{room.title}</h3>
-          <div className="flex items-center gap-2">
-            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-indigo-500/20 text-indigo-400">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-3">
+          <h3 className="text-lg font-bold text-white line-clamp-2 md:line-clamp-1 md:truncate md:pr-2">{room.title}</h3>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-indigo-500/20 text-indigo-400 whitespace-nowrap">
               {room.room_categories?.name || 'General'}
             </div>
             {room.room_type === 'private' && (
-              <Badge variant="secondary" className="flex items-center gap-1">
+              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
                 <Lock className="h-3 w-3" />
                 Private
               </Badge>

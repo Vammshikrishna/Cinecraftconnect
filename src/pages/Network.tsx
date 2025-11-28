@@ -1,4 +1,4 @@
-import Footer from "@/components/Footer";
+
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,7 @@ const Network = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-16">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24">
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground mb-2">Network</h1>
@@ -341,7 +341,6 @@ const Network = () => {
 
         </Tabs>
       </main>
-      <Footer />
     </div>
   );
 };
