@@ -7,7 +7,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ui/error-boundary";
-import "@/test-supabase";
+
 
 // Page Imports
 const Index = lazy(() => import("./pages/Index"));

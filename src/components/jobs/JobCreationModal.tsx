@@ -188,7 +188,7 @@ export const JobCreationModal = ({ onJobCreated }: JobCreationModalProps) => {
             <div className="space-y-2">
               <Label htmlFor="type">Job Type</Label>
               <Select value={jobData.type} onValueChange={(value) => setJobData(prev => ({ ...prev, type: value as JobType }))}>
-                <SelectTrigger>
+                <SelectTrigger id="type">
                   <SelectValue placeholder="Select job type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,7 +228,7 @@ export const JobCreationModal = ({ onJobCreated }: JobCreationModalProps) => {
           <div className="space-y-2">
             <Label htmlFor="experience_level">Experience Level</Label>
             <Select value={jobData.experience_level} onValueChange={(value) => setJobData(prev => ({ ...prev, experience_level: value as ExperienceLevel }))}>
-              <SelectTrigger>
+              <SelectTrigger id="experience_level">
                 <SelectValue placeholder="Select experience level" />
               </SelectTrigger>
               <SelectContent>

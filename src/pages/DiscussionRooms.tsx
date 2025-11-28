@@ -369,7 +369,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
         <div>
           <label htmlFor="category" className="block text-sm font-medium mb-1">Category *</label>
           <Select onValueChange={setCategoryId}>
-            <SelectTrigger className="w-full bg-gray-700 border-gray-600">
+            <SelectTrigger id="category" className="w-full bg-gray-700 border-gray-600">
               <SelectValue placeholder="Select a category" />
             </SelectTrigger>
             <SelectContent>
