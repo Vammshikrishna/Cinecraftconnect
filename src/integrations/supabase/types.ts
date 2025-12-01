@@ -1640,6 +1640,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_skills: {
         Row: {
           created_at: string
@@ -1818,6 +1839,13 @@ export type Database = {
           website: string
         }[]
       }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       has_unread_messages: { Args: never; Returns: boolean }
       is_member_of_project: { Args: { _project_id: string }; Returns: boolean }
       is_member_of_room: { Args: { _room_id: string }; Returns: boolean }
@@ -1887,6 +1915,7 @@ export type Database = {
       }
     }
     Enums: {
+      app_role: "admin" | "moderator" | "user"
       booking_status: "pending" | "confirmed" | "cancelled" | "completed"
       call_status: "active" | "ended"
       call_type: "audio" | "video"
@@ -2033,6 +2062,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      app_role: ["admin", "moderator", "user"],
       booking_status: ["pending", "confirmed", "cancelled", "completed"],
       call_status: ["active", "ended"],
       call_type: ["audio", "video"],
