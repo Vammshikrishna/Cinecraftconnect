@@ -145,12 +145,12 @@ const DiscussionRoomsPage = () => {
 
 
   if (loading && rooms.length === 0) {
-    return <div className="flex h-screen w-full items-center justify-center bg-gray-900"><Loader2 className="h-20 w-20 animate-spin text-indigo-500" /></div>;
+    return <div className="flex h-screen w-full items-center justify-center bg-background"><Loader2 className="h-20 w-20 animate-spin text-primary" /></div>;
   }
 
   if (selectedRoom) {
     return (
-      <div className="fixed inset-0 bg-gray-900 text-white flex flex-col pt-0 lg:pt-16 z-50">
+      <div className="fixed inset-0 bg-background text-foreground flex flex-col pt-0 lg:pt-16 z-50">
         <DiscussionChatInterface
           roomId={selectedRoom.id}
           userRole="member"
@@ -169,14 +169,14 @@ const DiscussionRoomsPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
       <div className="container mx-auto pt-16 pb-24">
         {/* Header and Controls */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-          <h1 className="text-4xl font-bold text-white">Discussion Rooms</h1>
+          <h1 className="text-4xl font-bold text-foreground">Discussion Rooms</h1>
           <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-2 px-4 rounded-lg flex items-center gap-2">
                 <PlusCircle size={20} /> Create Room
               </Button>
             </DialogTrigger>
@@ -190,7 +190,7 @@ const DiscussionRoomsPage = () => {
 
         {/* Featured Rooms */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4 text-indigo-400">Featured Rooms</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} />)}
           </div>
@@ -198,32 +198,32 @@ const DiscussionRoomsPage = () => {
 
         {/* All Rooms Section */}
         <section>
-          <h2 className="text-2xl font-semibold mb-4 text-indigo-400">All Rooms</h2>
+          <h2 className="text-2xl font-semibold mb-4 text-primary">All Rooms</h2>
           {/* Filtering and Sorting UI */}
-          <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-gray-800/50 rounded-lg">
+          <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-card border border-border rounded-lg">
             <div className="relative flex-grow sm:flex-grow-0 sm:w-1/3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
               <Input
                 placeholder="Search rooms..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-gray-700 border-gray-600 pl-10"
+                className="bg-input border-border pl-10"
               />
             </div>
             <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-full sm:w-[180px] bg-gray-700 border-gray-600">
+              <SelectTrigger className="w-full sm:w-[180px] bg-input border-border">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-popover border-border">
                 <SelectItem value="all">All Categories</SelectItem>
                 {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full sm:w-[180px] bg-gray-700 border-gray-600">
+              <SelectTrigger className="w-full sm:w-[180px] bg-input border-border">
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-popover border-border">
                 <SelectItem value="popularity">Popularity</SelectItem>
                 <SelectItem value="newest">Newest</SelectItem>
                 <SelectItem value="name">Name</SelectItem>
@@ -237,7 +237,7 @@ const DiscussionRoomsPage = () => {
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
-              <p className="text-gray-400 text-lg">No rooms found matching your criteria.</p>
+              <p className="text-muted-foreground text-lg">No rooms found matching your criteria.</p>
             </div>
           )}
         </section>
@@ -249,12 +249,12 @@ const DiscussionRoomsPage = () => {
 // --- ROOM CARD COMPONENT ---
 const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; }) => {
   return (
-    <Card className="bg-gray-800 border-gray-700 flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden">
+    <Card className="glass-card hover-lift flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden border-border">
       <CardContent className="p-5">
         <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-3">
-          <h3 className="text-lg font-bold text-white line-clamp-2 md:line-clamp-1 md:truncate md:pr-2">{room.title}</h3>
+          <h3 className="text-lg font-bold text-foreground line-clamp-2 md:line-clamp-1 md:truncate md:pr-2">{room.title}</h3>
           <div className="flex items-center gap-2 shrink-0">
-            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-indigo-500/20 text-indigo-400 whitespace-nowrap">
+            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-primary/20 text-primary whitespace-nowrap">
               {room.room_categories?.name || 'General'}
             </div>
             {room.room_type === 'private' && (
@@ -265,18 +265,18 @@ const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; 
             )}
           </div>
         </div>
-        <p className="text-sm text-gray-400 h-10 mb-4 overflow-hidden">{room.description || 'No description available.'}</p>
-        <div className="flex items-center text-sm text-gray-400 mb-4">
-          <Users className="w-4 h-4 mr-2 text-indigo-400" /> {room.member_count} active members
+        <p className="text-sm text-muted-foreground h-10 mb-4 overflow-hidden">{room.description || 'No description available.'}</p>
+        <div className="flex items-center text-sm text-muted-foreground mb-4">
+          <Users className="w-4 h-4 mr-2 text-primary" /> {room.member_count} active members
         </div>
         <div className="flex flex-wrap gap-2 mb-4">
           {room.tags?.map(tag => (
-            <span key={tag} className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full">{tag}</span>
+            <span key={tag} className="text-xs glass-badge">{tag}</span>
           ))}
         </div>
       </CardContent>
-      <div className="bg-gray-800/50 p-4 border-t border-gray-700/50">
-        <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={() => onJoin(room)}>
+      <div className="bg-card/50 p-4 border-t border-border">
+        <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => onJoin(room)}>
           <MessageSquare className="w-4 h-4 mr-2" /> Join Chat
         </Button>
       </div>
@@ -353,39 +353,39 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
   };
 
   return (
-    <DialogContent className="bg-gray-800 border-gray-700 text-white">
+    <DialogContent className="glass-modal border-border">
       <DialogHeader>
-        <DialogTitle>Create a New Discussion Room</DialogTitle>
+        <DialogTitle className="text-foreground">Create a New Discussion Room</DialogTitle>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="name" className="block text-sm font-medium mb-1">Room Name *</label>
-          <Input id="name" value={title} onChange={e => setTitle(e.target.value)} className="bg-gray-700 border-gray-600" />
+          <label htmlFor="name" className="block text-sm font-medium mb-1 text-foreground">Room Name *</label>
+          <Input id="name" value={title} onChange={e => setTitle(e.target.value)} className="glass-input" />
         </div>
         <div>
-          <label htmlFor="description" className="block text-sm font-medium mb-1">Description</label>
-          <Input id="description" value={description} onChange={e => setDescription(e.target.value)} className="bg-gray-700 border-gray-600" />
+          <label htmlFor="description" className="block text-sm font-medium mb-1 text-foreground">Description</label>
+          <Input id="description" value={description} onChange={e => setDescription(e.target.value)} className="glass-input" />
         </div>
         <div>
-          <label htmlFor="category" className="block text-sm font-medium mb-1">Category *</label>
+          <label htmlFor="category" className="block text-sm font-medium mb-1 text-foreground">Category *</label>
           <Select onValueChange={setCategoryId}>
-            <SelectTrigger id="category" className="w-full bg-gray-700 border-gray-600">
+            <SelectTrigger id="category" className="w-full glass-input">
               <SelectValue placeholder="Select a category" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="glass-dropdown">
               {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
         <div className="space-y-2">
-          <Label className="flex items-center">
+          <Label className="flex items-center text-foreground">
             {!isPrivate ? <Globe className="mr-1 h-4 w-4" /> : <Lock className="mr-1 h-4 w-4" />}
             Room Visibility
           </Label>
-          <div className="flex items-center justify-between p-4 border border-gray-600 rounded-lg bg-gray-700/50">
+          <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-card/50">
             <div className="flex-1">
-              <p className="font-medium">{!isPrivate ? 'Public Room' : 'Private Room'}</p>
-              <p className="text-sm text-gray-400">
+              <p className="font-medium text-foreground">{!isPrivate ? 'Public Room' : 'Private Room'}</p>
+              <p className="text-sm text-muted-foreground">
                 {!isPrivate
                   ? 'Visible to everyone. Anyone can view and join.'
                   : 'Only visible to invited members. Others cannot see this room.'}
@@ -399,7 +399,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
         </div>
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
-          <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isSubmitting}>
+          <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create
           </Button>

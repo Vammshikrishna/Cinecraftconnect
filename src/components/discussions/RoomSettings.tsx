@@ -64,26 +64,26 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
   };
 
   return (
-      <DialogContent className="bg-gray-800 border-gray-700 text-white">
+      <DialogContent className="glass-modal border-border">
           <DialogHeader>
-              <DialogTitle>Room Settings</DialogTitle>
+              <DialogTitle className="text-foreground">Room Settings</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
               <div>
-                  <label htmlFor="title" className="block text-sm font-medium mb-1">Room Name *</label>
-                  <Input id="title" value={title} onChange={e => setTitle(e.target.value)} className="bg-gray-700 border-gray-600" />
+                  <label htmlFor="title" className="block text-sm font-medium mb-1 text-foreground">Room Name *</label>
+                  <Input id="title" value={title} onChange={e => setTitle(e.target.value)} className="glass-input" />
               </div>
               <div>
-                  <label htmlFor="description" className="block text-sm font-medium mb-1">Description</label>
-                  <Input id="description" value={description} onChange={e => setDescription(e.target.value)} className="bg-gray-700 border-gray-600" />
+                  <label htmlFor="description" className="block text-sm font-medium mb-1 text-foreground">Description</label>
+                  <Input id="description" value={description} onChange={e => setDescription(e.target.value)} className="glass-input" />
               </div>
               <div>
-                  <label htmlFor="category" className="block text-sm font-medium mb-1">Category *</label>
+                  <label htmlFor="category" className="block text-sm font-medium mb-1 text-foreground">Category *</label>
                   <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger className="w-full bg-gray-700 border-gray-600">
+                      <SelectTrigger className="w-full glass-input">
                           <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="glass-dropdown">
                           {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
                       </SelectContent>
                   </Select>
