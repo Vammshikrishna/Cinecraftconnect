@@ -1,14 +1,19 @@
 /// <reference types="vitest" />
 /// <reference types="vite/client" />
+import path from "path"
 import react from "@vitejs/plugin-react"
-import { defineConfig, mergeConfig } from "vite"
-import { defineConfig as defineVitestConfig } from "vitest/config"
-import tailwindcss from 'tailwindcss';
-import autoprefixer from 'autoprefixer';
-import tsconfigPaths from 'vite-tsconfig-paths';
+import { defineConfig } from "vite"
+import { componentTagger } from "lovable-tagger"
+import tailwindcss from 'tailwindcss'
+import autoprefixer from 'autoprefixer'
+import tsconfigPaths from 'vite-tsconfig-paths'
 
-const viteConfig = defineConfig({
-  plugins: [react(), tsconfigPaths()],
+export default defineConfig(({ mode }) => ({
+  plugins: [
+    react(),
+    tsconfigPaths(),
+    mode === 'development' && componentTagger(),
+  ].filter(Boolean),
   css: {
     postcss: {
       plugins: [
@@ -18,7 +23,7 @@ const viteConfig = defineConfig({
     },
   },
   server: {
-    host: '127.0.0.1',
+    host: "::",
     port: 8080,
     proxy: {
       '/api': {
@@ -28,14 +33,14 @@ const viteConfig = defineConfig({
       },
     },
   },
-});
-
-const vitestConfig = defineVitestConfig({
-    test: {
-        globals: true,
-        environment: 'jsdom',
-        setupFiles: './src/setupTests.ts',
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
     },
-});
-
-export default mergeConfig(viteConfig, vitestConfig);
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.ts',
+  },
+}));
