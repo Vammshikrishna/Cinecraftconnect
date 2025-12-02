@@ -19,7 +19,7 @@ const viteConfig = defineConfig({
   },
   server: {
     host: '127.0.0.1',
-    port: 3000,
+    port: 8080,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
