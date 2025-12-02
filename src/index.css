@@ -19,10 +19,10 @@
     --primary: 161 93% 30%;
     /* iOS Blue */
     --primary-foreground: 151 80% 95%;
-    --secondary: 0 0% 32%;
+    --secondary: 220 13.0435% 90.9804%;
     /* iOS Purple */
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 63%;
+    --muted: 220 13.0435% 90.9804%;
     --muted-foreground: 0 0% 9%;
     --accent: 166 76% 96%;
     /* Brighter iOS Blue */
@@ -34,7 +34,7 @@
     --border: 0 0% 83%;
     /* Subtle border */
     --input: 0 0% 83%;
-    --ring: 161 93% 30%;
+    --ring: 149 80.3922% 90%;
     --radius: 0.75rem;
     /* More rounded like iOS */
 
@@ -47,7 +47,7 @@
     --chart-2: 141 69% 58%;
     --chart-3: 172 66% 50%;
     --chart-4: 82 77% 55%;
-    --chart-5: 0 0% 45%;
+    --chart-5: 216 12.1951% 83.9216%;
     --sidebar: 0 0% 98%;
     --sidebar-foreground: 0 0% 9%;
     --sidebar-primary: 161 93% 30%;
