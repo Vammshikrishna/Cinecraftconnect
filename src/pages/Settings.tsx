@@ -1,17 +1,14 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { LogOut, Trash2, User, Mail, Bell, Shield, Eye, Globe, Save, Download } from 'lucide-react';
+import { LogOut, Trash2, Bell, Shield, Eye, Globe, Download } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,11 +22,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const SettingsPage = () => {
-  const { signOut, user } = useAuth();
+  const { signOut } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
   // Notification preferences
@@ -40,37 +36,12 @@ const SettingsPage = () => {
   const [commentNotifications, setCommentNotifications] = useState(true);
   
   // Privacy settings
-  const [profileVisibility, setProfileVisibility] = useState('public');
   const [showEmail, setShowEmail] = useState(false);
   const [showLocation, setShowLocation] = useState(true);
   
   // Accessibility settings
   const [highContrast, setHighContrast] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-  const [fontSize, setFontSize] = useState('medium');
-
-  // Profile data
-  const [fullName, setFullName] = useState('');
-  const [bio, setBio] = useState('');
-
-  useEffect(() => {
-    const loadUserProfile = async () => {
-      if (!user) return;
-      
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('full_name, bio')
-        .eq('id', user.id)
-        .single();
-      
-      if (data) {
-        setFullName(data.full_name || '');
-        setBio(data.bio || '');
-      }
-    };
-    
-    loadUserProfile();
-  }, [user]);
 
   const handleSignOut = async () => {
     try {
@@ -89,33 +60,6 @@ const SettingsPage = () => {
       });
     } finally {
       setIsSigningOut(false);
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    if (!user) return;
-    
-    setIsSaving(true);
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: fullName, bio: bio })
-        .eq('id', user.id);
-      
-      if (error) throw error;
-      
-      toast({
-        title: "Profile Updated",
-        description: "Your profile has been saved successfully.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -148,7 +92,7 @@ const SettingsPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 md:p-8 pt-16 animate-fade-in">
+    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 md:p-8 pt-24 animate-fade-in">
       <div className="max-w-4xl mx-auto">
         <header className="mb-8">
           <h1 className="text-4xl font-extrabold tracking-tight flex items-center gap-3">
@@ -159,63 +103,6 @@ const SettingsPage = () => {
         </header>
 
         <div className="grid gap-8">
-          {/* Profile Settings */}
-          <Card className="glass-card border-border">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Profile Information
-              </CardTitle>
-              <CardDescription>Update your personal information</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="email" className="flex items-center gap-2 mb-2">
-                  <Mail className="h-4 w-4" />
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  value={user?.email || ''}
-                  disabled
-                  className="bg-muted/50"
-                />
-                <p className="text-xs text-muted-foreground mt-1">Email cannot be changed</p>
-              </div>
-              <div>
-                <Label htmlFor="fullName">Full Name</Label>
-                <Input
-                  id="fullName"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your full name"
-                />
-              </div>
-              <div>
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Tell us about yourself"
-                  rows={4}
-                />
-              </div>
-              <Button onClick={handleSaveProfile} disabled={isSaving} className="bg-primary hover:bg-primary/90">
-                {isSaving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
 
           {/* Appearance Settings */}
           <Card className="glass-card border-border">
@@ -454,7 +341,7 @@ const SettingsPage = () => {
           <Card className="glass-card border-border">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
+                <Shield className="h-5 w-5" />
                 Account
               </CardTitle>
               <CardDescription>Manage your account settings</CardDescription>
