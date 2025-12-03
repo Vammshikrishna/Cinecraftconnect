@@ -11,7 +11,7 @@ import { ProjectCreationModal } from '@/components/projects/ProjectCreationModal
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   description: string | null;
   status: string | null;
   location: string | null;
@@ -22,7 +22,7 @@ interface Project {
   start_date: string | null;
   creator_id: string;
   created_at: string;
-  project_space_type?: 'public' | 'private' | 'secret';
+  is_public: boolean | null;
 }
 
 const ProjectsTab = () => {
@@ -37,14 +37,14 @@ const ProjectsTab = () => {
   const fetchProjects = async () => {
     try {
       const { data, error } = await supabase
-        .from('project_spaces')
+        .from('projects')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (error) throw error;
       console.log('ProjectsTab - Fetched projects:', data);
-      setProjects((data || []) as any);
+      setProjects(data || []);
     } catch (error) {
       console.error('Error fetching projects:', error);
       toast({
@@ -90,7 +90,7 @@ const ProjectsTab = () => {
           {projects.map((project) => (
             <Link to={`/projects/${project.id}/space`} key={project.id} className="block h-full">
               <InteractiveCard
-                title={project.name}
+                title={project.title}
                 description={project.description?.substring(0, 80) + '...' || 'No description'}
                 variant="hover-lift"
                 className="h-full"
@@ -101,7 +101,7 @@ const ProjectsTab = () => {
                       <Badge variant={getStatusVariant(project.status)} className="capitalize">
                         {project.status || 'Unknown'}
                       </Badge>
-                      {project.project_space_type === 'private' && (
+                      {project.is_public === false && (
                         <Badge variant="secondary" className="flex items-center gap-1">
                           <Lock className="h-3 w-3" />
                           Private
