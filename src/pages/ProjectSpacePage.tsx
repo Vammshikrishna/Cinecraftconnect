@@ -30,8 +30,8 @@ const ProjectSpacePage = () => {
     const fetchProject = async () => {
       try {
         const { data: projectData, error: projectError } = await supabase
-          .from('project_spaces')
-          .select('id, name, description')
+          .from('projects')
+          .select('id, title, description')
           .eq('id', projectId)
           .single();
 
@@ -40,7 +40,7 @@ const ProjectSpacePage = () => {
           setError('Project not found');
           return;
         }
-        setProject({ id: projectData.id, title: projectData.name, description: projectData.description });
+        setProject({ id: projectData.id, title: projectData.title, description: projectData.description });
 
       } catch (err) {
         console.error('Error fetching project:', err);

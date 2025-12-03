@@ -125,13 +125,17 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
 
       if (error) throw error;
 
-      // Add creator as project member with owner role
+      // Create a project space for this project
       if (newProject) {
-        await supabase.from('project_members').insert({
+        const { error: spaceError } = await supabase.from('project_spaces').insert({
           project_id: newProject.id,
-          user_id: user.id,
-          role: 'owner',
+          name: `${projectData.name} Workspace`,
         });
+
+        if (spaceError) {
+          console.error('Error creating project space:', spaceError);
+          // Don't throw - project is created, just log the error
+        }
       }
 
       toast({

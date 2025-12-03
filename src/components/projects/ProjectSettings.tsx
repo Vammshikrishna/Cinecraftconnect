@@ -33,7 +33,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [projectData, setProjectData] = useState({
-        name: '',
+        title: '',
         description: '',
         status: 'planning',
         location: '',
@@ -43,7 +43,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
         end_date: '',
         genre: [] as string[],
         required_roles: [] as string[],
-        project_space_type: 'public' as 'public' | 'private',
+        is_public: true,
     });
 
     useEffect(() => {
@@ -53,7 +53,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
     const fetchProjectData = async () => {
         try {
             const { data, error } = await supabase
-                .from('project_spaces')
+                .from('projects')
                 .select('*')
                 .eq('id', projectId)
                 .single();
@@ -62,7 +62,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
             if (data) {
                 setProjectData({
-                    name: data.name || '',
+                    title: data.title || '',
                     description: data.description || '',
                     status: data.status || 'planning',
                     location: data.location || '',
@@ -72,7 +72,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     end_date: data.end_date || '',
                     genre: data.genre || [],
                     required_roles: data.required_roles || [],
-                    project_space_type: (data.project_space_type as 'public' | 'private') || 'public',
+                    is_public: data.is_public ?? true,
                 });
             }
         } catch (error: any) {
@@ -108,9 +108,9 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
         setSaving(true);
         try {
             const { error } = await supabase
-                .from('project_spaces')
+                .from('projects')
                 .update({
-                    name: projectData.name,
+                    title: projectData.title,
                     description: projectData.description,
                     status: projectData.status,
                     location: projectData.location,
@@ -120,7 +120,7 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     end_date: projectData.end_date || null,
                     genre: projectData.genre,
                     required_roles: projectData.required_roles,
-                    project_space_type: projectData.project_space_type,
+                    is_public: projectData.is_public,
                 })
                 .eq('id', projectId);
 
@@ -166,8 +166,8 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                             <Label htmlFor="name">Project Name *</Label>
                             <Input
                                 id="name"
-                                value={projectData.name}
-                                onChange={(e) => setProjectData({ ...projectData, name: e.target.value })}
+                                value={projectData.title}
+                                onChange={(e) => setProjectData({ ...projectData, title: e.target.value })}
                                 placeholder="Enter project name"
                             />
                         </div>
@@ -313,25 +313,25 @@ export default function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <div className="flex items-center justify-between p-4 border border-border rounded-lg bg-muted/20">
                         <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
-                                {projectData.project_space_type === 'public' ? (
+                                {projectData.is_public ? (
                                     <Globe className="h-4 w-4 text-primary" />
                                 ) : (
                                     <Lock className="h-4 w-4 text-muted-foreground" />
                                 )}
                                 <p className="font-medium">
-                                    {projectData.project_space_type === 'public' ? 'Public Project' : 'Private Project'}
+                                    {projectData.is_public ? 'Public Project' : 'Private Project'}
                                 </p>
                             </div>
                             <p className="text-sm text-muted-foreground">
-                                {projectData.project_space_type === 'public'
+                                {projectData.is_public
                                     ? 'Visible to everyone. Anyone can view and apply to join.'
                                     : 'Only visible to invited members. Others cannot see this project.'}
                             </p>
                         </div>
                         <Switch
-                            checked={projectData.project_space_type === 'public'}
+                            checked={projectData.is_public}
                             onCheckedChange={(checked) =>
-                                setProjectData({ ...projectData, project_space_type: checked ? 'public' : 'private' })
+                                setProjectData({ ...projectData, is_public: checked })
                             }
                         />
                     </div>

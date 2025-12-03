@@ -11,7 +11,7 @@ import { TeamManagementTab } from '@/components/projects/TeamManagementTab';
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   description: string | null;
   creator_id: string | null;
 }
@@ -29,13 +29,30 @@ const ProjectSpace = () => {
       if (!projectId) return;
       setLoading(true);
       const { data, error } = await supabase
-        .from('project_spaces')
-        .select('*')
+        .from('projects')
+        .select(`
+          id,
+          title,
+          description,
+          creator_id,
+          status,
+          location,
+          genre,
+          required_roles,
+          budget_min,
+          budget_max,
+          start_date,
+          end_date,
+          is_public,
+          created_at,
+          updated_at
+        `)
         .eq('id', projectId)
         .single();
 
       if (error) {
         console.error('Error fetching project:', error);
+        console.error('Full error details:', JSON.stringify(error, null, 2));
       } else {
         setProject(data);
         if (user && data && user.id === data.creator_id) {
@@ -72,7 +89,7 @@ const ProjectSpace = () => {
         Back to Projects
       </Button>
       <div className="mb-8">
-        <h1 className="text-4xl font-bold">{project.name}</h1>
+        <h1 className="text-4xl font-bold">{project.title}</h1>
         <p className="text-muted-foreground mt-2 max-w-3xl">{project.description}</p>
       </div>
 

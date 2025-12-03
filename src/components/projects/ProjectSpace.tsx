@@ -112,7 +112,7 @@ export const ProjectSpace = ({
           setUserRole('member');
         } else {
           const { data: project, error: projectError } = await supabase
-            .from('project_spaces')
+            .from('projects')
             .select('creator_id')
             .eq('id', projectId)
             .single();
