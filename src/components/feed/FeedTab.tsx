@@ -318,7 +318,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       <div className="space-y-6">
         {posts.length === 0 ? (
           <Card className="glass-card p-8 text-center">
-            <p className="text-gray-400 mb-4">No posts yet. Be the first to share something!</p>
+            <p className="text-muted-foreground mb-4">No posts yet. Be the first to share something!</p>
             <Button onClick={() => setShowCreatePost(true)} className="bg-gradient-to-r from-primary to-primary/80">
               Create First Post
             </Button>

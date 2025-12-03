@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Video, Users, MessageCircle } from "lucide-react";
+import { Video, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import EnhancedRealTimeChat from "../chat/EnhancedRealTimeChat";
+import { DiscussionChatInterface } from "../discussions/DiscussionChatInterface";
+import { Category } from "../discussions/types";
 
 interface DiscussionRoomProps {
   id?: string;
@@ -15,6 +16,8 @@ interface DiscussionRoomProps {
   memberCount: number;
   members: Array<{ initials: string; color: string }>;
   variant?: 'purple' | 'blue';
+  categoryId: string;
+  categories: Category[];
 }
 
 const DiscussionRoomCard = ({
@@ -23,7 +26,9 @@ const DiscussionRoomCard = ({
   description,
   memberCount,
   members,
-  variant = 'purple'
+  variant = 'purple',
+  categoryId,
+  categories
 }: DiscussionRoomProps) => {
   const [showChat, setShowChat] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -75,14 +80,15 @@ const DiscussionRoomCard = ({
     }
   };
 
+  const handleRoomUpdated = (roomId: string, newTitle: string, newDescription: string) => {
+    // In a real app, this would update the parent state or trigger a refetch
+    console.log('Room updated:', roomId, newTitle, newDescription);
+  };
+
   return (
     <>
       <div
-        className={`border border-white/10 rounded-lg p-4 bg-gradient-to-b from-black/40 
-          ${variant === 'purple'
-            ? 'to-cinesphere-purple/10 hover:from-black/30 hover:to-cinesphere-purple/20'
-            : 'to-cinesphere-blue/10 hover:from-black/30 hover:to-cinesphere-blue/20'} 
-          transition-all`}
+        className={`border border-border rounded-lg p-4 bg-card hover:bg-accent/5 transition-all`}
       >
         <div className="flex justify-between items-start mb-3 gap-2">
           <h3 className="font-semibold text-foreground line-clamp-1">{title}</h3>
@@ -123,15 +129,18 @@ const DiscussionRoomCard = ({
 
       <Dialog open={showChat} onOpenChange={setShowChat}>
         <DialogContent className="max-w-4xl h-[90vh] md:h-[600px] flex flex-col p-0">
-          <DialogHeader className="p-4 border-b">
-            <DialogTitle className="flex items-center gap-2">
-              <MessageCircle className="h-5 w-5" />
-              {title}
-            </DialogTitle>
-          </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {id && showChat && (
-              <EnhancedRealTimeChat roomId={id} roomTitle={title} />
+              <DiscussionChatInterface
+                roomId={id}
+                userRole="member"
+                roomTitle={title}
+                roomDescription={description}
+                categoryId={categoryId}
+                categories={categories}
+                onClose={() => setShowChat(false)}
+                onRoomUpdated={handleRoomUpdated}
+              />
             )}
           </div>
         </DialogContent>

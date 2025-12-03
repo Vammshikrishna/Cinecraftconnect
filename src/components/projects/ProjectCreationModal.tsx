@@ -107,19 +107,17 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       const { data: newProject, error } = await supabase
         .from('project_spaces')
         .insert({
-          name: projectData.name,
+          title: projectData.name,
           description: projectData.description,
           creator_id: user.id,
           genre: projectData.genre,
           location: projectData.location,
           required_roles: projectData.required_roles,
           status: projectData.status,
-          project_space_type: projectData.is_public ? 'public' : 'private',
-          budget_min: projectData.budget_min ? parseInt(projectData.budget_min) : null,
-          budget_max: projectData.budget_max ? parseInt(projectData.budget_max) : null,
+          is_public: projectData.is_public,
           start_date: projectData.start_date || null,
           end_date: projectData.end_date || null,
-        })
+        } as any)
         .select()
         .single();
 

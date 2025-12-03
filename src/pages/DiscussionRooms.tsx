@@ -10,9 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe } from 'lucide-react';
+import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2 } from 'lucide-react';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 
@@ -115,6 +116,10 @@ const DiscussionRoomsPage = () => {
     }
   }
 
+  const handleRoomDelete = (roomId: string) => {
+    setRooms(prevRooms => prevRooms.filter(r => r.id !== roomId));
+  }
+
   const filteredAndSortedRooms = useMemo(() => {
     let processedRooms = rooms.filter(room =>
       (room.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -150,7 +155,7 @@ const DiscussionRoomsPage = () => {
 
   if (selectedRoom) {
     return (
-      <div className="fixed inset-0 bg-background text-foreground flex flex-col pt-0 lg:pt-16 z-50">
+      <div className="fixed inset-0 bg-background text-foreground flex flex-col z-50">
         <DiscussionChatInterface
           roomId={selectedRoom.id}
           userRole="member"
@@ -192,7 +197,7 @@ const DiscussionRoomsPage = () => {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} />)}
+            {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} onDelete={handleRoomDelete} />)}
           </div>
         </section>
 
@@ -233,7 +238,7 @@ const DiscussionRoomsPage = () => {
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} />)}
+            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} onDelete={handleRoomDelete} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -247,7 +252,34 @@ const DiscussionRoomsPage = () => {
 };
 
 // --- ROOM CARD COMPONENT ---
-const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; }) => {
+const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; }) => {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [isDeleting, setDeleting] = useState(false);
+  const isOwner = user?.id === room.creator_id;
+
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('discussion_rooms')
+        .delete()
+        .eq('id', room.id);
+
+      if (error) throw error;
+
+      toast({ title: "Room deleted", description: "The discussion room has been deleted successfully." });
+      onDelete(room.id);
+      setDeleteDialogOpen(false);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <Card className="glass-card hover-lift flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden border-border">
       <CardContent className="p-5">
@@ -262,6 +294,28 @@ const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; 
                 <Lock className="h-3 w-3" />
                 Private
               </Badge>
+            )}
+            {isOwner && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-popover border-border">
+                  <DropdownMenuItem onClick={() => onJoin(room)} className="cursor-pointer">
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Room
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setDeleteDialogOpen(true)}
+                    className="cursor-pointer text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Room
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
@@ -280,6 +334,27 @@ const RoomCard = ({ room, onJoin }: { room: Room; onJoin: (room: Room) => void; 
           <MessageSquare className="w-4 h-4 mr-2" /> Join Chat
         </Button>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle>Delete Room</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to delete "{room.title}"? This action cannot be undone and all messages will be permanently deleted.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={isDeleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

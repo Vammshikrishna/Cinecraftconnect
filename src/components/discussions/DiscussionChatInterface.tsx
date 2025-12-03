@@ -12,7 +12,7 @@ import { Message, UserRole, Category, Call } from './types';
 import { MessageComposer } from './MessageComposer';
 import { TypingIndicator } from './TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { ArrowLeft, Video, Settings, Users, Phone, Loader2, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Video, Settings, Users, Phone, Loader2, ChevronDown, MessageSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
@@ -210,14 +210,14 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
-      <header className="flex items-center justify-between gap-4 p-3 border-b border-gray-700 bg-gray-800 z-10">
+      <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
         <div className="flex items-center gap-3">
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700">
-            <ArrowLeft className="h-6 w-6" />
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
+            <ArrowLeft className="h-6 w-6 text-foreground" />
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="font-bold text-lg truncate">{roomTitle}</h2>
-            <p className="text-sm text-gray-400 truncate">{roomDescription}</p>
+            <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
+            <p className="text-sm text-muted-foreground truncate">{roomDescription}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -248,44 +248,54 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           onScroll={handleScroll}
           className="flex-1 flex flex-col overflow-y-auto p-4 pr-4 custom-scrollbar"
         >
-          {messages.map((message) => {
-            const isSender = message.profiles.id === user?.id;
-            return (
-              <div key={message.id} className={`flex items-end gap-3 my-4 ${isSender ? 'flex-row-reverse' : ''}`}>
-                <TooltipProvider delayDuration={100}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Link to={`/profile/${message.profiles.id}`}>
-                        <Avatar className="h-8 w-8 cursor-pointer hover:opacity-80 transition-opacity">
-                          <AvatarImage src={message.profiles.avatar_url || undefined} />
-                          <AvatarFallback>{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
-                        </Avatar>
-                      </Link>
-                    </TooltipTrigger>
-                    <TooltipContent side={isSender ? 'right' : 'left'}>
-                      <p>{message.profiles.username}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
-                <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
-                  {message.content.startsWith('POST_SHARE::') ? (
-                    (() => {
-                      try {
-                        const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
-                        return <PostShareCard {...shareData} />;
-                      } catch (e) {
-                        return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                      }
-                    })()
-                  ) : (
-                    <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground">{formatTimestamp(message.created_at)}</span>
+          {messages.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <MessageSquare className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                <p className="text-muted-foreground text-sm">No messages yet</p>
+                <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
               </div>
-            );
-          })}
+            </div>
+          ) : (
+            messages.map((message) => {
+              const isSender = message.profiles.id === user?.id;
+              return (
+                <div key={message.id} className={`flex items-end gap-3 my-4 ${isSender ? 'flex-row-reverse' : ''}`}>
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Link to={`/profile/${message.profiles.id}`}>
+                          <Avatar className="h-8 w-8 cursor-pointer hover:opacity-80 transition-opacity">
+                            <AvatarImage src={message.profiles.avatar_url || undefined} />
+                            <AvatarFallback>{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
+                          </Avatar>
+                        </Link>
+                      </TooltipTrigger>
+                      <TooltipContent side={isSender ? 'right' : 'left'}>
+                        <p>{message.profiles.username}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+
+                  <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
+                    {message.content.startsWith('POST_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
+                          return <PostShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
+                        }
+                      })()
+                    ) : (
+                      <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground">{formatTimestamp(message.created_at)}</span>
+                </div>
+              );
+            })
+          )}
           <div ref={messagesEndRef} />
         </div>
 

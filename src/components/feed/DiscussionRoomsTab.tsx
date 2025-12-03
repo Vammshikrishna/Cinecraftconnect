@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import DiscussionRoomCard from "./DiscussionRoomCard";
 import { z } from "zod";
+import { Category } from "@/components/discussions/types";
 
 const roomSchema = z.object({
   title: z.string()
@@ -27,10 +28,12 @@ interface DiscussionRoom {
   creator_id: string;
   member_count: number | null;
   created_at: string;
+  category_id: string | null;
 }
 
 const DiscussionRoomsTab = () => {
   const [rooms, setRooms] = useState<DiscussionRoom[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newRoomTitle, setNewRoomTitle] = useState("");
@@ -48,7 +51,8 @@ const DiscussionRoomsTab = () => {
       setRooms((data || []).map(room => ({
         ...room,
         description: room.description || '',
-        creator_id: room.creator_id || ''
+        creator_id: room.creator_id || '',
+        category_id: room.category_id
       })));
     } catch (error) {
       console.error('Error fetching rooms:', error);
@@ -59,6 +63,23 @@ const DiscussionRoomsTab = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('room_categories')
+        .select('*');
+
+      if (error) throw error;
+      setCategories((data || []).map(cat => ({
+        ...cat,
+        description: null,
+        icon: null
+      })));
+    } catch (error) {
+      console.error('Error fetching categories:', error);
     }
   };
 
@@ -121,6 +142,7 @@ const DiscussionRoomsTab = () => {
 
   useEffect(() => {
     fetchRooms();
+    fetchCategories();
 
     const channel = supabase
       .channel('rooms-changes')
@@ -174,6 +196,8 @@ const DiscussionRoomsTab = () => {
                 { initials: `+${Math.max(0, (room.member_count || 0) - 2)}`, color: "bg-primary/80" }
               ]}
               variant={index % 2 === 0 ? "purple" : "blue"}
+              categoryId={room.category_id || (categories[0]?.id || '')}
+              categories={categories}
             />
           ))
         )}
