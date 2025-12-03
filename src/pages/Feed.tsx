@@ -1,7 +1,6 @@
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { FloatingActionButton } from '@/components/ui/floating-action-button';
 import { Plus, MessageSquare, Briefcase, Star, Rss, LayoutGrid } from 'lucide-react';
 
@@ -26,27 +25,29 @@ const FeedSkeleton = () => (
   <div className="min-h-screen bg-background pt-20">
     <div className="container mx-auto px-4 pb-8">
       <div className="max-w-4xl mx-auto">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-24" />)}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-6">
+        <div className="glass-card rounded-xl p-6">
+          <div className="flex flex-wrap gap-2 mb-8">
+            {[...Array(6)].map((_, i) => <EnhancedSkeleton key={i} className="h-8 w-24 rounded-full" />)}
+          </div>
+          <div className="space-y-6">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="border p-4 rounded-lg">
+              <div key={i} className="border border-border/50 p-6 rounded-xl bg-card/50">
                 <div className="flex items-center space-x-4 mb-4">
-                  <Skeleton className="h-12 w-12 rounded-full" />
+                  <EnhancedSkeleton className="h-12 w-12 rounded-full" />
                   <div className="space-y-2">
-                    <Skeleton className="h-4 w-[250px]" />
-                    <Skeleton className="h-4 w-[200px]" />
+                    <EnhancedSkeleton className="h-4 w-[250px]" />
+                    <EnhancedSkeleton className="h-3 w-[150px]" />
                   </div>
                 </div>
-                <Skeleton className="h-32 w-full" />
+                <EnhancedSkeleton className="h-32 w-full rounded-lg mb-4" />
+                <div className="flex gap-4">
+                  <EnhancedSkeleton className="h-8 w-20" />
+                  <EnhancedSkeleton className="h-8 w-20" />
+                </div>
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   </div>

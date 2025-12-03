@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { ExploreGrid } from '@/components/search/ExploreGrid';
 import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 // Basic type definitions for search results
 interface ProjectResult {
@@ -354,7 +355,22 @@ const SearchPage = () => {
                 </div>
 
                 <div className="space-y-4">
-                    {loading && <div className="text-center py-8 text-muted-foreground">Loading...</div>}
+                    {loading && (
+                        <div className="grid gap-4 max-w-3xl mx-auto">
+                            {[...Array(5)].map((_, i) => (
+                                <div key={i} className="glass-card p-4 rounded-xl">
+                                    <div className="flex items-start gap-4">
+                                        <EnhancedSkeleton className="h-12 w-12 rounded-lg" />
+                                        <div className="flex-1 space-y-2">
+                                            <EnhancedSkeleton className="h-6 w-1/3" />
+                                            <EnhancedSkeleton className="h-4 w-3/4" />
+                                            <EnhancedSkeleton className="h-4 w-1/4 rounded-full" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {!loading && !query && (
                         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -367,7 +383,15 @@ const SearchPage = () => {
                     )}
 
                     {!loading && query.length > 1 && filteredSearchResults.length === 0 && (
-                        <div className="text-center py-8 text-muted-foreground">No results found for "{query}"</div>
+                        <div className="text-center py-16">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-muted mb-6">
+                                <Search className="h-10 w-10 text-muted-foreground" />
+                            </div>
+                            <h3 className="text-xl font-semibold mb-2">No results found</h3>
+                            <p className="text-muted-foreground">
+                                We couldn't find anything matching "{query}". Try different keywords or check for typos.
+                            </p>
+                        </div>
                     )}
 
                     {!loading && query.length > 0 && (

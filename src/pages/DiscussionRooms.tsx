@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2 } from 'lucide-react';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
+import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
 
 // --- DATA INTERFACES ---
 
@@ -149,8 +150,22 @@ const DiscussionRoomsPage = () => {
   }, [rooms]);
 
 
+
+
   if (loading && rooms.length === 0) {
-    return <div className="flex h-screen w-full items-center justify-center bg-background"><Loader2 className="h-20 w-20 animate-spin text-primary" /></div>;
+    return (
+      <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
+        <div className="container mx-auto pt-16 pb-24">
+          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+            <EnhancedSkeleton className="h-10 w-64" />
+            <EnhancedSkeleton className="h-10 w-32" />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (selectedRoom) {

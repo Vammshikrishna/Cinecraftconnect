@@ -25,7 +25,7 @@ import {
   Twitter,
   Facebook,
 } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 const ProfilePage = () => {
@@ -126,7 +126,7 @@ const ProfilePage = () => {
   if (loading) {
     return (
       <div className="w-full h-screen bg-black flex justify-center items-center pt-20">
-        <Skeleton className="h-64 w-full max-w-3xl" />
+        <EnhancedSkeleton className="h-64 w-full max-w-3xl rounded-xl" />
       </div>
     );
   }
@@ -279,48 +279,15 @@ const ProfilePage = () => {
           <div className="relative w-full mb-6">
             <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide w-full md:justify-center" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               <TabsList className="flex h-auto bg-transparent gap-2 p-0">
-                <TabsTrigger
-                  value="posts"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Posts
-                </TabsTrigger>
-                <TabsTrigger
-                  value="portfolio"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Portfolio
-                </TabsTrigger>
-                <TabsTrigger
-                  value="projects"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Projects
-                </TabsTrigger>
-                <TabsTrigger
-                  value="announcements"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Announcements
-                </TabsTrigger>
-                <TabsTrigger
-                  value="analytics"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Analytics
-                </TabsTrigger>
-                <TabsTrigger
-                  value="skills"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Skills
-                </TabsTrigger>
-                <TabsTrigger
-                  value="experience"
-                  className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
-                >
-                  Experience
-                </TabsTrigger>
+                {['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'skills', 'experience'].map((tab) => (
+                  <TabsTrigger
+                    key={tab}
+                    value={tab}
+                    className="flex items-center gap-1.5 px-4 py-1.5 md:px-6 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all duration-300 border shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] data-[state=active]:scale-105 bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground capitalize"
+                  >
+                    {tab}
+                  </TabsTrigger>
+                ))}
               </TabsList>
               <div className="w-4 shrink-0" />
             </div>
@@ -338,8 +305,6 @@ const ProfilePage = () => {
           <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
           <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
         </Tabs>
-
-
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ui/error-boundary";
 
+import GlobalFeatures from "@/components/GlobalFeatures";
 
 // Page Imports
 const Index = lazy(() => import("./pages/Index"));
@@ -46,6 +47,7 @@ const App = () => {
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Toaster />
+      <GlobalFeatures />
       {user && profile?.onboarding_completed && <Navbar />}
       <ErrorBoundary>
         <Suspense
