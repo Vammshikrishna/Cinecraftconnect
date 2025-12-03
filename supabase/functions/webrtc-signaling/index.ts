@@ -1,4 +1,3 @@
-import { serve } from "jsr:@std/http";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -6,16 +5,15 @@ interface SignalingMessage {
   type: 'offer' | 'answer' | 'ice-candidate' | 'join-room' | 'leave-room';
   roomId: string;
   userId: string;
-  payload: any;
+  payload: unknown;
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Verify JWT authentication
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -28,17 +26,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
-    
-    // The rest of your signaling logic will go here.
-    // This will involve handling WebSocket connections and relaying
-    // messages between clients in the same room.
 
     return new Response(JSON.stringify({ message: "Signaling server is up" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500,
     });

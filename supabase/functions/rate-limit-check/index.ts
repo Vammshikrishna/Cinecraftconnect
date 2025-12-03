@@ -1,5 +1,5 @@
 // deno-lint-ignore-file
-import { createClient } from "npm:@supabase/supabase-js@2.25.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -9,18 +9,16 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // 1) Parse JSON body
-  let body: any;
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
-  } catch (e) {
+  } catch (_e) {
     return new Response(JSON.stringify({ error: "Invalid JSON format" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  // 2) Validate inputs
   const { action_type, max_requests = 60, window_minutes = 60 } = body ?? {};
 
   if (!action_type || typeof action_type !== "string") {
@@ -45,7 +43,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // 3) Validate env
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -55,10 +52,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 4) Init supabase client (server-side)
     const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
-    // 5) Verify bearer token (optional depending on function access control)
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "No authorization header" }), {
@@ -74,10 +69,10 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // safe destructure of getUser
     const authRes = await supabase.auth.getUser(token);
-    const authError = (authRes as any).error ?? null;
-    const user = (authRes as any).data?.user ?? null;
+    const authError = (authRes as Record<string, unknown>).error as unknown;
+    const userData = (authRes as Record<string, unknown>).data as Record<string, unknown> | null;
+    const user = userData?.user as Record<string, unknown> | null;
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
@@ -85,7 +80,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 6) Call the rate-limit RPC (assumes check_rate_limit exists)
     const rpcRes = await supabase.rpc("check_rate_limit", {
       _user_id: user.id,
       _action_type: action_type,
@@ -93,19 +87,19 @@ Deno.serve(async (req: Request) => {
       _window_minutes: window_minutes,
     });
 
-    const rpcError = (rpcRes as any).error ?? null;
-    const rpcData = (rpcRes as any).data ?? null;
+    const rpcError = (rpcRes as Record<string, unknown>).error as Record<string, unknown> | null;
+    const rpcData = (rpcRes as Record<string, unknown>).data as boolean | null;
 
     if (rpcError) {
       console.error("Rate limit check error:", rpcError);
-      return new Response(JSON.stringify({ error: rpcError.message ?? "Rate limit error" }), {
+      return new Response(JSON.stringify({ error: (rpcError.message as string) ?? "Rate limit error" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (!rpcData) {
-      const retryAfterSeconds = window_minutes * 60;
+      const retryAfterSeconds = (window_minutes as number) * 60;
       return new Response(
         JSON.stringify({
           allowed: false,
@@ -123,7 +117,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Allowed
     return new Response(JSON.stringify({ allowed: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

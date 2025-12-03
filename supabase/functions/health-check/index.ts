@@ -1,6 +1,5 @@
 // deno-lint-ignore-file
-// Health check edge function
-import { createClient } from "npm:@supabase/supabase-js@2.25.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req: Request) => {
@@ -9,13 +8,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const startTime = Date.now();
-  const checks: any = {
+  const checks: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
     status: 'healthy',
     checks: {}
   };
 
-  // Validate env
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !supabaseKey) {
@@ -31,34 +29,34 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabase = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
+    const checksObj = checks.checks as Record<string, unknown>;
 
     // Database check
     try {
       const dbStart = Date.now();
-      // Use a lightweight query - limit 1
       const dbRes = await supabase.from('profiles').select('id').limit(1);
-      const dbError = (dbRes as any).error ?? null;
-      checks.checks.database = {
+      const dbError = (dbRes as Record<string, unknown>).error as Record<string, unknown> | null;
+      checksObj.database = {
         status: dbError ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - dbStart,
         error: dbError?.message ?? null
       };
       if (dbError) checks.status = 'unhealthy';
     } catch (err) {
-      checks.checks.database = {
+      checksObj.database = {
         status: 'unhealthy',
         error: err instanceof Error ? err.message : String(err)
       };
       checks.status = 'unhealthy';
     }
 
-    // Storage check - list buckets
+    // Storage check
     try {
       const storageStart = Date.now();
       const storageRes = await supabase.storage.listBuckets();
-      const storageError = (storageRes as any).error ?? null;
-      const storageData = (storageRes as any).data ?? null;
-      checks.checks.storage = {
+      const storageError = (storageRes as Record<string, unknown>).error as Record<string, unknown> | null;
+      const storageData = (storageRes as Record<string, unknown>).data as unknown[] | null;
+      checksObj.storage = {
         status: storageError ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - storageStart,
         buckets: Array.isArray(storageData) ? storageData.length : null,
@@ -66,53 +64,51 @@ Deno.serve(async (req: Request) => {
       };
       if (storageError) checks.status = 'unhealthy';
     } catch (err) {
-      checks.checks.storage = {
+      checksObj.storage = {
         status: 'unhealthy',
         error: err instanceof Error ? err.message : String(err)
       };
       checks.status = 'unhealthy';
     }
 
-    // Background jobs check - rely on count or data length depending on SDK
+    // Background jobs check
     try {
-      // pending
       const pendingRes = await supabase
         .from('background_jobs')
         .select('id', { count: 'exact', head: false })
         .eq('status', 'pending');
-      const pendingError = (pendingRes as any).error ?? null;
-      const pendingData = (pendingRes as any).data ?? null;
-      const pendingCount = typeof (pendingRes as any).count === 'number'
-        ? (pendingRes as any).count
+      const pendingError = (pendingRes as Record<string, unknown>).error as Record<string, unknown> | null;
+      const pendingData = (pendingRes as Record<string, unknown>).data as unknown[] | null;
+      const pendingCount = typeof (pendingRes as Record<string, unknown>).count === 'number'
+        ? (pendingRes as Record<string, unknown>).count
         : Array.isArray(pendingData) ? pendingData.length : null;
 
-      // failed
       const failedRes = await supabase
         .from('background_jobs')
         .select('id', { count: 'exact', head: false })
         .eq('status', 'failed');
-      const failedError = (failedRes as any).error ?? null;
-      const failedData = (failedRes as any).data ?? null;
-      const failedCount = typeof (failedRes as any).count === 'number'
-        ? (failedRes as any).count
+      const failedError = (failedRes as Record<string, unknown>).error as Record<string, unknown> | null;
+      const failedData = (failedRes as Record<string, unknown>).data as unknown[] | null;
+      const failedCount = typeof (failedRes as Record<string, unknown>).count === 'number'
+        ? (failedRes as Record<string, unknown>).count
         : Array.isArray(failedData) ? failedData.length : null;
 
       if (pendingError || failedError) {
-        checks.checks.backgroundJobs = {
+        checksObj.backgroundJobs = {
           status: 'unhealthy',
           error: pendingError?.message ?? failedError?.message ?? null
         };
         checks.status = 'unhealthy';
       } else {
-        checks.checks.backgroundJobs = {
+        checksObj.backgroundJobs = {
           status: 'healthy',
           pendingCount,
           failedCount
         };
-        if ((failedCount ?? 0) > 10) checks.checks.backgroundJobs.status = 'warning';
+        if ((failedCount as number ?? 0) > 10) (checksObj.backgroundJobs as Record<string, unknown>).status = 'warning';
       }
     } catch (err) {
-      checks.checks.backgroundJobs = {
+      checksObj.backgroundJobs = {
         status: 'unhealthy',
         error: err instanceof Error ? err.message : String(err)
       };

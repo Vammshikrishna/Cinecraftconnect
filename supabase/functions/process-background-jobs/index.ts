@@ -1,17 +1,15 @@
 // deno-lint-ignore-file
-import { createClient } from "npm:@supabase/supabase-js@2.25.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 interface BackgroundJob {
   id: string;
   job_type: string;
-  payload: any;
+  payload: Record<string, unknown>;
   attempts: number;
   max_attempts: number | null;
-  // other columns as needed
 }
 
-// Helper to safe-stringify errors
 const errMessage = (e: unknown) =>
   e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e);
 
@@ -20,7 +18,6 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Validate environment
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -30,7 +27,6 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  // Basic auth guard (optional if this function is internal)
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -52,41 +48,34 @@ Deno.serve(async (req: Request) => {
   });
 
   try {
-    // Verify token belongs to a valid user (safe destructuring)
     const authRes = await supabase.auth.getUser(token);
-    const user = (authRes as any).data?.user ?? null;
-    const authErr = (authRes as any).error ?? null;
-    if (authErr || !user) {
+    const user = (authRes as Record<string, unknown>).data as Record<string, unknown> | null;
+    const authErr = (authRes as Record<string, unknown>).error as unknown;
+    if (authErr || !user?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized - invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // How many jobs to claim in this run
     const CLAIM_LIMIT = 10;
 
-    // Call RPC to claim jobs atomically
     const rpcRes = await supabase.rpc("claim_background_jobs", { in_limit: CLAIM_LIMIT });
-    const rpcError = (rpcRes as any).error ?? null;
-    const jobs = (rpcRes as any).data ?? [];
+    const rpcError = (rpcRes as Record<string, unknown>).error as Record<string, unknown> | null;
+    let jobs = (rpcRes as Record<string, unknown>).data as BackgroundJob[] | null;
 
     if (rpcError) {
       console.error("Error claiming jobs:", rpcError);
-      return new Response(JSON.stringify({ error: rpcError.message ?? "Error claiming jobs" }), {
+      return new Response(JSON.stringify({ error: (rpcError.message as string) ?? "Error claiming jobs" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     if (!Array.isArray(jobs)) {
-      // If the RPC returned a single row, coerce to array
       if (jobs) {
-        // wrap single object into array
-        // @ts-ignore
-        jobs = [jobs];
+        jobs = [jobs as unknown as BackgroundJob];
       } else {
-        // no jobs claimed
         return new Response(JSON.stringify({ processed: 0, results: [] }), {
           status: 200,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -94,10 +83,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    const results: any[] = [];
+    const results: Array<{ id: string; status: string; error?: string }> = [];
 
     for (const job of jobs) {
-      // Defensive checks
       const jobId = job.id;
       const jobType = job.job_type;
       const payload = job.payload ?? {};
@@ -121,15 +109,15 @@ Deno.serve(async (req: Request) => {
             console.warn(`Unknown job type: ${jobType}`);
         }
 
-        // Mark completed and set completed_at
         const upd = await supabase
           .from("background_jobs")
           .update({ status: "completed", completed_at: new Date().toISOString() })
           .eq("id", jobId);
 
-        if ((upd as any).error) {
-          console.error("Error marking job completed:", (upd as any).error);
-          results.push({ id: jobId, status: "error_updating", error: (upd as any).error.message });
+        const updError = (upd as Record<string, unknown>).error as Record<string, unknown> | null;
+        if (updError) {
+          console.error("Error marking job completed:", updError);
+          results.push({ id: jobId, status: "error_updating", error: updError.message as string });
         } else {
           results.push({ id: jobId, status: "completed" });
         }
@@ -137,23 +125,17 @@ Deno.serve(async (req: Request) => {
         const message = errMessage(e);
         console.error(`Error processing job ${jobId}:`, message);
 
-        // Increment attempts, decide new status
         const newAttempts = attempts + 1;
         const newStatus = newAttempts >= maxAttempts ? "failed" : "pending";
 
-        const updErr = await supabase
+        await supabase
           .from("background_jobs")
           .update({
             status: newStatus,
             attempts: newAttempts,
             error_message: message,
-            // optionally set next scheduled_at or exponential backoff
           })
           .eq("id", jobId);
-
-        if ((updErr as any).error) {
-          console.error("Error updating failed job status:", (updErr as any).error);
-        }
 
         results.push({ id: jobId, status: "failed", error: message });
       }
@@ -172,11 +154,9 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-/* ---------- Job handlers ---------- */
-
-async function processNotificationJob(supabase: any, payload: any) {
+async function processNotificationJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
   const userId = payload?.user_id;
-  const notificationData = payload?.notification_data ?? {};
+  const notificationData = (payload?.notification_data ?? {}) as Record<string, unknown>;
   if (!userId) throw new Error("Missing user_id in payload");
 
   const res = await supabase.from("notifications").insert({
@@ -185,16 +165,18 @@ async function processNotificationJob(supabase: any, payload: any) {
     created_at: new Date().toISOString(),
   });
 
-  if ((res as any).error) throw (res as any).error;
+  const error = (res as Record<string, unknown>).error;
+  if (error) throw error;
 }
 
-async function processAnalyticsJob(supabase: any, payload: any) {
-  const date = payload?.date ?? new Date().toISOString().split("T")[0];
+async function processAnalyticsJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
+  const date = (payload?.date as string) ?? new Date().toISOString().split("T")[0];
   const res = await supabase.rpc("calculate_daily_engagement_score", { target_date: date });
-  if ((res as any).error) throw (res as any).error;
+  const error = (res as Record<string, unknown>).error;
+  if (error) throw error;
 }
 
-async function processCleanupJob(supabase: any, payload: any) {
+async function processCleanupJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
   const daysOld = typeof payload?.days_old === "number" ? payload.days_old : 30;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysOld);
@@ -202,5 +184,6 @@ async function processCleanupJob(supabase: any, payload: any) {
     .from("rate_limits")
     .delete()
     .lt("created_at", cutoff.toISOString());
-  if ((res as any).error) throw (res as any).error;
+  const error = (res as Record<string, unknown>).error;
+  if (error) throw error;
 }

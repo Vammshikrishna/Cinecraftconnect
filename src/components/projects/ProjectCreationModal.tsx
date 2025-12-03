@@ -105,7 +105,7 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       }
 
       const { data: newProject, error } = await supabase
-        .from('project_spaces')
+        .from('projects')
         .insert({
           title: projectData.name,
           description: projectData.description,
@@ -117,11 +117,22 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
           is_public: projectData.is_public,
           start_date: projectData.start_date || null,
           end_date: projectData.end_date || null,
-        } as any)
+          budget_min: projectData.budget_min ? parseFloat(projectData.budget_min) : null,
+          budget_max: projectData.budget_max ? parseFloat(projectData.budget_max) : null,
+        })
         .select()
         .single();
 
       if (error) throw error;
+
+      // Add creator as project member with owner role
+      if (newProject) {
+        await supabase.from('project_members').insert({
+          project_id: newProject.id,
+          user_id: user.id,
+          role: 'owner',
+        });
+      }
 
       toast({
         title: "Project Created",
