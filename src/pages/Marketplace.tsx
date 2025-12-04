@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import {
     Search,
-    Filter,
     Camera,
     Home,
     Plus
@@ -15,6 +14,7 @@ import {
 import { MarketplaceListing, ListingType } from '@/types/marketplace';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { ListingCard } from '@/components/marketplace/ListingCard';
+import { MarketplaceFilters } from '@/components/marketplace/MarketplaceFilters';
 
 
 const Marketplace = () => {
@@ -24,10 +24,16 @@ const Marketplace = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<ListingType>('equipment');
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [filters, setFilters] = useState<{
+        minPrice?: number;
+        maxPrice?: number;
+        location?: string;
+        category?: string;
+    }>({});
 
     useEffect(() => {
         fetchListings();
-    }, [activeTab, searchQuery]);
+    }, [activeTab, searchQuery, filters]);
 
     const fetchListings = async () => {
         try {
@@ -37,10 +43,10 @@ const Marketplace = () => {
                 .rpc('search_marketplace_listings', {
                     search_query: searchQuery || undefined,
                     filter_type: activeTab,
-                    filter_category: undefined,
-                    filter_location: undefined,
-                    min_price: undefined,
-                    max_price: undefined
+                    filter_category: filters.category || undefined,
+                    filter_location: filters.location || undefined,
+                    min_price: filters.minPrice || undefined,
+                    max_price: filters.maxPrice || undefined
                 });
 
             if (error) throw error;
@@ -119,12 +125,33 @@ const Marketplace = () => {
                                 className="pl-10 bg-input border-border"
                             />
                         </div>
-                        <Button variant="outline" className="border-border gap-2">
-                            <Filter size={18} />
-                            Filters
-                        </Button>
+                        <MarketplaceFilters filters={filters} onFiltersChange={setFilters} />
                     </div>
                 </div>
+
+                {/* Active Filters Display */}
+                {(filters.location || filters.minPrice || filters.maxPrice || filters.category) && (
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        {filters.location && (
+                            <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                Location: {filters.location}
+                                <button onClick={() => setFilters({ ...filters, location: undefined })} className="hover:text-primary/80">×</button>
+                            </div>
+                        )}
+                        {(filters.minPrice || filters.maxPrice) && (
+                            <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                Price: ₹{filters.minPrice || 0} - ₹{filters.maxPrice || 'Any'}
+                                <button onClick={() => setFilters({ ...filters, minPrice: undefined, maxPrice: undefined })} className="hover:text-primary/80">×</button>
+                            </div>
+                        )}
+                        {filters.category && (
+                            <div className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                Category: {filters.category}
+                                <button onClick={() => setFilters({ ...filters, category: undefined })} className="hover:text-primary/80">×</button>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Tabs for Equipment and Locations */}
                 <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ListingType)}>

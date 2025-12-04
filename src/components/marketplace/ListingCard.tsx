@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { MarketplaceListing } from '@/types/marketplace';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, DollarSign, Star, User } from 'lucide-react';
+import { MapPin, Star, User } from 'lucide-react';
 
 interface ListingCardProps {
     listing: MarketplaceListing;
@@ -72,13 +72,13 @@ export const ListingCard = ({ listing }: ListingCardProps) => {
                     {/* Price */}
                     <div className="flex items-center justify-between pt-3 border-t border-gray-700">
                         <div className="flex items-center text-primary font-semibold">
-                            <DollarSign size={16} />
+                            <span className="mr-0.5">₹</span>
                             <span>{listing.price_per_day}</span>
                             <span className="text-sm text-gray-400 ml-1">/day</span>
                         </div>
                         {listing.price_per_week && (
                             <div className="text-sm text-gray-400">
-                                ${listing.price_per_week}/week
+                                ₹{listing.price_per_week}/week
                             </div>
                         )}
                     </div>

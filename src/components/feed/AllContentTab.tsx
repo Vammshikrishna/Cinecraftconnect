@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import PostCard from './PostCard';
-import { Badge } from '@/components/ui/badge';
+import FeedProjectCard from './FeedProjectCard';
+import FeedDiscussionCard from './FeedDiscussionCard';
+import FeedAnnouncementCard from './FeedAnnouncementCard';
+import FeedRatingCard from './FeedRatingCard';
+
 import { formatDistanceToNow } from 'date-fns';
-import { MapPin, Users, Megaphone, Film, MessageCircle, Star, Lock } from 'lucide-react';
+
 import { Post } from '@/types';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
+import { fetchLatestRatings, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 
 interface Project {
   id: string;
@@ -20,6 +26,10 @@ interface Project {
   created_at: string;
   itemType: 'project';
   project_space_type?: 'public' | 'private' | 'secret';
+  creator?: {
+    full_name: string | null;
+    avatar_url: string | null;
+  };
 }
 
 interface DiscussionRoom {
@@ -43,9 +53,13 @@ interface Announcement {
 interface Rating {
   id: string;
   title: string;
-  rating: number;
+  tmdb_rating: number;
+  user_rating?: number | null;
   created_at: string;
   itemType: 'rating';
+  poster_url?: string | null;
+  overview?: string;
+  media_type?: 'movie' | 'tv';
 }
 
 interface UnifiedPost extends Post {
@@ -69,15 +83,15 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
   useEffect(() => {
     const fetchAllContent = async () => {
       try {
-        const [postsRes, projectsRes, discussionsRes, announcementsRes] = await Promise.all([
+        const [postsRes, projectsRes, discussionsRes, announcementsRes, tmdbMovies] = await Promise.all([
           supabase
             .from('posts')
             .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
             .order('created_at', { ascending: false })
             .limit(20),
           supabase
-            .from('project_spaces')
-            .select('*')
+            .from('projects')
+            .select('*, creator:creator_id(full_name, avatar_url)')
             .order('created_at', { ascending: false })
             .limit(10),
           supabase
@@ -90,6 +104,10 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
             .select('*')
             .order('posted_at', { ascending: false })
             .limit(5),
+          fetchLatestRatings().catch(err => {
+            console.error("Failed to fetch TMDB ratings", err);
+            return [];
+          })
         ]);
 
         if (postsRes.error) console.error('Posts fetch error:', postsRes.error);
@@ -115,7 +133,15 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
           like_count: p.like_count || 0
         })) as unknown as UnifiedPost[];
 
-        const typedProjects: Project[] = (projectsRes.data || []).map(p => ({ ...p, itemType: 'project' })) as unknown as Project[];
+        // Process projects
+        const rawProjects = projectsRes.data || [];
+        const typedProjects: Project[] = rawProjects.map((p: any) => ({
+          ...p,
+          name: p.title, // Map title to name as used in Project interface
+          itemType: 'project',
+          creator: p.creator || null
+        })) as unknown as Project[];
+
         const typedDiscussions: DiscussionRoom[] = (discussionsRes.data || []).map(d => ({ ...d, itemType: 'discussion' })) as unknown as DiscussionRoom[];
         const typedAnnouncements: Announcement[] = (announcementsRes.data || []).map(a => ({
           ...a,
@@ -123,12 +149,19 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
           itemType: 'announcement'
         })) as unknown as Announcement[];
 
-        const mockRatings: Rating[] = [
-          { id: 'r1', title: 'The Last Journey', rating: 4.8, created_at: new Date().toISOString(), itemType: 'rating' },
-          { id: 'r2', title: 'Silent Echo', rating: 4.5, created_at: new Date().toISOString(), itemType: 'rating' },
-        ];
+        const typedRatings: Rating[] = tmdbMovies.map(movie => ({
+          id: movie.id.toString(),
+          title: movie.title || movie.name || 'Untitled',
+          tmdb_rating: movie.vote_average,
+          user_rating: null,
+          created_at: movie.release_date || movie.first_air_date || '',
+          itemType: 'rating',
+          poster_url: movie.poster_path ? `${TMDB_IMAGE_BASE_URL}${movie.poster_path}` : null,
+          overview: movie.overview,
+          media_type: movie.title ? 'movie' : 'tv'
+        }));
 
-        const combined: FeedItem[] = [...typedPosts, ...typedProjects, ...typedDiscussions, ...typedAnnouncements, ...mockRatings];
+        const combined: FeedItem[] = [...typedPosts, ...typedProjects, ...typedDiscussions, ...typedAnnouncements, ...typedRatings];
 
         // Shuffle array for random order
         for (let i = combined.length - 1; i > 0; i--) {
@@ -180,7 +213,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
   }
 
   return (
-    <div className="space-y-6">
+    <ResponsiveGrid cols={{ sm: 1, md: 1 }} gap={6}>
       {feed.map(item => {
         if (item.itemType === 'post') {
           const author = item.profiles;
@@ -208,109 +241,17 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
             />
           );
         } else if (item.itemType === 'project') {
-          return (
-            <Link to={`/projects/${item.id}/space`} key={`project-${item.id}`} className="block">
-              <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
-                <div className="flex items-start gap-4">
-                  <Film className="h-8 w-8 text-primary mt-1" />
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold">Project: {item.name}</h3>
-                    <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150) || 'No description'}...</p>
-                    <div className="space-y-3 mt-4">
-                      {item.status && (
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge>{item.status}</Badge>
-                          {item.project_space_type === 'private' && (
-                            <Badge variant="secondary" className="flex items-center gap-1">
-                              <Lock className="h-3 w-3" />
-                              Private
-                            </Badge>
-                          )}
-                          {item.location && (
-                            <div className="flex items-center">
-                              <MapPin className="mr-1 h-3 w-3" />
-                              {item.location}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex flex-wrap items-center justify-between pt-3 mt-3 border-t border-border/50 text-xs text-muted-foreground gap-y-2">
-                        <div className="flex items-center whitespace-nowrap">
-                          <div className="w-5 h-5 bg-primary rounded-full flex items-center justify-center mr-2 text-primary-foreground text-xxs">
-                            P
-                          </div>
-                          Project Creator
-                        </div>
-                        <span className="whitespace-nowrap ml-auto">{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Link>
-          );
+          return <FeedProjectCard key={`project-${item.id}`} project={item} />;
         } else if (item.itemType === 'discussion') {
-          return (
-            <Link to={`/discussion-rooms/${item.id}`} key={`discussion-${item.id}`} className="block">
-              <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
-                <div className="flex items-start gap-4">
-                  <MessageCircle className="h-8 w-8 text-primary mt-1" />
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold">Discussion: {item.title}</h3>
-                    <p className="text-gray-300 text-sm mt-1">{item.description?.substring(0, 150)}...</p>
-                    <div className="flex flex-wrap items-center justify-between pt-3 mt-3 text-xs text-muted-foreground gap-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center whitespace-nowrap">
-                          <Users className="mr-1 h-3 w-3" /> {item.member_count || 0} members
-                        </div>
-                        {item.room_type === 'private' && (
-                          <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
-                            <Lock className="h-3 w-3" />
-                            Private
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="whitespace-nowrap ml-auto">{formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Link>
-          );
+          return <FeedDiscussionCard key={`discussion-${item.id}`} discussion={item} />;
         } else if (item.itemType === 'announcement') {
-          return (
-            <div key={`announcement-${item.id}`} className="glass-card rounded-xl p-6">
-              <div className="flex items-start gap-4">
-                <Megaphone className="h-8 w-8 text-primary mt-1" />
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">Announcement: {item.title}</h3>
-                  <p className="text-gray-300 text-sm mt-1">{item.content.substring(0, 150)}...</p>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
+          return <FeedAnnouncementCard key={`announcement-${item.id}`} announcement={item} />;
         } else if (item.itemType === 'rating') {
-          return (
-            <div key={`rating-${item.id}`} className="glass-card rounded-xl p-6">
-              <div className="flex items-start gap-4">
-                <Star className="h-8 w-8 text-primary mt-1" />
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold">Rating: {item.title}</h3>
-                  <p className="text-gray-300 text-sm mt-1">Score: {item.rating}/5</p>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
+          return <FeedRatingCard key={`rating-${item.id}`} rating={item} contentType={item.media_type || 'movie'} />;
         }
         return null;
       })}
-    </div>
+    </ResponsiveGrid>
   );
 };
 

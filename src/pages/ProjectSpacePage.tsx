@@ -67,7 +67,7 @@ const ProjectSpacePage = () => {
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Error</h1>
           <p className="text-muted-foreground mb-6">{error || 'Project not found'}</p>
-          <Button onClick={() => navigate('/projects')} className="gap-2">
+          <Button onClick={() => navigate(-1)} className="gap-2">
             <ArrowLeft className="h-4 w-4" />
             Back to Projects
           </Button>

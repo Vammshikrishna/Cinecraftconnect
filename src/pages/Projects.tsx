@@ -17,10 +17,10 @@ import {
   Search,
   MapPin,
   Film,
-  ImageIcon,
   Bookmark,
   ChevronRight
 } from 'lucide-react';
+import { getGradientForString } from '@/utils/colors';
 
 interface Project {
   id: string;
@@ -87,7 +87,7 @@ const Projects = () => {
 
       if (projectsError && projectsError.code !== 'PGRST116') throw projectsError;
 
-      let projectsWithBookmarks = projectsData || [];
+      let projectsWithBookmarks: Project[] = (projectsData || []).map(p => ({ ...p, is_bookmarked: false })) as unknown as Project[];
 
       // Fetch bookmarks for the current user if logged in
       if (user) {
@@ -209,9 +209,13 @@ const Projects = () => {
         className="group relative bg-card border border-border rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1"
       >
         {/* Image Section */}
-        <div className="relative w-full h-48 bg-gradient-to-br from-primary/20 via-secondary/20 to-primary/10 overflow-hidden">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <ImageIcon className="w-16 h-16 text-muted-foreground/30" />
+        {/* Image Section */}
+        <div
+          className="relative w-full h-48 overflow-hidden"
+          style={{ background: getGradientForString(project.title) }}
+        >
+          <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+            <Film className="w-16 h-16 text-white/30" />
           </div>
 
           {/* Bookmark Button */}
@@ -222,9 +226,16 @@ const Projects = () => {
             <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-primary text-primary' : 'text-muted-foreground'}`} />
           </button>
 
+          {/* New Badge */}
+          {new Date(project.created_at) > new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) && (
+            <div className="absolute top-3 left-3">
+              <Badge className="bg-primary text-primary-foreground shadow-lg animate-pulse">New</Badge>
+            </div>
+          )}
+
           {/* Status Badge */}
           <div className="absolute bottom-3 left-3">
-            <Badge variant={getStatusVariant(project.status)} className="capitalize shadow-lg">
+            <Badge variant={getStatusVariant(project.status)} className="capitalize shadow-lg bg-background/80 backdrop-blur-sm">
               {project.status}
             </Badge>
           </div>

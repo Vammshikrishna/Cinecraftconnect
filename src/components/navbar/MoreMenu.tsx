@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, Building2, ChevronDown, BookOpen } from 'lucide-react';
+import { ShoppingBag, Building2, ChevronDown, BookOpen, Star, Megaphone, MessageSquare } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,6 +12,9 @@ const MoreMenu = () => {
     const location = useLocation();
 
     const moreItems = [
+        { path: '/chats', icon: MessageSquare, label: 'Chats' },
+        { path: '/ratings', icon: Star, label: 'Ratings' },
+        { path: '/announcements', icon: Megaphone, label: 'Announcements' },
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
         { path: '/vendors', icon: Building2, label: 'Vendors' },
         { path: '/learn', icon: BookOpen, label: 'Learn' }

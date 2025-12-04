@@ -1,6 +1,6 @@
 // Mobile navigation bar for mobile view
 import { Link, useLocation } from "react-router-dom";
-import { Home, Film, Briefcase, Users, Play, MessageSquare, MoreHorizontal, ShoppingBag, Building2, BookOpen } from "lucide-react";
+import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -41,7 +41,6 @@ export function MobileNav() {
     { to: "/discussion-rooms", icon: Play },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users },
-    { to: "/chats", icon: MessageSquare },
   ];
 
   return (
@@ -65,7 +64,9 @@ export function MobileNav() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
-                className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${location.pathname.startsWith("/learn") ||
+                className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${location.pathname.startsWith("/ratings") ||
+                  location.pathname.startsWith("/announcements") ||
+                  location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
                   location.pathname.startsWith("/vendors")
                   ? "text-primary"
@@ -73,7 +74,9 @@ export function MobileNav() {
                   }`}
               >
                 <MoreHorizontal size={20} />
-                {(location.pathname.startsWith("/learn") ||
+                {(location.pathname.startsWith("/ratings") ||
+                  location.pathname.startsWith("/announcements") ||
+                  location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
                   location.pathname.startsWith("/vendors")) && (
                     <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
@@ -81,6 +84,18 @@ export function MobileNav() {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
+              <DropdownMenuItem asChild>
+                <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
+                  <Star size={18} />
+                  <span>Ratings</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/announcements" className="flex items-center gap-3 cursor-pointer">
+                  <Megaphone size={18} />
+                  <span>Announcements</span>
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/learn" className="flex items-center gap-3 cursor-pointer">
                   <BookOpen size={18} />

@@ -324,7 +324,7 @@ const Network = () => {
                               Remove
                             </Button>
                             <Button asChild size="sm" className="w-full btn-primary">
-                              <Link to={`/dm/${profile.id}`} className="flex items-center justify-center">
+                              <Link to={`/messages/${profile.id}`} className="flex items-center justify-center">
                                 <MessageCircle className="w-4 h-4 mr-2" />
                                 Message
                               </Link>

@@ -180,7 +180,7 @@ const DiscussionRoomsPage = () => {
           categories={categories}
           onClose={() => {
             setSelectedRoom(null);
-            navigate('/discussion-rooms');
+            navigate(-1);
           }}
           onRoomUpdated={handleRoomUpdated}
         />

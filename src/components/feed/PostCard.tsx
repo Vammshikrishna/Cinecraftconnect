@@ -117,101 +117,116 @@ const PostCard = ({
   };
 
   return (
-    <div className="glass-card rounded-xl p-6 transition-all duration-300 hover:shadow-[0_0_15px_rgba(155,135,245,0.3)]">
-      <div className="flex items-center mb-4">
-        <Link to={`/profile/${author.id}`} className="hover:opacity-80 transition-opacity">
-          <Avatar className="h-10 w-10 mr-3">
-            <AvatarImage src={author.avatar || "/placeholder.svg"} />
-            <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">{author.initials}</AvatarFallback>
-          </Avatar>
-        </Link>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <div>
-              {author.id ? (
-                <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors min-w-0">
+
+
+    <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_-10px_rgba(var(--primary),0.3)] group">
+      {/* Decorative gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-blue-500/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+      <div className="relative p-6">
+        <div className="flex items-center mb-4">
+          <Link to={`/profile/${author.id}`} className="hover:opacity-80 transition-opacity relative z-10">
+            <Avatar className="h-10 w-10 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300">
+              <AvatarImage src={author.avatar || "/placeholder.svg"} />
+              <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">{author.initials}</AvatarFallback>
+            </Avatar>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between">
+              <div className="truncate">
+                {author.id ? (
+                  <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 block truncate">
+                    <p className="font-semibold truncate">{author.name}</p>
+                  </Link>
+                ) : (
                   <p className="font-semibold truncate">{author.name}</p>
-                </Link>
-              ) : (
-                <p className="font-semibold truncate">{author.name}</p>
-              )}
-              <p className="text-xs text-muted-foreground truncate">{author.role} • {timeAgo}</p>
+                )}
+                <p className="text-xs text-muted-foreground truncate">{author.role} • {timeAgo}</p>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <p className="mb-4 break-words whitespace-pre-wrap">{content}</p>
+        <p className="mb-4 break-words whitespace-pre-wrap text-foreground/90 leading-relaxed">{content}</p>
 
-      {hasImage && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
-          {mediaUrl ? (
-            <img
-              src={mediaUrl}
-              alt={imageAlt || "Post image"}
-              className="w-full h-auto object-contain max-h-[600px]"
-            />
-          ) : (
-            <div className="h-64 flex items-center justify-center backdrop-blur-sm">
-              <p className="text-gray-400">{imageAlt || "Image"}</p>
-            </div>
-          )}
-          {isAIGenerated && (
-            <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
-              AI Generated
-            </div>
-          )}
-        </div>
-      )}
+        {hasImage && (
+          <div className="mb-4 rounded-lg overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
+            {mediaUrl ? (
+              <img
+                src={mediaUrl}
+                alt={imageAlt || "Post image"}
+                className="w-full h-auto object-contain max-h-[600px]"
+              />
+            ) : (
+              <div className="h-64 flex items-center justify-center backdrop-blur-sm">
+                <p className="text-gray-400">{imageAlt || "Image"}</p>
+              </div>
+            )}
+            {isAIGenerated && (
+              <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md border border-white/10 text-white text-xs px-2 py-1 rounded-full">
+                AI Generated
+              </div>
+            )}
+          </div>
+        )}
 
-      {hasVideo && (
-        <div className="mb-4 rounded-lg overflow-hidden bg-card/50 relative">
-          {mediaUrl ? (
-            <video
-              src={mediaUrl}
-              controls
-              className="w-full h-auto object-contain max-h-[600px]"
-              preload="metadata"
+        {hasVideo && (
+          <div className="mb-4 rounded-lg overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
+            {mediaUrl ? (
+              <video
+                src={mediaUrl}
+                controls
+                className="w-full h-auto object-contain max-h-[600px]"
+                preload="metadata"
+              >
+                Your browser does not support video playback.
+              </video>
+            ) : (
+              <div className="h-80 flex items-center justify-center backdrop-blur-sm relative">
+                <p className="text-gray-400">{videoThumbnail}</p>
+                <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
+                  <Play size={24} />
+                </Button>
+              </div>
+            )}
+            {isAIGenerated && (
+              <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md border border-white/10 text-white text-xs px-2 py-1 rounded-full">
+                AI Generated
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 mb-4 relative z-10">
+          {tags && tags.map((tag) => (
+            <span
+              key={tag}
+              className="text-xs px-2.5 py-1 bg-primary/5 border border-primary/10 rounded-full text-primary/80 hover:bg-primary/10 hover:border-primary/30 cursor-pointer transition-all duration-300"
             >
-              Your browser does not support video playback.
-            </video>
-          ) : (
-            <div className="h-80 flex items-center justify-center backdrop-blur-sm relative">
-              <p className="text-gray-400">{videoThumbnail}</p>
-              <Button variant="default" size="icon" className="absolute bg-primary/80 hover:bg-primary">
-                <Play size={24} />
-              </Button>
-            </div>
-          )}
-          {isAIGenerated && (
-            <div className="absolute top-2 right-2 bg-gradient-to-r from-primary to-secondary text-primary-foreground text-xs px-2 py-1 rounded-full">
-              AI Generated
-            </div>
-          )}
+              #{tag}
+            </span>
+          ))}
         </div>
-      )}
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        {tags && tags.map((tag) => (
-          <span
-            key={tag}
-            className="text-xs px-2 py-1 bg-muted/20 rounded-full text-muted-foreground hover:bg-primary/20 cursor-pointer"
+        <div className="flex items-center justify-between pt-4 border-t border-white/5 relative z-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`text-muted-foreground hover:text-red-500 hover:bg-red-500/10 flex items-center gap-1.5 transition-all duration-300 ${isLiked ? 'text-red-500' : ''}`}
+            onClick={handleLike}
+            disabled={isLiking}
           >
-            #{tag}
-          </span>
-        ))}
-      </div>
+            <Heart size={18} className={`transition-transform duration-300 ${isLiked ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
+            <span>{likeCount}</span>
+          </Button>
 
-      <div className="flex items-center justify-between pt-4 border-t border-border">
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleLike} disabled={isLiking}>
-          <Heart size={18} className={`mr-1 ${isLiked ? 'text-red-500 fill-current' : ''}`} />
-          <span>{likeCount}</span>
-        </Button>
-        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center" onClick={handleComment}>
-          <MessageCircle size={18} className="mr-1" />
-          <span>{comment_count}</span>
-        </Button>
-        <ShareButton postId={id} shareCount={share_count} />
+          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center gap-1.5 transition-all duration-300" onClick={handleComment}>
+            <MessageCircle size={18} className="group-hover:scale-110 transition-transform duration-300" />
+            <span>{comment_count}</span>
+          </Button>
+
+          <ShareButton postId={id} shareCount={share_count} />
+        </div>
       </div>
       {showComments && <CommentSection postId={id} />}
     </div>
