@@ -34,17 +34,6 @@ const Navbar = () => {
               </span>
             </Link>
 
-            {/* Global Search (Left side) - Only for authenticated users */}
-            {user && (
-              <div className="hidden lg:flex items-center ml-4">
-                <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
-                  <Link to="/search">
-                    <Search className="h-5 w-5" />
-                  </Link>
-                </Button>
-              </div>
-            )}
-
             {/* Right side content */}
             <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 flex-shrink-0">
               {user ? (
@@ -69,7 +58,17 @@ const Navbar = () => {
                   <div className="hidden lg:block">
                     <MoreMenu />
                   </div>
-                  <ChatMenu />
+                  <div className="lg:hidden">
+                    <ChatMenu />
+                  </div>
+                  {/* Desktop Search Icon - beside bell */}
+                  <div className="hidden lg:block">
+                    <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
+                      <Link to="/search">
+                        <Search className="h-5 w-5" />
+                      </Link>
+                    </Button>
+                  </div>
                   <NotificationsDropdown />
                   <UserProfileMenu />
                 </>

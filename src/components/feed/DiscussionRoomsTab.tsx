@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -6,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import DiscussionRoomCard from "./DiscussionRoomCard";
+import FeedDiscussionCard from "./FeedDiscussionCard";
 import { z } from "zod";
-import { Category } from "@/components/discussions/types";
+import { ResponsiveGrid } from "@/components/ui/mobile-responsive-grid";
 
 const roomSchema = z.object({
   title: z.string()
@@ -33,7 +32,6 @@ interface DiscussionRoom {
 
 const DiscussionRoomsTab = () => {
   const [rooms, setRooms] = useState<DiscussionRoom[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newRoomTitle, setNewRoomTitle] = useState("");
@@ -63,23 +61,6 @@ const DiscussionRoomsTab = () => {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('room_categories')
-        .select('*');
-
-      if (error) throw error;
-      setCategories((data || []).map(cat => ({
-        ...cat,
-        description: null,
-        icon: null
-      })));
-    } catch (error) {
-      console.error('Error fetching categories:', error);
     }
   };
 
@@ -142,7 +123,6 @@ const DiscussionRoomsTab = () => {
 
   useEffect(() => {
     fetchRooms();
-    fetchCategories();
 
     const channel = supabase
       .channel('rooms-changes')
@@ -173,73 +153,69 @@ const DiscussionRoomsTab = () => {
   }
 
   return (
-    <div className="glass-card rounded-xl p-6">
-      <h2 className="text-xl font-bold mb-4 text-gradient">Discussion Rooms</h2>
-      <p className="mb-6 text-gray-300">Connect with other filmmakers in virtual rooms to discuss projects, share ideas, and collaborate.</p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        {rooms.length === 0 ? (
-          <div className="col-span-2 text-center py-8 text-gray-400">
-            No active discussion rooms. Create the first one!
-          </div>
-        ) : (
-          rooms.map((room, index) => (
-            <DiscussionRoomCard
-              key={room.id}
-              id={room.id}
-              title={room.title}
-              description={room.description}
-              memberCount={room.member_count || 0}
-              members={[
-                { initials: "U1", color: "bg-primary/50" },
-                { initials: "U2", color: "bg-primary/70" },
-                { initials: `+${Math.max(0, (room.member_count || 0) - 2)}`, color: "bg-primary/80" }
-              ]}
-              variant={index % 2 === 0 ? "purple" : "blue"}
-              categoryId={room.category_id || (categories[0]?.id || '')}
-              categories={categories}
-            />
-          ))
-        )}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xl font-semibold text-foreground">Discussion Rooms</h3>
+        <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
+          <DialogTrigger asChild>
+            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+              Create Room
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="bg-card border-border">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Create Discussion Room</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Room title"
+                value={newRoomTitle}
+                onChange={(e) => setNewRoomTitle(e.target.value)}
+                className="bg-background border-input text-foreground placeholder:text-muted-foreground"
+              />
+              <Textarea
+                placeholder="Room description"
+                value={newRoomDescription}
+                onChange={(e) => setNewRoomDescription(e.target.value)}
+                className="bg-background border-input text-foreground placeholder:text-muted-foreground"
+              />
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={createRoom}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  Create Room
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
 
-      <Dialog open={showCreateForm} onOpenChange={setShowCreateForm}>
-        <DialogTrigger asChild>
-          <Button className="w-full bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70">
-            Create New Discussion Room
-          </Button>
-        </DialogTrigger>
-        <DialogContent className="bg-black/90 border-white/10">
-          <DialogHeader>
-            <DialogTitle className="text-white">Create Discussion Room</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Room title"
-              value={newRoomTitle}
-              onChange={(e) => setNewRoomTitle(e.target.value)}
-              className="bg-black/20 border-white/10 text-white placeholder:text-gray-400"
+      {rooms.length === 0 ? (
+        <div className="text-center py-8 bg-muted/20 rounded-lg flex flex-col items-center justify-center space-y-4">
+          <p className="text-muted-foreground">No active discussion rooms. Create the first one!</p>
+        </div>
+      ) : (
+        <ResponsiveGrid cols={{ sm: 1, md: 2 }} gap={4}>
+          {rooms.map((room) => (
+            <FeedDiscussionCard
+              key={room.id}
+              discussion={{
+                id: room.id,
+                title: room.title,
+                description: room.description,
+                member_count: room.member_count,
+                created_at: room.created_at,
+                room_type: 'public' // Assuming public for now as room_type isn't in the interface yet
+              }}
             />
-            <Textarea
-              placeholder="Room description"
-              value={newRoomDescription}
-              onChange={(e) => setNewRoomDescription(e.target.value)}
-              className="bg-black/20 border-white/10 text-white placeholder:text-gray-400"
-            />
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setShowCreateForm(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={createRoom}
-                className="bg-gradient-to-r from-primary to-primary/80"
-              >
-                Create Room
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          ))}
+        </ResponsiveGrid>
+      )}
     </div>
   );
 };

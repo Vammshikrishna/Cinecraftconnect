@@ -29,12 +29,24 @@ const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
 const ChatsList = lazy(() => import("./pages/ChatsList"));
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const Settings = lazy(() => import("./pages/Settings"));
+const AppearanceSettings = lazy(() => import("./pages/settings/AppearanceSettings"));
+const NotificationsSettings = lazy(() => import("./pages/settings/NotificationsSettings"));
+const PrivacySettings = lazy(() => import("./pages/settings/PrivacySettings"));
+const SecuritySettings = lazy(() => import("./pages/settings/SecuritySettings"));
+const AccessibilitySettings = lazy(() => import("./pages/settings/AccessibilitySettings"));
+const SoundSettings = lazy(() => import("./pages/settings/SoundSettings"));
+const DataSettings = lazy(() => import("./pages/settings/DataSettings"));
+const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
 const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
+const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
 const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
+const ContentDetailPage = lazy(() => import("./pages/ContentDetailPage"));
+const RatingsPage = lazy(() => import("./pages/RatingsPage"));
+const AnnouncementsPage = lazy(() => import("./pages/AnnouncementsPage"));
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -77,12 +89,24 @@ const App = () => {
             <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
             <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
+            <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
+            <Route path="/settings/privacy" element={<ProtectedRoute><PrivacySettings /></ProtectedRoute>} />
+            <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
+            <Route path="/settings/accessibility" element={<ProtectedRoute><AccessibilitySettings /></ProtectedRoute>} />
+            <Route path="/settings/sound" element={<ProtectedRoute><SoundSettings /></ProtectedRoute>} />
+            <Route path="/settings/data" element={<ProtectedRoute><DataSettings /></ProtectedRoute>} />
+            <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
             <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
             <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
+            <Route path="/marketplace/:listingId" element={<ProtectedRoute><MarketplaceListingDetail /></ProtectedRoute>} />
             <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
             <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
             <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
             <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+            <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
+            <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+            <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

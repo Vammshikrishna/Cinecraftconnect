@@ -221,7 +221,7 @@ const PublicProfile = () => {
                 <Button onClick={handleConnect} className="flex-1"><UserPlus className="mr-2 h-4 w-4" />Connect</Button>
               )}
               <Button asChild className="flex-1">
-                <Link to={`/dm/${profile.id}`}><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
+                <Link to={`/messages/${profile.id}`}><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
               </Button>
             </div>
           </CardContent>

@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   description: string;
   status: string;
   location: string;
@@ -108,7 +108,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-bold mb-4">{project.name}</DialogTitle>
+            <DialogTitle className="text-3xl font-bold mb-4">{project.title}</DialogTitle>
             <Badge variant={getStatusVariant(project.status)} className="capitalize w-fit">{project.status}</Badge>
           </DialogHeader>
 
