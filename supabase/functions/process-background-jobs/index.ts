@@ -1,5 +1,5 @@
 // deno-lint-ignore-file
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
 interface BackgroundJob {
@@ -49,9 +49,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const authRes = await supabase.auth.getUser(token);
-    const user = (authRes as Record<string, unknown>).data as Record<string, unknown> | null;
-    const authErr = (authRes as Record<string, unknown>).error as unknown;
-    if (authErr || !user?.user) {
+    if (authRes.error || !authRes.data?.user) {
       return new Response(JSON.stringify({ error: "Unauthorized - invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -61,16 +59,16 @@ Deno.serve(async (req: Request) => {
     const CLAIM_LIMIT = 10;
 
     const rpcRes = await supabase.rpc("claim_background_jobs", { in_limit: CLAIM_LIMIT });
-    const rpcError = (rpcRes as Record<string, unknown>).error as Record<string, unknown> | null;
-    let jobs = (rpcRes as Record<string, unknown>).data as BackgroundJob[] | null;
-
-    if (rpcError) {
-      console.error("Error claiming jobs:", rpcError);
-      return new Response(JSON.stringify({ error: (rpcError.message as string) ?? "Error claiming jobs" }), {
+    
+    if (rpcRes.error) {
+      console.error("Error claiming jobs:", rpcRes.error);
+      return new Response(JSON.stringify({ error: rpcRes.error.message ?? "Error claiming jobs" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    let jobs = rpcRes.data as BackgroundJob[] | null;
 
     if (!Array.isArray(jobs)) {
       if (jobs) {
@@ -114,10 +112,9 @@ Deno.serve(async (req: Request) => {
           .update({ status: "completed", completed_at: new Date().toISOString() })
           .eq("id", jobId);
 
-        const updError = (upd as Record<string, unknown>).error as Record<string, unknown> | null;
-        if (updError) {
-          console.error("Error marking job completed:", updError);
-          results.push({ id: jobId, status: "error_updating", error: updError.message as string });
+        if (upd.error) {
+          console.error("Error marking job completed:", upd.error);
+          results.push({ id: jobId, status: "error_updating", error: upd.error.message });
         } else {
           results.push({ id: jobId, status: "completed" });
         }
@@ -154,7 +151,8 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function processNotificationJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
+// deno-lint-ignore no-explicit-any
+async function processNotificationJob(supabase: SupabaseClient<any>, payload: Record<string, unknown>) {
   const userId = payload?.user_id;
   const notificationData = (payload?.notification_data ?? {}) as Record<string, unknown>;
   if (!userId) throw new Error("Missing user_id in payload");
@@ -165,18 +163,18 @@ async function processNotificationJob(supabase: ReturnType<typeof createClient>,
     created_at: new Date().toISOString(),
   });
 
-  const error = (res as Record<string, unknown>).error;
-  if (error) throw error;
+  if (res.error) throw res.error;
 }
 
-async function processAnalyticsJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
+// deno-lint-ignore no-explicit-any
+async function processAnalyticsJob(supabase: SupabaseClient<any>, payload: Record<string, unknown>) {
   const date = (payload?.date as string) ?? new Date().toISOString().split("T")[0];
   const res = await supabase.rpc("calculate_daily_engagement_score", { target_date: date });
-  const error = (res as Record<string, unknown>).error;
-  if (error) throw error;
+  if (res.error) throw res.error;
 }
 
-async function processCleanupJob(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
+// deno-lint-ignore no-explicit-any
+async function processCleanupJob(supabase: SupabaseClient<any>, payload: Record<string, unknown>) {
   const daysOld = typeof payload?.days_old === "number" ? payload.days_old : 30;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - daysOld);
@@ -184,6 +182,5 @@ async function processCleanupJob(supabase: ReturnType<typeof createClient>, payl
     .from("rate_limits")
     .delete()
     .lt("created_at", cutoff.toISOString());
-  const error = (res as Record<string, unknown>).error;
-  if (error) throw error;
+  if (res.error) throw res.error;
 }
