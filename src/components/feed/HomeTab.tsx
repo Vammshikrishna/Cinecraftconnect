@@ -104,7 +104,7 @@ const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
 
                     // Marketplace Items
                     supabase
-                        .from('marketplace_items' as any)
+                        .from('marketplace_listings')
                         .select('*')
                         .order('created_at', { ascending: false })
                         .limit(5),
@@ -121,7 +121,7 @@ const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
                         .from('profiles')
                         .select('id, full_name, username, avatar_url, craft, bio')
                         .neq('id', user?.id || '')
-                        .order('created_at', { ascending: false })
+                        .order('updated_at', { ascending: false, nullsFirst: false })
                         .limit(6),
 
                     // Ratings (TMDB)
