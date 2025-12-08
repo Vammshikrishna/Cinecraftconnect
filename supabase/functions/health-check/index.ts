@@ -35,13 +35,12 @@ Deno.serve(async (req: Request) => {
     try {
       const dbStart = Date.now();
       const dbRes = await supabase.from('profiles').select('id').limit(1);
-      const dbError = (dbRes as Record<string, unknown>).error as Record<string, unknown> | null;
       checksObj.database = {
-        status: dbError ? 'unhealthy' : 'healthy',
+        status: dbRes.error ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - dbStart,
-        error: dbError?.message ?? null
+        error: dbRes.error?.message ?? null
       };
-      if (dbError) checks.status = 'unhealthy';
+      if (dbRes.error) checks.status = 'unhealthy';
     } catch (err) {
       checksObj.database = {
         status: 'unhealthy',
@@ -54,15 +53,13 @@ Deno.serve(async (req: Request) => {
     try {
       const storageStart = Date.now();
       const storageRes = await supabase.storage.listBuckets();
-      const storageError = (storageRes as Record<string, unknown>).error as Record<string, unknown> | null;
-      const storageData = (storageRes as Record<string, unknown>).data as unknown[] | null;
       checksObj.storage = {
-        status: storageError ? 'unhealthy' : 'healthy',
+        status: storageRes.error ? 'unhealthy' : 'healthy',
         responseTime: Date.now() - storageStart,
-        buckets: Array.isArray(storageData) ? storageData.length : null,
-        error: storageError?.message ?? null
+        buckets: Array.isArray(storageRes.data) ? storageRes.data.length : null,
+        error: storageRes.error?.message ?? null
       };
-      if (storageError) checks.status = 'unhealthy';
+      if (storageRes.error) checks.status = 'unhealthy';
     } catch (err) {
       checksObj.storage = {
         status: 'unhealthy',
@@ -77,26 +74,20 @@ Deno.serve(async (req: Request) => {
         .from('background_jobs')
         .select('id', { count: 'exact', head: false })
         .eq('status', 'pending');
-      const pendingError = (pendingRes as Record<string, unknown>).error as Record<string, unknown> | null;
-      const pendingData = (pendingRes as Record<string, unknown>).data as unknown[] | null;
-      const pendingCount = typeof (pendingRes as Record<string, unknown>).count === 'number'
-        ? (pendingRes as Record<string, unknown>).count
-        : Array.isArray(pendingData) ? pendingData.length : null;
+      
+      const pendingCount = pendingRes.count ?? (Array.isArray(pendingRes.data) ? pendingRes.data.length : null);
 
       const failedRes = await supabase
         .from('background_jobs')
         .select('id', { count: 'exact', head: false })
         .eq('status', 'failed');
-      const failedError = (failedRes as Record<string, unknown>).error as Record<string, unknown> | null;
-      const failedData = (failedRes as Record<string, unknown>).data as unknown[] | null;
-      const failedCount = typeof (failedRes as Record<string, unknown>).count === 'number'
-        ? (failedRes as Record<string, unknown>).count
-        : Array.isArray(failedData) ? failedData.length : null;
+      
+      const failedCount = failedRes.count ?? (Array.isArray(failedRes.data) ? failedRes.data.length : null);
 
-      if (pendingError || failedError) {
+      if (pendingRes.error || failedRes.error) {
         checksObj.backgroundJobs = {
           status: 'unhealthy',
-          error: pendingError?.message ?? failedError?.message ?? null
+          error: pendingRes.error?.message ?? failedRes.error?.message ?? null
         };
         checks.status = 'unhealthy';
       } else {
@@ -105,7 +96,7 @@ Deno.serve(async (req: Request) => {
           pendingCount,
           failedCount
         };
-        if ((failedCount as number ?? 0) > 10) (checksObj.backgroundJobs as Record<string, unknown>).status = 'warning';
+        if ((failedCount ?? 0) > 10) (checksObj.backgroundJobs as Record<string, unknown>).status = 'warning';
       }
     } catch (err) {
       checksObj.backgroundJobs = {
