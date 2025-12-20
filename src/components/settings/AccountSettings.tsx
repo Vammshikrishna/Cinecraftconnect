@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { User, Mail, LogOut, Palette } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -91,11 +91,10 @@ export const AccountSettings = () => {
                   key={color}
                   className="p-4 rounded-lg border border-border cursor-pointer hover:border-primary/50 transition-colors"
                 >
-                  <div className={`w-full h-8 rounded mb-2 ${
-                    color === 'Primary' ? 'bg-primary' :
+                  <div className={`w-full h-8 rounded mb-2 ${color === 'Primary' ? 'bg-primary' :
                     color === 'Secondary' ? 'bg-secondary' :
-                    'bg-accent'
-                  }`}></div>
+                      'bg-accent'
+                    }`}></div>
                   <p className="text-sm text-foreground text-center">{color}</p>
                 </div>
               ))}
@@ -105,9 +104,9 @@ export const AccountSettings = () => {
 
         <div className="pt-4 border-t border-border">
           <h3 className="text-sm font-medium text-foreground mb-2">Account Actions</h3>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleSignOut}
             disabled={isSigningOut}
             className="border-border"

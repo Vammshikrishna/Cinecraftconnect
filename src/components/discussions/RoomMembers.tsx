@@ -27,15 +27,31 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
     if (!roomId) return;
     try {
       setLoading(true);
-      const { data, error } = await supabase
+
+      // 1. Fetch room members (user_ids)
+      const { data: membersData, error: membersError } = await supabase
         .from('room_members')
-        .select('profiles(id, username, avatar_url)')
+        .select('user_id')
         .eq('room_id', roomId);
 
-      if (error) throw error;
+      if (membersError) throw membersError;
 
-      const memberProfiles = data.map((item: any) => item.profiles).filter(Boolean);
-      setMembers(memberProfiles as Member[]);
+      if (!membersData || membersData.length === 0) {
+        setMembers([]);
+        return;
+      }
+
+      const userIds = membersData.map((m: any) => m.user_id);
+
+      // 2. Fetch profiles for these user_ids
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', userIds);
+
+      if (profilesError) throw profilesError;
+
+      setMembers(profilesData as Member[]);
     } catch (err: any) {
       setError('Failed to fetch room members.');
       console.error('Error fetching members:', err);
@@ -49,14 +65,19 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
   }, [fetchMembers]);
 
   return (
-    <div className="absolute top-0 right-0 h-full w-full max-w-xs bg-gray-800 border-l border-gray-700 z-20 flex flex-col">
-      <header className="flex items-center justify-between p-4 border-b border-gray-700">
+    <div className="absolute top-0 right-0 h-full w-full max-w-xs bg-background/95 backdrop-blur-xl border-l border-white/10 z-20 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+      <header className="flex items-center justify-between p-4 border-b border-white/10 bg-muted/20">
         <div className="flex items-center gap-3">
-          <Users className="h-6 w-6" />
-          <h2 className="font-bold text-lg">Room Members</h2>
+          <div className="p-2 bg-primary/20 rounded-lg">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-bold text-sm">Room Members</h2>
+            <p className="text-[10px] text-muted-foreground">{members.length} {members.length === 1 ? 'person' : 'people'}</p>
+          </div>
         </div>
-        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700">
-          <X className="h-6 w-6" />
+        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors">
+          <X className="h-5 w-5" />
         </button>
       </header>
 
@@ -68,19 +89,34 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
         )}
         {error && <p className="text-red-500 p-4">{error}</p>}
         {!loading && !error && (
-          <div className="p-4 space-y-4">
-            {members.map((member) => (
-              <Link to={`/profile/${member.id}`} key={member.id} className="flex items-center gap-3 hover:bg-gray-700/50 p-2 rounded-lg transition-colors">
-                <Avatar className="h-9 w-9">
-                  <AvatarImage src={member.avatar_url} />
-                  <AvatarFallback>{member.username?.charAt(0) || '?'}</AvatarFallback>
-                </Avatar>
-                <span className="font-medium">{member.username}</span>
-              </Link>
-            ))}
+          <div className="p-4 space-y-2">
+            {members.length === 0 ? (
+              <div className="text-center p-8 text-muted-foreground/50 border border-dashed border-white/10 rounded-xl">
+                <p>No members found.</p>
+              </div>
+            ) : (
+              members.map((member) => (
+                <Link
+                  to={`/profile/${member.id}`}
+                  key={member.id}
+                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group"
+                >
+                  <Avatar className="h-10 w-10 border border-white/10 group-hover:border-primary/50 transition-colors">
+                    <AvatarImage src={member.avatar_url} />
+                    <AvatarFallback className="bg-muted text-muted-foreground">{member.username?.charAt(0).toUpperCase() || '?'}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate group-hover:text-primary transition-colors">{member.username}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">View Profile</p>
+                  </div>
+                </Link>
+              ))
+            )
+            }
           </div>
-        )}
-      </ScrollArea>
-    </div>
+        )
+        }
+      </ScrollArea >
+    </div >
   );
 };

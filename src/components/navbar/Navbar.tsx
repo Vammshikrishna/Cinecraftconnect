@@ -1,14 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Film, Search } from 'lucide-react';
-import { Button } from "./ui/button.tsx";
-import { useAuth } from '../contexts/AuthContext.tsx';
-import NavLinks from './navbar/NavLinks.tsx';
-import NotificationsDropdown from './navbar/NotificationsDropdown.tsx';
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import NavLinks from './NavLinks';
+import NotificationsDropdown from './NotificationsDropdown';
 
-import MoreMenu from './navbar/MoreMenu.tsx';
-import UserProfileMenu from './navbar/UserProfileMenu.tsx';
-import ChatMenu from './navbar/ChatMenu.tsx';
-import { MobileNav } from "./navbar/MobileNav.tsx";
+import MoreMenu from './MoreMenu';
+import UserProfileMenu from './UserProfileMenu';
+import ChatMenu from './ChatMenu';
+import { MobileNav } from "./MobileNav";
 
 const Navbar = () => {
   const { user } = useAuth();
@@ -58,9 +58,6 @@ const Navbar = () => {
                   <div className="hidden lg:block">
                     <MoreMenu />
                   </div>
-                  <div className="lg:hidden">
-                    <ChatMenu />
-                  </div>
                   {/* Desktop Search Icon - beside bell */}
                   <div className="hidden lg:block">
                     <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
@@ -69,6 +66,7 @@ const Navbar = () => {
                       </Link>
                     </Button>
                   </div>
+                  <ChatMenu />
                   <NotificationsDropdown />
                   <UserProfileMenu />
                 </>

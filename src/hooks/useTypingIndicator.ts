@@ -18,12 +18,12 @@ export const useTypingIndicator = (roomId: string) => {
 
     // Subscribe to typing events via Supabase Realtime
     const channel = supabase.channel(`typing-${roomId}`);
-    
+
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         const typing: TypingUser[] = [];
-        
+
         Object.values(state).forEach((presences: any) => {
           presences.forEach((presence: any) => {
             if (presence.user_id && presence.user_id !== user.id) {
@@ -34,7 +34,7 @@ export const useTypingIndicator = (roomId: string) => {
             }
           });
         });
-        
+
         setTypingUsers(typing);
       })
       .on('presence', { event: 'join' }, ({ newPresences }) => {
@@ -85,7 +85,7 @@ export const useTypingIndicator = (roomId: string) => {
     if (!channelRef.current) return;
 
     channelRef.current.untrack();
-    
+
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }

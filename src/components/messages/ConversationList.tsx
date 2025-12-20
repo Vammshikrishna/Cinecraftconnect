@@ -75,7 +75,7 @@ export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationLi
         const isOnline = otherParticipants.some(p => onlineUserIds.includes(p.profiles.id));
 
         return (
-          <button 
+          <button
             key={thread.id}
             onClick={() => onSelectThread(thread.id)}
             className={cn(
@@ -89,7 +89,7 @@ export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationLi
                   <AvatarImage src={otherParticipants[0]?.profiles.avatar_url} />
                   <AvatarFallback>{displayName[0]}</AvatarFallback>
                 </Avatar>
-                {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-background rounded-full" />} 
+                {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-background rounded-full" />}
               </div>
               {!isCollapsed && (
                 <div className="flex-1 truncate">

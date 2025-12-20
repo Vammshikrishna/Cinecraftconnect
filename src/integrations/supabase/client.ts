@@ -1,17 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
-import { Database } from '@/types/supabase'
+import { Database } from './types'
 
 // Use environment variables for Supabase configuration. Fallback to production values if not set.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://hfkubpcdbjxhafulxhfv.supabase.co";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhma3VicGNkYmp4aGFmdWx4aGZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQxODc4MjgsImV4cCI6MjA1OTc2MzgyOH0.2UkrXH3VPWPn0Y5XcenE0O0rbWvTFr7UrUJPEaLmu34";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zugtdutimulibaxwnlbs.supabase.co";
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NjA5MzQsImV4cCI6MjA4MTAzNjkzNH0.NRKEzG3QbbQ7r1R0kHVqS1YctfYUv7VbezcFZ3ti8ek";
 
 // Log warning if environment variables are not set
 if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
     console.warn('⚠️ Supabase environment variables not set. Using local development values. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local for production.');
 }
 
-
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+        autoRefreshToken: false,
+        persistSession: true,
+        detectSessionInUrl: true,
+    },
     realtime: {
         params: {
             eventsPerSecond: 10,
@@ -36,4 +40,3 @@ console.error = (...args: any[]) => {
     }
     originalError.apply(console, args);
 };
-

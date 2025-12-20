@@ -39,23 +39,33 @@ const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
   if (items.length === 0) return null;
 
   return (
-    <div className="space-y-2 py-4">
-      <h3 className="text-xl font-bold text-foreground px-4 md:px-0">{title}</h3>
-      <div className="group relative">
-        <button
-          onClick={() => scroll('left')}
-          className="absolute left-0 top-0 bottom-0 z-40 w-12 bg-black/50 hover:bg-black/70 text-white opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center justify-center rounded-r-lg"
-        >
-          <ChevronLeft className="h-8 w-8" />
-        </button>
+    <div className="space-y-4 py-6">
+      <div className="flex items-center justify-between px-4 md:px-0">
+        <h3 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">{title}</h3>
+        <div className="hidden md:flex gap-2">
+          <button
+            onClick={() => scroll('left')}
+            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            onClick={() => scroll('right')}
+            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+      </div>
 
+      <div className="group relative">
         <div
           ref={scrollRef}
           className="flex gap-4 overflow-x-auto pb-4 px-4 md:px-0 scrollbar-hide snap-x"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {items.map((item) => (
-            <div key={item.id} className="w-[200px] md:w-[250px] flex-none snap-start">
+            <div key={item.id} className="w-[180px] md:w-[240px] flex-none snap-start">
               <FeedRatingCard
                 rating={{
                   id: item.id.toString(),
@@ -74,13 +84,6 @@ const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
             </div>
           ))}
         </div>
-
-        <button
-          onClick={() => scroll('right')}
-          className="absolute right-0 top-0 bottom-0 z-40 w-12 bg-black/50 hover:bg-black/70 text-white opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex items-center justify-center rounded-l-lg"
-        >
-          <ChevronRight className="h-8 w-8" />
-        </button>
       </div>
     </div>
   );
@@ -106,13 +109,13 @@ const RatingsTab = () => {
 
     const [userRatingsRes, appRatingsRes] = await Promise.all([
       user ? supabase
-        .from('user_film_ratings' as any)
+        .from('user_film_ratings')
         .select('tmdb_id, rating')
         .eq('user_id', user.id)
         .in('tmdb_id', ids)
         : Promise.resolve({ data: [], error: null }),
       supabase
-        .from('user_film_ratings' as any)
+        .from('user_film_ratings')
         .select('tmdb_id, rating')
         .in('tmdb_id', ids)
     ]);
@@ -146,7 +149,6 @@ const RatingsTab = () => {
         fetchIndianMovies()
       ]);
 
-      // Process ratings for all categories in parallel
       const [pTrending, pTopRated, pAction, pComedy, pIndian] = await Promise.all([
         processRatings(trendingData),
         processRatings(topRatedData),
@@ -163,7 +165,7 @@ const RatingsTab = () => {
 
     } catch (error) {
       console.error('Error loading data:', error);
-      toast({ title: "Error", description: "Failed to load content.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to load movie content.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -171,7 +173,7 @@ const RatingsTab = () => {
 
   useEffect(() => {
     loadAllData();
-  }, [user]);
+  }, [user?.id]);
 
   const handleRate = async (tmdbId: string, rating: number) => {
     if (!user) {
@@ -179,10 +181,9 @@ const RatingsTab = () => {
       return;
     }
 
-    // Helper to update state
-    const updateState = (prev: RatingItem[]) => prev.map(item => item.id.toString() === tmdbId ? { ...item, user_rating: rating } : item);
+    const updateState = (prev: RatingItem[]) =>
+      prev.map(item => item.id.toString() === tmdbId ? { ...item, user_rating: rating } : item);
 
-    // Optimistic update all lists
     setTrending(updateState);
     setTopRated(updateState);
     setAction(updateState);
@@ -191,7 +192,7 @@ const RatingsTab = () => {
 
     try {
       const { error } = await supabase
-        .from('user_film_ratings' as any)
+        .from('user_film_ratings')
         .upsert({
           user_id: user.id,
           tmdb_id: parseInt(tmdbId),
@@ -203,15 +204,25 @@ const RatingsTab = () => {
     } catch (error) {
       console.error("Error saving rating:", error);
       toast({ title: "Error", description: "Failed to save rating.", variant: "destructive" });
-      loadAllData(); // Revert on error
+      loadAllData();
     }
   };
 
-  if (loading) return <div className="flex h-96 items-center justify-center">Loading content...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center h-96 space-y-4">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <p className="text-muted-foreground animate-pulse">Loading movie content...</p>
+    </div>
+  );
 
   return (
-    <div className="space-y-8 pb-20">
-      <div className="space-y-8 relative z-10 pl-2">
+    <div className="space-y-4 pb-20">
+      <div className="px-4 md:px-0">
+        <h2 className="text-3xl font-extrabold text-foreground mb-2">Movie Ratings</h2>
+        <p className="text-muted-foreground mb-8">Rate your favorite films and see what others think.</p>
+      </div>
+
+      <div className="space-y-2 relative z-10">
         <CategoryRow title="Trending Now" items={trending} onRate={handleRate} />
         <CategoryRow title="Top Rated Indian Cinema" items={indian} onRate={handleRate} />
         <CategoryRow title="Top Rated Global" items={topRated} onRate={handleRate} />

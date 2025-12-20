@@ -3,7 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import FeedAnnouncementCard from '@/components/feed/FeedAnnouncementCard';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
-import { Megaphone } from 'lucide-react';
+import { Megaphone, Plus } from 'lucide-react';
+import { CreateAnnouncementDialog } from '@/components/feed/CreateAnnouncementDialog';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Announcement {
     id: string;
@@ -13,10 +16,16 @@ interface Announcement {
     posted_at: string;
 }
 
-const AnnouncementsPage = () => {
+const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isCreateOpen, setIsCreateOpen] = useState(openCreate);
     const { toast } = useToast();
+    const { user } = useAuth();
+
+    useEffect(() => {
+        if (openCreate) setIsCreateOpen(true);
+    }, [openCreate]);
 
     useEffect(() => {
         fetchAnnouncements();
@@ -52,18 +61,33 @@ const AnnouncementsPage = () => {
     return (
         <div className="min-h-screen bg-background pt-20 pb-24">
             <div className="max-w-4xl mx-auto px-4 md:px-8">
-                <div className="mb-8 flex items-center gap-4">
-                    <div className="p-3 bg-primary/10 rounded-xl">
-                        <Megaphone className="h-8 w-8 text-primary" />
+                <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                        <div className="p-3 bg-primary/10 rounded-xl">
+                            <Megaphone className="h-8 w-8 text-primary" />
+                        </div>
+                        <div>
+                            <h1 className="text-4xl font-extrabold text-foreground mb-2">
+                                Announcements
+                            </h1>
+                            <p className="text-muted-foreground text-lg">
+                                Stay updated with the latest news and updates from the platform
+                            </p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-4xl font-extrabold text-foreground mb-2">
-                            Announcements
-                        </h1>
-                        <p className="text-muted-foreground text-lg">
-                            Stay updated with the latest news and updates from the platform
-                        </p>
-                    </div>
+                    {user && (
+                        <div className="flex gap-2">
+                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90">
+                                <Plus className="mr-2 h-4 w-4" />
+                                New Announcement
+                            </Button>
+                            <CreateAnnouncementDialog
+                                open={isCreateOpen}
+                                onOpenChange={setIsCreateOpen}
+                                onAnnouncementCreated={fetchAnnouncements}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {loading ? (

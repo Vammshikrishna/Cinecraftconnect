@@ -39,7 +39,7 @@ const ContentDetailPage = () => {
             // Load user rating
             if (user) {
                 const { data: ratingData } = await supabase
-                    .from('user_film_ratings' as any)
+                    .from('user_film_ratings')
                     .select('rating')
                     .eq('user_id', user.id)
                     .eq('tmdb_id', parseInt(id))
@@ -50,7 +50,7 @@ const ContentDetailPage = () => {
 
             // Load reviews
             const { data: reviewsData } = await supabase
-                .from('film_reviews' as any)
+                .from('film_reviews')
                 .select(`
           *,
           profiles:user_id(full_name, avatar_url, craft)
@@ -77,7 +77,7 @@ const ContentDetailPage = () => {
 
         try {
             const { error } = await supabase
-                .from('user_film_ratings' as any)
+                .from('user_film_ratings')
                 .upsert({
                     user_id: user.id,
                     tmdb_id: parseInt(id!),
@@ -99,7 +99,7 @@ const ContentDetailPage = () => {
         setSubmittingReview(true);
         try {
             const { error } = await supabase
-                .from('film_reviews' as any)
+                .from('film_reviews')
                 .upsert({
                     user_id: user.id,
                     tmdb_id: parseInt(id!),
@@ -129,7 +129,7 @@ const ContentDetailPage = () => {
 
         try {
             const { error } = await supabase
-                .from('review_helpful_marks' as any)
+                .from('review_helpful_marks')
                 .insert({ review_id: reviewId, user_id: user.id });
 
             if (error) throw error;

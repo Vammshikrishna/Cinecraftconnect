@@ -7,11 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  MessageCircle, 
-  Users, 
-  Film, 
-  Star, 
+import {
+  MessageCircle,
+  Users,
+  Film,
+  Star,
   Calendar,
   Briefcase,
   Award,
@@ -82,9 +82,9 @@ export const ActivityFeed = () => {
         .update({ is_read: true })
         .eq('id', activityId);
 
-      setActivities(prev => 
-        prev.map(activity => 
-          activity.id === activityId 
+      setActivities(prev =>
+        prev.map(activity =>
+          activity.id === activityId
             ? { ...activity, is_read: true }
             : activity
         )
@@ -108,7 +108,7 @@ export const ActivityFeed = () => {
 
   const getActivityMessage = (activity: Activity) => {
     const { activity_type, activity_data } = activity;
-    
+
     switch (activity_type) {
       case 'project_created':
         return `You created a new project: "${activity_data.project_title}"`;
@@ -186,12 +186,11 @@ export const ActivityFeed = () => {
           <div className="space-y-4">
             {activities.map((activity, index) => (
               <div key={activity.id}>
-                <div 
-                  className={`flex space-x-3 p-3 rounded-lg transition-colors ${
-                    !activity.is_read 
-                      ? 'bg-cinesphere-purple/10 border border-cinesphere-purple/20' 
+                <div
+                  className={`flex space-x-3 p-3 rounded-lg transition-colors ${!activity.is_read
+                      ? 'bg-cinesphere-purple/10 border border-cinesphere-purple/20'
                       : 'hover:bg-white/5'
-                  }`}
+                    }`}
                 >
                   <div className={`p-2 rounded-full ${getActivityColor(activity.activity_type)}`}>
                     {getActivityIcon(activity.activity_type)}
