@@ -40,7 +40,7 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItemData[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  
+
   const [isDetailViewOpen, setIsDetailViewOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<PortfolioItemData | null>(null);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
@@ -88,7 +88,7 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
       setIsUploadDialogOpen(true);
     }
   };
-  
+
   const handleSave = (savedItem: PortfolioItemData) => {
     const index = portfolioItems.findIndex(item => item.id === savedItem.id);
     if (index > -1) {

@@ -1,10 +1,10 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { MultiStepForm } from '@/components/ui/multi-step-form';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,13 +16,18 @@ import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Gl
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
+  defaultOpen?: boolean;
 }
 
-export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalProps) => {
+export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false }: ProjectCreationModalProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    if (defaultOpen) setIsOpen(true);
+  }, [defaultOpen]);
 
   const [projectData, setProjectData] = useState({
     name: '',
@@ -280,6 +285,9 @@ export const ProjectCreationModal = ({ onProjectCreated }: ProjectCreationModalP
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border p-4 sm:p-6">
         <DialogHeader className="mb-4">
           <DialogTitle className="text-foreground text-xl sm:text-2xl">Create New Project</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Launch a new project, recruit your team, and manage your production workflow.
+          </DialogDescription>
         </DialogHeader>
         <MultiStepForm steps={steps} onComplete={handleSubmit} className="w-full" />
       </DialogContent>

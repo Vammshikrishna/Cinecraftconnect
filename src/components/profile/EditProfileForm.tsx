@@ -12,18 +12,24 @@ import { Profile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+const optionalUrl = z.preprocess(
+  (val) => (val === "" ? undefined : val),
+  z.string().url({ message: "Invalid URL" }).optional()
+);
+
 const profileFormSchema = z.object({
   full_name: z.string().min(2, "Name is too short").max(50, "Name is too long").optional(),
   username: z.string().min(3, "Username must be at least 3 characters").max(20, "Username must be 20 characters or less"),
   bio: z.string().max(500, "Bio must be 500 characters or less").optional(),
   craft: z.string().max(1000, "Craft must be 1000 characters or less").optional(),
   location: z.string().max(100, "Location must be 100 characters or less").optional(),
-  website: z.string().url("Please enter a valid URL").optional().or(z.literal('')),
+  website: optionalUrl,
+  youtube_url: optionalUrl,
   social_links: z.object({
-    instagram: z.string().url("Invalid URL").optional().or(z.literal('')),
-    linkedin: z.string().url("Invalid URL").optional().or(z.literal('')),
-    twitter: z.string().url("Invalid URL").optional().or(z.literal('')),
-    facebook: z.string().url("Invalid URL").optional().or(z.literal('')),
+    instagram: optionalUrl,
+    linkedin: optionalUrl,
+    twitter: optionalUrl,
+    facebook: optionalUrl,
   }).optional(),
 });
 
@@ -48,6 +54,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       craft: profile.craft || "",
       location: profile.location || "",
       website: profile.website || "",
+      youtube_url: profile.youtube_url || "",
       social_links: {
         instagram: profile.social_links?.instagram || "",
         linkedin: profile.social_links?.linkedin || "",
@@ -259,6 +266,19 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
                   <FormLabel>Facebook</FormLabel>
                   <FormControl>
                     <Input {...field} placeholder="Facebook profile URL" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="youtube_url"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>YouTube</FormLabel>
+                  <FormControl>
+                    <Input {...field} placeholder="YouTube channel URL" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

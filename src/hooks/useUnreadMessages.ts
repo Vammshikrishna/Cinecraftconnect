@@ -14,12 +14,12 @@ export const useUnreadMessages = () => {
 
     try {
       const { data, error } = await supabase.rpc('has_unread_messages');
-      
+
       if (error) {
         console.error('Error fetching unread status:', error);
         return;
       }
-      
+
       setHasUnread(data);
 
     } catch (err) {
@@ -39,9 +39,9 @@ export const useUnreadMessages = () => {
       const senderId = payload.new.sender_id || payload.new.user_id;
       if (senderId !== user.id) {
         // Only show notification if not on a chat page
-        if (!location.pathname.startsWith('/messages') && 
-            !location.pathname.startsWith('/discussion-rooms') && 
-            !location.pathname.includes('/space')) {
+        if (!location.pathname.startsWith('/messages') &&
+          !location.pathname.startsWith('/discussion-rooms') &&
+          !location.pathname.includes('/space')) {
           setHasUnread(true);
         }
       }

@@ -10,7 +10,15 @@ const UniversalCreateButton = () => {
 
     const toggleOpen = () => setIsOpen(!isOpen);
 
-    const actions = [
+    interface Action {
+        icon: any;
+        label: string;
+        path?: string;
+        action?: () => void;
+        color: string;
+    }
+
+    const actions: Action[] = [
         {
             icon: Megaphone,
             label: 'Create Announcement',
@@ -38,7 +46,7 @@ const UniversalCreateButton = () => {
         {
             icon: PenTool,
             label: 'Create Post',
-            action: () => document.getElementById('create-post-trigger')?.click(),
+            path: '/feed/create',
             color: 'bg-pink-500'
         },
     ];

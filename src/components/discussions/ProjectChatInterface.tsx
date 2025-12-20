@@ -43,8 +43,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
-        table: 'project_messages',
-        filter: `project_id=eq.${projectId}`
+        table: 'project_space_messages',
+        filter: `project_space_id=eq.${projectId}`
       }, () => {
         fetchMessages();
       })
@@ -60,8 +60,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   }, [messages]);
 
   const fetchMessages = async () => {
+    if (!projectId) return;
+
     const { data, error } = await supabase
-      .from('project_messages' as any)
+      .from('project_space_messages' as any)
       .select(`
         id,
         content,
@@ -72,7 +74,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
           avatar_url
         )
       `)
-      .eq('project_id', projectId)
+      .eq('project_space_id', projectId)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -92,9 +94,9 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     setSending(true);
     try {
       const { error } = await supabase
-        .from('project_messages' as any)
+        .from('project_space_messages' as any)
         .insert([{
-          project_id: projectId,
+          project_space_id: projectId,
           user_id: user?.id,
           content: content.trim()
         }]);
@@ -125,9 +127,9 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
       // Send message with file reference
       const { error: msgError } = await supabase
-        .from('project_messages' as any)
+        .from('project_space_messages' as any)
         .insert({
-          project_id: projectId,
+          project_space_id: projectId,
           user_id: user.id,
           content: `Shared a file: ${file.name}`
         });

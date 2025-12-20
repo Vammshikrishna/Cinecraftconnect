@@ -12,8 +12,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { Link } from "react-router-dom";
 
-const Jobs = () => {
+const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
+  // ... existing state ...
+
+
   const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -81,7 +84,7 @@ const Jobs = () => {
 
   useEffect(() => {
     fetchUserApplications();
-  }, [user]);
+  }, [user?.id]);
 
   const handleJobCreated = () => {
     fetchJobs();
@@ -114,7 +117,7 @@ const Jobs = () => {
             <Link to="/jobs/manage">
               <Button variant="outline">Manage Jobs</Button>
             </Link>
-            <JobCreationModal onJobCreated={handleJobCreated} />
+            <JobCreationModal onJobCreated={handleJobCreated} defaultOpen={openCreate} />
           </div>
         </div>
 

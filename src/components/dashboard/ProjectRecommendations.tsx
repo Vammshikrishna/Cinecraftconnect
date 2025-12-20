@@ -163,8 +163,8 @@ export const ProjectRecommendations = () => {
               return (
                 <div key={project.id}>
                   <div className={`p-4 rounded-lg border transition-all hover:border-cinesphere-purple/50 ${isHighMatch
-                      ? 'border-cinesphere-purple/30 bg-cinesphere-purple/5'
-                      : 'border-white/10 hover:bg-white/5'
+                    ? 'border-cinesphere-purple/30 bg-cinesphere-purple/5'
+                    : 'border-white/10 hover:bg-white/5'
                     }`}>
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1">
@@ -213,8 +213,8 @@ export const ProjectRecommendations = () => {
                               key={role}
                               variant="outline"
                               className={`text-xs ${userProfile?.craft === role
-                                  ? 'border-cinesphere-purple text-cinesphere-purple'
-                                  : ''
+                                ? 'border-cinesphere-purple text-cinesphere-purple'
+                                : ''
                                 }`}
                             >
                               {role}

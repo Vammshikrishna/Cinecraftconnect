@@ -55,7 +55,7 @@ const MyApplications = () => {
         };
 
         fetchApplications();
-    }, [user]);
+    }, [user?.id]);
 
     const getStatusColor = (status: string) => {
         switch (status) {

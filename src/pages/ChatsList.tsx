@@ -69,7 +69,7 @@ const ChatsList = () => {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     const searchUsers = async () => {
@@ -94,7 +94,7 @@ const ChatsList = () => {
 
     const debounce = setTimeout(searchUsers, 300);
     return () => clearTimeout(debounce);
-  }, [userSearchTerm, user]);
+  }, [userSearchTerm, user?.id]);
 
   const handleStartChat = (userId: string) => {
     setIsNewChatOpen(false);

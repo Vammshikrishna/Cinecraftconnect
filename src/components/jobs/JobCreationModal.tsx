@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,13 +27,18 @@ import { JobType, ExperienceLevel, JOB_TYPES, EXPERIENCE_LEVELS } from '@/types/
 
 interface JobCreationModalProps {
   onJobCreated?: () => void;
+  defaultOpen?: boolean;
 }
 
-export const JobCreationModal = ({ onJobCreated }: JobCreationModalProps) => {
-  const [isOpen, setIsOpen] = useState(false);
+export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreationModalProps) => {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (defaultOpen) setIsOpen(true);
+  }, [defaultOpen]);
 
   const [jobData, setJobData] = useState({
     title: '',

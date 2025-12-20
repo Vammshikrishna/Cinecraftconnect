@@ -37,7 +37,7 @@ const FeedSkeleton = () => (
   </div>
 );
 
-const Feed = () => {
+const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [loading, setLoading] = useState(true);
   const [postRatings, setPostRatings] = useState<{ [postId: string]: number }>({});
 
@@ -59,7 +59,7 @@ const Feed = () => {
       <div className="container mx-auto px-4 pb-24 animate-fade-in">
         <div className="max-w-4xl mx-auto">
           <Suspense fallback={<FeedSkeleton />}>
-            <HomeTab postRatings={postRatings} onRate={handleRate} />
+            <HomeTab postRatings={postRatings} onRate={handleRate} openCreate={openCreate} />
           </Suspense>
         </div>
         <UniversalCreateButton />

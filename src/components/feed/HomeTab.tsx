@@ -10,7 +10,7 @@ import {
 
 // Components
 import FeedSection from './FeedSection';
-import AdCard from './AdCard';
+import { CreatePostWidget } from './CreatePostWidget';
 import PostCard from './PostCard';
 import FeedProjectCard from './FeedProjectCard';
 import FeedDiscussionCard from './FeedDiscussionCard';
@@ -26,6 +26,7 @@ import { fetchLatestRatings, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 interface HomeTabProps {
     postRatings: { [postId: string]: number };
     onRate: (postId: string, rating: number) => void;
+    openCreate?: boolean;
 }
 
 interface HomeData {
@@ -39,7 +40,7 @@ interface HomeData {
     connections: any[];
 }
 
-const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
+const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const [data, setData] = useState<HomeData>({
         announcements: [],
         projects: [],
@@ -54,101 +55,118 @@ const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
     const { toast } = useToast();
     const { user } = useAuth();
     const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const refreshFeed = () => setRefreshTrigger(prev => prev + 1);
 
     useEffect(() => {
+        console.log("HomeTab Effect Triggered. User ID:", user?.id);
         const fetchAllData = async () => {
             try {
-                // Fetch posts (Chronological - "What happens first")
-                let postsData: any[] = [];
-                const { data: fetchedPosts, error: postsError } = await supabase
+                // Prepare all fetch promises
+
+                // 1. Posts
+                const postsPromise = supabase
                     .from('posts')
                     .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
                     .order('created_at', { ascending: false })
                     .limit(20);
 
-                if (postsError) {
-                    console.error("Error fetching posts:", postsError);
-                } else {
-                    postsData = fetchedPosts || [];
-                }
+                // 2. Announcements
+                const announcementsPromise = supabase
+                    .from('announcements')
+                    .select('*')
+                    .order('posted_at', { ascending: false })
+                    .limit(5);
 
+                // 3. Projects
+                const projectsPromise = supabase
+                    .from('projects')
+                    .select('*, creator:creator_id(full_name, avatar_url)')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                // 4. Discussions
+                const discussionsPromise = supabase
+                    .from('discussion_rooms')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                // 5. Marketplace
+                const conceptsPromise = supabase
+                    .from('marketplace_listings')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                // 6. Vendors
+                const vendorsPromise = supabase
+                    .from('vendors')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+
+                // 7. TMDB Ratings
+                const ratingsPromise = fetchLatestRatings().catch(() => []);
+
+                // 8. Connections (User dependent)
+                const connectionsPromise = user?.id
+                    ? supabase
+                        .from('profiles')
+                        .select('id, full_name, username, avatar_url, craft, bio')
+                        .neq('id', user.id)
+                        .order('updated_at', { ascending: false, nullsFirst: false })
+                        .limit(6)
+                    : Promise.resolve({ data: [], error: null });
+
+                // 9. Post Likes (User dependent)
+                const likesPromise = user?.id
+                    ? supabase
+                        .from('post_likes')
+                        .select('post_id')
+                        .eq('user_id', user.id)
+                    : Promise.resolve({ data: [], error: null });
+
+
+                // Execute all in parallel
                 const [
+                    postsRes,
                     announcementsRes,
                     projectsRes,
                     discussionsRes,
                     marketplaceRes,
                     vendorsRes,
+                    ratingsData,
                     connectionsRes,
-                    tmdbMovies
+                    likesRes
                 ] = await Promise.all([
-                    // Announcements
-                    supabase
-                        .from('announcements')
-                        .select('*')
-                        .order('posted_at', { ascending: false })
-                        .limit(5),
-
-                    // Projects
-                    supabase
-                        .from('projects')
-                        .select('*, creator:creator_id(full_name, avatar_url)')
-                        .order('created_at', { ascending: false })
-                        .limit(5),
-
-                    // Discussions
-                    supabase
-                        .from('discussion_rooms')
-                        .select('*')
-                        .order('created_at', { ascending: false })
-                        .limit(5),
-
-                    // Marketplace Items
-                    supabase
-                        .from('marketplace_listings')
-                        .select('*')
-                        .order('created_at', { ascending: false })
-                        .limit(5),
-
-                    // Vendors
-                    supabase
-                        .from('vendors')
-                        .select('*')
-                        .order('created_at', { ascending: false })
-                        .limit(5),
-
-                    // Connections/Network
-                    supabase
-                        .from('profiles')
-                        .select('id, full_name, username, avatar_url, craft, bio')
-                        .neq('id', user?.id || '')
-                        .order('updated_at', { ascending: false, nullsFirst: false })
-                        .limit(6),
-
-                    // Ratings (TMDB)
-                    fetchLatestRatings().catch(err => {
-                        console.error("Failed to fetch TMDB ratings", err);
-                        return [];
-                    })
+                    postsPromise,
+                    announcementsPromise,
+                    projectsPromise,
+                    discussionsPromise,
+                    conceptsPromise,
+                    vendorsPromise,
+                    ratingsPromise,
+                    connectionsPromise,
+                    likesPromise
                 ]);
 
-                // Fetch liked posts
-                if (user) {
-                    const { data: likesData } = await supabase
-                        .from('post_likes')
-                        .select('post_id')
-                        .eq('user_id', user.id);
-
-                    if (likesData) {
-                        setLikedPostIds(new Set((likesData as any[]).map(l => l.post_id)));
-                    }
+                // Handle Likes
+                if (likesRes.data) {
+                    setLikedPostIds(new Set((likesRes.data as any[]).map(l => l.post_id)));
                 }
 
+                // Log errors but don't block
+                if (postsRes.error) console.error("Posts error:", postsRes.error);
+                if (announcementsRes.error) console.error("Announcements error:", announcementsRes.error);
+
                 setData({
+                    posts: postsRes.data || [],
                     announcements: announcementsRes.data || [],
                     projects: projectsRes.data || [],
                     discussions: discussionsRes.data || [],
-                    posts: postsData,
-                    ratings: tmdbMovies || [],
+                    ratings: ratingsData || [],
                     marketplace: marketplaceRes.data || [],
                     vendors: vendorsRes.data || [],
                     connections: connectionsRes.data || []
@@ -156,14 +174,14 @@ const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
 
             } catch (error) {
                 console.error('Error fetching home data:', error);
-                toast({ title: 'Error', description: 'Failed to load home feed.', variant: 'destructive' });
+                toast({ title: 'Error', description: 'Failed to fully load home feed.', variant: 'destructive' });
             } finally {
                 setLoading(false);
             }
         };
 
         fetchAllData();
-    }, [user, toast]);
+    }, [user?.id, toast, refreshTrigger]);
 
     const handleLikeToggle = (postId: string, isLiked: boolean) => {
         setLikedPostIds(prev => {
@@ -348,6 +366,10 @@ const HomeTab = ({ postRatings, onRate }: HomeTabProps) => {
             <div className="flex items-center gap-2 px-4 pt-2">
                 <Rss className="h-5 w-5 text-primary" />
                 <h2 className="text-xl font-bold tracking-tight">Your Feed</h2>
+            </div>
+
+            <div className="px-4">
+                <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />
             </div>
 
             {/* Posts with Interleaved Sections */}

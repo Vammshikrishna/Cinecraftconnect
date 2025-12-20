@@ -28,7 +28,7 @@ export const StatsOverview = () => {
     if (user) {
       fetchStats();
     }
-  }, [user]);
+  }, [user?.id]);
 
   const fetchStats = async () => {
     if (!user) return;

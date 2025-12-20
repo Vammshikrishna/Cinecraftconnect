@@ -36,18 +36,31 @@ interface Room {
 }
 
 // --- MAIN PAGE COMPONENT ---
-const DiscussionRoomsPage = () => {
+const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const { roomId } = useParams<{ roomId: string }>();
+  const navigate = useNavigate();
+
+  // Use URL as the source of truth for the selected room
+  const activeRoom = useMemo(() => {
+    if (!roomId || rooms.length === 0) return null;
+    return rooms.find(r => r.id === roomId) || null;
+  }, [roomId, rooms]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
-  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(openCreate);
   const { toast } = useToast();
-  const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (openCreate) setCreateModalOpen(true);
+  }, [openCreate]);
+
+  // ... [fetchData and useEffect remain same, will rely on original file content for brevity if possible, but replace needs context] ...
+  // To avoid breaking the file, I will rewrite the surrounding state and effects cleanly.
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -69,7 +82,6 @@ const DiscussionRoomsPage = () => {
         room_type: room.room_type as 'public' | 'private' | 'secret',
         category_id: room.category_id || '',
         creator_id: room.creator_id || '',
-        // Mock tags for UI richness
         tags: ['cinema', 'directing', 'qa'].slice(0, Math.floor(Math.random() * 3) + 1),
       }));
 
@@ -95,30 +107,20 @@ const DiscussionRoomsPage = () => {
     };
   }, [fetchData]);
 
-  // Handle deep linking to a specific room
-  useEffect(() => {
-    if (roomId && rooms.length > 0 && !selectedRoom) {
-      const room = rooms.find(r => r.id === roomId);
-      if (room) {
-        setSelectedRoom(room);
-      }
-    }
-  }, [roomId, rooms, selectedRoom]);
-
   const handleRoomCreated = (newRoom: Room) => {
     setRooms(prevRooms => [newRoom, ...prevRooms]);
-    setSelectedRoom(newRoom);
+    navigate(`/discussion-rooms/${newRoom.id}`);
   };
 
   const handleRoomUpdated = (roomId: string, newTitle: string, newDescription: string) => {
     setRooms(prevRooms => prevRooms.map(r => r.id === roomId ? { ...r, title: newTitle, description: newDescription } : r));
-    if (selectedRoom && selectedRoom.id === roomId) {
-      setSelectedRoom(prev => prev ? { ...prev, title: newTitle, description: newDescription } : null);
-    }
   }
 
   const handleRoomDelete = (roomId: string) => {
     setRooms(prevRooms => prevRooms.filter(r => r.id !== roomId));
+    if (activeRoom?.id === roomId) {
+      navigate('/discussion-rooms');
+    }
   }
 
   const filteredAndSortedRooms = useMemo(() => {
@@ -149,10 +151,11 @@ const DiscussionRoomsPage = () => {
     return [...rooms].sort((a, b) => b.member_count - a.member_count).slice(0, 3);
   }, [rooms]);
 
+  // Loading state (initial load or resolving deep link)
+  // If we have a roomId but haven't found the room yet (and strict loading is true or rooms empty), show loading.
+  const isResolvingDeepLink = loading || (!!roomId && !activeRoom && rooms.length === 0);
 
-
-
-  if (loading && rooms.length === 0) {
+  if (isResolvingDeepLink) {
     return (
       <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
         <div className="container mx-auto pt-16 pb-24">
@@ -168,19 +171,18 @@ const DiscussionRoomsPage = () => {
     );
   }
 
-  if (selectedRoom) {
+  if (activeRoom) {
     return (
       <div className="fixed inset-0 bg-background text-foreground flex flex-col z-50">
         <DiscussionChatInterface
-          roomId={selectedRoom.id}
+          roomId={activeRoom.id}
           userRole="member"
-          roomTitle={selectedRoom.title}
-          roomDescription={selectedRoom.description}
-          categoryId={selectedRoom.category_id}
+          roomTitle={activeRoom.title}
+          roomDescription={activeRoom.description}
+          categoryId={activeRoom.category_id}
           categories={categories}
           onClose={() => {
-            setSelectedRoom(null);
-            navigate(-1);
+            navigate('/discussion-rooms');
           }}
           onRoomUpdated={handleRoomUpdated}
         />
@@ -212,7 +214,7 @@ const DiscussionRoomsPage = () => {
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} onDelete={handleRoomDelete} />)}
+            {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
           </div>
         </section>
 
@@ -253,7 +255,7 @@ const DiscussionRoomsPage = () => {
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} onJoin={setSelectedRoom} onDelete={handleRoomDelete} />)}
+            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -446,6 +448,9 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
     <DialogContent className="glass-modal border-border">
       <DialogHeader>
         <DialogTitle className="text-foreground">Create a New Discussion Room</DialogTitle>
+        <DialogDescription className="text-muted-foreground">
+          Start a new topic or group for film professionals to connect.
+        </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

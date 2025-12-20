@@ -92,7 +92,7 @@ const ManageJobs = () => {
 
     useEffect(() => {
         fetchJobsAndApplications();
-    }, [user]);
+    }, [user?.id]);
 
     const handleStatusUpdate = async (applicationId: string, newStatus: string) => {
         try {

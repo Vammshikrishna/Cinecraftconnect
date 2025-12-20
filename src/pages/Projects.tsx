@@ -44,7 +44,7 @@ interface Project {
   };
 }
 
-const Projects = () => {
+const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -296,7 +296,7 @@ const Projects = () => {
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center"><Film className="mr-3 h-8 w-8 text-primary" />Projects</h1>
             <p className="text-muted-foreground">Discover and collaborate on film projects</p>
           </div>
-          <ProjectCreationModal onProjectCreated={fetchProjects} />
+          <ProjectCreationModal onProjectCreated={fetchProjects} defaultOpen={openCreate} />
         </div>
 
         <div className="mb-6">

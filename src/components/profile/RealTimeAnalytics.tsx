@@ -119,7 +119,7 @@ export const RealTimeAnalytics = () => {
       supabase.removeChannel(postsChannel);
       supabase.removeChannel(connectionsChannel);
     };
-  }, [user]);
+  }, [user?.id]);
 
   if (loading) {
     return (

@@ -85,7 +85,7 @@ const NotificationsDropdown = () => {
       ).subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user?.id]);
 
   const markAsRead = async (notificationId: string) => {
     const notification = notifications.find(n => n.id === notificationId);

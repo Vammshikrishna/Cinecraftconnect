@@ -20,6 +20,7 @@ import {
   MapPin,
   Globe,
   Settings,
+  Pencil,
   Instagram,
   Linkedin,
   Twitter,
@@ -261,9 +262,10 @@ const ProfilePage = () => {
               <div className="flex items-center justify-center gap-3 mt-2">
                 <Button
                   onClick={() => setIsEditing(true)}
-                  className="bg-primary hover:bg-primary/90 text-white rounded-full px-6 shadow-lg shadow-primary/20 transition-all hover:scale-105"
+                  className="gap-2 bg-primary hover:bg-primary/90 text-white rounded-full px-6 shadow-lg shadow-primary/20 transition-all hover:scale-105"
                 >
-                  Edit Profile
+                  <Pencil className="h-4 w-4" />
+                  <span>Edit Profile</span>
                 </Button>
                 <Link to="/settings">
                   <Button variant="outline" size="icon" className="rounded-full border-border/50 hover:bg-secondary/10 hover:text-foreground transition-all hover:scale-105">
