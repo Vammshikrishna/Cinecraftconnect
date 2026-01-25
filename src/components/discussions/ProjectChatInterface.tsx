@@ -6,7 +6,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Phone, Video } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useCall } from '@/hooks/useCall';
-import { CallContainer } from '@/components/calls/CallContainer';
+import { NativeCallContainer } from '@/components/calls/NativeCallContainer';
 import { MessageComposer } from './MessageComposer';
 import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
@@ -38,7 +38,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
-  const { activeCall, loading, startCall, joinCall } = useCall('project', projectId);
+  // Use spaceId for the call room, as RLS policies expect project_space_id
+  const { activeCall, loading, startCall, joinCall } = useCall('project', spaceId || '');
 
   useEffect(() => {
     const fetchSpaceId = async () => {
@@ -420,11 +421,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   // If in call, show call interface
   if (inCall && activeCall) {
     return (
-      <CallContainer
-        callId={activeCall.id}
-        roomUrl={activeCall.daily_room_url}
-        roomType="project"
-        roomId={projectId}
+      <NativeCallContainer
+        roomId={spaceId || projectId}
         onLeave={handleLeaveCall}
       />
     );
