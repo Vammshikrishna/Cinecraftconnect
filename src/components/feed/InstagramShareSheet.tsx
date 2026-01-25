@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Search, Link as LinkIcon, Share2, Film, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useConnections } from "@/hooks/useConnections";
 
 interface InstagramShareSheetProps {
     isOpen: boolean;
@@ -33,12 +34,13 @@ export function InstagramShareSheet({ isOpen, onOpenChange, postId }: InstagramS
     const { user } = useAuth();
     const { toast } = useToast();
     const isDesktop = useMediaQuery("(min-width: 768px)");
+    const { connections } = useConnections();
 
     useEffect(() => {
         if (isOpen && user) {
             fetchTargets();
         }
-    }, [isOpen, user]);
+    }, [isOpen, user, connections]);
 
     const fetchTargets = async () => {
         if (!user) return;
@@ -47,67 +49,83 @@ export function InstagramShareSheet({ isOpen, onOpenChange, postId }: InstagramS
         const newTargets: ShareTarget[] = [];
 
         try {
-            // 1. Fetch Connections (Profiles)
-            try {
-                const { data: profiles, error: profilesError } = await supabase
-                    .rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
+            // 1. Add Connections
+            if (connections) {
+                connections.forEach(conn => {
+                    const isFollower = conn.follower_id === user.id;
+                    const profile = isFollower ? conn.following_profile : conn.follower_profile;
 
-                if (profilesError) throw profilesError;
-
-                if (profiles) {
-                    const uniqueProfiles = new Set();
-                    profiles.forEach((p: any) => {
-                        if (!uniqueProfiles.has(p.other_user_id)) {
-                            uniqueProfiles.add(p.other_user_id);
-                            newTargets.push({
-                                id: p.other_user_id,
-                                name: p.other_user_full_name || 'Unknown',
-                                avatar_url: p.other_user_avatar_url,
-                                type: 'user',
-                                subtitle: 'Connection'
-                            });
-                        }
-                    });
-                }
-            } catch (e) {
-                console.error("Error fetching profiles:", e);
+                    if (profile) {
+                        newTargets.push({
+                            id: profile.id,
+                            name: profile.full_name || profile.username || 'Unknown',
+                            avatar_url: profile.avatar_url,
+                            type: 'user',
+                            subtitle: 'Connection'
+                        });
+                    }
+                });
             }
 
-            // 2. Fetch Projects
+            // 2. Fetch Project Spaces
             try {
-                // Step 1: Get project IDs the user is a member of
-                const { data: memberData, error: memberError } = await supabase
-                    .from('project_members' as any)
-                    .select('project_id')
+                // Get spaces via membership
+                const { data: memberSpaces, error: memberError } = await supabase
+                    .from('project_space_members' as any)
+                    .select('project_space_id')
                     .eq('user_id', user.id);
 
                 if (memberError) throw memberError;
 
-                if (memberData && memberData.length > 0) {
-                    const projectIds = memberData.map((m: any) => m.project_id);
+                // Get projects owned by user
+                const { data: ownedProjects, error: ownedError } = await supabase
+                    .from('projects')
+                    .select('id')
+                    .eq('creator_id', user.id);
 
-                    // Step 2: Fetch project spaces for these projects
-                    const { data: spaces, error: spacesError } = await supabase
+                if (ownedError) throw ownedError;
+
+                const knownSpaceIds = memberSpaces?.map((m: any) => m.project_space_id) || [];
+                const ownedProjectIds = ownedProjects?.map((p: any) => p.id) || [];
+
+                let additionalSpaceIds: string[] = [];
+                if (ownedProjectIds.length > 0) {
+                    const { data: spaces } = await supabase
                         .from('project_spaces' as any)
-                        .select('id, name, project_id')
-                        .in('project_id', projectIds);
+                        .select('id')
+                        .in('project_id', ownedProjectIds);
+                    additionalSpaceIds = spaces?.map((s: any) => s.id) || [];
+                }
+
+                const allSpaceIds = Array.from(new Set([...knownSpaceIds, ...additionalSpaceIds]));
+
+                if (allSpaceIds.length > 0) {
+                    const { data: spacesData, error: spacesError } = await supabase
+                        .from('project_spaces' as any)
+                        .select('id, name, project_id, projects!inner(title)')
+                        .in('id', allSpaceIds);
 
                     if (spacesError) throw spacesError;
 
-                    if (spaces) {
+                    if (spacesData) {
+                        const spaces = spacesData as any[];
                         spaces.forEach((space: any) => {
-                            newTargets.push({
-                                id: space.id,
-                                name: space.name,
-                                avatar_url: null,
-                                type: 'project',
-                                subtitle: 'Project Space'
-                            });
+                            const projectTitle = Array.isArray(space.projects) ? space.projects[0]?.title : space.projects?.title;
+
+                            if (projectTitle) {
+                                newTargets.push({
+                                    id: space.id,
+                                    name: projectTitle,
+                                    avatar_url: null,
+                                    type: 'project',
+                                    subtitle: `Project Space • ${space.name}`
+                                });
+                            }
                         });
                     }
                 }
             } catch (e) {
-                console.error("Error fetching projects:", e);
+                console.error("Error fetching project spaces:", e);
             }
 
             // 3. Fetch Discussion Rooms
@@ -181,8 +199,8 @@ export function InstagramShareSheet({ isOpen, onOpenChange, postId }: InstagramS
                     recipient_id: target.id
                 });
             } else if (target.type === 'project') {
-                await supabase.from('project_messages' as any).insert({
-                    project_id: target.id,
+                await supabase.from('project_space_messages' as any).insert({
+                    project_space_id: target.id,
                     user_id: user.id,
                     content: messageContent
                 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -6,8 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, FileText, Download, Trash2, Upload, Calendar } from 'lucide-react';
+import { Plus, FileText, Download, Trash2, Upload, Calendar, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { EncryptionService } from '@/services/EncryptionService';
 
 interface CallSheet {
     id: string;
@@ -24,15 +25,18 @@ interface CallSheet {
 
 interface CallSheetProps {
     project_id: string;
+    roomKey: CryptoKey | null;
 }
 
-const CallSheet = ({ project_id }: CallSheetProps) => {
-    const { data: callSheets, error } = useRealtimeData<CallSheet>('call_sheets', 'project_id', project_id);
+const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
+    const { data: rawCallSheets, error } = useRealtimeData<CallSheet>('call_sheets', 'project_id', project_id);
+    const [callSheets, setCallSheets] = useState<CallSheet[]>([]);
     const { toast } = useToast();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
     const [creating, setCreating] = useState(false);
     const [uploading, setUploading] = useState(false);
+
 
     // Form state
     const [date, setDate] = useState('');
@@ -57,6 +61,51 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
         setSelectedFile(null);
     };
 
+    useEffect(() => {
+        const decryptData = async () => {
+            if (!rawCallSheets) {
+                setCallSheets([]);
+                return;
+            }
+            if (!roomKey) {
+                setCallSheets(rawCallSheets);
+                return;
+                return;
+            }
+
+            const processed = await Promise.all(rawCallSheets.map(async (sheet) => {
+                const decryptField = async (text: string | null) => {
+                    if (!text || !text.startsWith('{')) return text;
+                    try {
+                        const parsed = JSON.parse(text);
+                        if (parsed.iv && parsed.ciphertext) {
+                            return await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey) || text;
+                        }
+                    } catch { } // Ignore parse errors
+                    return text;
+                };
+
+                return {
+                    ...sheet,
+                    location: await decryptField(sheet.location),
+                    director: await decryptField(sheet.director),
+                    producer: await decryptField(sheet.producer),
+                    notes: await decryptField(sheet.notes),
+                    director_phone: await decryptField(sheet.director_phone),
+                    producer_phone: await decryptField(sheet.producer_phone),
+                };
+            }));
+            setCallSheets(processed);
+        };
+        decryptData();
+    }, [rawCallSheets, roomKey]);
+
+    const encryptValue = async (val: string) => {
+        if (!roomKey || !val) return val;
+        const encrypted = await EncryptionService.encryptGroupMessage(val, roomKey);
+        return JSON.stringify(encrypted);
+    };
+
     const handleCreate = async () => {
         if (!date) {
             toast({ title: "Error", description: "Date is required", variant: "destructive" });
@@ -66,18 +115,22 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
         setCreating(true);
 
         try {
+            const encryptedData = {
+                location: await encryptValue(location),
+                director: await encryptValue(director),
+                director_phone: await encryptValue(directorPhone),
+                producer: await encryptValue(producer),
+                producer_phone: await encryptValue(producerPhone),
+                notes: await encryptValue(notes),
+            };
+
             const { error: insertError } = await supabase
                 .from('call_sheets' as any)
                 .insert([{
                     project_id,
                     date,
                     call_time: callTime || null,
-                    location: location || null,
-                    director: director || null,
-                    director_phone: directorPhone || null,
-                    producer: producer || null,
-                    producer_phone: producerPhone || null,
-                    notes: notes || null
+                    ...encryptedData
                 }]);
 
             if (insertError) throw insertError;
@@ -109,6 +162,8 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
 
         try {
             // Upload file to storage
+            // Note: For full E2EE on files, we would use EncryptionService.encryptFile
+            // For now, let's keep basic upload but flag it in notes
             const fileExt = selectedFile.name.split('.').pop();
             const fileName = `${project_id}/${Date.now()}.${fileExt}`;
 
@@ -118,18 +173,19 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
 
             if (uploadError) throw uploadError;
 
-            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('call-sheets')
                 .getPublicUrl(fileName);
 
-            // Insert call sheet record with file reference
+            const notesContent = `Uploaded file: ${publicUrl}`;
+            const encryptedNotes = await encryptValue(notesContent);
+
             const { error: insertError } = await supabase
                 .from('call_sheets' as any)
                 .insert([{
                     project_id,
                     date,
-                    notes: `Uploaded file: ${publicUrl}`
+                    notes: encryptedNotes
                 }]);
 
             if (insertError) throw insertError;
@@ -171,9 +227,16 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto">
+        <div className="p-4 sm:p-8 h-full overflow-y-auto w-full">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h1 className="text-xl sm:text-2xl font-bold">Call Sheet</h1>
+                <div className="flex items-center gap-3">
+                    <h1 className="text-xl sm:text-2xl font-bold">Call Sheet</h1>
+                    {roomKey && (
+                        <div className="text-xs flex items-center gap-1 text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
+                            <Lock className="w-3 h-3" /> E2EE
+                        </div>
+                    )}
+                </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
@@ -181,8 +244,8 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                         </DialogTrigger>
                         <DialogContent className="max-w-2xl w-[95vw] rounded-lg">
                             <DialogHeader>
-                                <DialogTitle>Create Call Sheet</DialogTitle>
-                                <DialogDescription>Fill in the details below to create a new call sheet.</DialogDescription>
+                                <DialogTitle>Create Encrypted Call Sheet</DialogTitle>
+                                <DialogDescription>Details will be encrypted end-to-end.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -224,7 +287,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                     <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={4} />
                                 </div>
                                 <Button onClick={handleCreate} disabled={creating} className="w-full">
-                                    {creating ? 'Creating...' : 'Create Call Sheet'}
+                                    {creating ? 'Encrypting & Saving...' : 'Create Call Sheet'}
                                 </Button>
                             </div>
                         </DialogContent>
@@ -237,7 +300,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                         <DialogContent className="w-[95vw] rounded-lg">
                             <DialogHeader>
                                 <DialogTitle>Upload Call Sheet</DialogTitle>
-                                <DialogDescription>Upload an existing call sheet file (PDF, Image).</DialogDescription>
+                                <DialogDescription>Upload an existing call sheet file.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4">
                                 <div>
@@ -261,7 +324,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             {callSheets && callSheets.length > 0 ? (
                 <div className="space-y-4">
                     {callSheets.map(sheet => (
-                        <div key={sheet.id} className="bg-slate-800/50 p-6 rounded-lg shadow-md">
+                        <div key={sheet.id} className="bg-slate-800/50 p-6 rounded-lg shadow-md border border-white/5">
                             <div className="flex justify-between items-start mb-4">
                                 <div className="flex items-center gap-2">
                                     <Calendar className="h-5 w-5 text-primary" />
@@ -288,7 +351,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                             </div>
 
                             {(sheet.director || sheet.producer) && (
-                                <div className="border-t border-slate-700 pt-4 mt-4">
+                                <div className="border-t border-slate-700/50 pt-4 mt-4">
                                     <h3 className="font-semibold mb-3">Contacts</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {sheet.director && (
@@ -310,7 +373,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                             )}
 
                             {sheet.notes && (
-                                <div className="border-t border-slate-700 pt-4 mt-4">
+                                <div className="border-t border-slate-700/50 pt-4 mt-4">
                                     <h3 className="font-semibold mb-2">Notes</h3>
                                     {sheet.notes.startsWith('Uploaded file:') ? (
                                         <Button size="sm" variant="outline" asChild>

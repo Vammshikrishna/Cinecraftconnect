@@ -86,12 +86,12 @@ const PostCard = ({
     const originalLikeCount = likeCount;
 
     // Optimistic UI update
-    setIsLiked(!originalLiked);
-    setLikeCount(originalLiked ? originalLikeCount - 1 : originalLikeCount + 1);
-    onLikeToggle?.(id, !originalLiked);
+    const newLikedState = !originalLiked;
+    setIsLiked(newLikedState);
+    setLikeCount(newLikedState ? originalLikeCount + 1 : originalLikeCount - 1);
+    onLikeToggle?.(id, newLikedState);
 
     try {
-      // Use the imported service function
       await togglePostLike(id, originalLiked);
     } catch (error) {
       console.error("Failed to toggle like:", error);

@@ -8,7 +8,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useCall } from '@/hooks/useCall';
 import { CallContainer } from '@/components/calls/CallContainer';
 import { MessageComposer } from './MessageComposer';
+import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
+import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 
 interface Message {
   id: string;
@@ -32,19 +34,76 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inCall, setInCall] = useState(false);
+  const [spaceId, setSpaceId] = useState<string | null>(null);
+  const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
+  // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
   const { activeCall, loading, startCall, joinCall } = useCall('project', projectId);
 
   useEffect(() => {
+    const fetchSpaceId = async () => {
+      if (!projectId) return;
+      const { data, error } = await supabase
+        .from('project_spaces' as any)
+        .select('id')
+        .eq('project_id', projectId)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching project space:', error);
+        return;
+      }
+
+      if (data) {
+        setSpaceId((data as any).id);
+      } else {
+        console.log('No project space found. checking ownership to auto-create...');
+
+        // Check if user is creator to auto-create space
+        const { data: project } = await supabase
+          .from('projects')
+          .select('creator_id')
+          .eq('id', projectId)
+          .single();
+
+        if (project && user && project.creator_id === user.id) {
+          console.log('User is creator. Creating default space...');
+          const { data: newSpace, error: createError } = await supabase
+            .from('project_spaces' as any)
+            .insert({
+              project_id: projectId,
+              name: 'General'
+            })
+            .select()
+            .single();
+
+          if (!createError && newSpace) {
+            setSpaceId((newSpace as any).id);
+            toast({ title: "Fixed", description: "Project space created automatically." });
+          } else {
+            console.error('Failed to create space:', createError);
+          }
+        } else {
+          console.error('No project space found and user is not creator.');
+        }
+      }
+    };
+    fetchSpaceId();
+  }, [projectId, user]);
+
+  useEffect(() => {
+    if (!spaceId) return;
+
     fetchMessages();
 
     const channel = supabase
-      .channel(`project_messages:${projectId}`)
+      .channel(`project_messages:${spaceId}`)
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'project_space_messages',
-        filter: `project_space_id=eq.${projectId}`
+        filter: `project_space_id=eq.${spaceId}`
       }, () => {
         fetchMessages();
       })
@@ -53,14 +112,117 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId]);
+  }, [spaceId]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  // --- E2EE Room Key Management ---
+  useEffect(() => {
+    if (!spaceId || !user) return;
+
+    const setupRoomEncryption = async () => {
+      // setIsKeyLoading(true);
+      try {
+        // 1. Check if I have a key for this room
+        const { data: keyData, error: _keyError } = await supabase
+          .from('room_keys' as any)
+          .select('encrypted_key, sender_id')
+          .eq('room_id', spaceId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (keyData) {
+          // I have a key! Decrypt it.
+          // We need the sender's public key to decrypt.
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('public_key')
+            .eq('id', (keyData as any).sender_id)
+            .single();
+
+          if ((senderProfile as any)?.public_key) {
+            // Note: In our `encryptRoomKeyForUser` implementation, we used `encryptMessage` logic.
+            // Our `encryptMessage` returns { ciphertext, iv }. 
+            // The `room_keys` table stores `encrypted_key` as text. 
+            // We assume it's stored as JSON string of { ciphertext, iv }?
+            // Wait, migration said "encrypted_key text". 
+            // `EncryptionService` now returns `{ encryptedKey: string, iv: string }`.
+            // Let's assume we store JSON.stringify({ ciphertext: ..., iv: ... }).
+
+            try {
+              const parsedKey = JSON.parse((keyData as any).encrypted_key);
+              // Wait, `EncryptionService.decryptRoomKey` expects simple args.
+              // It calls `decryptMessage`.
+              const decryptedKey = await EncryptionService.decryptRoomKey(
+                parsedKey.ciphertext, // or parsedKey.encryptedKey? The service returns { encryptedKey, iv }.
+                parsedKey.iv,
+                (senderProfile as any).public_key
+              );
+              if (decryptedKey) {
+                setRoomKey(decryptedKey);
+                console.log("Room key decrypted successfully.");
+
+                // Auto-Share Logic: If I have a valid key, check if others need it?
+                // Checking permissions... avoiding loop. 
+              }
+            } catch (err) {
+              console.error("Failed to parse/decrypt room key", err);
+            }
+          }
+        } else {
+          // No key found.
+          console.log("No room key found for user.");
+
+          // Check if I am the project creator (or authorized to create key)
+          const { data: project } = await supabase
+            .from('projects')
+            .select('creator_id')
+            .eq('id', projectId)
+            .single();
+
+          if (project?.creator_id === user.id) {
+            console.log("I am creator. Generating new room key...");
+            const newKey = await EncryptionService.generateRoomKey();
+
+            // Encrypt for MYSELF first
+            const { data: myProfile } = await supabase.from('profiles').select('public_key').eq('id', user.id).single();
+
+            if ((myProfile as any)?.public_key) {
+              const encryptedForMe = await EncryptionService.encryptRoomKeyForUser(newKey, (myProfile as any).public_key);
+
+              if (encryptedForMe) {
+                // Store in DB
+                const { error: insertError } = await supabase.from('room_keys' as any).insert({
+                  room_id: spaceId,
+                  user_id: user.id,
+                  sender_id: user.id,
+                  encrypted_key: JSON.stringify({ ciphertext: encryptedForMe.encryptedKey, iv: encryptedForMe.iv })
+                });
+
+                if (!insertError) {
+                  setRoomKey(newKey);
+                  console.log("New room key generated and saved.");
+                  // TODO: Share with other members? (This requires listing members and encrypting for each)
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error setting up room encryption:", err);
+      } finally {
+        // setIsKeyLoading(false);
+      }
+    };
+
+    setupRoomEncryption();
+  }, [spaceId, user, projectId]);
+
+
   const fetchMessages = async () => {
-    if (!projectId) return;
+    if (!spaceId) return;
 
     const { data, error } = await supabase
       .from('project_space_messages' as any)
@@ -74,13 +236,30 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
           avatar_url
         )
       `)
-      .eq('project_space_id', projectId)
+      .eq('project_space_id', spaceId)
       .order('created_at', { ascending: true });
 
     if (error) {
       console.error('Error fetching messages:', error);
     } else {
-      setMessages((data as any) || []);
+      // Decrypt messages
+      const decryptedMessages = await Promise.all(((data as any) || []).map(async (msg: any) => {
+        if (!msg.content) return msg;
+        // Check if JSON (likely encrypted)
+        if (msg.content.startsWith('{') && msg.content.includes('"iv"') && roomKey) {
+          try {
+            const parsed = JSON.parse(msg.content);
+            const decryptedText = await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey);
+            if (decryptedText) {
+              return { ...msg, content: decryptedText };
+            }
+          } catch (e) {
+            // Ignore parse errors (plaintext)
+          }
+        }
+        return msg;
+      }));
+      setMessages(decryptedMessages);
     }
   };
 
@@ -93,12 +272,20 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
     setSending(true);
     try {
+      let contentToSend = content.trim();
+
+      // Encrypt if we have a key
+      if (roomKey) {
+        const encrypted = await EncryptionService.encryptGroupMessage(contentToSend, roomKey);
+        contentToSend = JSON.stringify(encrypted); // { ciphertext, iv }
+      }
+
       const { error } = await supabase
         .from('project_space_messages' as any)
         .insert([{
-          project_space_id: projectId,
+          project_space_id: spaceId,
           user_id: user?.id,
-          content: content.trim()
+          content: contentToSend
         }]);
 
       if (error) throw error;
@@ -118,29 +305,86 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     if (!user || !projectId) return;
     setSending(true);
     try {
-      const filePath = `${projectId}/${Date.now()}_${file.name}`;
+      // 1. Encrypt File
+      const encryptedData = await EncryptionService.encryptFile(file);
+      if (!encryptedData) throw new Error("Failed to encrypt file");
+
+      const filePath = `${projectId}/${Date.now()}_${file.name}.enc`;
+
+      // 2. Upload Encrypted Blob
       const { error: uploadError } = await supabase.storage
         .from('project-files')
-        .upload(filePath, file);
+        .upload(filePath, encryptedData.encryptedBlob);
 
       if (uploadError) throw uploadError;
+
+      // 3. Prepare Metadata (Plaintext content)
+      const fileMetadata = JSON.stringify({
+        type: 'file',
+        path: filePath,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        key: encryptedData.key,
+        iv: encryptedData.iv
+      });
+
+      // 4. Encrypt Metadata with Room Key
+      let contentToInsert = fileMetadata;
+      if (roomKey) {
+        const encryptedMsg = await EncryptionService.encryptGroupMessage(fileMetadata, roomKey);
+        contentToInsert = JSON.stringify(encryptedMsg);
+      } else {
+        // Fallback for non-E2EE rooms (shouldn't happen if migration worked, but safe fallback)
+        contentToInsert = `Shared a file: ${file.name} (Unencrypted)`;
+      }
 
       // Send message with file reference
       const { error: msgError } = await supabase
         .from('project_space_messages' as any)
         .insert({
-          project_space_id: projectId,
+          project_space_id: spaceId,
           user_id: user.id,
-          content: `Shared a file: ${file.name}`
+          content: contentToInsert
         });
 
       if (msgError) throw msgError;
 
-      toast({ title: "Success", description: "File uploaded successfully" });
+      toast({ title: "Success", description: "Encrypted file uploaded successfully" });
     } catch (error: any) {
+      console.error(error);
       toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
     } finally {
       setSending(false);
+    }
+  };
+
+  const downloadDecryptedFile = async (metadata: any) => {
+    try {
+      toast({ title: "Decrypting...", description: "Downloading and decrypting file..." });
+
+      // 1. Download Encrypted Blob
+      const { data, error } = await supabase.storage.from('project-files').download(metadata.path);
+      if (error) throw error;
+
+      // 2. Decrypt Blob
+      const decryptedBlob = await EncryptionService.decryptFile(data, metadata.key, metadata.iv);
+      if (!decryptedBlob) throw new Error("Decryption failed");
+
+      // 3. Trigger Download / View
+      const url = URL.createObjectURL(decryptedBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = metadata.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ title: "Success", description: "File downloaded." });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Failed to download/decrypt file.", variant: "destructive" });
     }
   };
 
@@ -226,7 +470,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                   </AvatarFallback>
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[70%]`}>
-                  <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `rounded-lg px-4 py-2 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
+                  <div className={`${(message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::')) ? 'p-0 bg-transparent' : `rounded-lg px-4 py-2 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
                     {!isOwn && (
                       <p className="text-xs font-semibold mb-1">
                         {message.profiles?.full_name || 'Unknown User'}
@@ -241,8 +485,41 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                           return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
                         }
                       })()
+                    ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                          return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
+                        }
+                      })()
                     ) : (
-                      <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                      // File Message Detection
+                      (() => {
+                        try {
+                          if (message.content.includes('"type":"file"')) {
+                            const metadata = JSON.parse(message.content);
+                            if (metadata.type === 'file' && metadata.key && metadata.iv) {
+                              return (
+                                <div className="flex flex-col gap-2">
+                                  <p className="font-semibold text-sm">🔒 Encrypted File</p>
+                                  <div className="flex items-center gap-2 p-2 bg-black/20 rounded">
+                                    <span className="text-xs truncate max-w-[150px]">{metadata.name}</span>
+                                    <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={() => downloadDecryptedFile(metadata)}>
+                                      Download
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+                          // Fallback normal message
+                          return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
+                        } catch {
+                          return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
+                        }
+                      })()
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground mt-1">

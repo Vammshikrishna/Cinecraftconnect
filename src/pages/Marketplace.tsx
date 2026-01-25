@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-
-import { supabase } from '@/integrations/supabase/client';
+import { useState } from 'react';
+import { useMarketplaceListings } from '@/hooks/useMarketplace';
+import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -9,20 +9,19 @@ import {
     Search,
     Camera,
     Home,
-    Plus
+    Plus,
+    LayoutGrid
 } from 'lucide-react';
-import { MarketplaceListing, ListingType } from '@/types/marketplace';
+import { ListingType } from '@/types/marketplace';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { MarketplaceFilters } from '@/components/marketplace/MarketplaceFilters';
 
-
 const Marketplace = () => {
     const { toast } = useToast();
-    const [listings, setListings] = useState<MarketplaceListing[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
-    const [activeTab, setActiveTab] = useState<ListingType>('equipment');
+    const [activeTab, setActiveTab] = useState<ListingType | 'all'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [filters, setFilters] = useState<{
         minPrice?: number;
@@ -31,65 +30,15 @@ const Marketplace = () => {
         category?: string;
     }>({});
 
-    useEffect(() => {
-        fetchListings();
-    }, [activeTab, searchQuery, filters]);
-
-    const fetchListings = async () => {
-        try {
-            setLoading(true);
-
-            const { data, error } = await supabase
-                .rpc('search_marketplace_listings', {
-                    search_query: searchQuery || undefined,
-                    filter_type: activeTab,
-                    filter_category: filters.category || undefined,
-                    filter_location: filters.location || undefined,
-                    min_price: filters.minPrice || undefined,
-                    max_price: filters.maxPrice || undefined
-                });
-
-            if (error) throw error;
-
-            // Fetch user profiles for listings
-            const listingsWithProfiles = await Promise.all(
-                (data || []).map(async (listing) => {
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('username, avatar_url, full_name')
-                        .eq('id', listing.user_id)
-                        .single();
-
-                    return {
-                        ...listing,
-                        profiles: profile ? {
-                            username: profile.username || '',
-                            avatar_url: profile.avatar_url || '',
-                            full_name: profile.full_name || ''
-                        } : undefined,
-                        specifications: {},
-                        availability_calendar: [],
-                        updated_at: listing.created_at
-                    };
-                })
-            );
-
-            setListings(listingsWithProfiles);
-        } catch (error: any) {
-            console.error('Error fetching listings:', error);
-            toast({
-                title: 'Error',
-                description: 'Failed to load marketplace listings',
-                variant: 'destructive'
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data: listings = [], isLoading: loading } = useMarketplaceListings({
+        searchQuery,
+        activeTab,
+        filters
+    });
 
     const handleListingCreated = () => {
         setShowCreateModal(false);
-        fetchListings();
+        queryClient.invalidateQueries({ queryKey: ['marketplace-listings'] });
         toast({
             title: 'Success',
             description: 'Your listing has been created successfully!'
@@ -153,9 +102,12 @@ const Marketplace = () => {
                     </div>
                 )}
 
-                {/* Tabs for Equipment and Locations */}
-                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ListingType)}>
+                <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ListingType | 'all')}>
                     <TabsList className="mb-6">
+                        <TabsTrigger value="all" className="gap-2">
+                            <LayoutGrid size={18} />
+                            All
+                        </TabsTrigger>
                         <TabsTrigger value="equipment" className="gap-2">
                             <Camera size={18} />
                             Equipment
@@ -165,6 +117,37 @@ const Marketplace = () => {
                             Locations
                         </TabsTrigger>
                     </TabsList>
+
+                    <TabsContent value="all">
+                        {loading ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {[1, 2, 3, 4, 5, 6].map((i) => (
+                                    <div key={i} className="glass-card rounded-xl p-4 animate-pulse">
+                                        <div className="aspect-video bg-gray-700 rounded-lg mb-4"></div>
+                                        <div className="h-6 bg-gray-700 rounded mb-2"></div>
+                                        <div className="h-4 bg-gray-700 rounded w-2/3"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : listings.length === 0 ? (
+                            <div className="text-center py-16">
+                                <LayoutGrid size={48} className="mx-auto text-gray-500 mb-4" />
+                                <h3 className="text-xl font-semibold mb-2">No listings found</h3>
+                                <p className="text-gray-400 mb-4">
+                                    Be the first to create a listing!
+                                </p>
+                                <Button onClick={() => setShowCreateModal(true)}>
+                                    Create Listing
+                                </Button>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {listings.map((listing) => (
+                                    <ListingCard key={listing.id} listing={listing} />
+                                ))}
+                            </div>
+                        )}
+                    </TabsContent>
 
                     <TabsContent value="equipment">
                         {loading ? (

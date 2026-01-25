@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { EncryptionService } from '@/services/EncryptionService';
 
 interface BudgetItem {
     id: string;
@@ -31,17 +32,23 @@ interface ScheduleItem {
 
 interface BudgetSchedProps {
     project_id: string;
+    roomKey: CryptoKey | null;
 }
 
-const BudgetSched = ({ project_id }: BudgetSchedProps) => {
-    const { data: budgetData, error: budgetError } = useRealtimeData<BudgetItem>('budget_items', 'project_id', project_id);
-    const { data: scheduleData, error: scheduleError } = useRealtimeData<ScheduleItem>('schedule_items', 'project_id', project_id);
+const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
+    const { data: rawBudget, error: budgetError } = useRealtimeData<BudgetItem>('budget_items', 'project_id', project_id);
+    const { data: rawSchedule, error: scheduleError } = useRealtimeData<ScheduleItem>('schedule_items', 'project_id', project_id);
     const { toast } = useToast();
+
+    // Local state for decrypted data
+    const [budgetData, setBudgetData] = useState<BudgetItem[]>([]);
+    const [scheduleData, setScheduleData] = useState<ScheduleItem[]>([]);
 
     const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
     const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
     const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null);
     const [editingSchedule, setEditingSchedule] = useState<ScheduleItem | null>(null);
+    const [saving, setSaving] = useState(false);
 
     // Budget form state
     const [budgetCategory, setBudgetCategory] = useState('');
@@ -75,68 +82,124 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
         setEditingSchedule(null);
     };
 
+    // --- Decryption Effect ---
+    useEffect(() => {
+        const decryptAll = async () => {
+            if (!rawBudget && !rawSchedule) {
+                setBudgetData([]);
+                setScheduleData([]);
+                return;
+            }
+            if (!roomKey) {
+                setBudgetData(rawBudget || []);
+                setScheduleData(rawSchedule || []);
+                return;
+            }
+
+
+
+            // Helper to decrypt a string
+            const dec = async (val: string | null) => {
+                if (!val || !val.startsWith('{')) return val;
+                try {
+                    const p = JSON.parse(val);
+                    if (p.iv && p.ciphertext) return await EncryptionService.decryptGroupMessage(p.ciphertext, p.iv, roomKey) || val;
+                } catch { }
+                return val;
+            };
+
+            // Process Budget
+            if (rawBudget) {
+                const decBudget = await Promise.all(rawBudget.map(async (item) => ({
+                    ...item,
+                    category: await dec(item.category) || item.category,
+                    item_name: await dec(item.item_name) || item.item_name,
+                    notes: await dec(item.notes),
+                })));
+                setBudgetData(decBudget);
+            }
+
+            // Process Schedule
+            if (rawSchedule) {
+                const decSchedule = await Promise.all(rawSchedule.map(async (item) => ({
+                    ...item,
+                    title: await dec(item.title) || item.title,
+                    description: await dec(item.description),
+                })));
+                setScheduleData(decSchedule);
+            }
+        };
+        decryptAll();
+    }, [rawBudget, rawSchedule, roomKey]);
+
+    const encryptValue = async (val: string) => {
+        if (!roomKey || !val) return val;
+        const encrypted = await EncryptionService.encryptGroupMessage(val, roomKey);
+        return JSON.stringify(encrypted);
+    };
+
+    // --- Handlers ---
+
     const handleAddBudgetItem = async () => {
         if (!budgetCategory || !budgetItemName) {
             toast({ title: "Error", description: "Category and item name are required", variant: "destructive" });
             return;
         }
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('budget_items' as any)
+                .insert([{
+                    project_id,
+                    category: await encryptValue(budgetCategory),
+                    item_name: await encryptValue(budgetItemName),
+                    estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
+                    actual_cost: actualCost ? parseFloat(actualCost) : null,
+                    notes: await encryptValue(budgetNotes)
+                }]);
 
-        const { error } = await supabase
-            .from('budget_items' as any)
-            .insert([{
-                project_id,
-                category: budgetCategory,
-                item_name: budgetItemName,
-                estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
-                actual_cost: actualCost ? parseFloat(actualCost) : null,
-                notes: budgetNotes || null
-            }]);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to add budget item", variant: "destructive" });
-        } else {
+            if (error) throw error;
             toast({ title: "Success", description: "Budget item added" });
             setBudgetDialogOpen(false);
             resetBudgetForm();
+        } catch (e: any) {
+            toast({ title: "Error", description: e.message, variant: "destructive" });
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleUpdateBudgetItem = async () => {
         if (!editingBudget) return;
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('budget_items' as any)
+                .update({
+                    category: await encryptValue(budgetCategory),
+                    item_name: await encryptValue(budgetItemName),
+                    estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
+                    actual_cost: actualCost ? parseFloat(actualCost) : null,
+                    notes: await encryptValue(budgetNotes)
+                })
+                .eq('id', editingBudget.id);
 
-        const { error } = await supabase
-            .from('budget_items' as any)
-            .update({
-                category: budgetCategory,
-                item_name: budgetItemName,
-                estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
-                actual_cost: actualCost ? parseFloat(actualCost) : null,
-                notes: budgetNotes || null
-            })
-            .eq('id', editingBudget.id);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to update budget item", variant: "destructive" });
-        } else {
+            if (error) throw error;
             toast({ title: "Success", description: "Budget item updated" });
             setBudgetDialogOpen(false);
             resetBudgetForm();
+        } catch (e: any) {
+            toast({ title: "Error", description: e.message, variant: "destructive" });
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleDeleteBudgetItem = async (id: string) => {
         if (!confirm('Delete this budget item?')) return;
-
-        const { error } = await supabase
-            .from('budget_items' as any)
-            .delete()
-            .eq('id', id);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to delete budget item", variant: "destructive" });
-        } else {
-            toast({ title: "Success", description: "Budget item deleted" });
-        }
+        const { error } = await supabase.from('budget_items' as any).delete().eq('id', id);
+        if (error) toast({ title: "Error", description: "Failed to delete item", variant: "destructive" });
+        else toast({ title: "Success", description: "Item deleted" });
     };
 
     const handleAddScheduleItem = async () => {
@@ -144,63 +207,61 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
             toast({ title: "Error", description: "Title and start date are required", variant: "destructive" });
             return;
         }
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('schedule_items' as any)
+                .insert([{
+                    project_id,
+                    title: await encryptValue(scheduleTitle),
+                    description: await encryptValue(scheduleDescription),
+                    start_date: startDate,
+                    end_date: endDate || null,
+                    status: scheduleStatus
+                }]);
 
-        const { error } = await supabase
-            .from('schedule_items' as any)
-            .insert([{
-                project_id,
-                title: scheduleTitle,
-                description: scheduleDescription || null,
-                start_date: startDate,
-                end_date: endDate || null,
-                status: scheduleStatus
-            }]);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to add schedule item", variant: "destructive" });
-        } else {
+            if (error) throw error;
             toast({ title: "Success", description: "Schedule item added" });
             setScheduleDialogOpen(false);
             resetScheduleForm();
+        } catch (e: any) {
+            toast({ title: "Error", description: e.message, variant: "destructive" });
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleUpdateScheduleItem = async () => {
         if (!editingSchedule) return;
+        setSaving(true);
+        try {
+            const { error } = await supabase
+                .from('schedule_items' as any)
+                .update({
+                    title: await encryptValue(scheduleTitle),
+                    description: await encryptValue(scheduleDescription),
+                    start_date: startDate,
+                    end_date: endDate || null,
+                    status: scheduleStatus
+                })
+                .eq('id', editingSchedule.id);
 
-        const { error } = await supabase
-            .from('schedule_items' as any)
-            .update({
-                title: scheduleTitle,
-                description: scheduleDescription || null,
-                start_date: startDate,
-                end_date: endDate || null,
-                status: scheduleStatus
-            })
-            .eq('id', editingSchedule.id);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to update schedule item", variant: "destructive" });
-        } else {
+            if (error) throw error;
             toast({ title: "Success", description: "Schedule item updated" });
             setScheduleDialogOpen(false);
             resetScheduleForm();
+        } catch (e: any) {
+            toast({ title: "Error", description: e.message, variant: "destructive" });
+        } finally {
+            setSaving(false);
         }
     };
 
     const handleDeleteScheduleItem = async (id: string) => {
         if (!confirm('Delete this schedule item?')) return;
-
-        const { error } = await supabase
-            .from('schedule_items' as any)
-            .delete()
-            .eq('id', id);
-
-        if (error) {
-            toast({ title: "Error", description: "Failed to delete schedule item", variant: "destructive" });
-        } else {
-            toast({ title: "Success", description: "Schedule item deleted" });
-        }
+        const { error } = await supabase.from('schedule_items' as any).delete().eq('id', id);
+        if (error) toast({ title: "Error", description: "Failed to delete item", variant: "destructive" });
+        else toast({ title: "Success", description: "Item deleted" });
     };
 
     const openEditBudget = (item: BudgetItem) => {
@@ -223,8 +284,8 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
         setScheduleDialogOpen(true);
     };
 
-    const totalEstimated = budgetData?.reduce((sum, item) => sum + (item.estimated_cost || 0), 0) || 0;
-    const totalActual = budgetData?.reduce((sum, item) => sum + (item.actual_cost || 0), 0) || 0;
+    const totalEstimated = budgetData.reduce((sum, item) => sum + (item.estimated_cost || 0), 0);
+    const totalActual = budgetData.reduce((sum, item) => sum + (item.actual_cost || 0), 0);
 
     const formatDateRange = (start: string, end: string | null) => {
         const startDate = new Date(start).toLocaleDateString();
@@ -237,11 +298,19 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto">
-            <h1 className="text-xl sm:text-2xl font-bold mb-6">Budget & Schedule</h1>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto w-full">
+            <div className="flex items-center gap-3 mb-6">
+                <h1 className="text-xl sm:text-2xl font-bold">Budget & Schedule</h1>
+                {roomKey && (
+                    <div className="text-xs flex items-center gap-1 text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
+                        <Lock className="w-3 h-3" /> E2EE
+                    </div>
+                )}
+            </div>
+
             <div className="space-y-8">
                 {/* Budget Section */}
-                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md">
+                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md border border-white/5">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h2 className="text-xl font-semibold">Budget Overview</h2>
                         <Dialog open={budgetDialogOpen} onOpenChange={(open) => { setBudgetDialogOpen(open); if (!open) resetBudgetForm(); }}>
@@ -251,7 +320,10 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                             <DialogContent className="w-[95vw] rounded-lg">
                                 <DialogHeader>
                                     <DialogTitle>{editingBudget ? 'Edit' : 'Add'} Budget Item</DialogTitle>
-                                    <DialogDescription>Enter the details for this budget item.</DialogDescription>
+                                    <DialogDescription>
+                                        Enter the details for this budget item.
+                                        {roomKey && <span className="text-green-500 text-xs ml-2 flex items-center gap-1 inline-flex"><Lock className="w-3 h-3" /> Ends-to-End Encrypted</span>}
+                                    </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
                                     <div>
@@ -276,14 +348,14 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                         <Label>Notes</Label>
                                         <Textarea value={budgetNotes} onChange={(e) => setBudgetNotes(e.target.value)} placeholder="Additional notes..." />
                                     </div>
-                                    <Button onClick={editingBudget ? handleUpdateBudgetItem : handleAddBudgetItem} className="w-full">
-                                        {editingBudget ? 'Update' : 'Add'} Budget Item
+                                    <Button onClick={editingBudget ? handleUpdateBudgetItem : handleAddBudgetItem} className="w-full" disabled={saving}>
+                                        {saving ? 'Encrypting & Saving...' : (editingBudget ? 'Update Budget Item' : 'Add Budget Item')}
                                     </Button>
                                 </div>
                             </DialogContent>
                         </Dialog>
                     </div>
-                    {budgetData && budgetData.length > 0 ? (
+                    {budgetData.length > 0 ? (
                         <>
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 p-4 bg-slate-900/50 rounded">
                                 <div>
@@ -301,7 +373,7 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                             </div>
                             <div className="space-y-2">
                                 {budgetData.map(item => (
-                                    <div key={item.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-slate-900/50 rounded hover:bg-slate-900/70 gap-3">
+                                    <div key={item.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 bg-slate-900/50 rounded hover:bg-slate-900/70 gap-3 border border-white/5">
                                         <div className="flex-1 w-full">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <p className="font-medium">{item.item_name}</p>
@@ -333,7 +405,7 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                 </div>
 
                 {/* Schedule Section */}
-                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md">
+                <div className="bg-slate-800/50 p-4 sm:p-6 rounded-lg shadow-md border border-white/5">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
                         <h2 className="text-xl font-semibold">Schedule Overview</h2>
                         <Dialog open={scheduleDialogOpen} onOpenChange={(open) => { setScheduleDialogOpen(open); if (!open) resetScheduleForm(); }}>
@@ -343,7 +415,10 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                             <DialogContent className="w-[95vw] rounded-lg">
                                 <DialogHeader>
                                     <DialogTitle>{editingSchedule ? 'Edit' : 'Add'} Schedule Item</DialogTitle>
-                                    <DialogDescription>Enter the details for this schedule item.</DialogDescription>
+                                    <DialogDescription>
+                                        Enter the details for this schedule item.
+                                        {roomKey && <span className="text-green-500 text-xs ml-2 flex items-center gap-1 inline-flex"><Lock className="w-3 h-3" /> Ends-to-End Encrypted</span>}
+                                    </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
                                     <div>
@@ -378,17 +453,17 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                             </SelectContent>
                                         </Select>
                                     </div>
-                                    <Button onClick={editingSchedule ? handleUpdateScheduleItem : handleAddScheduleItem} className="w-full">
-                                        {editingSchedule ? 'Update' : 'Add'} Schedule Item
+                                    <Button onClick={editingSchedule ? handleUpdateScheduleItem : handleAddScheduleItem} className="w-full" disabled={saving}>
+                                        {saving ? 'Encrypting & Saving...' : (editingSchedule ? 'Update Schedule Item' : 'Add Schedule Item')}
                                     </Button>
                                 </div>
                             </DialogContent>
                         </Dialog>
                     </div>
-                    {scheduleData && scheduleData.length > 0 ? (
+                    {scheduleData.length > 0 ? (
                         <div className="space-y-3">
                             {scheduleData.map(item => (
-                                <div key={item.id} className="p-4 bg-slate-900/50 rounded hover:bg-slate-900/70">
+                                <div key={item.id} className="p-4 bg-slate-900/50 rounded hover:bg-slate-900/70 border border-white/5">
                                     <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                                         <div className="flex-1 w-full">
                                             <div className="flex items-center gap-2 mb-2 flex-wrap">

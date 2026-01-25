@@ -12,7 +12,7 @@ const MoreMenu = () => {
     const location = useLocation();
 
     const moreItems = [
-        { path: '/chats', icon: MessageSquare, label: 'Chats' },
+        { path: '/messages', icon: MessageSquare, label: 'Messages' },
         { path: '/ratings', icon: Star, label: 'Ratings' },
         { path: '/announcements', icon: Megaphone, label: 'Announcements' },
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },

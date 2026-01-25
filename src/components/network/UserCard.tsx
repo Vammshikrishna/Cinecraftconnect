@@ -8,10 +8,10 @@ import { useAuth } from '../../contexts/AuthContext';
 interface UserCardProps {
   user: {
     id: string;
-    avatar_url: string;
-    full_name: string;
-    username: string;
-    craft: string;
+    avatar_url: string | null;
+    full_name: string | null;
+    username: string | null;
+    craft: string | null;
     // FINAL FIX: Made connection_status optional to match the UserProfile type.
     connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
   };
@@ -68,7 +68,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
       <div className="flex items-center space-x-4">
         <Link to={`/profile/${user.id}`} className="hover:opacity-80 transition-opacity">
           <Avatar className="h-16 w-16">
-            <AvatarImage src={user.avatar_url || undefined} alt={user.full_name} />
+            <AvatarImage src={user.avatar_url || undefined} alt={user.full_name || 'User'} />
             <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
           </Avatar>
         </Link>
@@ -76,7 +76,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
           <div className="flex justify-between items-start">
             <div>
               <Link to={`/profile/${user.id}`} className="hover:underline decoration-primary underline-offset-4">
-                <h3 className="font-bold text-lg">{user.full_name}</h3>
+                <h3 className="font-bold text-lg leading-tight">{user.full_name}</h3>
               </Link>
               <Link to={`/profile/${user.id}`} className="hover:text-primary transition-colors">
                 <p className="text-sm text-muted-foreground">@{user.username}</p>
@@ -84,22 +84,22 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
               <p className="text-sm text-primary mt-1">{user.craft}</p>
             </div>
           </div>
-          <div className="mt-4 flex gap-2">
-            {renderActionButton()}
-            {(user.connection_status || 'none') === 'connected' && (
-              <Button
-                size="sm"
-                variant="default"
-                className="flex-1"
-                asChild
-              >
-                <Link to={`/dm/${user.id}`}>
-                  <MessageCircle size={14} className="mr-1" /> Message
-                </Link>
-              </Button>
-            )}
-          </div>
         </div>
+      </div>
+      <div className="mt-4 flex gap-2 flex-wrap">
+        {renderActionButton()}
+        {(user.connection_status || 'none') === 'connected' && (
+          <Button
+            size="sm"
+            variant="default"
+            className="flex-1 min-w-[100px]"
+            asChild
+          >
+            <Link to={`/dm/${user.id}`}>
+              <MessageCircle size={14} className="mr-1" /> Message
+            </Link>
+          </Button>
+        )}
       </div>
     </Card>
   );

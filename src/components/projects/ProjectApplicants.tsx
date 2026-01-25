@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -25,89 +25,105 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
   const { toast } = useToast();
+  // const { user } = useAuth(); // Not currently used
+
+  // Resolve space ID if different from projectId
+  const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(projectId);
 
   useEffect(() => {
-    fetchApplicants();
+    let mounted = true;
+    const resolveSpace = async () => {
+      if (!projectId) return;
+      try {
+        const { data } = await supabase
+          .from('project_spaces')
+          .select('id')
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        if (mounted && data) {
+          setResolvedSpaceId(data.id);
+        }
+      } catch (e) {
+        // Ignore
+      }
+    };
+    resolveSpace();
+    return () => { mounted = false; };
   }, [projectId]);
 
-  const fetchApplicants = async () => {
+  const fetchApplicants = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('project_applications')
+    // Fetch join requests for this Space
+    const { data: requests, error } = await supabase
+      .from('project_space_join_requests' as any)
       .select(`
         id,
         user_id,
         status,
-        profiles (
+        profiles:user_id (
           full_name,
           avatar_url,
           craft
         )
       `)
-      .eq('project_id', projectId);
+      .eq('project_space_id', resolvedSpaceId); // Use resolvedSpaceId!
 
     if (error) {
       console.error("Error fetching applicants:", error);
       toast({
         title: "Error",
-        description: "Failed to load applicants. The database may be temporarily unavailable.",
+        description: "Failed to load applicants.",
         variant: "destructive",
       });
     } else {
-      setApplicants(data as any);
+      // Map to expected format if needed, but the Select matches the interface roughly
+      setApplicants(requests as any);
     }
     setLoading(false);
-  };
+  }, [resolvedSpaceId, toast]); // resolvedSpaceId dependency
 
-  const handleApplication = async (applicationId: string, userId: string, newStatus: 'approved' | 'rejected') => {
-    setProcessingId(applicationId);
-
-    const { error: updateError } = await supabase
-      .from('project_applications')
-      .update({ status: newStatus })
-      .eq('id', applicationId);
-
-    if (updateError) {
-      toast({
-        title: "Error",
-        description: `Failed to ${newStatus === 'approved' ? 'approve' : 'reject'} application. Please try again.`,
-        variant: "destructive",
-      });
-      setProcessingId(null);
-      return;
+  useEffect(() => {
+    if (resolvedSpaceId) {
+      fetchApplicants();
     }
+  }, [resolvedSpaceId, fetchApplicants]);
 
-    if (newStatus === 'approved') {
-      const { error: insertError } = await supabase
-        .from('project_space_members')
-        .upsert({
-          project_space_id: projectId,
-          user_id: userId,
-          role: 'member'
-        });
+  const handleApplication = async (requestId: string, _userId: string, newStatus: 'approved' | 'rejected') => {
+    setProcessingId(requestId);
 
-      if (insertError) {
-        toast({
-          title: "Error",
-          description: "Application was approved, but failed to add the user to the project team.",
-          variant: "destructive",
-        });
+    try {
+      let error;
+      if (newStatus === 'approved') {
+        const { error: rpcError } = await supabase.rpc('approve_join_request' as any, { _request_id: requestId });
+        error = rpcError;
       } else {
-        toast({
-          title: "Success",
-          description: "Application approved and user added to the project team.",
-        });
+        const { error: rpcError } = await supabase.rpc('reject_join_request' as any, { _request_id: requestId });
+        error = rpcError;
       }
-    } else {
+
+      if (error) throw error;
+
       toast({
         title: "Success",
-        description: "Application has been rejected.",
+        description: newStatus === 'approved' ? "User approved and added to team." : "Request rejected.",
       });
-    }
 
-    setProcessingId(null);
-    fetchApplicants();
+      // Optimistic update or refetch
+      fetchApplicants();
+
+    } catch (err) {
+      console.error("Error processing request:", err);
+      toast({
+        title: "Error",
+        description: "Failed to process request. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   if (loading) {

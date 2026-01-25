@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check } from 'lucide-react';
+import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check, Lock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { EncryptionService } from '@/services/EncryptionService';
 
 interface TeamMember {
     user_id: string;
@@ -22,13 +23,15 @@ interface SearchResult {
     full_name: string | null;
     avatar_url: string | null;
     bio: string | null;
+    public_key?: string | null;
 }
 
 interface TeamProps {
     project_id: string;
+    roomKey: CryptoKey | null;
 }
 
-const Team = ({ project_id }: TeamProps) => {
+const Team = ({ project_id, roomKey }: TeamProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
     const [members, setMembers] = useState<TeamMember[]>([]);
@@ -41,19 +44,45 @@ const Team = ({ project_id }: TeamProps) => {
     const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
     const [searching, setSearching] = useState(false);
 
+    const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(project_id);
+
+    useEffect(() => {
+        let mounted = true;
+        const resolveSpace = async () => {
+            if (!project_id) return;
+            try {
+                const { data, error } = await supabase
+                    .from('project_spaces')
+                    .select('id')
+                    .eq('project_id', project_id)
+                    .maybeSingle();
+
+                if (error) {
+                    // Ignore
+                } else if (mounted && data) {
+                    setResolvedSpaceId(data.id);
+                }
+            } catch (e) {
+                // Ignore
+            }
+        };
+        resolveSpace();
+        return () => { mounted = false; };
+    }, [project_id]);
+
     const fetchMembers = useCallback(async () => {
         try {
+            setLoading(true);
             const { data, error } = await supabase
                 .from('project_space_members' as any)
                 .select(`
-                    user_id,
-                    role,
+                    *,
                     profiles:user_id (
                         full_name,
                         avatar_url
                     )
                 `)
-                .eq('project_space_id', project_id);
+                .eq('project_space_id', resolvedSpaceId);
 
             if (error) throw error;
 
@@ -69,21 +98,22 @@ const Team = ({ project_id }: TeamProps) => {
             setMembers(formattedMembers);
         } catch (error: any) {
             console.error('Error fetching members:', error);
+            toast({ title: "Error", description: "Failed to load team members", variant: "destructive" });
         } finally {
             setLoading(false);
         }
-    }, [project_id]);
+    }, [resolvedSpaceId, toast]);
 
     useEffect(() => {
         fetchMembers();
 
         const channel = supabase
-            .channel(`project_space_members:${project_id}`)
+            .channel(`project_space_members:${resolvedSpaceId}`)
             .on('postgres_changes', {
                 event: '*',
                 schema: 'public',
                 table: 'project_space_members',
-                filter: `project_space_id=eq.${project_id}`
+                filter: `project_space_id=eq.${resolvedSpaceId}`
             }, () => {
                 fetchMembers();
             })
@@ -92,17 +122,16 @@ const Team = ({ project_id }: TeamProps) => {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [project_id, fetchMembers]);
+    }, [resolvedSpaceId, fetchMembers]);
 
     const generateInviteLink = async () => {
         try {
-            // Generate random invite code
             const code = Math.random().toString(36).substring(2, 15);
 
             const { error } = await supabase
                 .from('project_invites' as any)
                 .insert([{
-                    project_id,
+                    project_id: resolvedSpaceId,
                     invite_code: code,
                     created_by: user?.id,
                     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
@@ -113,6 +142,7 @@ const Team = ({ project_id }: TeamProps) => {
             setInviteCode(code);
             toast({ title: "Success", description: "Invite link generated" });
         } catch (error: any) {
+            console.error("Invite link error:", error);
             toast({ title: "Error", description: "Failed to generate invite link", variant: "destructive" });
         }
     };
@@ -130,43 +160,77 @@ const Team = ({ project_id }: TeamProps) => {
 
         setSearching(true);
         try {
+            // @ts-ignore
             const { data, error } = await supabase
                 .from('profiles')
-                .select('id, full_name, avatar_url, bio')
+                // @ts-ignore
+                .select('id, full_name, avatar_url, bio, public_key')
                 .ilike('full_name', `%${searchQuery}%`)
                 .limit(10);
 
             if (error) throw error;
 
-            // Filter out users already in the project
             const memberIds = members.map(m => m.user_id);
-            const filtered = data?.filter(user => !memberIds.includes(user.id)) || [];
+            // @ts-ignore
+            const filtered = data?.filter((user: any) => !memberIds.includes(user.id)).map((u: any) => ({
+                id: u.id,
+                full_name: u.full_name,
+                avatar_url: u.avatar_url,
+                bio: u.bio,
+                public_key: u.public_key
+            })) as SearchResult[] || [];
 
             setSearchResults(filtered);
         } catch (error: any) {
+            console.error("Search users error:", error);
             toast({ title: "Error", description: "Failed to search users", variant: "destructive" });
         } finally {
             setSearching(false);
         }
     };
 
-    const addMember = async (userId: string) => {
+    const addMember = async (targetUser: SearchResult) => {
         try {
+            // 1. Add to project
             const { error } = await supabase
                 .from('project_space_members' as any)
                 .insert([{
-                    project_space_id: project_id,
-                    user_id: userId,
-                    role: 'member'
+                    project_space_id: resolvedSpaceId,
+                    user_id: targetUser.id
                 }]);
 
             if (error) throw error;
 
+            // 2. Share Key (E2EE)
+            if (roomKey && targetUser.public_key) {
+                console.log("Sharing key with new member...");
+                const encryptedKeyData = await EncryptionService.encryptRoomKeyForUser(roomKey, targetUser.public_key);
+
+                if (encryptedKeyData) {
+                    await supabase.from('project_keys' as any).insert({
+                        project_id: project_id,
+                        user_id: targetUser.id,
+                        encrypted_key: encryptedKeyData.encryptedKey,
+                        iv: encryptedKeyData.iv,
+                    });
+                    toast({ title: "Secure Access Granted", description: "Encrypted key shared with new member." });
+                } else {
+                    toast({ title: "Encryption Warning", description: "Could not encrypt key for user. They may not see history.", variant: "destructive" });
+                }
+            } else if (roomKey && !targetUser.public_key) {
+                toast({ title: "Security Notice", description: "User has no public key. They cannot view encrypted content.", variant: "destructive" });
+            }
+
             toast({ title: "Success", description: "Member added to project" });
-            setSearchResults(searchResults.filter(u => u.id !== userId));
+            setSearchResults(searchResults.filter(u => u.id !== targetUser.id));
             fetchMembers();
         } catch (error: any) {
-            toast({ title: "Error", description: "Failed to add member", variant: "destructive" });
+            console.error("Add member error:", error);
+            toast({
+                title: "Error",
+                description: error.message || error.error_description || "Failed to add member",
+                variant: "destructive"
+            });
         }
     };
 
@@ -177,14 +241,18 @@ const Team = ({ project_id }: TeamProps) => {
             const { error } = await supabase
                 .from('project_space_members' as any)
                 .delete()
-                .eq('project_space_id', project_id)
+                .eq('project_space_id', resolvedSpaceId)
                 .eq('user_id', userId);
 
             if (error) throw error;
 
+            // @ts-ignore
+            await supabase.from('project_keys' as any).delete().eq('project_id', project_id).eq('user_id', userId);
+
             toast({ title: "Success", description: "Member removed" });
             fetchMembers();
         } catch (error: any) {
+            console.error("Remove member error:", error);
             toast({ title: "Error", description: "Failed to remove member", variant: "destructive" });
         }
     };
@@ -196,7 +264,10 @@ const Team = ({ project_id }: TeamProps) => {
     return (
         <div className="p-4 sm:p-8 h-full overflow-y-auto">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h1 className="text-xl sm:text-2xl font-bold">Team Management</h1>
+                <div className="flex items-center gap-2">
+                    <h1 className="text-xl sm:text-2xl font-bold">Team Management</h1>
+                    {roomKey && <Lock className="w-4 h-4 text-green-500" />}
+                </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                         <DialogTrigger asChild>
@@ -271,9 +342,10 @@ const Team = ({ project_id }: TeamProps) => {
                                                     <div>
                                                         <p className="font-medium">{user.full_name || 'Unknown User'}</p>
                                                         {user.bio && <p className="text-sm text-muted-foreground line-clamp-1">{user.bio}</p>}
+                                                        {roomKey && !user.public_key && <p className="text-xs text-red-400">No Public Key</p>}
                                                     </div>
                                                 </div>
-                                                <Button size="sm" onClick={() => addMember(user.id)}>
+                                                <Button size="sm" onClick={() => addMember(user)}>
                                                     Add
                                                 </Button>
                                             </div>

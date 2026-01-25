@@ -11,9 +11,13 @@ import {
     MapPin,
     ArrowLeft,
     MessageSquare,
-    Share2
+    Share2,
+    Edit,
+    Trash2
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MarketplaceShareSheet } from '@/components/marketplace/MarketplaceShareSheet';
+import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -23,6 +27,10 @@ const MarketplaceListingDetail = () => {
     const [listing, setListing] = useState<MarketplaceListing | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
+    const [showShareSheet, setShowShareSheet] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+    const isOwner = user && listing && user.id === listing.user_id;
 
     useEffect(() => {
         if (listingId) {
@@ -87,8 +95,34 @@ const MarketplaceListingDetail = () => {
         }
 
         if (listing && listing.profiles && (listing.profiles as any).id) {
-            // Navigate to chat with this user
             navigate(`/messages/${(listing.profiles as any).id}`);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!listingId) return;
+        if (!confirm('Are you sure you want to delete this listing? This action cannot be undone.')) return;
+
+        try {
+            const { error } = await supabase
+                .from('marketplace_listings')
+                .delete()
+                .eq('id', listingId);
+
+            if (error) throw error;
+
+            toast({
+                title: 'Listing deleted',
+                description: 'Your listing has been removed successfully.'
+            });
+            navigate('/marketplace');
+        } catch (error) {
+            console.error('Error deleting listing:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to delete listing',
+                variant: 'destructive'
+            });
         }
     };
 
@@ -163,14 +197,38 @@ const MarketplaceListingDetail = () => {
                                     <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
                                         {listing.title}
                                     </h1>
-                                    <div className="flex items-center text-muted-foreground">
-                                        <MapPin className="h-4 w-4 mr-1" />
+                                    <div className="flex items-center text-muted-foreground bg-primary/10 px-3 py-1 rounded-full text-sm">
+                                        <MapPin className="h-3.5 w-3.5 mr-1.5" />
                                         {listing.location}
                                     </div>
                                 </div>
-                                <Button variant="outline" size="icon">
-                                    <Share2 className="h-4 w-4" />
-                                </Button>
+                                <div className="flex gap-2">
+                                    {isOwner && (
+                                        <>
+                                            <Button variant="outline" size="icon" onClick={() => setIsEditModalOpen(true)}>
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                            <Button variant="destructive" size="icon" onClick={handleDelete}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </>
+                                    )}
+                                    <Button variant="outline" size="icon" onClick={() => setShowShareSheet(true)}>
+                                        <Share2 className="h-4 w-4" />
+                                    </Button>
+                                    <MarketplaceShareSheet
+                                        isOpen={showShareSheet}
+                                        onOpenChange={setShowShareSheet}
+                                        listingId={listing!.id}
+                                    />
+                                    <ListingCreationModal
+                                        open={isEditModalOpen}
+                                        onOpenChange={setIsEditModalOpen}
+                                        onSuccess={fetchListingDetails}
+                                        initialData={listing}
+                                        mode="edit"
+                                    />
+                                </div>
                             </div>
 
                             <div className="p-6 bg-card border border-border rounded-xl space-y-4">

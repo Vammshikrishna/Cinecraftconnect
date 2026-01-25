@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export interface Connection {
   id: string;
@@ -30,257 +31,128 @@ export interface Connection {
 export const useConnections = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [pendingRequests, setPendingRequests] = useState<Connection[]>([]);
-  const [sentRequests, setSentRequests] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchConnections = async () => {
-    if (!user) return;
+  // We will use the manual fetch pattern below to ensure compatibility with existing data structures
 
-    try {
-      setLoading(true);
 
-      // Fetch accepted connections
-      const { data: acceptedData, error: acceptedError } = await supabase
+  // Since we might not be sure if the join works, let's just stick to the manual join pattern inside queryFn for safety,
+  // or better, FIX the query to not rely on JOIN if we aren't sure.
+  // The previous code did manual join. Let's replicate that manual join inside the queryFn to be 100% safe.
+
+  const { data: safeData, isLoading: safeLoading } = useQuery({
+    queryKey: ['connections_manual', user?.id],
+    queryFn: async () => {
+      if (!user) return { connections: [], pendingRequests: [], sentRequests: [] };
+
+      // 1. Fetch all raw connections
+      const { data: rawConnections, error } = await supabase
         .from('user_connections')
         .select('*')
-        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
-        .eq('status', 'accepted');
+        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
 
-      if (acceptedError) throw acceptedError;
+      if (error) throw error;
 
-      // Fetch pending requests received
-      const { data: pendingData, error: pendingError } = await supabase
-        .from('user_connections')
-        .select('*')
-        .eq('following_id', user.id)
-        .eq('status', 'pending');
-
-      if (pendingError) throw pendingError;
-
-      // Fetch sent requests
-      const { data: sentData, error: sentError } = await supabase
-        .from('user_connections')
-        .select('*')
-        .eq('follower_id', user.id)
-        .eq('status', 'pending');
-
-      if (sentError) throw sentError;
-
-      // Fetch profiles for all connections
-      const allUserIds = new Set<string>();
-      [...(acceptedData || []), ...(pendingData || []), ...(sentData || [])].forEach((conn) => {
-        allUserIds.add(conn.follower_id);
-        allUserIds.add(conn.following_id);
+      // 2. Fetch profiles
+      const userIds = new Set<string>();
+      rawConnections?.forEach(c => {
+        userIds.add(c.follower_id);
+        userIds.add(c.following_id);
       });
 
-      const { data: profilesData } = await supabase
+      const { data: profiles } = await supabase
         .from('profiles')
         .select('*')
-        .in('id', Array.from(allUserIds));
+        .in('id', Array.from(userIds));
 
-      const profilesMap = new Map(profilesData?.map((p) => [p.id, p]) || []);
+      const profilesMap = new Map(profiles?.map(p => [p.id, p]));
 
-      // Map profiles to connections
-      const mapConnections = (connections: any[]) =>
-        connections.map((conn) => ({
-          ...conn,
-          follower_profile: profilesMap.get(conn.follower_id),
-          following_profile: profilesMap.get(conn.following_id),
-        }));
+      const mappedConnections = rawConnections?.map(conn => ({
+        ...conn,
+        follower_profile: profilesMap.get(conn.follower_id),
+        following_profile: profilesMap.get(conn.following_id),
+      })) || [];
 
-      setConnections(mapConnections(acceptedData || []));
-      setPendingRequests(mapConnections(pendingData || []));
-      setSentRequests(mapConnections(sentData || []));
-    } catch (error) {
-      console.error('Error fetching connections:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load connections',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
+      const connections = mappedConnections.filter(c => c.status === 'accepted') as Connection[];
+      const pendingRequests = mappedConnections.filter(c => c.following_id === user?.id && c.status === 'pending') as Connection[];
+      const sentRequests = mappedConnections.filter(c => c.follower_id === user?.id && c.status === 'pending') as Connection[];
+
+      return { connections, pendingRequests, sentRequests };
+    },
+    enabled: !!user,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Mutations
+  const sendMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      if (!user) throw new Error("No user");
+      const { error } = await supabase
+        .from('user_connections')
+        .insert({ follower_id: user.id, following_id: userId, status: 'pending' });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Success', description: 'Connection request sent' });
+      queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
-  };
+  });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string, status: 'accepted' }) => {
+      const { error } = await supabase.from('user_connections').update({ status }).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: 'Success', description: 'Connection request accepted' });
+      queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    }
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('user_connections').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    }
+  });
+
+  // Realtime subscription
   useEffect(() => {
-    fetchConnections();
-
-    // Subscribe to real-time changes
-    const channel = supabase
-      .channel('user_connections_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_connections',
-          filter: `follower_id=eq.${user?.id}`,
-        },
-        () => {
-          fetchConnections();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_connections',
-          filter: `following_id=eq.${user?.id}`,
-        },
-        () => {
-          fetchConnections();
-        }
-      )
+    if (!user) return;
+    const channel = supabase.channel('user_connections_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections', filter: `follower_id=eq.${user.id}` },
+        () => queryClient.invalidateQueries({ queryKey: ['connections_manual'] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections', filter: `following_id=eq.${user.id}` },
+        () => queryClient.invalidateQueries({ queryKey: ['connections_manual'] }))
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
-
-  const sendConnectionRequest = async (userId: string) => {
-    if (!user) return;
-
-    try {
-      const { error } = await supabase
-        .from('user_connections')
-        .insert({
-          follower_id: user.id,
-          following_id: userId,
-          status: 'pending',
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: 'Success',
-        description: 'Connection request sent',
-      });
-
-      fetchConnections();
-    } catch (error: any) {
-      console.error('Error sending connection request:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to send connection request',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const acceptConnectionRequest = async (connectionId: string) => {
-    try {
-      const { error } = await supabase
-        .from('user_connections')
-        .update({ status: 'accepted' })
-        .eq('id', connectionId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Success',
-        description: 'Connection request accepted',
-      });
-
-      fetchConnections();
-    } catch (error: any) {
-      console.error('Error accepting connection request:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to accept connection request',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const rejectConnectionRequest = async (connectionId: string) => {
-    try {
-      const { error } = await supabase
-        .from('user_connections')
-        .delete()
-        .eq('id', connectionId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Success',
-        description: 'Connection request rejected',
-      });
-
-      fetchConnections();
-    } catch (error: any) {
-      console.error('Error rejecting connection request:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to reject connection request',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const cancelConnectionRequest = async (connectionId: string) => {
-    try {
-      const { error } = await supabase
-        .from('user_connections')
-        .delete()
-        .eq('id', connectionId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Success',
-        description: 'Connection request cancelled',
-      });
-
-      fetchConnections();
-    } catch (error: any) {
-      console.error('Error cancelling connection request:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to cancel connection request',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  const removeConnection = async (connectionId: string) => {
-    try {
-      const { error } = await supabase
-        .from('user_connections')
-        .delete()
-        .eq('id', connectionId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Success',
-        description: 'Connection removed',
-      });
-
-      fetchConnections();
-    } catch (error: any) {
-      console.error('Error removing connection:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to remove connection',
-        variant: 'destructive',
-      });
-    }
-  };
+    return () => { supabase.removeChannel(channel); };
+  }, [user, queryClient]);
 
   return {
-    connections,
-    pendingRequests,
-    sentRequests,
-    loading,
-    sendConnectionRequest,
-    acceptConnectionRequest,
-    rejectConnectionRequest,
-    cancelConnectionRequest,
-    removeConnection,
+    connections: safeData?.connections || [],
+    pendingRequests: safeData?.pendingRequests || [],
+    sentRequests: safeData?.sentRequests || [],
+    loading: safeLoading,
+    sendConnectionRequest: (userId: string) => sendMutation.mutate(userId),
+    acceptConnectionRequest: (id: string) => updateStatusMutation.mutate({ id, status: 'accepted' }),
+    rejectConnectionRequest: (id: string) => {
+      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection request rejected' }) });
+    },
+    cancelConnectionRequest: (id: string) => {
+      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection request cancelled' }) });
+    },
+    removeConnection: (id: string) => {
+      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection removed' }) });
+    },
   };
 };
