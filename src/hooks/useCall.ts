@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { createDailyRoom } from '@/lib/daily';
 
 interface Call {
     id: string;
@@ -19,6 +18,8 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
+        if (!roomId) return;
+
         fetchActiveCall();
 
         // Subscribe to call changes
@@ -56,23 +57,22 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
 
         setLoading(true);
         try {
-            // Generate unique room name
-            const roomName = `${roomType}-${roomId}-${Date.now()}`;
+            // Generate unique room name for Jitsi
+            // Using a strictly unique name to avoid random people joining
+            const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substr(2);
+            const roomName = `CineCraft_${roomType}_${roomId}_${uniqueSuffix}`;
+            const jitsiUrl = `https://meet.jit.si/${roomName}`;
 
-            // Create Daily.co room via API
-            const dailyRoom = await createDailyRoom(roomName);
+            console.log("Starting Jitsi call:", jitsiUrl);
 
-            if (!dailyRoom) {
-                throw new Error('Failed to create Daily.co room');
-            }
-
+            // We store the Jitsi URL in the 'daily_room_url' column to reuse existing schema
             const { data, error } = await supabase
                 .from('calls' as any)
                 .insert([{
                     room_type: roomType,
                     room_id: roomId,
-                    daily_room_name: dailyRoom.name,
-                    daily_room_url: dailyRoom.url,
+                    daily_room_name: roomName,
+                    daily_room_url: jitsiUrl,
                     started_by: user.id,
                     status: 'active'
                 }])
@@ -81,7 +81,7 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
 
             if (error) throw error;
 
-            // Add self as participant (using upsert to avoid 409 conflict)
+            // Add self as participant
             const { error: participantError } = await supabase
                 .from('call_participants' as any)
                 .upsert([{
