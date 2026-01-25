@@ -85,13 +85,23 @@ const PublicProfile = () => {
     if (!user || !userId) return;
 
     try {
-      const { data } = await supabase
+      // Check for sent request
+      const { data: sentData } = await supabase
         .from('user_connections' as any)
         .select('id, status, follower_id')
-        .or(`and(follower_id.eq.${user.id},following_id.eq.${userId}),and(follower_id.eq.${userId},following_id.eq.${user.id})`)
-        .single();
+        .eq('follower_id', user.id)
+        .eq('following_id', userId)
+        .maybeSingle();
 
-      const connectionData = data as any;
+      // Check for received request
+      const { data: receivedData } = await supabase
+        .from('user_connections' as any)
+        .select('id, status, follower_id')
+        .eq('follower_id', userId)
+        .eq('following_id', user.id)
+        .maybeSingle();
+
+      const connectionData = (sentData || receivedData) as any;
 
       if (connectionData) {
         setConnectionId(connectionData.id);
@@ -103,9 +113,11 @@ const PublicProfile = () => {
           setConnectionStatus('pending_received');
         }
       } else {
+        setConnectionId(null);
         setConnectionStatus('none');
       }
     } catch (error) {
+      console.error('Error fetching connection status:', error);
       setConnectionStatus('none');
     }
   };
@@ -153,7 +165,14 @@ const PublicProfile = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto px-4 pt-16 pb-24 md:py-24">
-        <button onClick={() => navigate(-1)} className="inline-flex items-center text-muted-foreground hover:text-foreground mb-6 hover:underline bg-transparent border-0 p-0 cursor-pointer"><ArrowLeft className="mr-2 h-4 w-4" />Go Back</button>
+        <Button
+          variant="ghost"
+          onClick={() => navigate(-1)}
+          className="mb-6 pl-0 hover:bg-transparent hover:text-primary transition-colors"
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Go Back
+        </Button>
 
         <Card>
           <CardContent className="p-6 md:p-8">
@@ -220,28 +239,30 @@ const PublicProfile = () => {
               ) : (
                 <Button onClick={handleConnect} className="flex-1"><UserPlus className="mr-2 h-4 w-4" />Connect</Button>
               )}
-              <Button asChild className="flex-1">
-                <Link to={`/messages/${profile.id}`}><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
-              </Button>
+              {connectionStatus === 'connected' && (
+                <Button asChild className="flex-1">
+                  <Link to={`/messages/${profile.id}`}><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
 
         <div className="mt-8">
-          <Tabs defaultValue="portfolio" className="w-full">
+          <Tabs defaultValue="posts" className="w-full">
             <TabsList className="grid w-full grid-cols-3 bg-muted/50">
+              <TabsTrigger value="posts">Posts</TabsTrigger>
               <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
               <TabsTrigger value="projects">Projects</TabsTrigger>
-              <TabsTrigger value="posts">Posts</TabsTrigger>
             </TabsList>
+            <TabsContent value="posts" className="py-6">
+              <UserPosts targetUserId={profile.id} />
+            </TabsContent>
             <TabsContent value="portfolio" className="py-6">
               <PortfolioGrid userId={profile.id} isOwner={false} />
             </TabsContent>
             <TabsContent value="projects" className="py-6">
               <UserProjects userId={profile.id} />
-            </TabsContent>
-            <TabsContent value="posts" className="py-6">
-              <UserPosts targetUserId={profile.id} />
             </TabsContent>
           </Tabs>
         </div>

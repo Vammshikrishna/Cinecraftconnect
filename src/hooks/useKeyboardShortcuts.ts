@@ -27,7 +27,7 @@ export const useKeyboardShortcuts = () => {
             // Cmd+M or Ctrl+M for messages
             if ((e.metaKey || e.ctrlKey) && e.key === 'm') {
                 e.preventDefault();
-                navigate('/chats');
+                navigate('/messages');
             }
         };
 

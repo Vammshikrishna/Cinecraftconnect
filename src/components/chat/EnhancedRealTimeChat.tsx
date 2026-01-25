@@ -10,6 +10,8 @@ import { Send, ArrowLeft, MoreVertical, Smile } from 'lucide-react';
 import { format, isToday, isYesterday } from 'date-fns';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
+import { MarketplaceShareCard } from './MarketplaceShareCard';
+import { EncryptionService } from '@/services/EncryptionService';
 
 interface Message {
   id: string;
@@ -37,6 +39,24 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [partnerPublicKey, setPartnerPublicKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchPartnerKey = async () => {
+      if (!partnerId) return;
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('public_key')
+        .eq('id', partnerId)
+        .single();
+
+      if (!error && (data as any)?.public_key) {
+        setPartnerPublicKey((data as any).public_key);
+      }
+    };
+    fetchPartnerKey();
+  }, [partnerId]);
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -49,10 +69,60 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       console.error('Error fetching messages:', error);
       setMessages([]);
     } else {
-      setMessages(data as Message[]);
+      // Decrypt messages
+      const loadedMessages = data as Message[];
+      // We can only decrypt if we have the partner's public key (to derive the shared secret)
+      // AND the user's private key (handled by EncryptionService internally).
+      // Since fetches are async, we might want to do this transformation:
+
+      if (partnerPublicKey) {
+        const decryptedPromise = loadedMessages.map(async (msg) => {
+          // Try to decrypt only if it looks encrypted (e.g. check if it's JSON with iv?) 
+          // Our format: { ciphertext, iv } returned by encryptMessage
+          // AND we stored { ciphertext, iv } as JSON string in content?
+          // Wait, encryption service encryptMessage returns object. 
+          // handleSendMessage stores object.ciphertext? No, we need to store string.
+          // We should store JSON string of { ciphertext, iv }.
+
+          try {
+            const parsed = JSON.parse(msg.content);
+            if (parsed.ciphertext && parsed.iv) {
+              const decrypted = await EncryptionService.decryptMessage(parsed.ciphertext, parsed.iv, partnerPublicKey);
+              if (decrypted) {
+                return { ...msg, content: decrypted };
+              }
+            }
+          } catch (e) {
+            // Not JSON or not encrypted format -> Plaintext
+          }
+          return msg;
+        });
+        const decryptedMessages = await Promise.all(decryptedPromise);
+        setMessages(decryptedMessages);
+      } else {
+        // If we don't have the key yet, we can't decrypt encrypted messages.
+        // We should probably wait or trigger re-fetch when key loads.
+        // For now, show as is (will look like garbage if encrypted).
+        setMessages(loadedMessages);
+      }
     }
+
+    // Mark messages as read
+    if (user && roomId) {
+      const { error: readError } = await supabase
+        .from('direct_messages' as any)
+        .update({ is_read: true })
+        .eq('channel_id', roomId)
+        .eq('receiver_id', user.id)
+        .eq('is_read', false);
+
+      if (readError) {
+        console.error('Error marking messages as read:', readError);
+      }
+    }
+
     setLoading(false);
-  }, [roomId]);
+  }, [roomId, partnerPublicKey, user]);
 
   useEffect(() => {
     fetchMessages();
@@ -83,15 +153,32 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     e.preventDefault();
     if (newMessage.trim() === '' || !user || !roomId) return;
 
-    const { error } = await supabase.from('direct_messages' as any).insert({
-      content: newMessage.trim(),
+    // We need to implement encryption BEFORE insert.
+    // Ideally we modify the insert call above.
+
+
+    let contentToSend = newMessage.trim();
+    if (partnerPublicKey) {
+      const encrypted = await EncryptionService.encryptMessage(contentToSend, partnerPublicKey);
+      if (encrypted) {
+        contentToSend = JSON.stringify(encrypted);
+      } else {
+        console.warn('Failed to encrypt message. Falling back to plaintext.');
+        // Fallback to clear text
+      }
+    } else {
+      console.warn("No partner public key. Sending plaintext.");
+    }
+
+    const { error: sendError } = await supabase.from('direct_messages' as any).insert({
+      content: contentToSend,
       sender_id: user.id,
       channel_id: roomId,
-      recipient_id: partnerId
+      receiver_id: partnerId
     });
 
-    if (error) {
-      console.error('Error sending message:', error);
+    if (sendError) {
+      console.error('Error sending message:', sendError);
     } else {
       setNewMessage('');
       setShowEmojiPicker(false);
@@ -114,10 +201,10 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white">
-      <header className="flex items-center justify-between p-4 border-b border-gray-700">
+    <div className="flex flex-col h-full bg-background text-foreground">
+      <header className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <button onClick={onBackClick} className="p-2 rounded-full hover:bg-gray-800">
+          <button onClick={onBackClick} className="p-2 rounded-full hover:bg-muted">
             <ArrowLeft className="h-6 w-6" />
           </button>
           {partnerName && (
@@ -130,7 +217,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             </>
           )}
         </div>
-        <button onClick={() => console.log('Dot menu clicked')} className="p-2 rounded-full hover:bg-gray-800">
+        <button onClick={() => console.log('Dot menu clicked')} className="p-2 rounded-full hover:bg-muted">
           <MoreVertical className="h-6 w-6" />
         </button>
       </header>
@@ -148,7 +235,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-gray-700'}`} max-w-xs lg:max-w-md`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`} max-w-xs lg:max-w-md`}>
                     {message.content.startsWith('POST_SHARE::') ? (
                       (() => {
                         try {
@@ -158,17 +245,26 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           return <p className="text-sm break-words">{message.content}</p>;
                         }
                       })()
+                    ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                          return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words">{message.content}</p>;
+                        }
+                      })()
                     ) : (
                       <p className="text-sm break-words">{message.content}</p>
                     )}
                   </div>
-                  <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
+                  <span className="text-xs text-muted-foreground">{formatTimestamp(message.created_at)}</span>
                 </div>
               );
             })}
             <div ref={messagesEndRef} />
           </div>
-          <div className="p-4 border-t border-gray-700">
+          <div className="p-4 border-t border-border">
             {showEmojiPicker && (
               <div className="absolute bottom-20 z-10">
                 <EmojiPicker onEmojiClick={onEmojiClick} />
@@ -188,7 +284,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 placeholder="Send a message..."
-                className="flex-1 bg-gray-800 border-gray-600 rounded-full"
+                className="flex-1 rounded-full"
                 autoComplete="off"
               />
               <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>

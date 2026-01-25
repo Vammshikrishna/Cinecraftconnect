@@ -62,7 +62,16 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
 
   useEffect(() => {
     fetchMembers();
-  }, [fetchMembers]);
+
+    const channel = supabase
+      .channel(`room_members:${roomId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` }, fetchMembers)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [roomId, fetchMembers]);
 
   return (
     <div className="absolute top-0 right-0 h-full w-full max-w-xs bg-background/95 backdrop-blur-xl border-l border-white/10 z-20 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">

@@ -12,8 +12,10 @@ import UserCard from "@/components/network/UserCard"; // Corrected import path
 import { ConnectionRequestCard } from "@/components/network/ConnectionRequestCard";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Network = () => {
+  const { user: currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [craftFilter, setCraftFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("discover");
@@ -130,15 +132,45 @@ const Network = () => {
               </Card>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {users.map((user) => (
-                  <UserCard
-                    key={user.id}
-                    user={user}
-                    onConnect={sendConnectionRequest} // This is correct
-                    onAccept={acceptConnectionRequest}  // This is correct for the logic inside UserCard
-                  // onCancelRequest and onRemoveConnection were causing the crash and are not needed here
-                  />
-                ))}
+                {users.map((user) => {
+                  // Find relevant connection IDs if they exist
+                  const sentReq = sentRequests.find(r => r.following_id === user.id);
+                  const connection = connections.find(c =>
+                    (c.follower_id === user.id && c.following_id === currentUser?.id) ||
+                    (c.following_id === user.id && c.follower_id === currentUser?.id)
+                  );
+
+                  return (
+                    <UserCard
+                      key={user.id}
+                      user={{
+                        ...user,
+                        // Ensure status is accurately reflected from stats if not already present
+                        connection_status: sentReq ? 'pending_sent' :
+                          connection ? 'connected' :
+                            user.connection_status || 'none'
+                      }}
+                      onConnect={sendConnectionRequest}
+                      onAccept={(id) => {
+                        // Acceptance usually happens in Requests tab, but if we do it here, we need the request ID.
+                        // For "Discover" tab, "Accept" only shows if status is pending_received.
+                        // Let's implement looking up the request if needed.
+                        const req = pendingRequests.find(r => r.follower_id === id);
+                        if (req) acceptConnectionRequest(req.id);
+                      }}
+                      onCancelRequest={(id) => {
+                        const req = sentRequests.find(r => r.following_id === id);
+                        if (req) cancelConnectionRequest(req.id);
+                      }}
+                      onRemoveConnection={(id) => {
+                        const conn = connections.find(c =>
+                          c.follower_id === id || c.following_id === id
+                        );
+                        if (conn) removeConnection(conn.id);
+                      }}
+                    />
+                  );
+                })}
               </div>
             )}
           </TabsContent>
@@ -283,9 +315,9 @@ const Network = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {connections.map((connection) => {
                       const profile =
-                        connection.follower_profile?.id !== connection.follower_id
-                          ? connection.follower_profile
-                          : connection.following_profile;
+                        connection.follower_id === currentUser?.id
+                          ? connection.following_profile
+                          : connection.follower_profile;
 
                       if (!profile) return null;
 

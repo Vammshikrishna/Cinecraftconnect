@@ -7,9 +7,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Loader2, Save, Trash2 } from 'lucide-react';
+import { Loader2, Save, Trash2, Lock } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useNavigate } from 'react-router-dom';
+import { EncryptionService } from '@/services/EncryptionService';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -31,14 +32,17 @@ import {
 
 interface ProjectSettingsProps {
     projectId: string;
+    roomKey: CryptoKey | null;
 }
 
-const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
+const ProjectSettings = ({ projectId, roomKey }: ProjectSettingsProps) => {
     const { toast } = useToast();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
+
+    // Form fields
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [status, setStatus] = useState<string>('active');
@@ -52,7 +56,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 
     useEffect(() => {
         fetchProjectDetails();
-    }, [projectId]);
+    }, [projectId, roomKey]);
 
     const fetchProjectDetails = async () => {
         try {
@@ -66,7 +70,22 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 
             if (data) {
                 setTitle(data.title);
-                setDescription(data.description || '');
+                let desc = data.description || '';
+
+                // Try decrypt if needed
+                if (desc.startsWith('{') && roomKey) {
+                    try {
+                        const parsed = JSON.parse(desc);
+                        if (parsed.iv && parsed.ciphertext) {
+                            const decrypted = await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey);
+                            if (decrypted) desc = decrypted;
+                        }
+                    } catch (e) {
+                        // ignore parse error, treat as plain text
+                    }
+                }
+                setDescription(desc);
+
                 setStatus(data.status || 'active');
                 setLocation(data.location || '');
                 setGenre(data.genre ? data.genre.join(', ') : '');
@@ -91,11 +110,17 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     const handleSave = async () => {
         setSaving(true);
         try {
+            let finalDescription = description;
+            if (roomKey && description) {
+                const encrypted = await EncryptionService.encryptGroupMessage(description, roomKey);
+                finalDescription = JSON.stringify(encrypted);
+            }
+
             const { error } = await supabase
                 .from('projects')
                 .update({
                     title,
-                    description,
+                    description: finalDescription,
                     status,
                     location,
                     genre: genre.split(',').map(g => g.trim()).filter(g => g),
@@ -158,9 +183,12 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 
     return (
         <div className="max-w-4xl mx-auto p-6 space-y-8 h-full overflow-y-auto custom-scrollbar">
-            <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Project Settings</h2>
-                <p className="text-muted-foreground">Manage your project details and preferences.</p>
+            <div className="space-y-2 flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-bold tracking-tight">Project Settings</h2>
+                    <p className="text-muted-foreground">Manage your project details and preferences.</p>
+                </div>
+                {roomKey && <div className="text-green-500 flex items-center gap-1 text-sm bg-green-500/10 px-3 py-1 rounded-full"><Lock className="w-3 h-3" /> E2EE Enabled</div>}
             </div>
 
             <div className="grid gap-6">
@@ -193,7 +221,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="description">Description</Label>
+                            <Label htmlFor="description">Description (Encrypted)</Label>
                             <Textarea
                                 id="description"
                                 value={description}

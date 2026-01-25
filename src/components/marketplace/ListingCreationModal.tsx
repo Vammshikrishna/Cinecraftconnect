@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -30,12 +30,16 @@ interface ListingCreationModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSuccess: () => void;
+    initialData?: any;
+    mode?: 'create' | 'edit';
 }
 
 export const ListingCreationModal = ({
     open,
     onOpenChange,
-    onSuccess
+    onSuccess,
+    initialData,
+    mode = 'create'
 }: ListingCreationModalProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
@@ -51,8 +55,31 @@ export const ListingCreationModal = ({
     const [pricePerDay, setPricePerDay] = useState('');
     const [pricePerWeek, setPricePerWeek] = useState('');
     const [specifications, setSpecifications] = useState<Record<string, string>>({});
-    const [images, setImages] = useState<File[]>([]);
-    const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+
+    // Image handling
+    // We mix existing URLs and new Files into a unified view for the UI, but store them separately for logic
+    const [existingImages, setExistingImages] = useState<string[]>([]); // URLs
+    const [newImages, setNewImages] = useState<File[]>([]); // Files
+    const [newImagePreviews, setNewImagePreviews] = useState<string[]>([]); // Data URLs for new files
+
+    useEffect(() => {
+        if (open && mode === 'edit' && initialData) {
+            setListingType(initialData.listing_type);
+            setTitle(initialData.title);
+            setDescription(initialData.description);
+            setCategory(initialData.category);
+            setLocation(initialData.location);
+            setPricePerDay(initialData.price_per_day?.toString() || '');
+            setPricePerWeek(initialData.price_per_week?.toString() || '');
+            setSpecifications(initialData.specifications || {});
+            setExistingImages(initialData.images || []);
+            setNewImages([]);
+            setNewImagePreviews([]);
+            setStep(1); // Start at step 1 or maybe step 2? keep 1 to allow type change if needed (though usually type is fixed)
+        } else if (open && mode === 'create') {
+            resetForm();
+        }
+    }, [open, mode, initialData]);
 
     const resetForm = () => {
         setStep(1);
@@ -64,42 +91,49 @@ export const ListingCreationModal = ({
         setPricePerDay('');
         setPricePerWeek('');
         setSpecifications({});
-        setImages([]);
-        setImagePreviews([]);
+        setExistingImages([]);
+        setNewImages([]);
+        setNewImagePreviews([]);
     };
 
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        if (files.length + images.length > 5) {
+        const totalImages = existingImages.length + newImages.length + files.length;
+
+        if (totalImages > 5) {
             toast({
                 title: 'Too many images',
-                description: 'You can upload up to 5 images',
+                description: 'You can have up to 5 images total',
                 variant: 'destructive'
             });
             return;
         }
 
-        setImages([...images, ...files]);
+        setNewImages([...newImages, ...files]);
 
         // Create previews
         files.forEach(file => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                setImagePreviews(prev => [...prev, reader.result as string]);
+                setNewImagePreviews(prev => [...prev, reader.result as string]);
             };
             reader.readAsDataURL(file);
         });
     };
 
-    const removeImage = (index: number) => {
-        setImages(images.filter((_, i) => i !== index));
-        setImagePreviews(imagePreviews.filter((_, i) => i !== index));
+    const removeExistingImage = (index: number) => {
+        setExistingImages(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const removeNewImage = (index: number) => {
+        setNewImages(prev => prev.filter((_, i) => i !== index));
+        setNewImagePreviews(prev => prev.filter((_, i) => i !== index));
     };
 
     const uploadImages = async (): Promise<string[]> => {
         const uploadedUrls: string[] = [];
 
-        for (const image of images) {
+        for (const image of newImages) {
             const fileExt = image.name.split('.').pop();
             const fileName = `${user?.id}/${Date.now()}-${Math.random()}.${fileExt}`;
 
@@ -125,35 +159,57 @@ export const ListingCreationModal = ({
         try {
             setLoading(true);
 
-            // Upload images
-            const imageUrls = await uploadImages();
+            // Upload new images
+            const newImageUrls = await uploadImages();
 
-            // Create listing
-            const { error } = await supabase
-                .from('marketplace_listings')
-                .insert({
-                    user_id: user.id,
-                    listing_type: listingType,
-                    title,
-                    description,
-                    category,
-                    location,
-                    price_per_day: parseFloat(pricePerDay),
-                    price_per_week: pricePerWeek ? parseFloat(pricePerWeek) : null,
-                    images: imageUrls,
-                    specifications,
-                    is_active: true
-                });
+            // Combine with existing images
+            const finalImages = [...existingImages, ...newImageUrls];
+
+            const listingData = {
+                user_id: user.id,
+                listing_type: listingType,
+                title,
+                description,
+                category,
+                location,
+                price_per_day: parseFloat(pricePerDay),
+                price_per_week: pricePerWeek ? parseFloat(pricePerWeek) : null,
+                images: finalImages,
+                specifications,
+                is_active: true
+            };
+
+            let error;
+            if (mode === 'edit' && initialData?.id) {
+                // Update
+                const { error: updateError } = await supabase
+                    .from('marketplace_listings')
+                    .update(listingData)
+                    .eq('id', initialData.id);
+                error = updateError;
+            } else {
+                // Insert
+                const { error: insertError } = await supabase
+                    .from('marketplace_listings')
+                    .insert(listingData);
+                error = insertError;
+            }
 
             if (error) throw error;
 
-            resetForm();
+            toast({
+                title: mode === 'edit' ? 'Listing Updated' : 'Listing Created',
+                description: `Your listing has been successfully ${mode === 'edit' ? 'updated' : 'created'}.`
+            });
+
+            if (mode === 'create') resetForm();
             onSuccess();
+            onOpenChange(false);
         } catch (error: any) {
-            console.error('Error creating listing:', error);
+            console.error('Error saving listing:', error);
             toast({
                 title: 'Error',
-                description: error.message || 'Failed to create listing',
+                description: error.message || 'Failed to save listing',
                 variant: 'destructive'
             });
         } finally {
@@ -165,11 +221,14 @@ export const ListingCreationModal = ({
         ? EQUIPMENT_CATEGORIES
         : LOCATION_CATEGORIES;
 
+    // Computed total image count for display
+    const totalImageCount = existingImages.length + newImages.length;
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-card text-card-foreground">
                 <DialogHeader>
-                    <DialogTitle>Create New Listing</DialogTitle>
+                    <DialogTitle>{mode === 'edit' ? 'Edit Listing' : 'Create New Listing'}</DialogTitle>
                 </DialogHeader>
 
                 {/* Step 1: Type Selection */}
@@ -182,23 +241,23 @@ export const ListingCreationModal = ({
                                     onClick={() => setListingType('equipment')}
                                     className={`p-6 rounded-lg border-2 transition-all ${listingType === 'equipment'
                                         ? 'border-primary bg-primary/10'
-                                        : 'border-gray-700 hover:border-gray-600'
+                                        : 'border-border hover:border-muted-foreground/50'
                                         }`}
                                 >
                                     <Camera size={32} className="mx-auto mb-2" />
                                     <div className="font-semibold">Equipment</div>
-                                    <div className="text-sm text-gray-400">Cameras, lighting, audio, etc.</div>
+                                    <div className="text-sm text-muted-foreground">Cameras, lighting, audio, etc.</div>
                                 </button>
                                 <button
                                     onClick={() => setListingType('location')}
                                     className={`p-6 rounded-lg border-2 transition-all ${listingType === 'location'
                                         ? 'border-primary bg-primary/10'
-                                        : 'border-gray-700 hover:border-gray-600'
+                                        : 'border-border hover:border-muted-foreground/50'
                                         }`}
                                 >
                                     <Home size={32} className="mx-auto mb-2" />
                                     <div className="font-semibold">Location</div>
-                                    <div className="text-sm text-gray-400">Studios, properties, venues</div>
+                                    <div className="text-sm text-muted-foreground">Studios, properties, venues</div>
                                 </button>
                             </div>
                         </div>
@@ -300,7 +359,7 @@ export const ListingCreationModal = ({
                                 min="0"
                                 step="0.01"
                             />
-                            <p className="text-sm text-gray-400 mt-1">
+                            <p className="text-sm text-muted-foreground mt-1">
                                 Offer a discounted weekly rate
                             </p>
                         </div>
@@ -326,40 +385,58 @@ export const ListingCreationModal = ({
                         <div>
                             <Label>Images (up to 5)</Label>
                             <div className="mt-2">
-                                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-700 rounded-lg cursor-pointer hover:border-gray-600 transition-colors">
-                                    <Upload size={32} className="text-gray-400 mb-2" />
-                                    <span className="text-sm text-gray-400">Click to upload images</span>
+                                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+                                    <Upload size={32} className="text-muted-foreground mb-2" />
+                                    <span className="text-sm text-muted-foreground">Click to upload images</span>
                                     <input
                                         type="file"
                                         className="hidden"
                                         accept="image/*"
                                         multiple
                                         onChange={handleImageSelect}
-                                        disabled={images.length >= 5}
+                                        disabled={totalImageCount >= 5}
                                     />
                                 </label>
                             </div>
 
                             {/* Image Previews */}
-                            {imagePreviews.length > 0 && (
-                                <div className="grid grid-cols-3 gap-2 mt-4">
-                                    {imagePreviews.map((preview, index) => (
-                                        <div key={index} className="relative aspect-video">
-                                            <img
-                                                src={preview}
-                                                alt={`Preview ${index + 1}`}
-                                                className="w-full h-full object-cover rounded-lg"
-                                            />
-                                            <button
-                                                onClick={() => removeImage(index)}
-                                                className="absolute top-1 right-1 bg-red-500 rounded-full p-1 hover:bg-red-600"
-                                            >
-                                                <X size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            <div className="grid grid-cols-3 gap-2 mt-4">
+                                {/* Existing Images */}
+                                {existingImages.map((url, index) => (
+                                    <div key={`existing-${index}`} className="relative aspect-video">
+                                        <img
+                                            src={url}
+                                            alt={`Existing ${index + 1}`}
+                                            className="w-full h-full object-cover rounded-lg"
+                                        />
+                                        <button
+                                            onClick={() => removeExistingImage(index)}
+                                            className="absolute top-1 right-1 bg-destructive/80 text-destructive-foreground rounded-full p-1 hover:bg-destructive"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                        <span className="absolute bottom-1 left-1 bg-black/50 text-white text-[10px] px-1 rounded">Existing</span>
+                                    </div>
+                                ))}
+
+                                {/* New Images */}
+                                {newImagePreviews.map((preview, index) => (
+                                    <div key={`new-${index}`} className="relative aspect-video">
+                                        <img
+                                            src={preview}
+                                            alt={`New ${index + 1}`}
+                                            className="w-full h-full object-cover rounded-lg"
+                                        />
+                                        <button
+                                            onClick={() => removeNewImage(index)}
+                                            className="absolute top-1 right-1 bg-destructive/80 text-destructive-foreground rounded-full p-1 hover:bg-destructive"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                        <span className="absolute bottom-1 left-1 bg-green-500/80 text-white text-[10px] px-1 rounded">New</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
 
                         <div className="flex gap-2">
@@ -369,9 +446,9 @@ export const ListingCreationModal = ({
                             <Button
                                 onClick={handleSubmit}
                                 className="flex-1"
-                                disabled={loading || images.length === 0}
+                                disabled={loading || totalImageCount === 0}
                             >
-                                {loading ? 'Creating...' : 'Create Listing'}
+                                {loading ? 'Saving...' : (mode === 'edit' ? 'Update Listing' : 'Create Listing')}
                             </Button>
                         </div>
                     </div>

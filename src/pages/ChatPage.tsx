@@ -13,14 +13,16 @@ interface Profile {
 
 const ChatPage = () => {
   const { user } = useAuth();
-  const { conversationId } = useParams<{ conversationId: string }>();
+  const { conversationId, userId } = useParams<{ conversationId: string; userId: string }>();
+  const activeId = conversationId || userId;
   const navigate = useNavigate();
   const [partner, setPartner] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!conversationId || !user) {
+    if (!activeId || !user || activeId === 'undefined') {
+      console.warn("Invalid activeId:", activeId);
       setLoading(false);
       return;
     }
@@ -42,9 +44,9 @@ const ChatPage = () => {
       setLoading(false);
     };
 
-    fetchPartnerProfile(conversationId);
+    fetchPartnerProfile(activeId);
 
-  }, [conversationId, user]);
+  }, [activeId, user]);
 
   const channelId = useMemo(() => {
     if (!user || !partner) return null;

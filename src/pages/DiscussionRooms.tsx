@@ -181,6 +181,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           roomDescription={activeRoom.description}
           categoryId={activeRoom.category_id}
           categories={categories}
+          roomType={activeRoom.room_type}
           onClose={() => {
             navigate('/discussion-rooms');
           }}

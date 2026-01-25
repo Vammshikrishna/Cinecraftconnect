@@ -11,6 +11,7 @@ import { DialogContent, DialogTitle, DialogDescription } from '@/components/ui/d
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface RoomSettingsProps {
   roomId: string;
@@ -111,7 +112,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
       <Tabs defaultValue="general" orientation="vertical" className="flex h-full w-full">
 
         {/* Sidebar Navigation */}
-        <div className="w-64 bg-muted/30 border-r border-border p-6 flex flex-col gap-6 shrink-0">
+        <div className="w-64 bg-muted/30 border-r border-border p-6 flex flex-col gap-6 shrink-0 h-full">
           <div className="flex items-center gap-3 text-primary mb-2">
             <div className="p-2 bg-primary/10 rounded-xl">
               <Shield className="h-6 w-6" />
@@ -152,174 +153,176 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
         </div>
 
         {/* Main Content Area */}
-        <div className="flex-1 flex flex-col relative min-w-0 bg-background">
-          <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+        <div className="flex-1 flex flex-col relative min-w-0 bg-background overflow-hidden h-full">
+          <ScrollArea className="flex-1 w-full h-full">
+            <div className="p-8">
 
-            {/* General Tab */}
-            <TabsContent value="general" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none">
-              <div>
-                <h3 className="text-xl font-semibold mb-1 tracking-tight">General Information</h3>
-                <p className="text-sm text-muted-foreground mb-6">Configure the basic details of your room.</p>
+              {/* General Tab */}
+              <TabsContent value="general" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 tracking-tight">General Information</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Configure the basic details of your room.</p>
 
-                <div className="space-y-5">
-                  <div className="space-y-2">
-                    <Label htmlFor="title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Room Name</Label>
-                    <Input
-                      id="title"
-                      value={title}
-                      onChange={e => setTitle(e.target.value)}
-                      className="h-11 bg-muted/30 border-border focus:bg-background transition-colors"
-                      placeholder="e.g. Cinematography 101"
-                      maxLength={100}
-                    />
-                    <p className="text-[10px] text-muted-foreground text-right">{title.length}/100</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description</Label>
-                    <Textarea
-                      id="description"
-                      value={description}
-                      onChange={e => setDescription(e.target.value)}
-                      className="min-h-[120px] resize-none bg-muted/30 border-border focus:bg-background transition-colors"
-                      placeholder="What is this discussion about?"
-                      maxLength={500}
-                    />
-                    <p className="text-[10px] text-muted-foreground text-right">{description.length}/500</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="category" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Category</Label>
-                    <Select value={categoryId} onValueChange={setCategoryId}>
-                      <SelectTrigger className="w-full h-11 bg-muted/30 border-border focus:bg-background">
-                        <SelectValue placeholder="Select a category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2 pt-2">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tags</Label>
-                    <div className="flex gap-2">
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="title" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Room Name</Label>
                       <Input
-                        value={newTag}
-                        onChange={e => setNewTag(e.target.value)}
-                        onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                        placeholder="Add a tag..."
-                        className="h-10 bg-muted/30 border-border focus:bg-background"
-                        maxLength={20}
+                        id="title"
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        className="h-11 bg-muted/30 border-border focus:bg-background transition-colors"
+                        placeholder="e.g. Cinematography 101"
+                        maxLength={100}
                       />
-                      <Button onClick={handleAddTag} disabled={tags.length >= 10} size="sm" variant="secondary" className="h-10 px-4">
-                        <Tag className="h-4 w-4" />
-                      </Button>
+                      <p className="text-[10px] text-muted-foreground text-right">{title.length}/100</p>
                     </div>
-                    <div className="flex flex-wrap gap-2 mt-3 min-h-[30px]">
-                      {tags.map(tag => (
-                        <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1 py-1 cursor-default">
-                          {tag}
-                          <div role="button" onClick={() => handleRemoveTag(tag)} className="hover:bg-destructive/20 hover:text-destructive rounded-full p-0.5 transition-colors">
-                            <X className="h-3 w-3" />
+
+                    <div className="space-y-2">
+                      <Label htmlFor="description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Description</Label>
+                      <Textarea
+                        id="description"
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        className="min-h-[120px] resize-none bg-muted/30 border-border focus:bg-background transition-colors"
+                        placeholder="What is this discussion about?"
+                        maxLength={500}
+                      />
+                      <p className="text-[10px] text-muted-foreground text-right">{description.length}/500</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="category" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Category</Label>
+                      <Select value={categoryId} onValueChange={setCategoryId}>
+                        <SelectTrigger className="w-full h-11 bg-muted/30 border-border focus:bg-background">
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2 pt-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tags</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newTag}
+                          onChange={e => setNewTag(e.target.value)}
+                          onKeyPress={e => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                          placeholder="Add a tag..."
+                          className="h-10 bg-muted/30 border-border focus:bg-background"
+                          maxLength={20}
+                        />
+                        <Button onClick={handleAddTag} disabled={tags.length >= 10} size="sm" variant="secondary" className="h-10 px-4">
+                          <Tag className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-3 min-h-[30px]">
+                        {tags.map(tag => (
+                          <Badge key={tag} variant="secondary" className="gap-1 pl-2 pr-1 py-1 cursor-default">
+                            {tag}
+                            <div role="button" onClick={() => handleRemoveTag(tag)} className="hover:bg-destructive/20 hover:text-destructive rounded-full p-0.5 transition-colors">
+                              <X className="h-3 w-3" />
+                            </div>
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Privacy Tab */}
+              <TabsContent value="privacy" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 tracking-tight">Privacy & Access</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Control who can see and join your room.</p>
+
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          {isPrivate ? <Lock className="h-4 w-4 text-primary" /> : <Globe className="h-4 w-4 text-primary" />}
+                          {isPrivate ? 'Private Room' : 'Public Room'}
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {isPrivate
+                            ? 'Only members you explicitly invite can see and join this room.'
+                            : 'Anyone in the community can discover, view, and join this room.'}
+                        </p>
+                      </div>
+                      <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
+                    </div>
+
+                    <div className="space-y-3 pt-4 border-t border-border">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Member Limit</Label>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          type="number"
+                          value={memberLimit || ''}
+                          onChange={e => setMemberLimit(e.target.value ? parseInt(e.target.value) : null)}
+                          placeholder="Unlimited"
+                          className="h-11 w-40 bg-muted/30 border-border focus:bg-background"
+                          min={1}
+                          max={1000}
+                        />
+                        {memberLimit && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setMemberLimit(null)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            Reset to Unlimited
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Advanced Tab */}
+              <TabsContent value="advanced" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 text-destructive">Danger Zone</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Irreversible actions for this room.</p>
+
+                  <div className="border border-destructive/20 rounded-xl bg-destructive/5 p-6 space-y-4">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-red-100 dark:bg-red-900/20 rounded-full shrink-0">
+                        <Shield className="h-6 w-6 text-destructive" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-lg text-foreground mb-1">Delete Room</h4>
+                        <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                          Permanently remove this room and all its message history. Members will be removed immediately. This action cannot be undone.
+                        </p>
+                        {!isConfirmingDelete ? (
+                          <Button variant="destructive" onClick={() => setConfirmingDelete(true)}>
+                            Delete Room
+                          </Button>
+                        ) : (
+                          <div className="flex items-center gap-3 animate-in fade-in duration-200">
+                            <Button variant="outline" onClick={() => setConfirmingDelete(false)} className="bg-transparent border-destructive/30 hover:bg-destructive/10 text-destructive">
+                              Cancel
+                            </Button>
+                            <Button variant="destructive" onClick={handleDelete} disabled={isSubmitting}>
+                              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                              Confirm Deletion
+                            </Button>
                           </div>
-                        </Badge>
-                      ))}
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </TabsContent>
-
-            {/* Privacy Tab */}
-            <TabsContent value="privacy" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none">
-              <div>
-                <h3 className="text-xl font-semibold mb-1 tracking-tight">Privacy & Access</h3>
-                <p className="text-sm text-muted-foreground mb-6">Control who can see and join your room.</p>
-
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
-                    <div className="flex-1 pr-4">
-                      <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
-                        {isPrivate ? <Lock className="h-4 w-4 text-primary" /> : <Globe className="h-4 w-4 text-primary" />}
-                        {isPrivate ? 'Private Room' : 'Public Room'}
-                      </Label>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {isPrivate
-                          ? 'Only members you explicitly invite can see and join this room.'
-                          : 'Anyone in the community can discover, view, and join this room.'}
-                      </p>
-                    </div>
-                    <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-                  </div>
-
-                  <div className="space-y-3 pt-4 border-t border-border">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Member Limit</Label>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        type="number"
-                        value={memberLimit || ''}
-                        onChange={e => setMemberLimit(e.target.value ? parseInt(e.target.value) : null)}
-                        placeholder="Unlimited"
-                        className="h-11 w-40 bg-muted/30 border-border focus:bg-background"
-                        min={1}
-                        max={1000}
-                      />
-                      {memberLimit && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setMemberLimit(null)}
-                          className="text-muted-foreground hover:text-foreground"
-                        >
-                          Reset to Unlimited
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-
-            {/* Advanced Tab */}
-            <TabsContent value="advanced" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none">
-              <div>
-                <h3 className="text-xl font-semibold mb-1 text-destructive">Danger Zone</h3>
-                <p className="text-sm text-muted-foreground mb-6">Irreversible actions for this room.</p>
-
-                <div className="border border-destructive/20 rounded-xl bg-destructive/5 p-6 space-y-4">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-red-100 dark:bg-red-900/20 rounded-full shrink-0">
-                      <Shield className="h-6 w-6 text-destructive" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-lg text-foreground mb-1">Delete Room</h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                        Permanently remove this room and all its message history. Members will be removed immediately. This action cannot be undone.
-                      </p>
-                      {!isConfirmingDelete ? (
-                        <Button variant="destructive" onClick={() => setConfirmingDelete(true)}>
-                          Delete Room
-                        </Button>
-                      ) : (
-                        <div className="flex items-center gap-3 animate-in fade-in duration-200">
-                          <Button variant="outline" onClick={() => setConfirmingDelete(false)} className="bg-transparent border-destructive/30 hover:bg-destructive/10 text-destructive">
-                            Cancel
-                          </Button>
-                          <Button variant="destructive" onClick={handleDelete} disabled={isSubmitting}>
-                            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                            Confirm Deletion
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-          </div>
+              </TabsContent>
+            </div>
+          </ScrollArea>
 
           {/* Global Footer */}
-          <div className="p-6 border-t border-border flex justify-end gap-3 bg-background">
+          <div className="p-6 border-t border-border flex justify-end gap-3 bg-background mt-auto">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button onClick={handleSave} disabled={isSubmitting} className="min-w-[120px]">
               {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

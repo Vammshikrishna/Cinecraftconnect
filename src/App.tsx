@@ -54,12 +54,18 @@ const LandingRoute = () => {
   return user ? <Navigate to="/feed" /> : <Index />;
 };
 
+import { KeyInitialization } from "@/components/KeyInitialization";
+
+import ScrollToTop from "@/components/ScrollToTop";
+
 const App = () => {
   const { user, profile } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <ScrollToTop />
       <Toaster />
       <GlobalFeatures />
+      <KeyInitialization />
       {user && profile?.onboarding_completed && <Navbar />}
       <ErrorBoundary>
         <Suspense
@@ -86,8 +92,9 @@ const App = () => {
             <Route path="/learn" element={<LearningPortal />} />
             <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
             <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
-            <Route path="/chats" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
+            <Route path="/messages" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
             <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+            <Route path="/dm/:userId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
             <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
             <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />

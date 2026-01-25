@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -17,81 +17,74 @@ export interface UserProfile {
 
 export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') => {
   const { user } = useAuth();
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (!user) return;
+  const { data: users = [], isLoading: loading } = useQuery({
+    queryKey: ['users', searchQuery, craftFilter, user?.id],
+    queryFn: async () => {
+      if (!user) return [];
 
-      try {
-        setLoading(true);
+      // 1. Fetch profiles
+      let profilesQuery = supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', user.id);
 
-        // Fetch all users except current user
-        let query = supabase
-          .from('profiles')
-          .select('*')
-          .neq('id', user.id);
-
-        // Apply search filter
-        if (searchQuery) {
-          query = query.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%`);
-        }
-
-        // Apply craft filter
-        if (craftFilter && craftFilter !== 'All') {
-          query = query.ilike('craft', `%${craftFilter}%`);
-        }
-
-        const { data: profilesData, error: profilesError } = await query.limit(50);
-
-        if (profilesError) throw profilesError;
-
-        // Fetch user's connections to determine status
-        const { data: connectionsData, error: connectionsError } = await supabase
-          .from('user_connections')
-          .select('*')
-          .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
-
-        if (connectionsError) throw connectionsError;
-
-        // Map connection status to each user
-        const usersWithStatus = profilesData?.map((profile) => {
-          const sentConnection = connectionsData?.find(
-            (c) => c.follower_id === user.id && c.following_id === profile.id
-          );
-          const receivedConnection = connectionsData?.find(
-            (c) => c.follower_id === profile.id && c.following_id === user.id
-          );
-
-          let connection_status: UserProfile['connection_status'] = 'none';
-          let connection_id: string | undefined;
-
-          if (sentConnection) {
-            connection_status = sentConnection.status === 'accepted' ? 'connected' : 'pending_sent';
-            connection_id = sentConnection.id;
-          } else if (receivedConnection) {
-            connection_status = receivedConnection.status === 'accepted' ? 'connected' : 'pending_received';
-            connection_id = receivedConnection.id;
-          }
-
-          return {
-            ...profile,
-            connection_status,
-            connection_id,
-          };
-        }) || [];
-
-        setUsers(usersWithStatus);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      } finally {
-        setLoading(false);
+      if (searchQuery) {
+        profilesQuery = profilesQuery.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%`);
       }
-    };
 
-    fetchUsers();
-  }, [user?.id, searchQuery, craftFilter]);
+      if (craftFilter && craftFilter !== 'All') {
+        profilesQuery = profilesQuery.ilike('craft', `%${craftFilter}%`);
+      }
+
+      // 2. Fetch connections (for status mapping)
+      const connectionsQuery = supabase
+        .from('user_connections')
+        .select('*')
+        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
+
+      // Execute in parallel
+      const [profilesResult, connectionsResult] = await Promise.all([
+        profilesQuery.limit(50),
+        connectionsQuery
+      ]);
+
+      if (profilesResult.error) throw profilesResult.error;
+      if (connectionsResult.error) throw connectionsResult.error;
+
+      const profilesData = profilesResult.data || [];
+      const connectionsData = connectionsResult.data || [];
+
+      // Map connection status
+      return profilesData.map((profile) => {
+        const sentConnection = connectionsData.find(
+          (c) => c.follower_id === user.id && c.following_id === profile.id
+        );
+        const receivedConnection = connectionsData.find(
+          (c) => c.follower_id === profile.id && c.following_id === user.id
+        );
+
+        let connection_status: UserProfile['connection_status'] = 'none';
+        let connection_id: string | undefined;
+
+        if (sentConnection) {
+          connection_status = sentConnection.status === 'accepted' ? 'connected' : 'pending_sent';
+          connection_id = sentConnection.id;
+        } else if (receivedConnection) {
+          connection_status = receivedConnection.status === 'accepted' ? 'connected' : 'pending_received';
+          connection_id = receivedConnection.id;
+        }
+
+        return {
+          ...profile,
+          connection_status,
+          connection_id,
+        };
+      });
+    },
+    enabled: !!user,
+    staleTime: 1000 * 60, // 1 minute stale time for users list
+  });
 
   return { users, loading };
 };

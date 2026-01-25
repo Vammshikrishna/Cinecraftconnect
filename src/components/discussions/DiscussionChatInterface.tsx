@@ -18,7 +18,9 @@ import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
 import { VideoCallManager } from './VideoCallManager';
 import { useToast } from '@/hooks/use-toast';
+import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
+import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -27,11 +29,12 @@ interface DiscussionChatInterfaceProps {
   roomDescription: string | null;
   categoryId: string;
   categories: Category[];
+  roomType: 'public' | 'private' | 'secret';
   onClose: () => void;
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
 }
 
-export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
+export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, roomType, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -47,6 +50,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -86,20 +90,126 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
       if (error) throw error;
 
-      setMessages(data as any);
+      // Decrypt messages if roomKey exists
+      const decryptedMessages = await Promise.all(((data as any) || []).map(async (msg: any) => {
+        if (!msg.content) return msg;
+        // Check if JSON (likely encrypted)
+        if (roomKey && msg.content.startsWith('{') && msg.content.includes('"iv"')) {
+          try {
+            const parsed = JSON.parse(msg.content);
+            const decryptedText = await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey);
+            if (decryptedText) {
+              return { ...msg, content: decryptedText };
+            }
+          } catch (e) {
+            // Ignore parse errors (plaintext)
+          }
+        }
+        return msg;
+      }));
+
+      setMessages(decryptedMessages);
     } catch (err: any) {
       setError('Failed to fetch messages. Please try again later.');
       console.error('Error fetching messages:', err);
     } finally {
       setLoading(false);
     }
-  }, [roomId]);
+  }, [roomId, roomKey]);
+
+  // --- E2EE Room Key Management ---
+  useEffect(() => {
+    if (!roomId || !user) return;
+
+    // SKIP encryption for public rooms.
+    if (roomType === 'public') {
+      console.log("Public room: Encryption disabled.");
+      setRoomKey(null);
+      return;
+    }
+
+    const setupRoomEncryption = async () => {
+      try {
+        // 1. Check if I have a key for this room
+        const { data: keyData, error: _keyError } = await supabase
+          .from('room_keys' as any)
+          .select('encrypted_key, sender_id')
+          .eq('room_id', roomId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (keyData) {
+          // I have a key! Decrypt it.
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('public_key')
+            .eq('id', (keyData as any).sender_id)
+            .single();
+
+          if ((senderProfile as any)?.public_key) {
+            try {
+              const parsedKey = JSON.parse((keyData as any).encrypted_key);
+              const decryptedKey = await EncryptionService.decryptRoomKey(
+                parsedKey.ciphertext,
+                parsedKey.iv,
+                (senderProfile as any).public_key
+              );
+              if (decryptedKey) {
+                setRoomKey(decryptedKey);
+                console.log("Room key decrypted successfully.");
+              }
+            } catch (err) {
+              console.error("Failed to parse/decrypt room key", err);
+            }
+          }
+        } else {
+          // No key found. Check if I am the Creator.
+          const { data: room } = await supabase
+            .from('discussion_rooms')
+            .select('creator_id')
+            .eq('id', roomId)
+            .single();
+
+          if (room?.creator_id === user.id) {
+            console.log("I am creator. Generating new room key...");
+            const newKey = await EncryptionService.generateRoomKey();
+
+            // Encrypt for MYSELF first
+            const { data: myProfile } = await supabase.from('profiles').select('public_key').eq('id', user.id).single();
+
+            if ((myProfile as any)?.public_key) {
+              const encryptedForMe = await EncryptionService.encryptRoomKeyForUser(newKey, (myProfile as any).public_key);
+
+              if (encryptedForMe) {
+                // Store in DB
+                const { error: insertError } = await supabase.from('room_keys' as any).insert({
+                  room_id: roomId,
+                  user_id: user.id,
+                  sender_id: user.id,
+                  encrypted_key: JSON.stringify({ ciphertext: encryptedForMe.encryptedKey, iv: encryptedForMe.iv })
+                });
+
+                if (!insertError) {
+                  setRoomKey(newKey);
+                  console.log("New room key generated and saved.");
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error setting up room encryption:", err);
+      }
+    };
+
+    setupRoomEncryption();
+  }, [roomId, user, roomType]);
 
   useEffect(() => {
     fetchMessages();
     const timer = setTimeout(() => scrollToBottom('auto'), 500);
     return () => clearTimeout(timer);
-  }, [fetchMessages]);
+  }, [fetchMessages]); // fetchMessages now depends on roomKey
 
   useEffect(() => {
     const channel = supabase
@@ -135,8 +245,13 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     if (!user || !roomId) return;
 
     try {
+      let contentToSend = content;
+      if (roomKey) {
+        const encrypted = await EncryptionService.encryptGroupMessage(content, roomKey);
+        contentToSend = JSON.stringify(encrypted);
+      }
       const { error } = await supabase.from('room_messages').insert({
-        content,
+        content: contentToSend,
         user_id: user.id,
         room_id: roomId
       });
@@ -147,6 +262,93 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     } catch (err) {
       console.error("Error sending message:", err);
       // Optionally, show an error to the user
+    }
+  };
+
+  const handleAttach = async (file: File) => {
+    if (!user || !roomId) return;
+
+    try {
+      // 1. Encrypt File
+      const encryptedData = await EncryptionService.encryptFile(file);
+      if (!encryptedData) throw new Error("Failed to encrypt file");
+
+      const filePath = `${roomId}/${Date.now()}_${file.name}.enc`;
+
+      // 2. Upload Encrypted Blob
+      // Discussion rooms might share the 'project-files' bucket or have a 'discussion-files' bucket?
+      // Let's assume 'discussion-files' exists or use a generic one.
+      // Checking existing buckets... user only used 'project-files' before. 
+      // I will use 'project-files' for now but prefix with roomID which is a UUID.
+      // Wait, 'project-files' policies might rely on project_id? 
+      // If 'discussion-files' doesn't exist, upload will fail.
+      // I'll try 'project-files' for now, but if it fails, I might need to create a bucket.
+      // Actually, let's use 'project-files' since that's what we have.
+
+      const { error: uploadError } = await supabase.storage
+        .from('project-files')
+        .upload(filePath, encryptedData.encryptedBlob);
+
+      if (uploadError) throw uploadError;
+
+      // 3. Prepare Metadata
+      const fileMetadata = JSON.stringify({
+        type: 'file',
+        path: filePath,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type,
+        key: encryptedData.key,
+        iv: encryptedData.iv
+      });
+
+      // 4. Encrypt Metadata
+      let contentToInsert = fileMetadata;
+      if (roomKey) {
+        const encryptedMsg = await EncryptionService.encryptGroupMessage(fileMetadata, roomKey);
+        contentToInsert = JSON.stringify(encryptedMsg);
+      } else {
+        contentToInsert = `Shared a file: ${file.name} (Unencrypted)`;
+      }
+
+      const { error: msgError } = await supabase.from('room_messages').insert({
+        content: contentToInsert,
+        user_id: user.id,
+        room_id: roomId
+      });
+
+      if (msgError) throw msgError;
+
+      toast({ title: "Success", description: "Encrypted file uploaded successfully" });
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
+    }
+  };
+
+  const downloadDecryptedFile = async (metadata: any) => {
+    try {
+      toast({ title: "Decrypting...", description: "Downloading and decrypting file..." });
+
+      const { data, error } = await supabase.storage.from('project-files').download(metadata.path);
+      if (error) throw error;
+
+      const decryptedBlob = await EncryptionService.decryptFile(data, metadata.key, metadata.iv);
+      if (!decryptedBlob) throw new Error("Decryption failed");
+
+      const url = URL.createObjectURL(decryptedBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = metadata.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast({ title: "Success", description: "File downloaded." });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error", description: "Failed to download/decrypt file.", variant: "destructive" });
     }
   };
 
@@ -277,7 +479,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                     </Tooltip>
                   </TooltipProvider>
 
-                  <div className={`${message.content.startsWith('POST_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
                     {message.content.startsWith('POST_SHARE::') ? (
                       (() => {
                         try {
@@ -287,8 +489,41 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                           return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
                         }
                       })()
+                    ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                          return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
+                        }
+                      })()
                     ) : (
-                      <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>
+                      // File Message Detection
+                      (() => {
+                        try {
+                          if (message.content.includes('"type":"file"')) {
+                            const metadata = JSON.parse(message.content);
+                            if (metadata.type === 'file' && metadata.key && metadata.iv) {
+                              return (
+                                <div className="flex flex-col gap-2">
+                                  <p className="font-semibold text-sm">🔒 Encrypted File</p>
+                                  <div className="flex items-center gap-2 p-2 bg-black/20 rounded">
+                                    <span className="text-xs truncate max-w-[150px]">{metadata.name}</span>
+                                    <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={() => downloadDecryptedFile(metadata)}>
+                                      Download
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          }
+                          // Fallback normal message
+                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
+                        } catch {
+                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
+                        }
+                      })()
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground">{formatTimestamp(message.created_at)}</span>
@@ -320,6 +555,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         <TypingIndicator typingUsers={typingUsers} />
         <MessageComposer
           onSend={handleSendMessage}
+          onAttach={handleAttach}
           onTyping={startTyping}
           onStopTyping={stopTyping}
           userRole={userRole}

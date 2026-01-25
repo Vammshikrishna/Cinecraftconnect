@@ -9,24 +9,17 @@ export const togglePostLike = async (postId: string, isLiked: boolean): Promise<
 
   if (isLiked) {
     // Currently liked, so unlike it
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("post_likes")
       .delete()
-      .match({ post_id: postId, user_id: user.id })
-      .select('id');
+      .match({ post_id: postId, user_id: user.id });
 
     if (error) {
       console.error("Error unliking post:", error);
       throw new Error(error.message);
     }
 
-    if (!data || data.length === 0) {
-      console.warn(`Inconsistency: Attempted to unlike post ${postId} but no like was found.`);
-      // Treat as success since the goal (unliking) is achieved
-      return false;
-    }
-
-    return false;
+    return true; // Assume success if no error
   } else {
     // Currently not liked, so like it.
     // Use upsert to handle cases where the like already exists, making the operation idempotent.

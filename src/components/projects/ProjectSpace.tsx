@@ -29,6 +29,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+
+import { useToast } from '@/hooks/use-toast';
+import { useProjectEncryption } from '@/hooks/useProjectEncryption';
 
 interface ProjectSpaceProps {
   projectId: string;
@@ -45,11 +50,47 @@ export const ProjectSpace = ({
 }: ProjectSpaceProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member'>('member');
+  const { toast } = useToast();
+  const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member' | 'guest'>('guest');
+  const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(projectId);
+  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none');
+  const [checkingAccess, setCheckingAccess] = useState(true); // New loading state
   const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Always call hook at top level
+  const { roomKey } = useProjectEncryption(resolvedSpaceId);
+
+  // Resolve Space ID (Handle Project ID vs Space ID mismatch)
+  useEffect(() => {
+    let mounted = true;
+    const resolveSpace = async () => {
+      if (!projectId) return;
+      try {
+        console.log("Resolving space for project:", projectId);
+        const { data, error } = await supabase
+          .from('project_spaces')
+          .select('id')
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        if (error) console.error("Error resolving space query:", error);
+
+        if (mounted && data) {
+          console.log("Resolved space ID:", data.id);
+          setResolvedSpaceId(data.id);
+        } else if (mounted) {
+          console.warn("No space found for project:", projectId);
+        }
+      } catch (e) {
+        console.error("Error resolving space:", e);
+      }
+    };
+    resolveSpace();
+    return () => { mounted = false; };
+  }, [projectId]);
 
   // Scroll active tab into view
   useEffect(() => {
@@ -96,37 +137,121 @@ export const ProjectSpace = ({
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
   useEffect(() => {
-    const fetchUserRole = async () => {
-      if (!user || !projectId) return;
+    let active = true;
+    const checkAccess = async () => {
+      setCheckingAccess(true);
+      if (!user || !resolvedSpaceId) {
+        if (active) setCheckingAccess(false);
+        return;
+      }
+      console.log(`Checking access for User: ${user.id}, Space: ${resolvedSpaceId}`);
+
       try {
-        const { data: membership, error } = await supabase
+        // 1. Check Membership
+        const { data: membership, error: memError } = await supabase
           .from('project_space_members')
-          .select('*')
-          .eq('project_space_id', projectId)
+          .select('role')
+          .eq('project_space_id', resolvedSpaceId)
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (error && error.code !== 'PGRST116') throw error;
+        if (!active) return; // Stop if unmounted or new effect fired
+
+        console.log("Membership check:", { membership, error: memError });
 
         if (membership) {
+          console.log("User is member. Role:", membership.role);
           setUserRole('member');
-        } else {
-          const { data: project, error: projectError } = await supabase
-            .from('projects')
-            .select('creator_id')
-            .eq('id', projectId)
-            .single();
-          if (projectError) throw projectError;
-          if (project && project.creator_id === user.id) {
-            setUserRole('creator');
-          }
+          return; // Exit early
         }
-      } catch (error) {
-        console.error('Error fetching user role:', error);
+
+        // 2. Check Creator Status
+        const { data: project } = await supabase
+          .from('projects')
+          .select('creator_id')
+          .eq('id', projectId)
+          .single();
+
+        if (!active) return;
+
+        if (project && project.creator_id === user.id) {
+          console.log("User is creator.");
+          setUserRole('creator');
+          return;
+        }
+
+        // 3. Check for pending join request
+        const { data: request, error: reqError } = await supabase
+          .from('project_space_join_requests' as any)
+          .select('status, id')
+          .eq('project_space_id', resolvedSpaceId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!active) return;
+
+        console.log("Request check:", { request, error: reqError });
+
+        if (request && (request as any).status === 'pending') {
+          setRequestStatus('pending');
+        } else if (request && (request as any).status === 'rejected') {
+          setRequestStatus('rejected');
+        } else if (request && (request as any).status === 'approved') {
+          console.log("Request is approved (But member check failed/empty).");
+          setRequestStatus('approved');
+        }
+
+        setUserRole('guest');
+
+      } catch (err) {
+        console.error('Error fetching user role:', err);
+      } finally {
+        if (active) setCheckingAccess(false);
       }
     };
-    fetchUserRole();
-  }, [projectId, user]);
+
+    checkAccess();
+
+    return () => { active = false; };
+  }, [projectId, resolvedSpaceId, user]);
+
+  const handleJoinRequest = async () => {
+    console.log("Handle Join Request clicked", { user: user?.id, resolvedSpaceId });
+
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    if (!resolvedSpaceId) {
+      toast({ title: "Error", description: "Could not identify project space. Please refresh.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('project_space_join_requests' as any)
+        .insert({
+          project_space_id: resolvedSpaceId,
+          user_id: user.id
+        });
+
+      if (error) {
+        console.error("Join request specific error:", error);
+        if (error.code === '23505') {
+          // Duplicate request, treat as success/pending
+          setRequestStatus('pending');
+          toast({ title: "Request Pending", description: "You have already requested to join." });
+          return;
+        }
+        throw error;
+      }
+      setRequestStatus('pending');
+      toast({ title: "Request Sent", description: "Your request has been sent to the project owner." });
+    } catch (e: any) {
+      console.error("Join request failed exception:", e);
+      toast({ title: "Error", description: "Failed to send request: " + (e.message || "Unknown error"), variant: "destructive" });
+    }
+  };
 
   const collaborationNavItems = [
     { id: 'chat' as ActiveSection, label: 'Chat', icon: MessageCircle },
@@ -157,31 +282,137 @@ export const ProjectSpace = ({
   ];
 
   const renderContent = () => {
+    if (userRole === 'guest') {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
+          <div className="bg-primary/10 p-6 rounded-full">
+            <Users className="w-12 h-12 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold mb-2">Private Project Space</h2>
+            <p className="text-muted-foreground max-w-md">
+              {requestStatus === 'pending'
+                ? "Your request to join this project is pending approval from the creator."
+                : requestStatus === 'rejected'
+                  ? "Your request to join was declined by the project owner."
+                  : "You need to be a member of this project to view its content and collaborate."}
+            </p>
+          </div>
+
+          {requestStatus === 'none' && (
+            <Button onClick={handleJoinRequest} size="lg" className="animate-pulse">
+              Request to Join Project
+            </Button>
+          )}
+          {requestStatus === 'pending' && (
+            <Button disabled variant="outline">Request Pending</Button>
+          )}
+        </div>
+      );
+    }
+
+
+
+    // ... (rest of renderContent switch)
     switch (activeSection) {
       case 'chat':
         return <ProjectChatInterface projectId={projectId} />;
       case 'tasks':
-        return <Tasks project_id={projectId} />;
+        return <Tasks project_id={resolvedSpaceId} roomKey={roomKey} />; // Use resolved ID
       case 'files':
-        return <Files project_id={projectId} />;
+        return <Files project_id={resolvedSpaceId} />; // Use resolved ID
       case 'call-sheet':
-        return <CallSheet project_id={projectId} />;
+        return <CallSheet project_id={resolvedSpaceId} roomKey={roomKey} />;
       case 'shot-list':
-        return <ShotList project_id={projectId} />;
+        return <ShotList project_id={resolvedSpaceId} roomKey={roomKey} />;
       case 'legal-docs':
-        return <LegalDocs project_id={projectId} />;
+        return <LegalDocs project_id={resolvedSpaceId} />;
       case 'budget-sched':
-        return <BudgetSched project_id={projectId} />;
+        return <BudgetSched project_id={resolvedSpaceId} roomKey={roomKey} />;
       case 'team':
-        return <Team project_id={projectId} />;
+        return <Team project_id={projectId} roomKey={roomKey} />;
       case 'applicants':
         return <ProjectApplicants projectId={projectId} />;
       case 'settings':
-        return <ProjectSettings projectId={projectId} />;
+        return <ProjectSettings projectId={projectId} roomKey={roomKey} />;
       default:
         return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
     }
   };
+
+  if (checkingAccess) {
+    return (
+      <div className="h-screen w-screen bg-background flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (userRole === 'guest') {
+    return (
+      <div className="h-screen w-screen bg-background flex flex-col p-4">
+        {/* Guest View Dialog */}
+        <Dialog open={true} onOpenChange={(open) => { if (!open) navigate(-1); }}>
+          <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogHeader className="sr-only">
+              <DialogTitle>Access Restricted</DialogTitle>
+              <DialogDescription>
+                You need to request access to join this project space.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center justify-center p-6 space-y-4 text-center">
+              <div className="bg-primary/10 p-4 rounded-full">
+                <Users className="w-10 h-10 text-primary" />
+              </div>
+              <p className="text-muted-foreground">
+                You are not a member of this project. To view its content and collaborate, you must request to join.
+              </p>
+              {requestStatus === 'pending' && (
+                <div className="p-3 bg-yellow-500/10 text-yellow-500 rounded-md border border-yellow-500/20 text-sm w-full">
+                  Your request is currently pending approval.
+                </div>
+              )}
+              {requestStatus === 'approved' && (
+                <div className="p-3 bg-green-500/10 text-green-500 rounded-md border border-green-500/20 text-sm w-full">
+                  Your request has been approved! <br />
+                  <Button variant="link" onClick={() => window.location.reload()} className="p-0 h-auto font-bold text-green-600">
+                    Refresh Page
+                  </Button> to access.
+                </div>
+              )}
+              {requestStatus === 'rejected' && (
+                <div className="p-3 bg-red-500/10 text-red-500 rounded-md border border-red-500/20 text-sm w-full">
+                  Your request was declined by the project owner.
+                </div>
+              )}
+            </div>
+            <div className="flex flex-row justify-end space-x-2 w-full">
+              <Button variant="outline" onClick={() => navigate(-1)} className="flex-1">
+                Cancel
+              </Button>
+              {requestStatus === 'none' ? (
+                <Button onClick={handleJoinRequest} className="flex-1">
+                  Request to Join
+                </Button>
+              ) : requestStatus === 'approved' ? (
+                <Button onClick={() => window.location.reload()} className="flex-1 bg-green-600 hover:bg-green-700">
+                  Enter Space
+                </Button>
+              ) : (
+                <Button disabled className="flex-1 opacity-50">
+                  Request Sent
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <div className="flex-1 flex items-center justify-center opacity-10 filter blur-sm pointer-events-none">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-white/20 lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">

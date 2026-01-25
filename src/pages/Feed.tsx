@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, Suspense, lazy } from 'react';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import UniversalCreateButton from '@/components/feed/UniversalCreateButton';
 
@@ -38,21 +38,11 @@ const FeedSkeleton = () => (
 );
 
 const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
-  const [loading, setLoading] = useState(true);
   const [postRatings, setPostRatings] = useState<{ [postId: string]: number }>({});
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 800);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleRate = (postId: string | number, rating: number) => {
     setPostRatings(curr => ({ ...curr, [String(postId)]: rating }));
   };
-
-  if (loading) {
-    return <FeedSkeleton />;
-  }
 
   return (
     <div className="min-h-screen bg-background pt-20 relative">

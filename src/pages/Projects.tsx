@@ -1,8 +1,7 @@
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,7 +10,6 @@ import { ProjectDetailDialog } from '@/components/projects/ProjectDetailDialog';
 import { ProjectFilters, FilterState } from '@/components/projects/ProjectFilters';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
-import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Search,
@@ -21,34 +19,10 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { getGradientForString } from '@/utils/colors';
-
-interface Project {
-  id: string;
-  title: string;
-  description: string;
-  status: string;
-  location: string;
-  genre: string[];
-  required_roles: string[];
-  budget_min: number;
-  budget_max: number;
-  start_date: string;
-  end_date?: string;
-  creator_id: string;
-  created_at: string;
-  is_bookmarked?: boolean;
-  profiles?: {
-    full_name: string | null;
-    username: string | null;
-    avatar_url: string | null;
-  };
-}
+import { useProjects, Project } from '@/hooks/useProjects';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
-  const { toast } = useToast();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -59,81 +33,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     locations: []
   });
 
-  useEffect(() => {
-    fetchProjects();
-  }, [activeTab, user]);
-
-  const fetchProjects = async () => {
-    setLoading(true);
-    try {
-      // Fetch projects with creator profiles
-      let query = supabase
-        .from('projects')
-        .select(`
-          *,
-          profiles:creator_id (
-            full_name,
-            username,
-            avatar_url
-          )
-        `);
-
-      if (activeTab === 'my') {
-        if (!user) { setProjects([]); setLoading(false); return; }
-        query = query.eq('creator_id', user.id);
-      }
-
-      const { data: projectsData, error: projectsError } = await query.order('created_at', { ascending: false });
-
-      if (projectsError && projectsError.code !== 'PGRST116') throw projectsError;
-
-      let projectsWithBookmarks: Project[] = (projectsData || []).map(p => ({ ...p, is_bookmarked: false })) as unknown as Project[];
-
-      // Fetch bookmarks for the current user if logged in
-      if (user) {
-        // Get project_space IDs that are bookmarked
-        const { data: bookmarksData, error: bookmarksError } = await supabase
-          .from('project_space_bookmarks')
-          .select('project_space_id');
-
-        if (!bookmarksError && bookmarksData) {
-          // Get the project IDs from project_spaces
-          const spaceIds = bookmarksData.map(b => b.project_space_id);
-
-          if (spaceIds.length > 0) {
-            const { data: spacesData } = await supabase
-              .from('project_spaces')
-              .select('project_id')
-              .in('id', spaceIds);
-
-            const bookmarkedProjectIds = new Set(spacesData?.map(s => s.project_id) || []);
-
-            // Mark projects as bookmarked
-            projectsWithBookmarks = (projectsData || []).map((project: any) => ({
-              ...project,
-              is_bookmarked: bookmarkedProjectIds.has(project.id)
-            }));
-
-            // Filter for bookmarked tab
-            if (activeTab === 'bookmarked') {
-              projectsWithBookmarks = projectsWithBookmarks.filter(p => p.is_bookmarked);
-            }
-          }
-        }
-      }
-
-      setProjects(projectsWithBookmarks as any);
-    } catch (error) {
-      console.error('Error fetching projects:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load projects.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { projects, loading, toggleBookmark, refetch } = useProjects(activeTab);
 
   const filteredProjects = projects.filter(project => {
     const matchesSearch =
@@ -148,46 +48,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   const handleBookmarkToggle = async (project: Project, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!user) return;
-
-    const isBookmarked = project.is_bookmarked;
-    const newProjects = [...projects];
-    const projectIndex = newProjects.findIndex(p => p.id === project.id);
-
-    // First, get or create the project_space for this project
-    const { data: projectSpace } = await supabase
-      .from('project_spaces')
-      .select('id')
-      .eq('project_id', project.id)
-      .single();
-
-    if (!projectSpace) {
-      toast({ title: "Error", description: "Project space not found", variant: "destructive" });
-      return;
-    }
-
-    if (isBookmarked) {
-      const { error } = await supabase
-        .from('project_space_bookmarks')
-        .delete()
-        .match({ project_space_id: projectSpace.id, user_id: user.id });
-
-      if (!error) {
-        newProjects[projectIndex].is_bookmarked = false;
-        setProjects(newProjects);
-        toast({ title: "Bookmark removed" });
-      }
-    } else {
-      const { error } = await supabase
-        .from('project_space_bookmarks')
-        .insert({ project_space_id: projectSpace.id, user_id: user.id });
-
-      if (!error) {
-        newProjects[projectIndex].is_bookmarked = true;
-        setProjects(newProjects);
-        toast({ title: "Project bookmarked!" });
-      }
-    }
+    toggleBookmark.mutate(project);
   };
 
   const ProjectCard = ({ project }: { project: Project }) => {
@@ -208,7 +69,6 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
         onClick={handleCardClick}
         className="group relative bg-card border border-border rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1"
       >
-        {/* Image Section */}
         {/* Image Section */}
         <div
           className="relative w-full h-48 overflow-hidden"
@@ -286,8 +146,6 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     );
   };
 
-  // Other components (loading, header, etc.) remain largely the same...
-
   return (
     <div className="min-h-screen bg-background pt-20">
       <div className="container mx-auto px-4 pt-8 pb-24 animate-fade-in">
@@ -296,7 +154,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center"><Film className="mr-3 h-8 w-8 text-primary" />Projects</h1>
             <p className="text-muted-foreground">Discover and collaborate on film projects</p>
           </div>
-          <ProjectCreationModal onProjectCreated={fetchProjects} defaultOpen={openCreate} />
+          <ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />
         </div>
 
         <div className="mb-6">
