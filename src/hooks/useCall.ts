@@ -47,6 +47,8 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
             .eq('room_type', roomType)
             .eq('room_id', roomId)
             .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
         setActiveCall(data as Call | null);
@@ -57,22 +59,37 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
 
         setLoading(true);
         try {
-            // Generate unique room name for Jitsi
-            // Using a strictly unique name to avoid random people joining
+            // Check if there is already an active call
+            const { data: existingCall } = await supabase
+                .from('calls' as any)
+                .select('*')
+                .eq('room_type', roomType)
+                .eq('room_id', roomId)
+                .eq('status', 'active')
+                .limit(1)
+                .maybeSingle();
+
+            if (existingCall) {
+                console.log("Found existing active call, joining instead of creating.");
+                setActiveCall(existingCall as Call);
+                return existingCall;
+            }
+
+            // Generate unique room name for Native Call
             const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substr(2);
             const roomName = `CineCraft_${roomType}_${roomId}_${uniqueSuffix}`;
-            const jitsiUrl = `https://meet.jit.si/${roomName}`;
+            const nativeUrl = `native://${roomName}`;
 
-            console.log("Starting Jitsi call:", jitsiUrl);
+            console.log("Starting Native call for room:", roomId);
 
-            // We store the Jitsi URL in the 'daily_room_url' column to reuse existing schema
+            // Create new call
             const { data, error } = await supabase
                 .from('calls' as any)
                 .insert([{
                     room_type: roomType,
                     room_id: roomId,
                     daily_room_name: roomName,
-                    daily_room_url: jitsiUrl,
+                    daily_room_url: nativeUrl,
                     started_by: user.id,
                     status: 'active'
                 }])

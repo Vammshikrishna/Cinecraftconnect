@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Film, Search } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,17 +12,10 @@ import { MobileNav } from "./MobileNav";
 
 const Navbar = () => {
   const { user } = useAuth();
-  const location = useLocation();
-
-  // Check if we are in an immersive route (Project Space, Discussion Room, Chat DM)
-  const isImmersiveRoute =
-    /^\/projects\/[^/]+\/space/.test(location.pathname) ||
-    /^\/discussion-rooms\/[^/]+$/.test(location.pathname) ||
-    /^\/messages\/[^/]+$/.test(location.pathname);
 
   return (
     <>
-      <header className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden ${isImmersiveRoute ? 'hidden lg:block' : ''}`}>
+      <header className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden`}>
         <div className="w-full px-2 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-2 sm:gap-4">
             {/* Logo */}

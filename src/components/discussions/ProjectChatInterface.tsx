@@ -36,6 +36,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [inCall, setInCall] = useState(false);
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
+  const [projectName, setProjectName] = useState<string>('');
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
   // Use spaceId for the call room, as RLS policies expect project_space_id
@@ -56,19 +57,24 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         return;
       }
 
+      // Fetch project details (title) independently
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('title, creator_id')
+        .eq('id', projectId)
+        .single();
+
+      if (projectData) {
+        setProjectName(projectData.title);
+      }
+
       if (data) {
         setSpaceId((data as any).id);
       } else {
         console.log('No project space found. checking ownership to auto-create...');
+        // We already fetched projectData above
 
-        // Check if user is creator to auto-create space
-        const { data: project } = await supabase
-          .from('projects')
-          .select('creator_id')
-          .eq('id', projectId)
-          .single();
-
-        if (project && user && project.creator_id === user.id) {
+        if (projectData && user && projectData.creator_id === user.id) {
           console.log('User is creator. Creating default space...');
           const { data: newSpace, error: createError } = await supabase
             .from('project_spaces' as any)
@@ -424,6 +430,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       <NativeCallContainer
         roomId={spaceId || projectId}
         onLeave={handleLeaveCall}
+        roomName={projectName || 'Project Call'}
+        projectId={projectId}
       />
     );
   }
@@ -531,7 +539,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-border">
+      <div className="p-4 border-t border-border pb-16 lg:pb-4">
         <MessageComposer
           onSend={handleSendMessage}
           onAttach={handleAttach}

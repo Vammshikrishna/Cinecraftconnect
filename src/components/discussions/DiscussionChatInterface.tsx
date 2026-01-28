@@ -8,15 +8,16 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, isToday, isYesterday } from 'date-fns';
-import { Message, UserRole, Category, Call } from './types';
+import { Message, UserRole, Category } from './types';
 import { MessageComposer } from './MessageComposer';
 import { TypingIndicator } from './TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ArrowLeft, Video, Settings, Users, Phone, Loader2, ChevronDown, MessageSquare } from 'lucide-react';
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
-import { VideoCallManager } from './VideoCallManager';
+import { NativeCallContainer } from '@/components/calls/NativeCallContainer';
+import { useCall } from '@/hooks/useCall';
 import { useToast } from '@/hooks/use-toast';
 import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
@@ -44,8 +45,11 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
   const [isMembersSidebarOpen, setMembersSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
-  const [activeCall, setActiveCall] = useState<Call | null>(null);
-  const [isJoiningCall, setIsJoiningCall] = useState(false);
+
+  // Use shared call hook
+  // Use shared call hook
+  const { activeCall, loading: callLoading, startCall, joinCall, endCall } = useCall('discussion', roomId);
+
   const [isCallTypeDialogOpen, setCallTypeDialogOpen] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -352,43 +356,28 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     }
   };
 
-  const startCall = async (type: 'audio' | 'video') => {
-    if (!user) return;
-    setCallTypeDialogOpen(false);
-    setIsJoiningCall(true);
-    try {
-      const { data, error } = await (supabase.rpc as any)('start_call', {
-        room_id: roomId,
-        created_by: user.id,
-        call_type: type
+  // Call Handlers
+  const handleStartCall = async () => {
+    // defaults to video/jitsi logic in hook
+    const call = await startCall();
+    if (!call) {
+      toast({
+        title: "Error",
+        description: "Failed to start call. Please try again.",
+        variant: "destructive"
       });
-
-      if (error) throw error;
-      const newCall = await fetchCall((data as any).id);
-      if (newCall) setActiveCall(newCall);
-
-    } catch (error: any) {
-      toast({ title: "Error Starting Call", description: error.message, variant: "destructive" });
-    } finally {
-      setIsJoiningCall(false);
     }
+    setCallTypeDialogOpen(false);
   };
 
-  const fetchCall = async (callId: string): Promise<Call | null> => {
-    try {
-      const { data, error } = await supabase
-        .from('calls')
-        .select('*')
-        .eq('id', callId)
-        .single();
-      if (error) throw error;
-      return data as unknown as Call;
-    } catch (error) {
-      console.error("Failed to fetch call details", error);
-      toast({ title: "Error", description: "Could not fetch call details.", variant: "destructive" });
-      return null;
-    }
-  }
+  const handleJoinCall = async () => {
+    await joinCall();
+  };
+
+  const handleLeaveCall = async () => {
+    // End the call locally (and update DB status via hook)
+    await endCall();
+  };
 
 
   const formatTimestamp = (timestamp: string) => {
@@ -407,7 +396,13 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   }
 
   if (activeCall && user) {
-    return <VideoCallManager roomId={roomId} userId={user.id} />
+    return (
+      <NativeCallContainer
+        roomId={roomId}
+        onLeave={handleLeaveCall}
+        roomName={roomTitle}
+      />
+    );
   }
 
   return (
@@ -423,9 +418,20 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={() => setCallTypeDialogOpen(true)} disabled={isJoiningCall}>
-            {isJoiningCall ? <Loader2 className="h-5 w-5 animate-spin" /> : <Video className="w-5 h-5" />}
-          </Button>
+          {activeCall ? (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleJoinCall}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+            >
+              <Video className="w-4 h-4 mr-2" /> Join Call
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" onClick={() => setCallTypeDialogOpen(true)} disabled={callLoading}>
+              {callLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Video className="w-5 h-5" />}
+            </Button>
+          )}
           <Button variant="ghost" size="icon" onClick={() => setMembersSidebarOpen(true)}><Users className="w-5 h-5" /></Button>
           <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
             <DialogTrigger asChild>
@@ -551,7 +557,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         {isMembersSidebarOpen && <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />}
       </div>
 
-      <div className="p-4 border-t border-border/50 bg-background">
+      <div className="p-4 border-t border-border/50 bg-background pb-16 lg:pb-4">
         <TypingIndicator typingUsers={typingUsers} />
         <MessageComposer
           onSend={handleSendMessage}
@@ -563,19 +569,50 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       </div>
 
       <Dialog open={isCallTypeDialogOpen} onOpenChange={setCallTypeDialogOpen}>
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
-          <DialogHeader>
-            <DialogTitle>Start a Call</DialogTitle>
+        <DialogContent className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-gray-700 text-white max-w-md">
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="text-2xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Start a Call
+            </DialogTitle>
+            <DialogDescription className="text-center text-gray-300">
+              Choose how you'd like to connect with the room
+            </DialogDescription>
           </DialogHeader>
-          <div className="py-4 flex justify-around">
-            <Button variant="outline" size="lg" onClick={() => startCall('audio')} className="flex flex-col h-24 w-24">
-              <Phone className="h-8 w-8 mb-2" />
-              Audio Call
-            </Button>
-            <Button variant="outline" size="lg" onClick={() => startCall('video')} className="flex flex-col h-24 w-24">
-              <Video className="h-8 w-8 mb-2" />
-              Video Call
-            </Button>
+
+          <div className="py-6 px-4 grid grid-cols-2 gap-4">
+            {/* Audio Call Option */}
+            <button
+              onClick={() => handleStartCall()}
+              className="group relative flex flex-col items-center justify-center p-6 rounded-2xl bg-gradient-to-br from-green-500/10 to-green-600/10 border-2 border-green-500/30 hover:border-green-400 hover:from-green-500/20 hover:to-green-600/20 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/20"
+            >
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-green-400/0 to-green-600/0 group-hover:from-green-400/5 group-hover:to-green-600/5 transition-all duration-300" />
+              <div className="relative z-10 flex flex-col items-center gap-3">
+                <div className="p-4 rounded-full bg-green-500/20 group-hover:bg-green-500/30 transition-all duration-300">
+                  <Phone className="h-8 w-8 text-green-400 group-hover:text-green-300 transition-colors" />
+                </div>
+                <span className="font-semibold text-white group-hover:text-green-300 transition-colors">Audio Call</span>
+                <span className="text-xs text-gray-400 text-center">Voice only</span>
+              </div>
+            </button>
+
+            {/* Video Call Option */}
+            <button
+              onClick={() => handleStartCall()}
+              className="group relative flex flex-col items-center justify-center p-6 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-600/10 border-2 border-blue-500/30 hover:border-blue-400 hover:from-blue-500/20 hover:to-purple-600/20 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"
+            >
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-400/0 to-purple-600/0 group-hover:from-blue-400/5 group-hover:to-purple-600/5 transition-all duration-300" />
+              <div className="relative z-10 flex flex-col items-center gap-3">
+                <div className="p-4 rounded-full bg-blue-500/20 group-hover:bg-blue-500/30 transition-all duration-300">
+                  <Video className="h-8 w-8 text-blue-400 group-hover:text-blue-300 transition-colors" />
+                </div>
+                <span className="font-semibold text-white group-hover:text-blue-300 transition-colors">Video Call</span>
+                <span className="text-xs text-gray-400 text-center">Camera & audio</span>
+              </div>
+            </button>
+          </div>
+
+          <div className="text-center text-xs text-gray-500 pb-2">
+            All participants will be notified
           </div>
         </DialogContent>
       </Dialog>
