@@ -173,7 +173,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   if (activeRoom) {
     return (
-      <div className="fixed inset-0 bg-background text-foreground flex flex-col z-50">
+      <div className="fixed inset-x-0 top-16 bottom-0 bg-background text-foreground flex flex-col z-40">
         <DiscussionChatInterface
           roomId={activeRoom.id}
           userRole="member"

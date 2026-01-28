@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
-import { Send } from 'lucide-react';
+import { Send, ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import { usePresence } from '@/hooks/usePresence';
 
@@ -15,16 +15,17 @@ interface Message {
   created_at: string;
   user_id: string;
   profiles: {
-    full_name: string;
-    avatar_url: string;
+    full_name: string | null;
+    avatar_url: string | null;
   } | null;
 }
 
 interface ChatWindowProps {
   threadId: string;
+  onBack?: () => void;
 }
 
-export const ChatWindow = ({ threadId }: ChatWindowProps) => {
+export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -59,7 +60,7 @@ export const ChatWindow = ({ threadId }: ChatWindowProps) => {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `thread_id=eq.${threadId}` }, payload => {
         const newMessage = payload.new as Message;
         // enrich with profile data locally to avoid another fetch
-        supabase.from('profiles').select('full_name, avatar_url').eq('id', newMessage.user_id).single().then(({data}) => {
+        supabase.from('profiles').select('full_name, avatar_url').eq('id', newMessage.user_id).single().then(({ data }) => {
           newMessage.profiles = data;
           setMessages(currentMessages => [...currentMessages, newMessage]);
         })
@@ -79,9 +80,9 @@ export const ChatWindow = ({ threadId }: ChatWindowProps) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
 
-    const { error } = await supabase.from('messages').insert({ 
-      thread_id: threadId, 
-      user_id: user.id, 
+    const { error } = await supabase.from('messages').insert({
+      conversation_id: threadId,
+      sender_id: user.id,
       content: newMessage.trim()
     });
 
@@ -93,17 +94,27 @@ export const ChatWindow = ({ threadId }: ChatWindowProps) => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Mobile Header with Back Button */}
+      {onBack && (
+        <div className="lg:hidden flex items-center gap-3 p-4 border-b border-border bg-background">
+          <Button variant="ghost" size="icon" onClick={onBack}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h2 className="text-lg font-semibold">Conversation</h2>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(msg => (
           <div key={msg.id} className={`flex items-start gap-3 ${msg.user_id === user?.id ? 'justify-end' : ''}`}>
             {msg.user_id !== user?.id && (
-                <div className="relative">
-                    <Avatar className="h-8 w-8">
-                        <AvatarImage src={msg.profiles?.avatar_url} />
-                        <AvatarFallback>{msg.profiles?.full_name[0]}</AvatarFallback>
-                    </Avatar>
-                    {onlineUserIds.includes(msg.user_id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />} 
-                </div>
+              <div className="relative">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={msg.profiles?.avatar_url || undefined} />
+                  <AvatarFallback>{msg.profiles?.full_name?.[0] || 'U'}</AvatarFallback>
+                </Avatar>
+                {onlineUserIds.includes(msg.user_id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
+              </div>
             )}
             <div className={`p-3 rounded-lg max-w-md ${msg.user_id === user?.id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
               <p className="text-sm">{msg.content}</p>
@@ -113,7 +124,7 @@ export const ChatWindow = ({ threadId }: ChatWindowProps) => {
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSendMessage} className="p-4 border-t flex items-center gap-3">
+      <form onSubmit={handleSendMessage} className="p-4 border-t flex items-center gap-3 pb-16 lg:pb-4">
         <Input value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type a message..." />
         <Button type="submit" size="icon"><Send className="h-4 w-4" /></Button>
       </form>

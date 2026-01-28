@@ -27,6 +27,7 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
     if (!roomId) return;
     try {
       setLoading(true);
+      setError(null);
 
       // 1. Fetch room members (user_ids)
       const { data: membersData, error: membersError } = await supabase
@@ -34,14 +35,19 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (membersError) throw membersError;
+      if (membersError) {
+        console.error('Error fetching room members:', membersError);
+        throw membersError;
+      }
 
       if (!membersData || membersData.length === 0) {
+        console.log('No members found for room:', roomId);
         setMembers([]);
         return;
       }
 
       const userIds = membersData.map((m: any) => m.user_id);
+      console.log('User IDs in room:', userIds);
 
       // 2. Fetch profiles for these user_ids
       const { data: profilesData, error: profilesError } = await supabase
@@ -49,11 +55,16 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
         .select('id, username, avatar_url')
         .in('id', userIds);
 
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.error('Error fetching profiles:', profilesError);
+        throw profilesError;
+      }
 
-      setMembers(profilesData as Member[]);
+      console.log('Fetched profiles:', profilesData);
+      setMembers((profilesData || []) as Member[]);
     } catch (err: any) {
-      setError('Failed to fetch room members.');
+      const errorMsg = err?.message || 'Failed to fetch room members.';
+      setError(errorMsg);
       console.error('Error fetching members:', err);
     } finally {
       setLoading(false);

@@ -18,16 +18,6 @@ export function MobileNav() {
     return null;
   }
 
-  // Check if we are in an immersive route (Project Space, Discussion Room, Chat DM)
-  const isImmersiveRoute =
-    /^\/projects\/[^/]+\/space/.test(location.pathname) ||
-    /^\/discussion-rooms\/[^/]+$/.test(location.pathname) ||
-    /^\/messages\/[^/]+$/.test(location.pathname);
-
-  if (isImmersiveRoute) {
-    return null;
-  }
-
   const isActive = (path: string) => {
     if (path === "/") {
       return location.pathname === path;
