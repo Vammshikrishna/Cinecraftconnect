@@ -4,7 +4,7 @@ import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Megaphone, Film, MessageSquare, Star,
-    ShoppingBag, Building2, Rss, Users
+    ShoppingBag, Building2, Users
 } from 'lucide-react';
 
 // Components
@@ -101,7 +101,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             component: (
                 <FeedSection title="Announcements" icon={Megaphone} linkTo="/announcements">
                     {feedData.announcements.map((item: any) => (
-                        <div key={item.id} className="w-[280px] md:w-[320px] flex-none snap-start">
+                        <div key={item.id} className="w-[85vw] sm:w-[350px] md:w-[400px] flex-none snap-start mx-1 first:ml-0">
                             <FeedAnnouncementCard
                                 announcement={{
                                     ...item,
@@ -268,12 +268,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     return (
         <div className="space-y-6 pb-20">
             {/* Feed Header */}
-            <div className="flex items-center gap-2 px-4 pt-2">
-                <Rss className="h-5 w-5 text-primary" />
-                <h2 className="text-xl font-bold tracking-tight">Your Feed</h2>
-            </div>
 
-            <div className="px-4">
+
+            <div className="px-1 sm:px-4">
                 <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />
             </div>
 
@@ -293,7 +290,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
                     return (
                         <div key={post.id}>
-                            <div className="px-4">
+                            <div className="px-1 sm:px-4">
                                 <PostCard
                                     id={post.id}
                                     author={{

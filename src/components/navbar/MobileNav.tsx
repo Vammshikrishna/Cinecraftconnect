@@ -1,6 +1,6 @@
 // Mobile navigation bar for mobile view
 import { Link, useLocation } from "react-router-dom";
-import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star } from "lucide-react";
+import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star, MessageSquare } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -58,7 +58,9 @@ export function MobileNav() {
                   location.pathname.startsWith("/announcements") ||
                   location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
-                  location.pathname.startsWith("/vendors")
+                  location.pathname.startsWith("/vendors") ||
+                  location.pathname.startsWith("/messages") ||
+                  location.pathname.startsWith("/dm")
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
                   }`}
@@ -68,12 +70,20 @@ export function MobileNav() {
                   location.pathname.startsWith("/announcements") ||
                   location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
-                  location.pathname.startsWith("/vendors")) && (
+                  location.pathname.startsWith("/vendors") ||
+                  location.pathname.startsWith("/messages") ||
+                  location.pathname.startsWith("/dm")) && (
                     <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
                   )}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
+              <DropdownMenuItem asChild>
+                <Link to="/messages" className="flex items-center gap-3 cursor-pointer">
+                  <MessageSquare size={18} />
+                  <span>Messages</span>
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
                   <Star size={18} />

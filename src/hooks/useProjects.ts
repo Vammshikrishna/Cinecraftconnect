@@ -134,6 +134,30 @@ export const useProjects = (activeTab: string = 'all') => {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
     });
+    const deleteProject = useMutation({
+        mutationFn: async (projectId: string) => {
+            if (!user) throw new Error("Must be logged in");
 
-    return { projects, loading, toggleBookmark, refetch };
+            const { error } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', projectId)
+                .eq('creator_id', user.id); // Security check
+
+            if (error) throw error;
+            return projectId;
+        },
+        onSuccess: (deletedProjectId) => {
+            queryClient.setQueryData(['projects', activeTab, user?.id], (old: Project[] | undefined) => {
+                if (!old) return [];
+                return old.filter(p => p.id !== deletedProjectId);
+            });
+            toast({ title: "Project deleted successfully" });
+        },
+        onError: (error: any) => {
+            toast({ title: "Error deleting project", description: error.message, variant: "destructive" });
+        }
+    });
+
+    return { projects, loading, toggleBookmark, deleteProject, refetch };
 };

@@ -19,56 +19,51 @@ export interface HomeFeedData {
 export const useHomeFeed = () => {
     const { user } = useAuth();
 
-    return useQuery({
-        queryKey: ['home-feed', user?.id],
-        queryFn: async (): Promise<HomeFeedData> => {
-            // 1. Posts
+    // 1. Critical App Data (Supabase)
+    const supabaseQuery = useQuery({
+        queryKey: ['home-feed-data', user?.id],
+        queryFn: async (): Promise<Omit<HomeFeedData, 'ratings'>> => {
+            // Check if RPC exists (optional optimization for future)
+            // const { data: rpcData, error: rpcError } = await supabase.rpc('get_home_feed_data', { user_id_param: user?.id });
+            // if (!rpcError && rpcData) return rpcData;
+
+            // Fallback to parallel fetching
             const postsPromise = supabase
                 .from('posts')
                 .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
                 .order('created_at', { ascending: false })
                 .limit(20);
 
-            // 2. Announcements
             const announcementsPromise = supabase
                 .from('announcements')
                 .select('*')
                 .order('posted_at', { ascending: false })
                 .limit(5);
 
-            // 3. Projects
             const projectsPromise = supabase
                 .from('projects')
                 .select('*, creator:creator_id(full_name, avatar_url)')
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            // 4. Discussions
             const discussionsPromise = supabase
                 .from('discussion_rooms')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            // 5. Marketplace
             const conceptsPromise = supabase
                 .from('marketplace_listings')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            // 6. Vendors
             const vendorsPromise = supabase
                 .from('vendors')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            // 7. TMDB Ratings
-            const ratingsPromise = fetchLatestRatings().catch(() => []);
-
-            // 8. Connections (User dependent)
-            // Note: These are SUGGESTIONS (profiles), not actual connections.
             const connectionsPromise = user?.id
                 ? supabase
                     .from('profiles')
@@ -78,7 +73,6 @@ export const useHomeFeed = () => {
                     .limit(6)
                 : Promise.resolve({ data: [], error: null });
 
-            // 9. Post Likes (User dependent)
             const likesPromise = user?.id
                 ? supabase
                     .from('post_likes')
@@ -86,45 +80,54 @@ export const useHomeFeed = () => {
                     .eq('user_id', user.id)
                 : Promise.resolve({ data: [], error: null });
 
-            // Execute all in parallel
             const [
-                postsRes,
-                announcementsRes,
-                projectsRes,
-                discussionsRes,
-                marketplaceRes,
-                vendorsRes,
-                ratingsData,
-                connectionsRes,
-                likesRes
+                postsRes, announcementsRes, projectsRes, discussionsRes,
+                marketplaceRes, vendorsRes, connectionsRes, likesRes
             ] = await Promise.all([
-                postsPromise,
-                announcementsPromise,
-                projectsPromise,
-                discussionsPromise,
-                conceptsPromise,
-                vendorsPromise,
-                ratingsPromise,
-                connectionsPromise,
-                likesPromise
+                postsPromise, announcementsPromise, projectsPromise, discussionsPromise,
+                conceptsPromise, vendorsPromise, connectionsPromise, likesPromise
             ]);
-
-            // Check for critical errors (optional, usually component handles empty states)
-            if (postsRes.error) console.error("Posts error:", postsRes.error);
 
             return {
                 posts: postsRes.data || [],
                 announcements: announcementsRes.data || [],
                 projects: projectsRes.data || [],
                 discussions: discussionsRes.data || [],
-                ratings: ratingsData || [],
                 marketplace: marketplaceRes.data || [],
                 vendors: vendorsRes.data || [],
                 connections: connectionsRes.data || [],
                 likedPostIds: new Set((likesRes.data as any[] || []).map((l: any) => l.post_id))
             };
         },
-        staleTime: 1000 * 60 * 5, // 5 minutes cache
-        refetchOnWindowFocus: false,
+        staleTime: 1000 * 60 * 5,
     });
+
+    // 2. Non-Critical External Data (TMDB)
+    const ratingsQuery = useQuery({
+        queryKey: ['home-feed-ratings'],
+        queryFn: async () => {
+            return await fetchLatestRatings().catch(err => {
+                console.warn("Failed to fetch ratings", err);
+                return [];
+            });
+        },
+        staleTime: 1000 * 60 * 60, // 1 hour cache
+    });
+
+    // Merge Data
+    const combinedData: HomeFeedData | undefined = supabaseQuery.data ? {
+        ...supabaseQuery.data,
+        ratings: ratingsQuery.data || []
+    } : undefined;
+
+    return {
+        data: combinedData,
+        isLoading: supabaseQuery.isLoading, // Only block UI for Supabase data
+        isError: supabaseQuery.isError,
+        error: supabaseQuery.error,
+        refetch: () => {
+            supabaseQuery.refetch();
+            ratingsQuery.refetch();
+        }
+    };
 };

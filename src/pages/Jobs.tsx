@@ -110,12 +110,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
             <h1 className="text-3xl font-bold mb-2">Jobs</h1>
             <p className="text-gray-400">Find your next role in film and television</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto">
             <Link to="/jobs/applications">
-              <Button variant="outline">My Applications</Button>
+              <Button variant="outline" className="flex-1 md:flex-none">My Applications</Button>
             </Link>
             <Link to="/jobs/manage">
-              <Button variant="outline">Manage Jobs</Button>
+              <Button variant="outline" className="flex-1 md:flex-none">Manage Jobs</Button>
             </Link>
             <JobCreationModal onJobCreated={handleJobCreated} defaultOpen={openCreate} />
           </div>
@@ -205,10 +205,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                       </div>
                     </div>
 
-                    <div className="flex flex-col md:items-end justify-between min-w-[140px] border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6 mt-4 md:mt-0">
-                      <div className="mb-4">
+                    <div className="flex flex-col items-start md:items-end justify-between min-w-[140px] border-t md:border-t-0 md:border-l border-white/10 pt-4 md:pt-0 md:pl-6 mt-4 md:mt-0 w-full md:w-auto">
+                      <div className="mb-4 w-full md:w-auto">
                         {(job.salary_min || job.salary_max) ? (
-                          <div className="text-right">
+                          <div className="text-left md:text-right">
                             <span className="text-xs text-gray-500 block mb-1">Salary Range</span>
                             <span className="font-semibold text-primary text-lg">
                               {job.salary_min ? `₹${job.salary_min.toLocaleString()}` : ''}

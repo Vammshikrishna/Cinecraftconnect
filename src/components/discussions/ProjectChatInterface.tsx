@@ -11,6 +11,7 @@ import { MessageComposer } from './MessageComposer';
 import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
+import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 
 interface Message {
   id: string;
@@ -476,7 +477,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                   </AvatarFallback>
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[70%]`}>
-                  <div className={`${(message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::')) ? 'p-0 bg-transparent' : `rounded-lg px-4 py-2 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
+                  <div className={`${(message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::')) ? 'p-0 bg-transparent' : `rounded-lg px-4 py-2 ${isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
                     {!isOwn && (
                       <p className="text-xs font-semibold mb-1">
                         {message.profiles?.full_name || 'Unknown User'}
@@ -496,6 +497,15 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                         try {
                           const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
                           return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
+                        }
+                      })()
+                    ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                          return <AnnouncementShareCard {...shareData} />;
                         } catch (e) {
                           return <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>;
                         }
@@ -539,7 +549,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 border-t border-border pb-16 lg:pb-4">
+      <div className="p-4 border-t border-border">
         <MessageComposer
           onSend={handleSendMessage}
           onAttach={handleAttach}

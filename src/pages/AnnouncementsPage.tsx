@@ -14,6 +14,7 @@ interface Announcement {
     content: string;
     created_at: string;
     posted_at: string;
+    author_id?: string | null;
 }
 
 const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
@@ -62,15 +63,15 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
         <div className="min-h-screen bg-background pt-20 pb-24">
             <div className="max-w-4xl mx-auto px-4 md:px-8">
                 <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-primary/10 rounded-xl">
-                            <Megaphone className="h-8 w-8 text-primary" />
+                    <div className="flex items-center gap-4 min-w-0">
+                        <div className="p-3 bg-primary/10 rounded-xl shrink-0">
+                            <Megaphone className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
                         </div>
-                        <div>
-                            <h1 className="text-4xl font-extrabold text-foreground mb-2">
+                        <div className="flex-1 min-w-0">
+                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-foreground mb-1 sm:mb-2 truncate">
                                 Announcements
                             </h1>
-                            <p className="text-muted-foreground text-lg">
+                            <p className="text-muted-foreground text-sm sm:text-base md:text-lg break-words">
                                 Stay updated with the latest news and updates from the platform
                             </p>
                         </div>
@@ -115,7 +116,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                                     id: announcement.id,
                                     title: announcement.title,
                                     content: announcement.content,
-                                    created_at: announcement.posted_at || announcement.created_at
+                                    created_at: announcement.posted_at || announcement.created_at,
+                                    author_id: announcement.author_id
                                 }}
                             />
                         ))}

@@ -20,21 +20,38 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
     return useQuery({
         queryKey: ['marketplace-listings', activeTab, searchQuery, filters],
         queryFn: async () => {
-            const { data, error } = await supabase
-                .rpc('search_marketplace_listings', {
-                    search_query: searchQuery || undefined,
-                    filter_type: activeTab === 'all' ? undefined : activeTab,
-                    filter_category: filters.category || undefined,
-                    filter_location: filters.location || undefined,
-                    min_price: filters.minPrice || undefined,
-                    max_price: filters.maxPrice || undefined
-                });
+            let query = supabase
+                .from('marketplace_listings')
+                .select('*')
+                .eq('is_active', true)
+                .order('created_at', { ascending: false });
+
+            // Apply filters manually since we aren't using the RPC
+            if (activeTab !== 'all') {
+                query = query.eq('type', activeTab);
+            }
+            if (filters.category) {
+                query = query.eq('category', filters.category);
+            }
+            if (filters.location) {
+                query = query.ilike('location', `%${filters.location}%`);
+            }
+            if (filters.minPrice) {
+                query = query.gte('price', filters.minPrice);
+            }
+            if (filters.maxPrice) {
+                query = query.lte('price', filters.maxPrice);
+            }
+            if (searchQuery) {
+                query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
-
             if (!data || data.length === 0) return [];
 
-            // Optimize: Fetch all profiles in one go
+            // Fetch profiles in batch
             const userIds = new Set((data as any[]).map((l) => l.user_id));
             const { data: profiles } = await supabase
                 .from('profiles')

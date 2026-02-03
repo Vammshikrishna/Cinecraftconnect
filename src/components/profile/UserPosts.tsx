@@ -89,7 +89,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
   }
 
   return (
-    <div className="grid grid-cols-3 gap-1 md:gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-0.5 md:gap-4">
       {posts.map((post) => {
         const hasMedia = !!post.media_url;
         const isVideo = post.media_type === 'video';

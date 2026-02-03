@@ -12,14 +12,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Globe } from 'lucide-react';
+import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Globe, Edit } from 'lucide-react';
+
+import { Project } from '@/hooks/useProjects';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
   defaultOpen?: boolean;
+  projectToEdit?: Project | null;
 }
 
-export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false }: ProjectCreationModalProps) => {
+export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, projectToEdit }: ProjectCreationModalProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -42,6 +45,25 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false }: 
     status: 'planning',
     is_public: true,
   });
+
+  useEffect(() => {
+    if (projectToEdit) {
+      setProjectData({
+        name: projectToEdit.title,
+        description: projectToEdit.description,
+        genre: projectToEdit.genre || [],
+        location: projectToEdit.location || '',
+        budget_min: projectToEdit.budget_min?.toString() || '',
+        budget_max: projectToEdit.budget_max?.toString() || '',
+        start_date: projectToEdit.start_date || '',
+        end_date: projectToEdit.end_date || '',
+        required_roles: projectToEdit.required_roles || [],
+        status: projectToEdit.status || 'planning',
+        is_public: true, // Assuming public by default or needs DB field
+      });
+      setIsOpen(true);
+    }
+  }, [projectToEdit]);
   const [projectImage, setProjectImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -109,58 +131,74 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false }: 
         console.log('Project image uploaded:', urlData.publicUrl);
       }
 
-      const { data: newProject, error } = await supabase
-        .from('projects')
-        .insert({
-          title: projectData.name,
-          description: projectData.description,
-          creator_id: user.id,
-          genre: projectData.genre,
-          location: projectData.location,
-          required_roles: projectData.required_roles,
-          status: projectData.status,
-          is_public: projectData.is_public,
-          start_date: projectData.start_date || null,
-          end_date: projectData.end_date || null,
-          budget_min: projectData.budget_min ? parseFloat(projectData.budget_min) : null,
-          budget_max: projectData.budget_max ? parseFloat(projectData.budget_max) : null,
-        })
-        .select()
-        .single();
+      const payload = {
+        title: projectData.name,
+        description: projectData.description,
+        creator_id: user.id,
+        genre: projectData.genre,
+        location: projectData.location,
+        required_roles: projectData.required_roles,
+        status: projectData.status,
+        is_public: projectData.is_public,
+        start_date: projectData.start_date || null,
+        end_date: projectData.end_date || null,
+        budget_min: projectData.budget_min ? parseFloat(projectData.budget_min) : null,
+        budget_max: projectData.budget_max ? parseFloat(projectData.budget_max) : null,
+      };
 
-      if (error) throw error;
+      if (projectToEdit) {
+        const { error } = await supabase
+          .from('projects')
+          .update(payload)
+          .eq('id', projectToEdit.id);
 
-      // Create a project space for this project
-      if (newProject) {
-        const { error: spaceError } = await supabase.from('project_spaces').insert({
-          project_id: newProject.id,
-          name: `${projectData.name} Workspace`,
+        if (error) throw error;
+
+        toast({
+          title: "Project Updated",
+          description: "Your project has been updated successfully!",
+        });
+      } else {
+        const { data: newProject, error } = await supabase
+          .from('projects')
+          .insert(payload)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // Create a project space for this project
+        if (newProject) {
+          const { error: spaceError } = await supabase.from('project_spaces').insert({
+            project_id: newProject.id,
+            name: `${projectData.name} Workspace`,
+          });
+
+          if (spaceError) {
+            console.error('Error creating project space:', spaceError);
+            // Don't throw - project is created, just log the error
+          }
+        }
+
+        toast({
+          title: "Project Created",
+          description: "Your project has been created successfully!",
         });
 
-        if (spaceError) {
-          console.error('Error creating project space:', spaceError);
-          // Don't throw - project is created, just log the error
+        if (newProject) {
+          navigate(`/projects/${newProject.id}/space`);
         }
       }
-
-      toast({
-        title: "Project Created",
-        description: "Your project has been created successfully!",
-      });
 
       setIsOpen(false);
       onProjectCreated?.();
 
-      if (newProject) {
-        navigate(`/projects/${newProject.id}/space`);
-      }
-
     } catch (error) {
-      console.error('Error creating project:', error);
+      console.error('Error creating/updating project:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
       toast({
-        title: "Creation Failed",
-        description: error instanceof Error ? error.message : "There was an error creating your project.",
+        title: projectToEdit ? "Update Failed" : "Creation Failed",
+        description: error instanceof Error ? error.message : "There was an error processing your request.",
         variant: "destructive",
       });
     }
@@ -280,11 +318,22 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false }: 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-primary hover:bg-primary/90"><Plus className="mr-2 h-4 w-4" />Create Project</Button>
+        <Button className="bg-primary hover:bg-primary/90 h-9 px-3 sm:h-10 sm:px-4">
+          {projectToEdit ? (
+            <span className="flex items-center"><Edit className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Update Project</span><span className="sm:hidden">Update</span></span>
+          ) : (
+            <>
+              <Plus className="h-5 w-5 sm:mr-2 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Create Project</span>
+            </>
+          )}
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border p-4 sm:p-6">
         <DialogHeader className="mb-4">
-          <DialogTitle className="text-foreground text-xl sm:text-2xl">Create New Project</DialogTitle>
+          <DialogTitle className="text-foreground text-xl sm:text-2xl">
+            {projectToEdit ? 'Edit Project' : 'Create New Project'}
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Launch a new project, recruit your team, and manage your production workflow.
           </DialogDescription>

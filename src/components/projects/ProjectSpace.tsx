@@ -417,7 +417,7 @@ export const ProjectSpace = ({
   return (
     <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-white/20 lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
       {/* Mobile Header & Navigation */}
-      <div className="lg:hidden flex flex-col border-b border-white/10 bg-background/80 backdrop-blur-xl z-30 shrink-0 sticky top-0">
+      <div className="lg:hidden flex flex-col border-b border-white/10 bg-background z-[60] shrink-0 sticky top-0">
         <div className="flex items-center justify-between p-3">
           <Button
             variant="ghost"
