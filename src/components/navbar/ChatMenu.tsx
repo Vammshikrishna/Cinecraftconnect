@@ -85,7 +85,7 @@ const ChatMenu = () => {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
+      <DropdownMenuContent align="end" className="w-[90vw] sm:w-80">
         <DropdownMenuLabel>Messages</DropdownMenuLabel>
         <DropdownMenuSeparator />
 

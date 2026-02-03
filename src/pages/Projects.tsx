@@ -16,8 +16,29 @@ import {
   MapPin,
   Film,
   Bookmark,
-  ChevronRight
+  ChevronRight,
+  MoreVertical,
+  Edit,
+  Trash2,
+  Loader2
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { getGradientForString } from '@/utils/colors';
 import { useProjects, Project } from '@/hooks/useProjects';
 
@@ -33,7 +54,12 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     locations: []
   });
 
-  const { projects, loading, toggleBookmark, refetch } = useProjects(activeTab);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { projects, loading, toggleBookmark, deleteProject, refetch } = useProjects(activeTab);
 
   const filteredProjects = projects.filter(project => {
     const matchesSearch =
@@ -93,6 +119,33 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             </div>
           )}
 
+          {/* Owner Actions */}
+          {user?.id === project.creator_id && (
+            <div className="absolute bottom-3 right-3 z-20" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80">
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40 z-50 bg-background border-border">
+                  <DropdownMenuItem onClick={() => {
+                    setProjectToEdit(project);
+                    setIsEditModalOpen(true);
+                  }}>
+                    <Edit className="mr-2 h-4 w-4" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setProjectToDelete(project)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+
           {/* Status Badge */}
           <div className="absolute bottom-3 left-3">
             <Badge variant={getStatusVariant(project.status)} className="capitalize shadow-lg bg-background/80 backdrop-blur-sm">
@@ -147,18 +200,21 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   };
 
   return (
-    <div className="min-h-screen bg-background pt-20">
-      <div className="container mx-auto px-4 pt-8 pb-24 animate-fade-in">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-8 space-y-4 lg:space-y-0">
+    <div className="min-h-screen bg-background pt-12">
+      <div className="w-full md:container mx-auto px-1 sm:px-4 pt-4 md:pt-8 pb-24 animate-fade-in">
+        <div className="flex flex-row justify-between items-center mb-6 gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center"><Film className="mr-3 h-8 w-8 text-primary" />Projects</h1>
-            <p className="text-muted-foreground">Discover and collaborate on film projects</p>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-1 flex items-center">
+              <Film className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 text-primary" />
+              Projects
+            </h1>
+            <p className="text-xs md:text-sm text-muted-foreground hidden sm:block">Discover and collaborate on film projects</p>
           </div>
           <ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />
         </div>
 
         <div className="mb-6">
-          <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <div className="flex flex-row gap-2 sm:gap-4 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
@@ -166,18 +222,18 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             <ProjectFilters onFiltersChange={setFilters} activeFilters={filters} />
           </div>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-card border border-border">
-              <TabsTrigger value="all" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All Projects</TabsTrigger>
-              {user && <TabsTrigger value="my" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
-              {user && <TabsTrigger value="bookmarked" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="bg-card border border-border w-full flex overflow-x-auto justify-start no-scrollbar">
+              <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All Projects</TabsTrigger>
+              {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
+              {user && <TabsTrigger value="bookmarked" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}
             </TabsList>
           </Tabs>
         </div>
 
         {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
           filteredProjects.length > 0 ? (
-            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6}>
+            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6} className="gap-3 sm:gap-6">
               {filteredProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
             </ResponsiveGrid>
           ) : (
@@ -190,6 +246,46 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
         )}
 
         <ProjectDetailDialog project={selectedProject} open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)} />
+
+        {/* Edit Modal */}
+        {isEditModalOpen && (
+          <ProjectCreationModal
+            defaultOpen={true}
+            projectToEdit={projectToEdit}
+            onProjectCreated={() => {
+              refetch();
+              setIsEditModalOpen(false);
+              setProjectToEdit(null);
+            }}
+          />
+        )}
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!projectToDelete} onOpenChange={(open) => !open && setProjectToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the project "{projectToDelete?.title}" and remove all data from our servers.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (projectToDelete) {
+                    deleteProject.mutate(projectToDelete.id);
+                    setProjectToDelete(null);
+                  }
+                }}
+              >
+                {deleteProject.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                Delete Project
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

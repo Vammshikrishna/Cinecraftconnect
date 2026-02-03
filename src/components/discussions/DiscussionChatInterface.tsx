@@ -22,6 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
+import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -485,7 +486,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                     </Tooltip>
                   </TooltipProvider>
 
-                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
                     {message.content.startsWith('POST_SHARE::') ? (
                       (() => {
                         try {
@@ -500,6 +501,15 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                         try {
                           const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
                           return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
+                        }
+                      })()
+                    ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                          return <AnnouncementShareCard {...shareData} />;
                         } catch (e) {
                           return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
                         }

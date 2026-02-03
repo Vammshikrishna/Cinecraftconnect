@@ -123,7 +123,7 @@ const PostCard = ({
       {/* Decorative gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-blue-500/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-      <div className="relative p-6">
+      <div className="relative p-3 sm:p-6">
         <div className="flex items-center mb-4">
           <Link to={`/profile/${author.id}`} className="hover:opacity-80 transition-opacity relative z-10">
             <Avatar className="h-10 w-10 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300">
@@ -150,7 +150,7 @@ const PostCard = ({
         <p className="mb-4 break-words whitespace-pre-wrap text-foreground/90 leading-relaxed">{content}</p>
 
         {hasImage && (
-          <div className="mb-4 rounded-lg overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
+          <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] rounded-none overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
             {mediaUrl ? (
               <img
                 src={mediaUrl}
@@ -171,7 +171,7 @@ const PostCard = ({
         )}
 
         {hasVideo && (
-          <div className="mb-4 rounded-lg overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
+          <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] rounded-none overflow-hidden bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300">
             {mediaUrl ? (
               <video
                 src={mediaUrl}

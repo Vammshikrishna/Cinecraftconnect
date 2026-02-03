@@ -47,6 +47,7 @@ interface Announcement {
   title: string;
   content: string;
   created_at: string;
+  author_id?: string | null;
   itemType: 'announcement';
 }
 
@@ -213,7 +214,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
   }
 
   return (
-    <ResponsiveGrid cols={{ sm: 1, md: 1 }} gap={6}>
+    <ResponsiveGrid cols={{ sm: 1, md: 1 }} gap={6} className="px-1 sm:px-0">
       {feed.map(item => {
         if (item.itemType === 'post') {
           const author = item.profiles;

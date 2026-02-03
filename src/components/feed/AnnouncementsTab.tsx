@@ -192,7 +192,8 @@ const AnnouncementsTab = () => {
                 id: announcement.id,
                 title: announcement.title,
                 content: announcement.content,
-                created_at: announcement.created_at
+                created_at: announcement.created_at,
+                author_id: announcement.author_id
               }}
             />
           ))}

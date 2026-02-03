@@ -63,12 +63,12 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   // To avoid breaking the file, I will rewrite the surrounding state and effects cleanly.
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    // Keep silent refresh for background updates
     try {
       const [roomsRes, categoriesRes] = await Promise.all([
         supabase
           .from('discussion_rooms')
-          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count:room_members(count), room_categories(name)'),
+          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count, room_categories(name)'),
         supabase.from('room_categories').select('id, name')
       ]);
 
@@ -78,11 +78,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       // @ts-ignore
       const formattedRooms = roomsRes.data.map(room => ({
         ...room,
-        member_count: room.member_count[0]?.count || 0,
+        member_count: room.member_count || 0,
         room_type: room.room_type as 'public' | 'private' | 'secret',
         category_id: room.category_id || '',
         creator_id: room.creator_id || '',
-        tags: ['cinema', 'directing', 'qa'].slice(0, Math.floor(Math.random() * 3) + 1),
+        tags: ['cinema', 'directing', 'qa'].slice(0, (room.id.charCodeAt(0) % 3) + 1),
       }));
 
       setRooms(formattedRooms);
@@ -96,13 +96,24 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   useEffect(() => {
     fetchData();
+
+    // Debounce the refresh to prevent UI freezing on rapid updates
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const debouncedRefresh = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchData();
+      }, 1000); // Wait 1s after last update before refreshing
+    };
+
     const channel = supabase.channel('discussion-rooms-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'discussion_rooms' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_categories' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discussion_rooms' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_categories' }, debouncedRefresh)
       .subscribe();
 
     return () => {
+      clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [fetchData]);
@@ -192,15 +203,16 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
-      <div className="container mx-auto pt-16 pb-24">
+    <div className="min-h-screen bg-background text-foreground pt-12">
+      <div className="w-full md:container mx-auto px-1 sm:px-4 pt-4 md:pt-8 pb-24">
         {/* Header and Controls */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-          <h1 className="text-4xl font-bold text-foreground">Discussion Rooms</h1>
+        <div className="flex flex-row justify-between items-center mb-8 gap-4">
+          <h1 className="text-2xl md:text-4xl font-bold text-foreground">Discussion Rooms</h1>
           <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold py-2 px-4 rounded-lg flex items-center gap-2">
-                <PlusCircle size={20} /> Create Room
+              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-9 px-3 sm:h-10 sm:px-4 rounded-lg flex items-center gap-1 md:gap-2">
+                <PlusCircle size={16} className="h-5 w-5 sm:mr-2 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Create Room</span>
               </Button>
             </DialogTrigger>
             <CreateRoomModal
@@ -214,7 +226,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         {/* Featured Rooms */}
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
             {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
           </div>
         </section>
@@ -223,35 +235,37 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <section>
           <h2 className="text-2xl font-semibold mb-4 text-primary">All Rooms</h2>
           {/* Filtering and Sorting UI */}
-          <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-card border border-border rounded-lg">
-            <div className="relative flex-grow sm:flex-grow-0 sm:w-1/3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
+          <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 sm:gap-4 mb-6 p-2 sm:p-4 bg-card border border-border rounded-lg">
+            <div className="relative w-full sm:w-auto sm:flex-grow sm:w-1/3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
               <Input
                 placeholder="Search rooms..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="bg-input border-border pl-10"
+                className="bg-input border-border pl-9 h-9 sm:h-10 text-sm"
               />
             </div>
-            <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-full sm:w-[180px] bg-input border-border">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                <SelectItem value="all">All Categories</SelectItem>
-                {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-full sm:w-[180px] bg-input border-border">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent className="bg-popover border-border">
-                <SelectItem value="popularity">Popularity</SelectItem>
-                <SelectItem value="newest">Newest</SelectItem>
-                <SelectItem value="name">Name</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex w-full sm:w-auto gap-2">
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="flex-1 sm:w-[180px] bg-input border-border h-9 sm:h-10 text-sm">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="flex-1 sm:w-[180px] bg-input border-border h-9 sm:h-10 text-sm">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent className="bg-popover border-border">
+                  <SelectItem value="popularity">Popularity</SelectItem>
+                  <SelectItem value="newest">Newest</SelectItem>
+                  <SelectItem value="name">Name</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Rooms Grid */}
@@ -301,22 +315,13 @@ const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room)
   return (
     <Card className="glass-card hover-lift flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden border-border">
       <CardContent className="p-5">
-        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-3">
-          <h3 className="text-lg font-bold text-foreground line-clamp-2 md:line-clamp-1 md:truncate md:pr-2">{room.title}</h3>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-primary/20 text-primary whitespace-nowrap">
-              {room.room_categories?.name || 'General'}
-            </div>
-            {room.room_type === 'private' && (
-              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
-                <Lock className="h-3 w-3" />
-                Private
-              </Badge>
-            )}
+        <div className="flex flex-col justify-between gap-3 mb-3">
+          <div className="flex justify-between items-start w-full">
+            <h3 className="text-lg font-bold text-foreground line-clamp-2 break-all pr-2">{room.title}</h3>
             {isOwner && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mr-2">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -334,6 +339,17 @@ const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room)
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-primary/20 text-primary whitespace-nowrap">
+              {room.room_categories?.name || 'General'}
+            </div>
+            {room.room_type === 'private' && (
+              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
+                <Lock className="h-3 w-3" />
+                Private
+              </Badge>
             )}
           </div>
         </div>

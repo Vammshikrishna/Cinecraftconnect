@@ -117,16 +117,17 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
     };
 
     return (
-        <Card className="glass-card p-6 mb-6" id="create-post-widget">
+        <Card className="glass-card p-2 sm:p-6 mb-6" id="create-post-widget">
             {!showCreatePost ? (
                 <Button
                     id="create-post-trigger"
                     onClick={() => setShowCreatePost(true)}
-                    className="w-full justify-start text-left bg-transparent hover:bg-accent border-dashed border-2 border-border h-12"
+                    className="w-full justify-start text-left bg-transparent hover:bg-accent border-dashed border-2 border-border h-10 text-sm"
                     variant="outline"
                 >
-                    <PlusCircle className="mr-2 h-5 w-5" />
-                    Share your latest project or idea...
+                    <PlusCircle className="mr-2 h-5 w-5 shrink-0" />
+                    <span className="hidden sm:inline">Share your latest project or idea...</span>
+                    <span className="inline sm:hidden">Create a post...</span>
                 </Button>
             ) : (
                 <div className="space-y-4">

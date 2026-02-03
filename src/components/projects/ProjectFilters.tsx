@@ -18,7 +18,7 @@ export interface FilterState {
 }
 
 const AVAILABLE_GENRES = [
-  'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi', 
+  'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi',
   'Romance', 'Documentary', 'Fantasy', 'Mystery', 'Animation'
 ];
 
@@ -68,20 +68,20 @@ export function ProjectFilters({ onFiltersChange, activeFilters }: ProjectFilter
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" className="relative">
-          <Filter className="mr-2 h-4 w-4" />
-          Filters
+        <Button variant="outline" className="relative px-3 sm:px-4">
+          <Filter className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Filters</span>
           {activeFilterCount > 0 && (
-            <Badge 
-              variant="default" 
-              className="ml-2 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs"
+            <Badge
+              variant="default"
+              className="absolute -top-1 -right-1 sm:static sm:ml-2 h-4 w-4 sm:h-5 sm:w-5 min-w-[1rem] rounded-full p-0 flex items-center justify-center text-[10px] sm:text-xs"
             >
               {activeFilterCount}
             </Badge>
           )}
         </Button>
       </SheetTrigger>
-      
+
       <SheetContent className="w-full sm:max-w-md overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Filter Projects</SheetTitle>

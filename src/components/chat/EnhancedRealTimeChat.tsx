@@ -11,6 +11,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
 import { MarketplaceShareCard } from './MarketplaceShareCard';
+import { AnnouncementShareCard } from './AnnouncementShareCard';
 import { EncryptionService } from '@/services/EncryptionService';
 
 interface Message {
@@ -235,7 +236,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`} max-w-xs lg:max-w-md`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`} max-w-xs lg:max-w-md`}>
                     {message.content.startsWith('POST_SHARE::') ? (
                       (() => {
                         try {
@@ -250,6 +251,15 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         try {
                           const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
                           return <MarketplaceShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words">{message.content}</p>;
+                        }
+                      })()
+                    ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                          return <AnnouncementShareCard {...shareData} />;
                         } catch (e) {
                           return <p className="text-sm break-words">{message.content}</p>;
                         }
