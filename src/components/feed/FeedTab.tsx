@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "./PostCard";
@@ -11,9 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import MediaUpload from "./MediaUpload";
-import { ResponsiveGrid } from "@/components/ui/mobile-responsive-grid";
 import { z } from "zod";
 import { Post } from "@/types";
+import { useHomeFeed } from "@/hooks/useHomeFeed";
+import { useConnections } from "@/hooks/useConnections";
+import { FirstContentBlock, SecondContentBlock } from "./FeedWidgets";
+import { useAuth } from "@/contexts/AuthContext";
 
 const postSchema = z.object({
   content: z.string().trim().optional(),
@@ -26,20 +29,40 @@ interface FeedTabProps {
 }
 
 const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState("All");
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [localPosts, setLocalPosts] = useState<Post[]>([]);
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
   const [newPostContent, setNewPostContent] = useState("");
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [postMediaUrl, setPostMediaUrl] = useState("");
   const [postMediaType, setPostMediaType] = useState<'image' | 'video' | null>(null);
   const { toast } = useToast();
 
+  // 1. Fetch Holistic Feed Data
+  const { data: homeFeed, isLoading } = useHomeFeed();
+  const { connections, sendConnectionRequest } = useConnections();
+
+  // Initialize local posts from homeFeed
+  useEffect(() => {
+    if (homeFeed?.posts) {
+      setLocalPosts((prev) => {
+        // Merge logic if needed, but for now reset on fresh fetch to respect algorithm
+        // Or better, only set if empty to allow realtime additions.
+        if (prev.length === 0) return homeFeed.posts;
+        return prev;
+      });
+      if (homeFeed.likedPostIds) {
+        setLikedPostIds(homeFeed.likedPostIds);
+      }
+    }
+  }, [homeFeed]);
+
   // Real-time posts subscription
   useRealtimePosts({
     onInsert: (newPost) => {
-      setPosts(prev => [newPost as Post, ...prev]);
+      // Add new items to top locally
+      setLocalPosts(prev => [newPost as Post, ...prev]);
       cacheManager.invalidate('posts-feed');
       toast({
         title: "New post",
@@ -47,80 +70,147 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       });
     },
     onUpdate: (updatedPost) => {
-      setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost as Post : p));
+      setLocalPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost as Post : p));
       cacheManager.invalidate('posts-feed');
     },
     onDelete: (postId) => {
-      setPosts(prev => prev.filter(p => p.id !== postId));
+      setLocalPosts(prev => prev.filter(p => p.id !== postId));
       cacheManager.invalidate('posts-feed');
     }
   });
 
-  // Fetch posts from database with author profile data
-  const fetchPosts = async () => {
-    const stopTimer = performanceMonitor.startTimer('fetch-posts');
+  // Calculate Sorted Feed
+  const feedItems = useMemo(() => {
+    if (!localPosts.length) return [];
 
-    // Check cache first
-    const cached = cacheManager.get<Post[]>('posts-feed');
-    if (cached) {
-      setPosts(cached);
-      setLoading(false);
-      stopTimer();
-      return;
+    // 1. Identify Connection IDs
+    const connectionIds = new Set<string>();
+    connections.forEach(c => {
+      connectionIds.add(c.follower_id);
+      connectionIds.add(c.following_id);
+    });
+
+    // 2. Sorting Algorithm
+    // - Bucket 1: My Posts & Connection Posts (Recent)
+    // - Bucket 2: Others (Sorted by "Smart" score: Likes + Recent?) -> For now, purely chronological for "Others" but we could sort by likes.
+    // User requested: "first user connectttion post and next smart in between the posts all the others"
+
+    const myAndFriendsPosts = [];
+    const otherPosts = [];
+
+    for (const post of localPosts) {
+      if (post.author_id === user?.id || connectionIds.has(post.author_id)) {
+        myAndFriendsPosts.push(post);
+      } else {
+        otherPosts.push(post);
+      }
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles:author_id (
-            id,
-            full_name,
-            username,
-            avatar_url,
-            craft
-          )
-        `)
-        .order('created_at', { ascending: false });
+    // Sort friends posts by date (newest first)
+    myAndFriendsPosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-      if (error) throw error;
+    // Sort others by "Smart" (e.g. Likes count desc) to fulfill "Smart" requirement, then Date
+    // Actually user said "next smart... all others". Let's split others into "Top" and "Rest".
+    // Let's define "Smart" as posts with > 5 likes? Or just top 20%?
+    // Simplified: Sort 'otherPosts' by like_count descending first? 
+    // Let's keep strict chronological for 'others' to avoid stale old posts showing up just because they are popular, 
+    // unless we implement a real score ( (likes+1) / (age+2)^1.8 ).
+    // For now, let's just stick to: Connections -> Others.
 
-      // Fetch user likes
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: likes } = await supabase
-          .from('post_likes')
-          .select('post_id')
-          .eq('user_id', user.id);
+    // Check if user specifically requested "Smart" as a category. Yes.
+    // Let's try to bubble up high-engagement non-connection posts.
+    const smartThreshold = 2; // Arbitrary
+    const smartPosts = otherPosts.filter(p => (p.like_count || 0) >= smartThreshold);
+    const normalPosts = otherPosts.filter(p => (p.like_count || 0) < smartThreshold);
 
-        if (likes) {
-          setLikedPostIds(new Set(likes.map(l => l.post_id).filter((id): id is string => id !== null)));
+    // Sort smart by likes
+    smartPosts.sort((a, b) => (b.like_count || 0) - (a.like_count || 0));
+
+    // Sort normal by date
+    normalPosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // Combined List
+    const sortedPosts = [...myAndFriendsPosts, ...smartPosts, ...normalPosts];
+
+    // 3. Injection Logic
+    // "for 4 posts there need show [Block A] and for three post the [Block B]"
+    // Interpretation: 
+    // Index 0-3: Posts (4 posts)
+    // Index 4: Block A
+    // Index 4-6 (orig 4-6): Posts (3 posts) -> RANDOMIZE THESE
+    // Index 7: Block B
+    // Rest of posts
+
+    const items = [];
+    const blockAIndex = 4;
+    const blockBIndex = 7; // 4 + 3
+
+    // Helper: Random shuffle
+    const shuffleArray = (array: any[]) => {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    };
+
+    // Slice out the group between A and B
+    // Group 1: 0-4 (0, 1, 2, 3)
+    // Group 2: 4-7 (4, 5, 6) -> Shuffle this!
+    // Group 3: 7+
+
+    // We only shuffle if we have enough items to fill the gap.
+    if (sortedPosts.length >= blockBIndex) {
+      const group1 = sortedPosts.slice(0, blockAIndex);
+      const group2 = sortedPosts.slice(blockAIndex, blockBIndex);
+      const group3 = sortedPosts.slice(blockBIndex);
+
+      const shuffledGroup2 = shuffleArray([...group2]); // Shuffle copy
+
+      // Reassemble
+      const finalPosts = [...group1, ...shuffledGroup2, ...group3];
+
+      for (let i = 0; i < finalPosts.length; i++) {
+        items.push({ type: 'post', data: finalPosts[i] });
+
+        if (i + 1 === blockAIndex) {
+          items.push({ type: 'blockA', data: null });
+        }
+        if (i + 1 === blockBIndex) {
+          items.push({ type: 'blockB', data: null });
         }
       }
+    } else {
+      // Fallback for short lists (no shuffle needed or possible)
+      for (let i = 0; i < sortedPosts.length; i++) {
+        items.push({ type: 'post', data: sortedPosts[i] });
 
-      const posts = ((data as any) || []).map((post: any) => ({
-        ...post,
-        like_count: post.like_count || 0
-      }));
-      setPosts(posts);
-      cacheManager.set('posts-feed', posts, 300); // 5 minutes
-
-      performanceMonitor.logToAnalytics('posts_fetched', {
-        count: posts.length
-      });
-    } catch (error) {
-      console.error('Error fetching posts:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load posts",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-      stopTimer();
+        if (i + 1 === blockAIndex) {
+          items.push({ type: 'blockA', data: null });
+        }
+        if (i + 1 === blockBIndex) {
+          items.push({ type: 'blockB', data: null });
+        }
+      }
     }
-  };
+
+    // If we have fewer posts than the blocks, we might want to append widgets at the end?
+    // Current logic: only injects if we have enough posts. 
+    // If < 4 posts, Block A won't show.
+    // Let's force show them if we run out of posts? 
+    // User said "in between", implying separation. I'll leave as is.
+    // But realistically, if only 2 posts exist, we might still want to see Announcements.
+    // Let's ensure they appear at the end if not already injected.
+
+    const hasBlockA = sortedPosts.length >= blockAIndex;
+    const hasBlockB = sortedPosts.length >= blockBIndex;
+
+    if (!hasBlockA) items.push({ type: 'blockA', data: null });
+    else if (!hasBlockB && sortedPosts.length >= blockAIndex) items.push({ type: 'blockB', data: null }); // Only if passed A but not B
+
+    return items;
+  }, [localPosts, connections, user?.id]);
+
 
   // Create new post
   const createPost = async () => {
@@ -178,7 +268,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       setPostMediaType(null);
       setShowCreatePost(false);
       cacheManager.invalidate('posts-feed');
-      fetchPosts(); // Refresh posts
+      // refetch(); // No need, realtime handles it
       toast({
         title: "Success",
         description: "Post created successfully!",
@@ -200,38 +290,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
     setPostMediaType(mediaType);
   };
 
-  // Set up real-time subscription
-  useEffect(() => {
-    fetchPosts();
-
-    const channel = supabase
-      .channel('posts-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'posts'
-        },
-        () => {
-          fetchPosts(); // Refresh posts on any change
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
-  }
-
   const handleLikeToggle = (postId: string, isLiked: boolean) => {
     setLikedPostIds(prev => {
       const newSet = new Set(prev);
@@ -243,16 +301,24 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       return newSet;
     });
 
-    setPosts(prev => prev.map(p => {
+    setLocalPosts(prev => prev.map(p => {
       if (p.id === postId) {
         return {
           ...p,
-          like_count: isLiked ? p.like_count + 1 : Math.max(0, p.like_count - 1)
+          like_count: isLiked ? (p.like_count || 0) + 1 : Math.max(0, (p.like_count || 0) - 1)
         };
       }
       return p;
     }));
   };
+
+  if (isLoading && localPosts.length === 0) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -315,9 +381,9 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         )}
       </Card>
 
-      {/* Posts Feed */}
-      <div className="mt-6">
-        {posts.length === 0 ? (
+      {/* Posts Feed with Injected Blocks */}
+      <div className="mt-6 space-y-6">
+        {feedItems.length === 0 ? (
           <Card className="glass-card p-8 text-center">
             <p className="text-muted-foreground mb-4">No posts yet. Be the first to share something!</p>
             <Button onClick={() => setShowCreatePost(true)} className="bg-gradient-to-r from-primary to-primary/80">
@@ -325,8 +391,35 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
             </Button>
           </Card>
         ) : (
-          <ResponsiveGrid cols={{ sm: 1, md: 1 }} gap={6}>
-            {posts.map((post) => {
+          <div className="space-y-6">
+            {feedItems.map((item, index) => {
+              if (item.type === 'blockA') {
+                return (
+                  <FirstContentBlock
+                    key={`blockA-${index}`}
+                    announcements={homeFeed?.announcements || []}
+                    projects={homeFeed?.projects || []}
+                    discussions={homeFeed?.discussions || []}
+                    ratings={homeFeed?.ratings || []}
+                  />
+                );
+              }
+              if (item.type === 'blockB') {
+                return (
+                  <SecondContentBlock
+                    key={`blockB-${index}`}
+                    creators={homeFeed?.connections || []}
+                    marketplace={homeFeed?.marketplace || []}
+                    vendors={homeFeed?.vendors || []}
+                    onConnect={(id) => sendConnectionRequest(id)}
+                  />
+                );
+              }
+
+              // Post
+              const post = item.data;
+              if (!post) return null;
+
               const author = post.profiles;
               const authorName = author?.full_name || author?.username || 'Anonymous User';
               const authorRole = author?.craft || 'Creator';
@@ -336,7 +429,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
 
               return (
                 <PostCard
-                  key={post.id}
+                  key={`post-${post.id}`}
                   id={post.id}
                   author={{
                     id: author?.id,
@@ -364,7 +457,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 />
               );
             })}
-          </ResponsiveGrid>
+          </div>
         )}
       </div>
     </>

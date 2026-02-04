@@ -258,6 +258,7 @@ export type Database = {
           name: string
           project_id: string | null
           room_type: string | null
+          tags: string[] | null
           title: string
         }
         Insert: {
@@ -271,6 +272,7 @@ export type Database = {
           name: string
           project_id?: string | null
           room_type?: string | null
+          tags?: string[] | null
           title: string
         }
         Update: {
@@ -284,6 +286,7 @@ export type Database = {
           name?: string
           project_id?: string | null
           room_type?: string | null
+          tags?: string[] | null
           title?: string
         }
         Relationships: [

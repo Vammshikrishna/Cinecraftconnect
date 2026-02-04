@@ -28,6 +28,8 @@ interface DiscussionRoom {
   member_count: number | null;
   created_at: string;
   category_id: string | null;
+  room_categories?: { name: string } | null;
+  tags?: string[] | null;
 }
 
 const DiscussionRoomsTab = () => {
@@ -42,7 +44,7 @@ const DiscussionRoomsTab = () => {
     try {
       const { data, error } = await supabase
         .from('discussion_rooms')
-        .select('*')
+        .select('*, room_categories(name)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -50,7 +52,8 @@ const DiscussionRoomsTab = () => {
         ...room,
         description: room.description || '',
         creator_id: room.creator_id || '',
-        category_id: room.category_id
+        category_id: room.category_id,
+        tags: room.tags || [],
       })));
     } catch (error) {
       console.error('Error fetching rooms:', error);
@@ -98,6 +101,7 @@ const DiscussionRoomsTab = () => {
             name: validation.data.title,
             description: validation.data.description,
             creator_id: user.id,
+            // category_id and tags are not in the create form yet, user only asked to redesign the card
           }
         ]);
 
@@ -210,7 +214,9 @@ const DiscussionRoomsTab = () => {
                 description: room.description,
                 member_count: room.member_count,
                 created_at: room.created_at,
-                room_type: 'public' // Assuming public for now as room_type isn't in the interface yet
+                room_type: 'public',
+                category: room.room_categories,
+                tags: room.tags
               }}
             />
           ))}
