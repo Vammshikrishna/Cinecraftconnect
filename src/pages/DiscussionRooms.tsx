@@ -68,21 +68,20 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       const [roomsRes, categoriesRes] = await Promise.all([
         supabase
           .from('discussion_rooms')
-          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count, room_categories(name)'),
+          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count, room_categories(name), tags'),
         supabase.from('room_categories').select('id, name')
       ]);
 
       if (roomsRes.error) throw roomsRes.error;
       if (categoriesRes.error) throw categoriesRes.error;
 
-      // @ts-ignore
       const formattedRooms = roomsRes.data.map(room => ({
         ...room,
         member_count: room.member_count || 0,
         room_type: room.room_type as 'public' | 'private' | 'secret',
         category_id: room.category_id || '',
         creator_id: room.creator_id || '',
-        tags: ['cinema', 'directing', 'qa'].slice(0, (room.id.charCodeAt(0) % 3) + 1),
+        tags: room.tags || [],
       }));
 
       setRooms(formattedRooms);

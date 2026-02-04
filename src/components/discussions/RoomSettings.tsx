@@ -108,11 +108,11 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
   };
 
   return (
-    <DialogContent className="max-w-4xl max-h-[90vh] h-[600px] overflow-hidden p-0 gap-0 border-border shadow-2xl bg-background text-foreground">
-      <Tabs defaultValue="general" orientation="vertical" className="flex h-full w-full">
+    <DialogContent className="max-w-4xl max-h-[90vh] h-[90vh] md:h-[600px] overflow-hidden p-0 gap-0 border-border shadow-2xl bg-background text-foreground flex flex-col">
+      <Tabs defaultValue="general" className="flex flex-col md:flex-row h-full w-full">
 
         {/* Sidebar Navigation */}
-        <div className="w-64 bg-muted/30 border-r border-border p-6 flex flex-col gap-6 shrink-0 h-full">
+        <div className="w-full md:w-64 bg-muted/30 border-b md:border-b-0 md:border-r border-border p-4 md:p-6 flex flex-col gap-4 md:gap-6 shrink-0 h-auto md:h-full">
           <div className="flex items-center gap-3 text-primary mb-2">
             <div className="p-2 bg-primary/10 rounded-xl">
               <Shield className="h-6 w-6" />
@@ -123,31 +123,31 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
             </div>
           </div>
 
-          <TabsList className="flex flex-col h-auto bg-transparent gap-2 p-0 justify-start w-full">
+          <TabsList className="flex flex-row md:flex-col overflow-x-auto md:overflow-visible h-auto bg-transparent gap-2 p-0 justify-start w-full no-scrollbar">
             <TabsTrigger
               value="general"
-              className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
-              <Tag className="h-4 w-4" />
+              <Tag className="h-4 w-4 shrink-0" />
               <span>General</span>
             </TabsTrigger>
             <TabsTrigger
               value="privacy"
-              className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
-              <Lock className="h-4 w-4" />
+              <Lock className="h-4 w-4 shrink-0" />
               <span>Privacy</span>
             </TabsTrigger>
             <TabsTrigger
               value="advanced"
-              className="w-full justify-start gap-3 px-4 py-3 h-auto data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive hover:bg-destructive/5 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive hover:bg-destructive/5 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
-              <Shield className="h-4 w-4" />
+              <Shield className="h-4 w-4 shrink-0" />
               <span>Danger Zone</span>
             </TabsTrigger>
           </TabsList>
 
-          <div className="mt-auto pt-6 border-t border-border">
+          <div className="hidden md:block mt-auto pt-6 border-t border-border">
             <p className="text-xs text-muted-foreground/50 text-center font-mono">ID: {roomId.slice(0, 8)}</p>
           </div>
         </div>
