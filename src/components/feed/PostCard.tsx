@@ -2,7 +2,7 @@ import { Heart, MessageCircle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
 import { useToast } from "@/hooks/use-toast";
@@ -58,57 +58,37 @@ const PostCard = ({
   mediaUrl
 }: PostProps) => {
 
-  const [isLiked, setIsLiked] = useState(currentUserLiked || false);
-  const [likeCount, setLikeCount] = useState(like_count);
+
   const [showComments, setShowComments] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const { toast } = useToast();
-  const isMountedRef = useRef(true);
 
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isLiking) {
-      setIsLiked(currentUserLiked || false);
-      setLikeCount(like_count);
-    }
-  }, [currentUserLiked, like_count, isLiking]);
+  // Use props as source of truth
+  const isLiked = currentUserLiked || false;
+  const displayLikeCount = like_count;
 
   const handleLike = async () => {
     if (isLiking) return;
 
     setIsLiking(true);
-    const originalLiked = isLiked;
-    const originalLikeCount = likeCount;
 
-    // Optimistic UI update
-    const newLikedState = !originalLiked;
-    setIsLiked(newLikedState);
-    setLikeCount(newLikedState ? originalLikeCount + 1 : originalLikeCount - 1);
+    // Call the parent's optimistic update immediately
+    const newLikedState = !isLiked;
     onLikeToggle?.(id, newLikedState);
 
     try {
-      await togglePostLike(id, originalLiked);
+      await togglePostLike(id, isLiked);
     } catch (error) {
       console.error("Failed to toggle like:", error);
-      if (isMountedRef.current) {
-        // Rollback on error
-        setIsLiked(originalLiked);
-        setLikeCount(originalLikeCount);
-        toast({
-          title: "Error",
-          description: "Could not update like status. Please try again.",
-          variant: "destructive",
-        });
-      }
+      // Rollback the optimistic update
+      onLikeToggle?.(id, isLiked);
+      toast({
+        title: "Error",
+        description: "Could not update like status. Please try again.",
+        variant: "destructive",
+      });
     } finally {
-      if (isMountedRef.current) {
-        setIsLiking(false);
-      }
+      setIsLiking(false);
     }
   };
 
@@ -217,7 +197,7 @@ const PostCard = ({
             disabled={isLiking}
           >
             <Heart size={18} className={`transition-transform duration-300 ${isLiked ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
-            <span>{likeCount}</span>
+            <span>{displayLikeCount}</span>
           </Button>
 
           <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center gap-1.5 transition-all duration-300" onClick={handleComment}>

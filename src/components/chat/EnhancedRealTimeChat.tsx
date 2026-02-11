@@ -203,7 +203,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground">
-      <header className="flex items-center justify-between p-4 border-b border-border">
+      <header className="flex items-center justify-between px-4 pb-4 border-b border-border">
         <div className="flex items-center gap-3">
           <button onClick={onBackClick} className="p-2 rounded-full hover:bg-muted">
             <ArrowLeft className="h-6 w-6" />
@@ -227,7 +227,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto p-4 pr-4">
+          <div className="flex-1 overflow-y-auto p-2 pb-20 md:p-4 md:pb-4 pr-2 md:pr-4">
             {messages.map((message) => {
               const isSender = message.sender_id === user?.id;
               return (

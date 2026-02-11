@@ -41,6 +41,7 @@ const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
 const Vendors = lazy(() => import("./pages/Vendors"));
+const VendorDetail = lazy(() => import("./pages/VendorDetail"));
 const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
 const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
@@ -108,6 +109,7 @@ const App = () => {
             <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
             <Route path="/marketplace/:listingId" element={<ProtectedRoute><MarketplaceListingDetail /></ProtectedRoute>} />
             <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+            <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
             <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
             <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
             <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />

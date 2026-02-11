@@ -147,7 +147,7 @@ const MarketplaceListingDetail = () => {
     if (!listing) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-24 pb-12">
+        <div className="min-h-screen bg-background pt-20 pb-24">
             <div className="max-w-6xl mx-auto px-4 md:px-8">
                 {/* Back Button */}
                 <Button
