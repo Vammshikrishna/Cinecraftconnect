@@ -60,7 +60,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
     const handleLikeToggle = (postId: string, isLiked: boolean) => {
         // Optimistic update
-        queryClient.setQueryData(['home-feed', user?.id], (old: HomeFeedData | undefined) => {
+        queryClient.setQueryData(['home-feed-data', user?.id], (old: HomeFeedData | undefined) => {
             if (!old) return old;
 
             const newLikedIds = new Set(old.likedPostIds);

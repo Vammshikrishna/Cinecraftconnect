@@ -1,8 +1,9 @@
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchLatestRatings } from '@/services/tmdb';
+import { useEffect } from 'react';
 
 export interface HomeFeedData {
     posts: any[];
@@ -18,6 +19,7 @@ export interface HomeFeedData {
 
 export const useHomeFeed = () => {
     const { user } = useAuth();
+    const queryClient = useQueryClient();
 
     // 1. Critical App Data (Supabase)
     const supabaseQuery = useQuery({
@@ -113,6 +115,65 @@ export const useHomeFeed = () => {
         },
         staleTime: 1000 * 60 * 60, // 1 hour cache
     });
+
+    // 3. Real-time subscription for post likes and updates
+    useEffect(() => {
+        if (!user?.id) return;
+
+        // Subscribe to post_likes changes to update the current user's liked posts
+        const likesChannel = supabase
+            .channel('user_post_likes')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'post_likes',
+                    filter: `user_id=eq.${user.id}`
+                },
+                (payload) => {
+                    console.log('User post like changed:', payload);
+                    // Invalidate to refetch liked post IDs
+                    queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
+                }
+            )
+            .subscribe();
+
+        // Subscribe to posts table updates for like count changes
+        const postsChannel = supabase
+            .channel('posts_updates')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'posts'
+                },
+                (payload) => {
+                    console.log('Post updated:', payload);
+                    // Update the specific post in the cache without full refetch
+                    queryClient.setQueryData(['home-feed-data', user.id], (old: any) => {
+                        if (!old) return old;
+
+                        const updatedPost = payload.new;
+                        return {
+                            ...old,
+                            posts: old.posts.map((post: any) =>
+                                post.id === updatedPost.id
+                                    ? { ...post, like_count: updatedPost.like_count, comment_count: updatedPost.comment_count, share_count: updatedPost.share_count }
+                                    : post
+                            )
+                        };
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(likesChannel);
+            supabase.removeChannel(postsChannel);
+        };
+    }, [user?.id, queryClient]);
 
     // Merge Data
     const combinedData: HomeFeedData | undefined = supabaseQuery.data ? {
