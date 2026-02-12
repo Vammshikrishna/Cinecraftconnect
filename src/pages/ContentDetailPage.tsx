@@ -43,7 +43,7 @@ const ContentDetailPage = () => {
                     .select('rating')
                     .eq('user_id', user.id)
                     .eq('tmdb_id', parseInt(id))
-                    .single();
+                    .maybeSingle();
 
                 if (ratingData) setUserRating((ratingData as any).rating);
             }
@@ -52,9 +52,9 @@ const ContentDetailPage = () => {
             const { data: reviewsData } = await supabase
                 .from('film_reviews')
                 .select(`
-          *,
-          profiles:user_id(full_name, avatar_url, craft)
-        `)
+                    *,
+                    profiles(full_name, avatar_url, craft)
+                `)
                 .eq('tmdb_id', parseInt(id))
                 .order('helpful_count', { ascending: false })
                 .limit(10);

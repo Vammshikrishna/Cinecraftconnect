@@ -27,7 +27,7 @@ export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
     }
 
     return (
-        <div className="grid grid-cols-3 gap-0.5 md:gap-1">
+        <div className="grid grid-cols-3 gap-1 md:gap-2">
             {items.map((item) => (
                 <ExploreCard key={`${item.type}-${item.id}`} item={item} />
             ))}

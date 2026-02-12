@@ -12,9 +12,23 @@ import { Profile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+// More lenient URL validation - only check basic format
 const optionalUrl = z.preprocess(
-  (val) => (val === "" ? undefined : val),
-  z.string().url({ message: "Invalid URL" }).optional()
+  (val) => {
+    if (val === "" || val === null || val === undefined) return undefined;
+    // Trim whitespace
+    const trimmed = String(val).trim();
+    if (trimmed === "") return undefined;
+    return trimmed;
+  },
+  z.string().refine(
+    (val) => {
+      if (!val) return true; // Optional field
+      // Basic URL check - must start with http:// or https:// or be a valid domain
+      return /^(https?:\/\/)/.test(val) || /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}/.test(val);
+    },
+    { message: "Please enter a valid URL" }
+  ).optional()
 );
 
 const profileFormSchema = z.object({
@@ -47,6 +61,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
 
   const form = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),
+    mode: "onBlur", // Only validate when user leaves the field, not on every keystroke
     defaultValues: {
       full_name: profile.full_name || "",
       username: profile.username || "",
@@ -75,45 +90,70 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
   const onSubmit = async (values: z.infer<typeof profileFormSchema>) => {
     if (!user) return;
 
-    let avatar_url = profile.avatar_url;
+    // Show loading toast
+    const loadingToast = toast({
+      title: "Saving profile...",
+      description: "Please wait while we update your profile.",
+      duration: 10000
+    });
 
-    if (avatarFile) {
-      const fileExt = avatarFile.name.split('.').pop();
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, avatarFile);
+    try {
+      let avatar_url = profile.avatar_url;
 
-      if (uploadError) {
-        toast({ title: "Avatar Upload Failed", description: uploadError.message, variant: "destructive" });
-        return;
+      if (avatarFile) {
+        const fileExt = avatarFile.name.split('.').pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('avatars')
+          .upload(fileName, avatarFile);
+
+        if (uploadError) {
+          loadingToast.dismiss();
+          toast({ title: "Avatar Upload Failed", description: uploadError.message, variant: "destructive" });
+          return;
+        }
+
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        avatar_url = urlData.publicUrl;
       }
 
-      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-      avatar_url = urlData.publicUrl;
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
+      // Optimized: No need to select() after update, we already have the data
+      const updatedData = {
+        ...profile,
         ...values,
         avatar_url,
         updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-      .select()
-      .single();
+      };
 
-    if (error) {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          ...values,
+          avatar_url,
+          updated_at: updatedData.updated_at,
+        })
+        .eq('id', user.id);
+
+      loadingToast.dismiss();
+
+      if (error) {
+        toast({
+          title: "Error updating profile",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Profile updated successfully!", duration: 3000 });
+        onUpdate(updatedData as Profile);
+        setEditing(false);
+      }
+    } catch (error: any) {
+      loadingToast.dismiss();
       toast({
-        title: "Error updating profile",
-        description: error.message,
+        title: "Unexpected error",
+        description: error?.message || "Failed to update profile",
         variant: "destructive",
       });
-    } else if (data) {
-      toast({ title: "Profile updated successfully!" });
-      onUpdate(data as unknown as Profile);
-      setEditing(false);
     }
   };
 

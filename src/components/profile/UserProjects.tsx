@@ -3,12 +3,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, MapPin } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Calendar, MapPin, Users, Film, DollarSign, ExternalLink } from 'lucide-react';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { Link } from 'react-router-dom';
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   description: string | null;
   status: string | null;
   start_date: string | null;
@@ -16,12 +18,31 @@ interface Project {
   location: string | null;
   genre: string[] | null;
   required_roles: string[] | null;
+  budget_min: number | null;
+  budget_max: number | null;
   created_at: string;
 }
 
 interface UserProjectsProps {
   userId?: string;
 }
+
+const getStatusColor = (status: string | null) => {
+  switch (status?.toLowerCase()) {
+    case 'active':
+    case 'in production':
+      return 'bg-green-500/10 text-green-500 border-green-500/20';
+    case 'pre-production':
+    case 'planning':
+      return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
+    case 'completed':
+      return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
+    case 'on hold':
+      return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
+    default:
+      return 'bg-secondary/50 text-muted-foreground border-border';
+  }
+};
 
 export const UserProjects = ({ userId }: UserProjectsProps) => {
   const { user } = useAuth();
@@ -35,7 +56,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
     const fetchProjects = async () => {
       setLoading(true);
       const { data, error } = await supabase
-        .from('project_spaces')
+        .from('projects')
         .select('*')
         .eq('creator_id', targetUserId)
         .order('created_at', { ascending: false });
@@ -55,7 +76,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
         {
           event: '*',
           schema: 'public',
-          table: 'project_spaces',
+          table: 'projects',
           filter: `creator_id=eq.${targetUserId}`
         },
         () => {
@@ -71,17 +92,9 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {[...Array(2)].map((_, i) => (
-          <Card key={i} className="bg-gray-900 border-gray-800 rounded-lg">
-            <CardHeader className="p-4">
-              <Skeleton className="h-5 w-3/5" />
-            </CardHeader>
-            <CardContent className="p-4 -mt-4">
-              <Skeleton className="h-4 w-full mb-3" />
-              <Skeleton className="h-4 w-4/5" />
-            </CardContent>
-          </Card>
+          <EnhancedSkeleton key={i} className="h-80 w-full rounded-xl" />
         ))}
       </div>
     );
@@ -89,53 +102,135 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
 
   if (projects.length === 0) {
     return (
-      <div className="text-center py-12 text-muted-foreground">
-        This user hasn't posted any projects yet.
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+          <Film className="h-10 w-10 text-primary" />
+        </div>
+        <h3 className="text-xl font-semibold mb-2">No Projects Yet</h3>
+        <p className="text-muted-foreground max-w-md">
+          This user hasn't created any projects yet. Check back later!
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {projects.map((project) => (
-        <Card key={project.id} className="bg-gray-900 border-gray-800 rounded-lg">
-          <CardHeader className="p-4">
-            <div className="flex items-start justify-between">
-              <CardTitle className="text-lg font-semibold">{project.name}</CardTitle>
-              {project.status && (
-                <Badge className="text-xs" variant="outline">{project.status}</Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="p-4 -mt-4">
-            {project.description && (
-              <p className="text-sm text-gray-400 mb-4">{project.description}</p>
-            )}
-            <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-500">
-              {project.location && (
-                <div className="flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5" />
-                  {project.location}
-                </div>
-              )}
-              {project.start_date && (
-                <div className="flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5" />
-                  {new Date(project.start_date).toLocaleDateString()}
-                </div>
-              )}
-            </div>
-            {project.genre && project.genre.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {project.genre.map((g, idx) => (
-                  <Badge key={idx} variant="secondary" className="text-xs font-normal">
-                    {g}
-                  </Badge>
-                ))}
+        <Link key={project.id} to={`/projects/${project.id}`}>
+          <Card className="group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:scale-[1.02] h-full">
+            {/* Gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+
+            <CardHeader className="relative pb-3">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <CardTitle className="text-xl font-bold group-hover:text-primary transition-colors line-clamp-2">
+                  {project.title}
+                </CardTitle>
+                <ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0 mt-1" />
               </div>
-            )}
-          </CardContent>
-        </Card>
+
+              {project.status && (
+                <Badge
+                  className={`w-fit text-xs font-medium px-3 py-1 ${getStatusColor(project.status)}`}
+                  variant="outline"
+                >
+                  {project.status}
+                </Badge>
+              )}
+            </CardHeader>
+
+            <CardContent className="relative space-y-4">
+              {/* Description */}
+              {project.description && (
+                <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                  {project.description}
+                </p>
+              )}
+
+              {/* Genres */}
+              {project.genre && project.genre.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {project.genre.slice(0, 3).map((g, idx) => (
+                    <Badge
+                      key={idx}
+                      variant="secondary"
+                      className="text-xs font-normal bg-secondary/50 hover:bg-secondary/70 transition-colors"
+                    >
+                      {g}
+                    </Badge>
+                  ))}
+                  {project.genre.length > 3 && (
+                    <Badge variant="secondary" className="text-xs font-normal bg-secondary/30">
+                      +{project.genre.length - 3} more
+                    </Badge>
+                  )}
+                </div>
+              )}
+
+              {/* Project Details Grid */}
+              <div className="grid grid-cols-1 gap-2.5 pt-2 border-t border-border/50">
+                {project.location && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-4 w-4 text-primary/70 shrink-0" />
+                    <span className="truncate">{project.location}</span>
+                  </div>
+                )}
+
+                {project.start_date && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Calendar className="h-4 w-4 text-primary/70 shrink-0" />
+                    <span>
+                      {new Date(project.start_date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                      {project.end_date && ` - ${new Date(project.end_date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}`}
+                    </span>
+                  </div>
+                )}
+
+                {project.required_roles && project.required_roles.length > 0 && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4 text-primary/70 shrink-0" />
+                    <span className="truncate">
+                      {project.required_roles.slice(0, 2).join(', ')}
+                      {project.required_roles.length > 2 && ` +${project.required_roles.length - 2}`}
+                    </span>
+                  </div>
+                )}
+
+                {(project.budget_min || project.budget_max) && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <DollarSign className="h-4 w-4 text-primary/70 shrink-0" />
+                    <span>
+                      {project.budget_min && project.budget_max
+                        ? `₹${project.budget_min.toLocaleString()} - ₹${project.budget_max.toLocaleString()}`
+                        : project.budget_min
+                          ? `From ₹${project.budget_min.toLocaleString()}`
+                          : `Up to ₹${project.budget_max?.toLocaleString()}`
+                      }
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* View Project Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-4 group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-primary transition-all"
+              >
+                View Project Details
+              </Button>
+            </CardContent>
+          </Card>
+        </Link>
       ))}
     </div>
   );

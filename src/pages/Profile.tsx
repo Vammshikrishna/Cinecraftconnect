@@ -138,13 +138,19 @@ const ProfilePage = () => {
 
   if (isEditing) {
     return (
-      <div className="bg-black text-white min-h-screen flex justify-center py-12 pt-20">
-        <div className="w-full max-w-3xl px-4">
-          <EditProfileForm
-            profile={profile}
-            onUpdate={handleProfileUpdate}
-            setEditing={setIsEditing}
-          />
+      <div className="bg-background text-foreground min-h-screen flex justify-center py-12 pt-20 pb-24 relative overflow-hidden">
+        {/* Background ambient effects */}
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
+        <div className="absolute bottom-20 right-1/4 w-[400px] h-[400px] bg-secondary/15 rounded-full blur-[120px] pointer-events-none opacity-40" />
+
+        <div className="w-full max-w-3xl px-4 relative z-10">
+          <div className="glass-card p-8">
+            <EditProfileForm
+              profile={profile}
+              onUpdate={handleProfileUpdate}
+              setEditing={setIsEditing}
+            />
+          </div>
         </div>
       </div>
     );
