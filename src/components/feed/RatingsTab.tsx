@@ -100,44 +100,6 @@ const RatingsTab = () => {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  const processRatings = async (items: TMDBContent[]) => {
-    const ids = items.map(i => i.id);
-    if (ids.length === 0) return items;
-
-    let userRatingsMap: Record<number, number> = {};
-    let appRatingsMap: Record<number, { total: number; count: number }> = {};
-
-    const [userRatingsRes, appRatingsRes] = await Promise.all([
-      user ? supabase
-        .from('user_film_ratings')
-        .select('tmdb_id, rating')
-        .eq('user_id', user.id)
-        .in('tmdb_id', ids)
-        : Promise.resolve({ data: [], error: null }),
-      supabase
-        .from('user_film_ratings')
-        .select('tmdb_id, rating')
-        .in('tmdb_id', ids)
-    ]);
-
-    if (userRatingsRes.data) {
-      (userRatingsRes.data as any[]).forEach(r => userRatingsMap[r.tmdb_id] = Number(r.rating));
-    }
-    if (appRatingsRes.data) {
-      (appRatingsRes.data as any[]).forEach(r => {
-        if (!appRatingsMap[r.tmdb_id]) appRatingsMap[r.tmdb_id] = { total: 0, count: 0 };
-        appRatingsMap[r.tmdb_id].total += Number(r.rating);
-        appRatingsMap[r.tmdb_id].count += 1;
-      });
-    }
-
-    return items.map(item => ({
-      ...item,
-      user_rating: userRatingsMap[item.id] || null,
-      app_rating: appRatingsMap[item.id] ? appRatingsMap[item.id].total / appRatingsMap[item.id].count : null
-    }));
-  };
-
   const loadAllData = async () => {
     setLoading(true);
     try {
@@ -149,19 +111,54 @@ const RatingsTab = () => {
         fetchIndianMovies()
       ]);
 
-      const [pTrending, pTopRated, pAction, pComedy, pIndian] = await Promise.all([
-        processRatings(trendingData),
-        processRatings(topRatedData),
-        processRatings(actionData),
-        processRatings(comedyData),
-        processRatings(indianData)
+      const allItems = [...trendingData, ...topRatedData, ...actionData, ...comedyData, ...indianData];
+      const allIds = Array.from(new Set(allItems.map(i => i.id)));
+
+      if (allIds.length === 0) {
+        setTrending([]);
+        setTopRated([]);
+        setAction([]);
+        setComedy([]);
+        setIndian([]);
+        setLoading(false);
+        return;
+      }
+
+      let userRatingsMap: Record<number, number> = {};
+      let appRatingsMap: Record<number, number> = {};
+
+      const [userRatingsRes, aggregatedRes] = await Promise.all([
+        user ? supabase
+          .from('user_film_ratings')
+          .select('tmdb_id, rating')
+          .eq('user_id', user.id)
+          .in('tmdb_id', allIds)
+          : Promise.resolve({ data: [], error: null }),
+        (supabase as any)
+          .rpc('get_aggregated_film_ratings', { tmdb_ids: allIds })
       ]);
 
-      setTrending(pTrending);
-      setTopRated(pTopRated);
-      setAction(pAction);
-      setComedy(pComedy);
-      setIndian(pIndian);
+      if (userRatingsRes.data) {
+        (userRatingsRes.data as any[]).forEach(r => userRatingsMap[r.tmdb_id] = Number(r.rating));
+      }
+
+      if (aggregatedRes.data) {
+        (aggregatedRes.data as any[]).forEach(r => {
+          appRatingsMap[r.tmdb_id] = Number(r.average_rating);
+        });
+      }
+
+      const processItems = (items: TMDBContent[]) => items.map(item => ({
+        ...item,
+        user_rating: userRatingsMap[item.id] || null,
+        app_rating: appRatingsMap[item.id] || null
+      }));
+
+      setTrending(processItems(trendingData));
+      setTopRated(processItems(topRatedData));
+      setAction(processItems(actionData));
+      setComedy(processItems(comedyData));
+      setIndian(processItems(indianData));
 
     } catch (error) {
       console.error('Error loading data:', error);

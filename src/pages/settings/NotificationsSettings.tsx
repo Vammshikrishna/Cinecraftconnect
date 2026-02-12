@@ -1,37 +1,26 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Bell, Check } from 'lucide-react';
+import { ArrowLeft, Bell } from 'lucide-react';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const NotificationsSettings = () => {
     const navigate = useNavigate();
-    const { toast } = useToast();
-    const [isSaving, setIsSaving] = useState(false);
+    const { settings, loading, updateSetting } = useUserSettings();
 
-    const [emailNotifications, setEmailNotifications] = useState(true);
-    const [pushNotifications, setPushNotifications] = useState(false);
-    const [projectNotifications, setProjectNotifications] = useState(true);
-    const [messageNotifications, setMessageNotifications] = useState(true);
-    const [commentNotifications, setCommentNotifications] = useState(true);
-    const [jobAlerts, setJobAlerts] = useState(true);
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            toast({
-                title: "Settings Saved",
-                description: "Your notification preferences have been updated.",
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background pt-20 pb-32">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <EnhancedSkeleton className="h-64 w-full" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background pt-20 pb-32">
@@ -60,7 +49,11 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="email-notif" className="text-base font-medium">Email Notifications</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Receive updates via email</p>
                                 </div>
-                                <Switch id="email-notif" checked={emailNotifications} onCheckedChange={setEmailNotifications} />
+                                <Switch
+                                    id="email-notif"
+                                    checked={settings?.email_notifications ?? true}
+                                    onCheckedChange={(checked) => updateSetting('email_notifications', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -68,7 +61,11 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="push-notif" className="text-base font-medium">Push Notifications</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Receive browser notifications</p>
                                 </div>
-                                <Switch id="push-notif" checked={pushNotifications} onCheckedChange={setPushNotifications} />
+                                <Switch
+                                    id="push-notif"
+                                    checked={settings?.push_notifications ?? false}
+                                    onCheckedChange={(checked) => updateSetting('push_notifications', checked)}
+                                />
                             </div>
                         </CardContent>
                     </Card>
@@ -84,7 +81,11 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="project-notif" className="text-base font-medium">Project Updates</Label>
                                     <p className="text-sm text-muted-foreground mt-1">New projects and opportunities</p>
                                 </div>
-                                <Switch id="project-notif" checked={projectNotifications} onCheckedChange={setProjectNotifications} />
+                                <Switch
+                                    id="project-notif"
+                                    checked={settings?.project_notifications ?? true}
+                                    onCheckedChange={(checked) => updateSetting('project_notifications', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -92,7 +93,11 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="message-notif" className="text-base font-medium">Messages</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Direct messages and chats</p>
                                 </div>
-                                <Switch id="message-notif" checked={messageNotifications} onCheckedChange={setMessageNotifications} />
+                                <Switch
+                                    id="message-notif"
+                                    checked={settings?.message_notifications ?? true}
+                                    onCheckedChange={(checked) => updateSetting('message_notifications', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -100,7 +105,11 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="comment-notif" className="text-base font-medium">Comments & Mentions</Label>
                                     <p className="text-sm text-muted-foreground mt-1">When someone comments or mentions you</p>
                                 </div>
-                                <Switch id="comment-notif" checked={commentNotifications} onCheckedChange={setCommentNotifications} />
+                                <Switch
+                                    id="comment-notif"
+                                    checked={settings?.comment_notifications ?? true}
+                                    onCheckedChange={(checked) => updateSetting('comment_notifications', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -108,25 +117,19 @@ const NotificationsSettings = () => {
                                     <Label htmlFor="job-notif" className="text-base font-medium">Job Alerts</Label>
                                     <p className="text-sm text-muted-foreground mt-1">New job postings matching your profile</p>
                                 </div>
-                                <Switch id="job-notif" checked={jobAlerts} onCheckedChange={setJobAlerts} />
+                                <Switch
+                                    id="job-notif"
+                                    checked={settings?.job_alerts ?? true}
+                                    onCheckedChange={(checked) => updateSetting('job_alerts', checked)}
+                                />
                             </div>
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end">
-                        <Button onClick={handleSave} disabled={isSaving} size="lg">
-                            {isSaving ? (
-                                <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Check className="mr-2 h-4 w-4" />
-                                    Save Changes
-                                </>
-                            )}
-                        </Button>
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                        <p className="text-sm text-muted-foreground">
+                            💡 <strong>Auto-save enabled:</strong> Your notification preferences are saved automatically when you toggle any switch.
+                        </p>
                     </div>
                 </div>
             </div>

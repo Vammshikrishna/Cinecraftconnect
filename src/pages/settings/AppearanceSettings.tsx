@@ -1,11 +1,9 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Palette, Check } from 'lucide-react';
+import { ArrowLeft, Palette } from 'lucide-react';
 import {
     Select,
     SelectContent,
@@ -13,32 +11,22 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const AppearanceSettings = () => {
     const navigate = useNavigate();
-    const { toast } = useToast();
-    const [fontSize, setFontSize] = useState('medium');
-    const [language, setLanguage] = useState('en');
-    const [isSaving, setIsSaving] = useState(false);
+    const { settings, loading, updateSetting } = useUserSettings();
 
-    const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            toast({
-                title: "Settings Saved",
-                description: "Your appearance preferences have been updated.",
-            });
-        } catch (error) {
-            toast({
-                title: "Error",
-                description: "Failed to save settings.",
-                variant: "destructive",
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background pt-20 pb-32">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <EnhancedSkeleton className="h-64 w-full" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background pt-20 pb-32">
@@ -83,7 +71,10 @@ const AppearanceSettings = () => {
                                     <Label className="text-base font-medium">Font Size</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Adjust text size for better readability</p>
                                 </div>
-                                <Select value={fontSize} onValueChange={setFontSize}>
+                                <Select
+                                    value={settings?.font_size ?? 'medium'}
+                                    onValueChange={(value: 'small' | 'medium' | 'large') => updateSetting('font_size', value)}
+                                >
                                     <SelectTrigger className="w-36">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -108,7 +99,10 @@ const AppearanceSettings = () => {
                                     <Label className="text-base font-medium">Display Language</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Choose your preferred language</p>
                                 </div>
-                                <Select value={language} onValueChange={setLanguage}>
+                                <Select
+                                    value={settings?.language ?? 'en'}
+                                    onValueChange={(value) => updateSetting('language', value)}
+                                >
                                     <SelectTrigger className="w-40">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -124,20 +118,10 @@ const AppearanceSettings = () => {
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end">
-                        <Button onClick={handleSave} disabled={isSaving} size="lg">
-                            {isSaving ? (
-                                <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Check className="mr-2 h-4 w-4" />
-                                    Save Changes
-                                </>
-                            )}
-                        </Button>
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                        <p className="text-sm text-muted-foreground">
+                            💡 <strong>Auto-save enabled:</strong> Your appearance preferences are saved automatically when you make changes.
+                        </p>
                     </div>
                 </div>
             </div>

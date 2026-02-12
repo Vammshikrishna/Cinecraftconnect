@@ -317,7 +317,7 @@ const SearchPage = () => {
         : results.filter(result => result.type === CATEGORIES.find(c => c.id === activeCategory)?.type);
 
     return (
-        <div className="min-h-screen bg-background p-4 md:p-8">
+        <div className="min-h-screen bg-background pt-24 pb-24 px-4 md:px-8 lg:px-12">
             <div className="max-w-7xl mx-auto space-y-6">
                 <div className="flex items-center gap-4">
                     <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
@@ -326,12 +326,12 @@ const SearchPage = () => {
                     <h1 className="text-2xl font-bold">Search & Explore</h1>
                 </div>
 
-                <div className="relative max-w-3xl mx-auto">
+                <div className="relative max-w-3xl mx-auto mt-8 mb-8">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" size={20} />
                     <Input
                         type="search"
                         placeholder="Search for projects, people, discussions, vendors..."
-                        className="pl-12 pr-4 py-6 text-lg w-full bg-card border-border rounded-xl focus:ring-2 focus:ring-primary/50 transition-all"
+                        className="pl-12 pr-4 py-6 text-lg w-full bg-card border-border rounded-xl focus:ring-2 focus:ring-primary/50 transition-all shadow-sm"
                         value={query}
                         onChange={handleSearch}
                         autoFocus={!query}
@@ -339,14 +339,14 @@ const SearchPage = () => {
                 </div>
 
                 {/* Category Pills */}
-                <div className="flex gap-2 overflow-x-auto pb-2 max-w-3xl mx-auto no-scrollbar">
+                <div className="flex gap-2 overflow-x-auto pb-4 mb-8 max-w-3xl mx-auto no-scrollbar px-1">
                     {CATEGORIES.map(category => (
                         <button
                             key={category.id}
                             onClick={() => setActiveCategory(category.id)}
-                            className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${activeCategory === category.id
-                                ? 'bg-primary text-primary-foreground'
-                                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            className={`px-6 py-2.5 rounded-full text-sm font-medium whitespace-nowrap transition-all duration-200 ${activeCategory === category.id
+                                ? 'bg-primary text-primary-foreground shadow-md scale-105'
+                                : 'bg-muted text-muted-foreground hover:bg-muted/80 shadow-sm border border-border/50'
                                 }`}
                         >
                             {category.label}

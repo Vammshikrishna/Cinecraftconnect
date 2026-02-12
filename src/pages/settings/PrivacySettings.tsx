@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Lock, Check } from 'lucide-react';
+import { ArrowLeft, Lock } from 'lucide-react';
 import {
     Select,
     SelectContent,
@@ -14,30 +12,22 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const PrivacySettings = () => {
     const navigate = useNavigate();
-    const { toast } = useToast();
-    const [isSaving, setIsSaving] = useState(false);
+    const { settings, loading, updateSetting } = useUserSettings();
 
-    const [profileVisibility, setProfileVisibility] = useState('public');
-    const [showEmail, setShowEmail] = useState(false);
-    const [showLocation, setShowLocation] = useState(true);
-    const [showOnlineStatus, setShowOnlineStatus] = useState(true);
-    const [allowMessagesFrom, setAllowMessagesFrom] = useState('everyone');
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            toast({
-                title: "Settings Saved",
-                description: "Your privacy preferences have been updated.",
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background pt-20 pb-32">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <EnhancedSkeleton className="h-64 w-full" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background pt-20 pb-32">
@@ -66,7 +56,10 @@ const PrivacySettings = () => {
                                     <Label className="text-base font-medium">Profile Visibility</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Who can view your profile</p>
                                 </div>
-                                <Select value={profileVisibility} onValueChange={setProfileVisibility}>
+                                <Select
+                                    value={settings?.profile_visibility ?? 'public'}
+                                    onValueChange={(value: 'public' | 'connections' | 'private') => updateSetting('profile_visibility', value)}
+                                >
                                     <SelectTrigger className="w-44">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -83,7 +76,11 @@ const PrivacySettings = () => {
                                     <Label htmlFor="show-email" className="text-base font-medium">Show Email</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Display email on public profile</p>
                                 </div>
-                                <Switch id="show-email" checked={showEmail} onCheckedChange={setShowEmail} />
+                                <Switch
+                                    id="show-email"
+                                    checked={settings?.show_email ?? false}
+                                    onCheckedChange={(checked) => updateSetting('show_email', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -91,7 +88,11 @@ const PrivacySettings = () => {
                                     <Label htmlFor="show-location" className="text-base font-medium">Show Location</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Display location on public profile</p>
                                 </div>
-                                <Switch id="show-location" checked={showLocation} onCheckedChange={setShowLocation} />
+                                <Switch
+                                    id="show-location"
+                                    checked={settings?.show_location ?? true}
+                                    onCheckedChange={(checked) => updateSetting('show_location', checked)}
+                                />
                             </div>
                             <Separator />
                             <div className="flex items-center justify-between">
@@ -99,7 +100,11 @@ const PrivacySettings = () => {
                                     <Label htmlFor="show-online" className="text-base font-medium">Show Online Status</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Let others see when you're online</p>
                                 </div>
-                                <Switch id="show-online" checked={showOnlineStatus} onCheckedChange={setShowOnlineStatus} />
+                                <Switch
+                                    id="show-online"
+                                    checked={settings?.show_online_status ?? true}
+                                    onCheckedChange={(checked) => updateSetting('show_online_status', checked)}
+                                />
                             </div>
                         </CardContent>
                     </Card>
@@ -115,7 +120,10 @@ const PrivacySettings = () => {
                                     <Label className="text-base font-medium">Allow Messages From</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Who can send you direct messages</p>
                                 </div>
-                                <Select value={allowMessagesFrom} onValueChange={setAllowMessagesFrom}>
+                                <Select
+                                    value={settings?.allow_messages_from ?? 'everyone'}
+                                    onValueChange={(value: 'everyone' | 'connections' | 'nobody') => updateSetting('allow_messages_from', value)}
+                                >
                                     <SelectTrigger className="w-44">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -129,20 +137,10 @@ const PrivacySettings = () => {
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end">
-                        <Button onClick={handleSave} disabled={isSaving} size="lg">
-                            {isSaving ? (
-                                <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Check className="mr-2 h-4 w-4" />
-                                    Save Changes
-                                </>
-                            )}
-                        </Button>
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                        <p className="text-sm text-muted-foreground">
+                            💡 <strong>Auto-save enabled:</strong> Your privacy preferences are saved automatically when you make changes.
+                        </p>
                     </div>
                 </div>
             </div>

@@ -1,32 +1,26 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Eye, Check } from 'lucide-react';
+import { Separator } from "@/components/ui/separator";
+import { ArrowLeft, Eye } from 'lucide-react';
+import { useUserSettings } from '@/hooks/useUserSettings';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 const AccessibilitySettings = () => {
     const navigate = useNavigate();
-    const { toast } = useToast();
-    const [isSaving, setIsSaving] = useState(false);
+    const { settings, loading, updateSetting } = useUserSettings();
 
-    const [highContrast, setHighContrast] = useState(false);
-    const [reduceMotion, setReduceMotion] = useState(false);
-
-    const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            toast({
-                title: "Settings Saved",
-                description: "Your accessibility preferences have been updated.",
-            });
-        } finally {
-            setIsSaving(false);
-        }
-    };
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-background pt-20 pb-32">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <EnhancedSkeleton className="h-64 w-full" />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen bg-background pt-20 pb-32">
@@ -40,47 +34,46 @@ const AccessibilitySettings = () => {
                         <Eye className="h-8 w-8 text-primary" />
                         Accessibility
                     </h1>
-                    <p className="text-muted-foreground mt-2">Make the app easier to use</p>
+                    <p className="text-muted-foreground mt-2">Customize the app for better accessibility</p>
                 </div>
 
                 <div className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle>Visual Accessibility</CardTitle>
-                            <CardDescription>Adjust visual settings for better accessibility</CardDescription>
+                            <CardDescription>Adjust visual settings for better readability</CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <Label htmlFor="high-contrast" className="text-base font-medium">High Contrast Mode</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Increase color contrast</p>
+                                    <p className="text-sm text-muted-foreground mt-1">Increase contrast for better visibility</p>
                                 </div>
-                                <Switch id="high-contrast" checked={highContrast} onCheckedChange={setHighContrast} />
+                                <Switch
+                                    id="high-contrast"
+                                    checked={settings?.high_contrast ?? false}
+                                    onCheckedChange={(checked) => updateSetting('high_contrast', checked)}
+                                />
                             </div>
+                            <Separator />
                             <div className="flex items-center justify-between">
                                 <div>
                                     <Label htmlFor="reduce-motion" className="text-base font-medium">Reduce Motion</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Minimize animations</p>
+                                    <p className="text-sm text-muted-foreground mt-1">Minimize animations and transitions</p>
                                 </div>
-                                <Switch id="reduce-motion" checked={reduceMotion} onCheckedChange={setReduceMotion} />
+                                <Switch
+                                    id="reduce-motion"
+                                    checked={settings?.reduce_motion ?? false}
+                                    onCheckedChange={(checked) => updateSetting('reduce_motion', checked)}
+                                />
                             </div>
                         </CardContent>
                     </Card>
 
-                    <div className="flex justify-end">
-                        <Button onClick={handleSave} disabled={isSaving} size="lg">
-                            {isSaving ? (
-                                <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Check className="mr-2 h-4 w-4" />
-                                    Save Changes
-                                </>
-                            )}
-                        </Button>
+                    <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                        <p className="text-sm text-muted-foreground">
+                            💡 <strong>Auto-save enabled:</strong> Your accessibility preferences are saved automatically when you make changes.
+                        </p>
                     </div>
                 </div>
             </div>
