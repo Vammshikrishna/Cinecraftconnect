@@ -71,7 +71,7 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
 
             if (existingCall) {
                 console.log("Found existing active call, joining instead of creating.");
-                setActiveCall(existingCall as Call);
+                setActiveCall(existingCall as unknown as Call);
                 return existingCall;
             }
 

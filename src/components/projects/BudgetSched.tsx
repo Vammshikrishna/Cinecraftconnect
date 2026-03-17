@@ -7,9 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Lock } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { EncryptionService } from '@/services/EncryptionService';
 
 interface BudgetItem {
     id: string;
@@ -32,10 +31,9 @@ interface ScheduleItem {
 
 interface BudgetSchedProps {
     project_id: string;
-    roomKey: CryptoKey | null;
 }
 
-const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
+const BudgetSched = ({ project_id }: BudgetSchedProps) => {
     const { data: rawBudget, error: budgetError } = useRealtimeData<BudgetItem>('budget_items', 'project_id', project_id);
     const { data: rawSchedule, error: scheduleError } = useRealtimeData<ScheduleItem>('schedule_items', 'project_id', project_id);
     const { toast } = useToast();
@@ -84,59 +82,11 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
 
     // --- Decryption Effect ---
     useEffect(() => {
-        const decryptAll = async () => {
-            if (!rawBudget && !rawSchedule) {
-                setBudgetData([]);
-                setScheduleData([]);
-                return;
-            }
-            if (!roomKey) {
-                setBudgetData(rawBudget || []);
-                setScheduleData(rawSchedule || []);
-                return;
-            }
+        setBudgetData(rawBudget || []);
+        setScheduleData(rawSchedule || []);
+    }, [rawBudget, rawSchedule]);
 
 
-
-            // Helper to decrypt a string
-            const dec = async (val: string | null) => {
-                if (!val || !val.startsWith('{')) return val;
-                try {
-                    const p = JSON.parse(val);
-                    if (p.iv && p.ciphertext) return await EncryptionService.decryptGroupMessage(p.ciphertext, p.iv, roomKey) || val;
-                } catch { }
-                return val;
-            };
-
-            // Process Budget
-            if (rawBudget) {
-                const decBudget = await Promise.all(rawBudget.map(async (item) => ({
-                    ...item,
-                    category: await dec(item.category) || item.category,
-                    item_name: await dec(item.item_name) || item.item_name,
-                    notes: await dec(item.notes),
-                })));
-                setBudgetData(decBudget);
-            }
-
-            // Process Schedule
-            if (rawSchedule) {
-                const decSchedule = await Promise.all(rawSchedule.map(async (item) => ({
-                    ...item,
-                    title: await dec(item.title) || item.title,
-                    description: await dec(item.description),
-                })));
-                setScheduleData(decSchedule);
-            }
-        };
-        decryptAll();
-    }, [rawBudget, rawSchedule, roomKey]);
-
-    const encryptValue = async (val: string) => {
-        if (!roomKey || !val) return val;
-        const encrypted = await EncryptionService.encryptGroupMessage(val, roomKey);
-        return JSON.stringify(encrypted);
-    };
 
     // --- Handlers ---
 
@@ -151,11 +101,11 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                 .from('budget_items' as any)
                 .insert([{
                     project_id,
-                    category: await encryptValue(budgetCategory),
-                    item_name: await encryptValue(budgetItemName),
+                    category: budgetCategory,
+                    item_name: budgetItemName,
                     estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
                     actual_cost: actualCost ? parseFloat(actualCost) : null,
-                    notes: await encryptValue(budgetNotes)
+                    notes: budgetNotes
                 }]);
 
             if (error) throw error;
@@ -176,11 +126,11 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
             const { error } = await supabase
                 .from('budget_items' as any)
                 .update({
-                    category: await encryptValue(budgetCategory),
-                    item_name: await encryptValue(budgetItemName),
+                    category: budgetCategory,
+                    item_name: budgetItemName,
                     estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
                     actual_cost: actualCost ? parseFloat(actualCost) : null,
-                    notes: await encryptValue(budgetNotes)
+                    notes: budgetNotes
                 })
                 .eq('id', editingBudget.id);
 
@@ -213,8 +163,8 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                 .from('schedule_items' as any)
                 .insert([{
                     project_id,
-                    title: await encryptValue(scheduleTitle),
-                    description: await encryptValue(scheduleDescription),
+                    title: scheduleTitle,
+                    description: scheduleDescription,
                     start_date: startDate,
                     end_date: endDate || null,
                     status: scheduleStatus
@@ -238,8 +188,8 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
             const { error } = await supabase
                 .from('schedule_items' as any)
                 .update({
-                    title: await encryptValue(scheduleTitle),
-                    description: await encryptValue(scheduleDescription),
+                    title: scheduleTitle,
+                    description: scheduleDescription,
                     start_date: startDate,
                     end_date: endDate || null,
                     status: scheduleStatus
@@ -301,11 +251,6 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
         <div className="p-4 sm:p-8 h-full overflow-y-auto w-full">
             <div className="flex items-center gap-3 mb-6">
                 <h1 className="text-xl sm:text-2xl font-bold">Budget & Schedule</h1>
-                {roomKey && (
-                    <div className="text-xs flex items-center gap-1 text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
-                        <Lock className="w-3 h-3" /> E2EE
-                    </div>
-                )}
             </div>
 
             <div className="space-y-8">
@@ -322,7 +267,6 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                                     <DialogTitle>{editingBudget ? 'Edit' : 'Add'} Budget Item</DialogTitle>
                                     <DialogDescription>
                                         Enter the details for this budget item.
-                                        {roomKey && <span className="text-green-500 text-xs ml-2 flex items-center gap-1 inline-flex"><Lock className="w-3 h-3" /> Ends-to-End Encrypted</span>}
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
@@ -349,7 +293,7 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                                         <Textarea value={budgetNotes} onChange={(e) => setBudgetNotes(e.target.value)} placeholder="Additional notes..." />
                                     </div>
                                     <Button onClick={editingBudget ? handleUpdateBudgetItem : handleAddBudgetItem} className="w-full" disabled={saving}>
-                                        {saving ? 'Encrypting & Saving...' : (editingBudget ? 'Update Budget Item' : 'Add Budget Item')}
+                                        {saving ? 'Saving...' : (editingBudget ? 'Update Budget Item' : 'Add Budget Item')}
                                     </Button>
                                 </div>
                             </DialogContent>
@@ -417,7 +361,6 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                                     <DialogTitle>{editingSchedule ? 'Edit' : 'Add'} Schedule Item</DialogTitle>
                                     <DialogDescription>
                                         Enter the details for this schedule item.
-                                        {roomKey && <span className="text-green-500 text-xs ml-2 flex items-center gap-1 inline-flex"><Lock className="w-3 h-3" /> Ends-to-End Encrypted</span>}
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
@@ -454,7 +397,7 @@ const BudgetSched = ({ project_id, roomKey }: BudgetSchedProps) => {
                                         </Select>
                                     </div>
                                     <Button onClick={editingSchedule ? handleUpdateScheduleItem : handleAddScheduleItem} className="w-full" disabled={saving}>
-                                        {saving ? 'Encrypting & Saving...' : (editingSchedule ? 'Update Schedule Item' : 'Add Schedule Item')}
+                                        {saving ? 'Saving...' : (editingSchedule ? 'Update Schedule Item' : 'Add Schedule Item')}
                                     </Button>
                                 </div>
                             </DialogContent>

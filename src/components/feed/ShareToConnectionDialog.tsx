@@ -75,14 +75,25 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
             const postLink = `${window.location.origin}/feed?post=${postId}`;
             const messageContent = `Check out this post: ${postLink}`;
 
-            const { error } = await supabase.from('direct_messages' as any).insert({
+            const { error: sendError } = await supabase.from('direct_messages' as any).insert({
                 content: messageContent,
                 sender_id: user.id,
                 channel_id: channelId,
-                recipient_id: recipientId
+                receiver_id: recipientId
             });
 
-            if (error) throw error;
+            if (sendError && sendError.message?.includes('receiver_id')) {
+                // Fallback to legacy recipient_id
+                const { error: fallbackError } = await supabase.from('direct_messages' as any).insert({
+                    content: messageContent,
+                    sender_id: user.id,
+                    channel_id: channelId,
+                    recipient_id: recipientId
+                });
+                if (fallbackError) throw fallbackError;
+            } else if (sendError) {
+                throw sendError;
+            }
 
             setSentTo(prev => new Set(prev).add(recipientId));
             toast({

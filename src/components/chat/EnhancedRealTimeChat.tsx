@@ -12,7 +12,7 @@ import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
 import { MarketplaceShareCard } from './MarketplaceShareCard';
 import { AnnouncementShareCard } from './AnnouncementShareCard';
-import { EncryptionService } from '@/services/EncryptionService';
+import { VendorShareCard } from './VendorShareCard';
 
 interface Message {
   id: string;
@@ -40,25 +40,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [partnerPublicKey, setPartnerPublicKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchPartnerKey = async () => {
-      if (!partnerId) return;
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('public_key')
-        .eq('id', partnerId)
-        .single();
-
-      if (!error && (data as any)?.public_key) {
-        setPartnerPublicKey((data as any).public_key);
-      }
-    };
-    fetchPartnerKey();
-  }, [partnerId]);
-
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -70,64 +51,46 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       console.error('Error fetching messages:', error);
       setMessages([]);
     } else {
-      // Decrypt messages
-      const loadedMessages = data as Message[];
-      // We can only decrypt if we have the partner's public key (to derive the shared secret)
-      // AND the user's private key (handled by EncryptionService internally).
-      // Since fetches are async, we might want to do this transformation:
-
-      if (partnerPublicKey) {
-        const decryptedPromise = loadedMessages.map(async (msg) => {
-          // Try to decrypt only if it looks encrypted (e.g. check if it's JSON with iv?) 
-          // Our format: { ciphertext, iv } returned by encryptMessage
-          // AND we stored { ciphertext, iv } as JSON string in content?
-          // Wait, encryption service encryptMessage returns object. 
-          // handleSendMessage stores object.ciphertext? No, we need to store string.
-          // We should store JSON string of { ciphertext, iv }.
-
-          try {
-            const parsed = JSON.parse(msg.content);
-            if (parsed.ciphertext && parsed.iv) {
-              const decrypted = await EncryptionService.decryptMessage(parsed.ciphertext, parsed.iv, partnerPublicKey);
-              if (decrypted) {
-                return { ...msg, content: decrypted };
-              }
-            }
-          } catch (e) {
-            // Not JSON or not encrypted format -> Plaintext
-          }
-          return msg;
-        });
-        const decryptedMessages = await Promise.all(decryptedPromise);
-        setMessages(decryptedMessages);
-      } else {
-        // If we don't have the key yet, we can't decrypt encrypted messages.
-        // We should probably wait or trigger re-fetch when key loads.
-        // For now, show as is (will look like garbage if encrypted).
-        setMessages(loadedMessages);
-      }
+      setMessages(data as Message[]);
     }
-
-    // Mark messages as read
-    if (user && roomId) {
-      const { error: readError } = await supabase
-        .from('direct_messages' as any)
-        .update({ is_read: true })
-        .eq('channel_id', roomId)
-        .eq('receiver_id', user.id)
-        .eq('is_read', false);
-
-      if (readError) {
-        console.error('Error marking messages as read:', readError);
-      }
-    }
-
     setLoading(false);
-  }, [roomId, partnerPublicKey, user]);
+  }, [roomId]);
+
+  // Use a ref for fetchMessages to avoid subscription churn
+  const fetchMessagesRef = useRef(fetchMessages);
+  useEffect(() => {
+    fetchMessagesRef.current = fetchMessages;
+  }, [fetchMessages]);
 
   useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
+
+  // Separate "Mark as Read" to avoid refetch loops
+  useEffect(() => {
+    if (user && partnerId && messages.length > 0) {
+      const markAsRead = async () => {
+        // Try receiver_id first (modern standard)
+        const { error } = await supabase
+          .from('direct_messages')
+          .update({ is_read: true } as any)
+          .eq('sender_id', partnerId)
+          .eq('receiver_id', user.id)
+          .or('is_read.eq.false,is_read.is.null');
+
+        if (error && error.message?.includes('receiver_id')) {
+          // Fallback to legacy recipient_id
+          await supabase
+            .from('direct_messages')
+            .update({ is_read: true } as any)
+            .eq('sender_id', partnerId)
+            .eq('recipient_id', user.id)
+            .or('is_read.eq.false,is_read.is.null');
+        }
+      };
+      markAsRead();
+    }
+  }, [user, partnerId, messages.length]);
 
   useEffect(() => {
     scrollToBottom();
@@ -137,40 +100,30 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     if (!roomId) return;
 
     const channel = supabase
-      .channel(`realtime-chat:${roomId}`)
+      .channel(`chat-v4-${roomId}`)
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
-        (_payload) => {
-          fetchMessages();
+        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
+        (payload) => {
+          if (payload.new.channel_id === roomId) {
+            setTimeout(() => fetchMessagesRef.current(), 100);
+            setTimeout(() => fetchMessagesRef.current(), 500);
+          }
         }
       ).subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomId, fetchMessages, user?.id]);
+  }, [roomId]); // ONLY depend on roomId to prevent reconnection loops
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newMessage.trim() === '' || !user || !roomId) return;
 
-    // We need to implement encryption BEFORE insert.
-    // Ideally we modify the insert call above.
+    const contentToSend = newMessage.trim();
 
-
-    let contentToSend = newMessage.trim();
-    if (partnerPublicKey) {
-      const encrypted = await EncryptionService.encryptMessage(contentToSend, partnerPublicKey);
-      if (encrypted) {
-        contentToSend = JSON.stringify(encrypted);
-      } else {
-        console.warn('Failed to encrypt message. Falling back to plaintext.');
-        // Fallback to clear text
-      }
-    } else {
-      console.warn("No partner public key. Sending plaintext.");
-    }
-
+    // Column Strategy: We try 'receiver_id' first as it's the modern standard for this project.
+    // If it fails with "column not found", we fallback to 'recipient_id'.
     const { error: sendError } = await supabase.from('direct_messages' as any).insert({
       content: contentToSend,
       sender_id: user.id,
@@ -178,12 +131,21 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       receiver_id: partnerId
     });
 
-    if (sendError) {
+    if (sendError && (sendError as any).message?.includes('receiver_id')) {
+      // Fallback for legacy schema
+      await supabase.from('direct_messages' as any).insert({
+        content: contentToSend,
+        sender_id: user.id,
+        channel_id: roomId,
+        recipient_id: partnerId
+      });
+    } else if (sendError) {
       console.error('Error sending message:', sendError);
-    } else {
-      setNewMessage('');
-      setShowEmojiPicker(false);
+      return;
     }
+
+    setNewMessage('');
+    setShowEmojiPicker(false);
   };
 
   const onEmojiClick = (emojiObject: EmojiClickData) => {
@@ -236,7 +198,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`} max-w-xs lg:max-w-md`}>
+                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`} max-w-xs lg:max-w-md`}>
                     {message.content.startsWith('POST_SHARE::') ? (
                       (() => {
                         try {
@@ -260,6 +222,15 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         try {
                           const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
                           return <AnnouncementShareCard {...shareData} />;
+                        } catch (e) {
+                          return <p className="text-sm break-words">{message.content}</p>;
+                        }
+                      })()
+                    ) : message.content.startsWith('VENDOR_SHARE::') ? (
+                      (() => {
+                        try {
+                          const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
+                          return <VendorShareCard {...shareData} />;
                         } catch (e) {
                           return <p className="text-sm break-words">{message.content}</p>;
                         }

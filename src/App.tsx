@@ -55,8 +55,6 @@ const LandingRoute = () => {
   return user ? <Navigate to="/feed" /> : <Index />;
 };
 
-import { KeyInitialization } from "@/components/KeyInitialization";
-
 import ScrollToTop from "@/components/ScrollToTop";
 
 const App = () => {
@@ -66,7 +64,6 @@ const App = () => {
       <ScrollToTop />
       <Toaster />
       <GlobalFeatures />
-      <KeyInitialization />
       {user && profile?.onboarding_completed && <Navbar />}
       <ErrorBoundary>
         <Suspense

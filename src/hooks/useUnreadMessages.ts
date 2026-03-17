@@ -40,6 +40,7 @@ export const useUnreadMessages = () => {
       if (senderId !== user.id) {
         // Only show notification if not on a chat page
         if (!location.pathname.startsWith('/messages') &&
+          !location.pathname.startsWith('/dm/') &&
           !location.pathname.startsWith('/discussion-rooms') &&
           !location.pathname.includes('/space')) {
           setHasUnread(true);
@@ -53,8 +54,8 @@ export const useUnreadMessages = () => {
       .subscribe();
 
     const roomMessagesChannel = supabase
-      .channel('public:discussion_room_messages')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'discussion_room_messages' }, handleNewMessage)
+      .channel('public:room_messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages' }, handleNewMessage)
       .subscribe();
 
     // In a real app, you would also join channels for project spaces the user is a member of.
@@ -68,7 +69,10 @@ export const useUnreadMessages = () => {
 
   useEffect(() => {
     // If user navigates to a chat-related page, clear the notification.
-    if (location.pathname.startsWith('/messages') || location.pathname.startsWith('/discussion-rooms') || location.pathname.includes('/space')) {
+    if (location.pathname.startsWith('/messages') ||
+      location.pathname.startsWith('/dm/') ||
+      location.pathname.startsWith('/discussion-rooms') ||
+      location.pathname.includes('/space')) {
       setHasUnread(false);
     }
   }, [location.pathname]);

@@ -12,17 +12,20 @@ import { Message, UserRole, Category } from './types';
 import { MessageComposer } from './MessageComposer';
 import { TypingIndicator } from './TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { ArrowLeft, Video, Settings, Users, Phone, Loader2, ChevronDown, MessageSquare } from 'lucide-react';
-import { Dialog, DialogContent, DialogTrigger, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import {
+  ArrowLeft, Settings, Users, Loader2, ChevronDown,
+  MessageSquare, Radio, Headphones, X
+} from 'lucide-react';
+import { Dialog, DialogTrigger } from '@/components/ui/dialog';
 import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
-import { NativeCallContainer } from '@/components/calls/NativeCallContainer';
+import { EmbeddedCallPanel } from './EmbeddedCallPanel';
 import { useCall } from '@/hooks/useCall';
 import { useToast } from '@/hooks/use-toast';
-import { EncryptionService } from '@/services/EncryptionService';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
+import { VendorShareCard } from '@/components/chat/VendorShareCard';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -36,26 +39,50 @@ interface DiscussionChatInterfaceProps {
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
 }
 
-export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, roomType, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
+export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
   const [isMembersSidebarOpen, setMembersSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
 
-  // Use shared call hook
-  // Use shared call hook
+  // Call state
   const { activeCall, loading: callLoading, startCall, joinCall, endCall } = useCall('discussion', roomId);
+  const [isInCall, setIsInCall] = useState(false);
+  const [isCallMinimized, setIsCallMinimized] = useState(false);
+  const [showJoinBanner, setShowJoinBanner] = useState(false);
 
-  const [isCallTypeDialogOpen, setCallTypeDialogOpen] = useState(false);
+  // Mobile swipeable tab state
+  const [mobileTab, setMobileTab] = useState<'discussion' | 'chat'>('discussion');
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  // JS-based screen size detection (prevents mounting two EmbeddedCallPanels)
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [roomKey, setRoomKey] = useState<CryptoKey | null>(null);
+
+  // Show join banner when there's an active call and user hasn't joined
+  useEffect(() => {
+    if (activeCall && !isInCall) {
+      setShowJoinBanner(true);
+    } else {
+      setShowJoinBanner(false);
+    }
+  }, [activeCall, isInCall]);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -94,144 +121,58 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-
-      // Decrypt messages if roomKey exists
-      const decryptedMessages = await Promise.all(((data as any) || []).map(async (msg: any) => {
-        if (!msg.content) return msg;
-        // Check if JSON (likely encrypted)
-        if (roomKey && msg.content.startsWith('{') && msg.content.includes('"iv"')) {
-          try {
-            const parsed = JSON.parse(msg.content);
-            const decryptedText = await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey);
-            if (decryptedText) {
-              return { ...msg, content: decryptedText };
-            }
-          } catch (e) {
-            // Ignore parse errors (plaintext)
-          }
-        }
-        return msg;
-      }));
-
-      setMessages(decryptedMessages);
-    } catch (err: any) {
-      setError('Failed to fetch messages. Please try again later.');
-      console.error('Error fetching messages:', err);
+      setMessages((data as any) || []);
     } finally {
       setLoading(false);
     }
-  }, [roomId, roomKey]);
+  }, [roomId]);
 
-  // --- E2EE Room Key Management ---
+  // Auto-join room membership
   useEffect(() => {
     if (!roomId || !user) return;
 
-    // SKIP encryption for public rooms.
-    if (roomType === 'public') {
-      console.log("Public room: Encryption disabled.");
-      setRoomKey(null);
-      return;
-    }
-
-    const setupRoomEncryption = async () => {
+    const ensureMembership = async () => {
       try {
-        // 1. Check if I have a key for this room
-        const { data: keyData, error: _keyError } = await supabase
-          .from('room_keys' as any)
-          .select('encrypted_key, sender_id')
+        const { data: existing } = await supabase
+          .from('room_members')
+          .select('user_id')
           .eq('room_id', roomId)
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (keyData) {
-          // I have a key! Decrypt it.
-          const { data: senderProfile } = await supabase
-            .from('profiles')
-            .select('public_key')
-            .eq('id', (keyData as any).sender_id)
-            .single();
+        if (!existing) {
+          const { error } = await supabase
+            .from('room_members')
+            .insert({ room_id: roomId, user_id: user.id });
 
-          if ((senderProfile as any)?.public_key) {
-            try {
-              const parsedKey = JSON.parse((keyData as any).encrypted_key);
-              const decryptedKey = await EncryptionService.decryptRoomKey(
-                parsedKey.ciphertext,
-                parsedKey.iv,
-                (senderProfile as any).public_key
-              );
-              if (decryptedKey) {
-                setRoomKey(decryptedKey);
-                console.log("Room key decrypted successfully.");
-              }
-            } catch (err) {
-              console.error("Failed to parse/decrypt room key", err);
-            }
-          }
-        } else {
-          // No key found. Check if I am the Creator.
-          const { data: room } = await supabase
-            .from('discussion_rooms')
-            .select('creator_id')
-            .eq('id', roomId)
-            .single();
-
-          if (room?.creator_id === user.id) {
-            console.log("I am creator. Generating new room key...");
-            const newKey = await EncryptionService.generateRoomKey();
-
-            // Encrypt for MYSELF first
-            const { data: myProfile } = await supabase.from('profiles').select('public_key').eq('id', user.id).single();
-
-            if ((myProfile as any)?.public_key) {
-              const encryptedForMe = await EncryptionService.encryptRoomKeyForUser(newKey, (myProfile as any).public_key);
-
-              if (encryptedForMe) {
-                // Store in DB
-                const { error: insertError } = await supabase.from('room_keys' as any).insert({
-                  room_id: roomId,
-                  user_id: user.id,
-                  sender_id: user.id,
-                  encrypted_key: JSON.stringify({ ciphertext: encryptedForMe.encryptedKey, iv: encryptedForMe.iv })
-                });
-
-                if (!insertError) {
-                  setRoomKey(newKey);
-                  console.log("New room key generated and saved.");
-                }
-              }
-            }
+          if (error && !error.message?.includes('duplicate')) {
+            console.error('Failed to auto-join room:', error);
           }
         }
       } catch (err) {
-        console.error("Error setting up room encryption:", err);
+        console.error('Error ensuring room membership:', err);
       }
     };
 
-    setupRoomEncryption();
-  }, [roomId, user, roomType]);
+    ensureMembership();
+  }, [roomId, user]);
 
   useEffect(() => {
     fetchMessages();
     const timer = setTimeout(() => scrollToBottom('auto'), 500);
     return () => clearTimeout(timer);
-  }, [fetchMessages]); // fetchMessages now depends on roomKey
+  }, [fetchMessages]);
 
   useEffect(() => {
     const channel = supabase
       .channel(`chat-room:${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages', filter: `room_id=eq.${roomId}` },
         (payload) => {
-          // Check if the new message is from the current user
           const isMyMessage = payload.new && (payload.new as any).user_id === user?.id;
-
           fetchMessages();
-
           if (isMyMessage) {
-            // If it's my message, I've already handled the scroll in handleSendMessage, 
-            // but doing it again here ensures sync.
             setTimeout(() => scrollToBottom(), 300);
           } else {
-            // If it's someone else's message
             if (isAtBottom) {
               setTimeout(() => scrollToBottom(), 300);
             } else {
@@ -248,138 +189,68 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
   const handleSendMessage = async (content: string) => {
     if (!user || !roomId) return;
-
     try {
-      let contentToSend = content;
-      if (roomKey) {
-        const encrypted = await EncryptionService.encryptGroupMessage(content, roomKey);
-        contentToSend = JSON.stringify(encrypted);
-      }
       const { error } = await supabase.from('room_messages').insert({
-        content: contentToSend,
+        content: content,
         user_id: user.id,
         room_id: roomId
       });
       if (error) throw error;
-      fetchMessages(); // Refresh messages immediately
-      setTimeout(() => scrollToBottom(), 100); // Force scroll on send
-      stopTyping(); // Stop typing indicator on send
+      fetchMessages();
+      setTimeout(() => scrollToBottom(), 100);
+      stopTyping();
     } catch (err) {
       console.error("Error sending message:", err);
-      // Optionally, show an error to the user
     }
   };
 
   const handleAttach = async (file: File) => {
     if (!user || !roomId) return;
-
     try {
-      // 1. Encrypt File
-      const encryptedData = await EncryptionService.encryptFile(file);
-      if (!encryptedData) throw new Error("Failed to encrypt file");
-
-      const filePath = `${roomId}/${Date.now()}_${file.name}.enc`;
-
-      // 2. Upload Encrypted Blob
-      // Discussion rooms might share the 'project-files' bucket or have a 'discussion-files' bucket?
-      // Let's assume 'discussion-files' exists or use a generic one.
-      // Checking existing buckets... user only used 'project-files' before. 
-      // I will use 'project-files' for now but prefix with roomID which is a UUID.
-      // Wait, 'project-files' policies might rely on project_id? 
-      // If 'discussion-files' doesn't exist, upload will fail.
-      // I'll try 'project-files' for now, but if it fails, I might need to create a bucket.
-      // Actually, let's use 'project-files' since that's what we have.
-
-      const { error: uploadError } = await supabase.storage
-        .from('project-files')
-        .upload(filePath, encryptedData.encryptedBlob);
-
-      if (uploadError) throw uploadError;
-
-      // 3. Prepare Metadata
-      const fileMetadata = JSON.stringify({
-        type: 'file',
-        path: filePath,
-        name: file.name,
-        size: file.size,
-        mimeType: file.type,
-        key: encryptedData.key,
-        iv: encryptedData.iv
-      });
-
-      // 4. Encrypt Metadata
-      let contentToInsert = fileMetadata;
-      if (roomKey) {
-        const encryptedMsg = await EncryptionService.encryptGroupMessage(fileMetadata, roomKey);
-        contentToInsert = JSON.stringify(encryptedMsg);
-      } else {
-        contentToInsert = `Shared a file: ${file.name} (Unencrypted)`;
-      }
-
+      const contentToInsert = `Shared a file: ${file.name}`;
       const { error: msgError } = await supabase.from('room_messages').insert({
         content: contentToInsert,
         user_id: user.id,
         room_id: roomId
       });
-
       if (msgError) throw msgError;
-
-      toast({ title: "Success", description: "Encrypted file uploaded successfully" });
+      toast({ title: "Success", description: "File uploaded successfully" });
     } catch (error: any) {
       console.error(error);
       toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
     }
   };
 
-  const downloadDecryptedFile = async (metadata: any) => {
-    try {
-      toast({ title: "Decrypting...", description: "Downloading and decrypting file..." });
-
-      const { data, error } = await supabase.storage.from('project-files').download(metadata.path);
-      if (error) throw error;
-
-      const decryptedBlob = await EncryptionService.decryptFile(data, metadata.key, metadata.iv);
-      if (!decryptedBlob) throw new Error("Decryption failed");
-
-      const url = URL.createObjectURL(decryptedBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = metadata.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast({ title: "Success", description: "File downloaded." });
-    } catch (e) {
-      console.error(e);
-      toast({ title: "Error", description: "Failed to download/decrypt file.", variant: "destructive" });
-    }
-  };
-
-  // Call Handlers
-  const handleStartCall = async () => {
-    // defaults to video/jitsi logic in hook
+  // --- Call Handlers ---
+  const handleStartSpace = async () => {
     const call = await startCall();
-    if (!call) {
-      toast({
-        title: "Error",
-        description: "Failed to start call. Please try again.",
-        variant: "destructive"
-      });
+    if (call) {
+      setIsInCall(true);
+      setIsCallMinimized(false);
+      toast({ title: "🎙️ Discussion Started!", description: "Your discussion room is now active!" });
+    } else {
+      toast({ title: "Error", description: "Failed to start discussion.", variant: "destructive" });
     }
-    setCallTypeDialogOpen(false);
   };
 
-  const handleJoinCall = async () => {
-    await joinCall();
+  const handleJoinSpace = async () => {
+    const success = await joinCall();
+    if (success) {
+      setIsInCall(true);
+      setIsCallMinimized(false);
+      setShowJoinBanner(false);
+      toast({ title: "🎧 Joined Discussion", description: "You're now in the discussion." });
+    } else {
+      toast({ title: "Error", description: "Failed to join discussion.", variant: "destructive" });
+    }
   };
 
-  const handleLeaveCall = async () => {
-    // End the call locally (and update DB status via hook)
+  const handleLeaveSpace = async () => {
     await endCall();
+    setIsInCall(false);
+    setIsCallMinimized(false);
+    toast({ title: "Left Discussion", description: "You've left the discussion." });
   };
-
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -392,51 +263,84 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     return <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>;
   }
 
-  if (error) {
-    return <div className="flex-1 flex items-center justify-center text-red-500">{error}</div>;
-  }
+  // --- Render Share Card ---
+  const renderMessageContent = (content: string) => {
+    if (content.startsWith('POST_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('POST_SHARE::', ''));
+        return <PostShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('MARKETPLACE_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('MARKETPLACE_SHARE::', ''));
+        return <MarketplaceShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('ANNOUNCEMENT_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('ANNOUNCEMENT_SHARE::', ''));
+        return <AnnouncementShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('VENDOR_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('VENDOR_SHARE::', ''));
+        return <VendorShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>;
+  };
 
-  if (activeCall && user) {
-    return (
-      <NativeCallContainer
-        roomId={roomId}
-        onLeave={handleLeaveCall}
-        roomName={roomTitle}
-      />
-    );
-  }
+  const isShareContent = (content: string) =>
+    content.startsWith('POST_SHARE::') ||
+    content.startsWith('MARKETPLACE_SHARE::') ||
+    content.startsWith('ANNOUNCEMENT_SHARE::') ||
+    content.startsWith('VENDOR_SHARE::');
 
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
+
+      {/* ===== HEADER ===== */}
       <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
-        <div className="flex items-center gap-3">
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors">
-            <ArrowLeft className="h-6 w-6 text-foreground" />
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0">
+            <ArrowLeft className="h-5 w-5 text-foreground" />
           </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
-            <p className="text-sm text-muted-foreground truncate">{roomDescription}</p>
+          <div className="min-w-0 flex-1 overflow-hidden pr-2">
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
+              {activeCall && (
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                  ACTIVE
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground truncate">{roomDescription}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {activeCall ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Go Live button (no active call & not in call) */}
+          {!activeCall && !isInCall && (
             <Button
-              variant="default"
               size="sm"
-              onClick={handleJoinCall}
-              className="bg-teal-600 hover:bg-teal-700 text-white"
+              onClick={handleStartSpace}
+              disabled={callLoading}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs shadow-lg shadow-purple-600/20 border-none flex items-center justify-center h-8 w-8 sm:w-auto sm:px-4 shrink-0"
+              title="Join Discussion"
             >
-              <Video className="w-4 h-4 mr-2" /> Join Call
-            </Button>
-          ) : (
-            <Button variant="ghost" size="icon" onClick={() => setCallTypeDialogOpen(true)} disabled={callLoading}>
-              {callLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Video className="w-5 h-5" />}
+              {callLoading ? <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" /> : <Radio className="h-4 w-4 sm:mr-1.5" />}
+              <span className="hidden sm:inline">Join Discussion</span>
             </Button>
           )}
-          <Button variant="ghost" size="icon" onClick={() => setMembersSidebarOpen(true)}><Users className="w-5 h-5" /></Button>
+
+          <Button variant="ghost" size="icon" onClick={() => setMembersSidebarOpen(true)} className="h-8 w-8">
+            <Users className="w-4 h-4" />
+          </Button>
           <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
             <DialogTrigger asChild>
-              <Button variant="ghost" size="icon"><Settings className="w-5 h-5" /></Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8"><Settings className="w-4 h-4" /></Button>
             </DialogTrigger>
             <RoomSettings
               roomId={roomId}
@@ -451,181 +355,246 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden relative">
-        <div
-          ref={scrollContainerRef}
-          onScroll={handleScroll}
-          className="flex-1 flex flex-col overflow-y-auto p-4 pr-4 custom-scrollbar"
-        >
-          {messages.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <MessageSquare className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
-                <p className="text-muted-foreground text-sm">No messages yet</p>
-                <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
+      {/* ===== JOIN LIVE BANNER (when call is active but user not joined) ===== */}
+      {showJoinBanner && (
+        <div className="mx-3 mt-2 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-purple-600/20 border border-purple-500/30 rounded-2xl p-4 shadow-lg animate-in slide-in-from-top duration-300">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center shadow-lg shadow-purple-600/30">
+                  <Radio className="w-5 h-5 text-white" />
+                </div>
+                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-background" />
+              </div>
+              <div>
+                <p className="text-foreground font-semibold text-sm">Discussion is Active!</p>
+                <p className="text-muted-foreground text-xs">Join to listen and participate</p>
               </div>
             </div>
-          ) : (
-            messages.map((message) => {
-              const isSender = message.profiles.id === user?.id;
-              return (
-                <div key={message.id} className={`flex items-end gap-3 my-4 ${isSender ? 'flex-row-reverse' : ''}`}>
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Link to={`/profile/${message.profiles.id}`}>
-                          <Avatar className="h-8 w-8 cursor-pointer hover:opacity-80 transition-opacity">
-                            <AvatarImage src={message.profiles.avatar_url || undefined} />
-                            <AvatarFallback>{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
-                          </Avatar>
-                        </Link>
-                      </TooltipTrigger>
-                      <TooltipContent side={isSender ? 'right' : 'left'}>
-                        <p>{message.profiles.username}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <div className={`${message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-sm md:max-w-md lg:max-w-lg relative group`}>
-                    {message.content.startsWith('POST_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
-                          return <PostShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
-                          return <MarketplaceShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
-                          return <AnnouncementShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                        }
-                      })()
-                    ) : (
-                      // File Message Detection
-                      (() => {
-                        try {
-                          if (message.content.includes('"type":"file"')) {
-                            const metadata = JSON.parse(message.content);
-                            if (metadata.type === 'file' && metadata.key && metadata.iv) {
-                              return (
-                                <div className="flex flex-col gap-2">
-                                  <p className="font-semibold text-sm">🔒 Encrypted File</p>
-                                  <div className="flex items-center gap-2 p-2 bg-black/20 rounded">
-                                    <span className="text-xs truncate max-w-[150px]">{metadata.name}</span>
-                                    <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={() => downloadDecryptedFile(metadata)}>
-                                      Download
-                                    </Button>
-                                  </div>
-                                </div>
-                              );
-                            }
-                          }
-                          // Fallback normal message
-                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                        } catch {
-                          return <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>;
-                        }
-                      })()
-                    )}
-                  </div>
-                  <span className="text-xs text-muted-foreground">{formatTimestamp(message.created_at)}</span>
-                </div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={handleJoinSpace}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs px-4 h-8 shadow-lg shadow-purple-600/20 border-none"
+              >
+                <Headphones className="w-3.5 h-3.5 mr-1.5" />
+                Join Discussion
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowJoinBanner(false)}
+                className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
         </div>
+      )}
 
-        {/* Unread Messages Indicator */}
-        {!isAtBottom && unreadCount > 0 && (
-          <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20">
-            <Button
-              onClick={() => scrollToBottom()}
-              className="rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
-              size="sm"
-            >
-              <ChevronDown className="h-4 w-4" />
-              {unreadCount} New Message{unreadCount > 1 ? 's' : ''}
-            </Button>
+      {/* ===== MAIN CONTENT AREA ===== */}
+
+      {/* ====== DESKTOP (md+): Side by Side ====== */}
+      {isDesktop ? <div className="flex flex-1 overflow-hidden relative flex-row">
+        {/* Left: Call Panel */}
+        {isInCall && activeCall && (
+          <div className="w-[55%] flex flex-col border-r border-border/30 shrink-0 overflow-hidden">
+            <EmbeddedCallPanel
+              roomId={roomId}
+              roomName={roomTitle}
+              onLeave={handleLeaveSpace}
+              isMinimized={isCallMinimized}
+              onToggleMinimize={() => setIsCallMinimized(!isCallMinimized)}
+            />
           </div>
         )}
 
+        {/* Right: Chat */}
+        <div className="flex flex-col flex-1 min-w-0">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 flex flex-col overflow-y-auto p-4 custom-scrollbar"
+          >
+            {messages.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <MessageSquare className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-muted-foreground text-sm">No messages yet</p>
+                  <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
+                </div>
+              </div>
+            ) : (
+              messages.map((message) => {
+                const isSender = message.profiles.id === user?.id;
+                const isShare = isShareContent(message.content);
+                return (
+                  <div key={message.id} className={`flex items-end gap-2 my-3 ${isSender ? 'flex-row-reverse' : ''}`}>
+                    <TooltipProvider delayDuration={100}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Link to={`/profile/${message.profiles.id}`}>
+                            <Avatar className="h-7 w-7 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+                              <AvatarImage src={message.profiles.avatar_url || undefined} />
+                              <AvatarFallback className="text-xs">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
+                            </Avatar>
+                          </Link>
+                        </TooltipTrigger>
+                        <TooltipContent side={isSender ? 'right' : 'left'}>
+                          <p>{message.profiles.username}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <div className={`${isShare ? 'p-0 bg-transparent' : `p-2.5 rounded-2xl text-sm ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-[85%] relative group`}>
+                      {renderMessageContent(message.content)}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{formatTimestamp(message.created_at)}</span>
+                  </div>
+                );
+              })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {!isAtBottom && unreadCount > 0 && (
+            <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20">
+              <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 text-xs" size="sm">
+                <ChevronDown className="h-3.5 w-3.5" /> {unreadCount} new
+              </Button>
+            </div>
+          )}
+
+          <div className="p-3 border-t border-border/50 bg-background">
+            <TypingIndicator typingUsers={typingUsers} />
+            <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} userRole={userRole} />
+          </div>
+        </div>
+
         {isMembersSidebarOpen && <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />}
-      </div>
+      </div> : <div className="flex flex-col flex-1 overflow-hidden relative">
 
-      <div className="p-4 border-t border-border/50 bg-background pb-16 lg:pb-4">
-        <TypingIndicator typingUsers={typingUsers} />
-        <MessageComposer
-          onSend={handleSendMessage}
-          onAttach={handleAttach}
-          onTyping={startTyping}
-          onStopTyping={stopTyping}
-          userRole={userRole}
-        />
-      </div>
-
-      <Dialog open={isCallTypeDialogOpen} onOpenChange={setCallTypeDialogOpen}>
-        <DialogContent className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border-gray-700 text-white max-w-md">
-          <DialogHeader className="space-y-3">
-            <DialogTitle className="text-2xl font-bold text-center bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-              Start a Call
-            </DialogTitle>
-            <DialogDescription className="text-center text-gray-300">
-              Choose how you'd like to connect with the room
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-6 px-4 grid grid-cols-2 gap-4">
-            {/* Audio Call Option */}
+        {/* Mobile Tab Bar (only when in call) */}
+        {isInCall && activeCall && (
+          <div className="flex items-center bg-background border-b border-border shrink-0">
             <button
-              onClick={() => handleStartCall()}
-              className="group relative flex flex-col items-center justify-center p-6 rounded-2xl bg-gradient-to-br from-green-500/10 to-green-600/10 border-2 border-green-500/30 hover:border-green-400 hover:from-green-500/20 hover:to-green-600/20 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-green-500/20"
+              onClick={() => setMobileTab('discussion')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors relative ${mobileTab === 'discussion' ? 'text-foreground' : 'text-muted-foreground'
+                }`}
             >
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-green-400/0 to-green-600/0 group-hover:from-green-400/5 group-hover:to-green-600/5 transition-all duration-300" />
-              <div className="relative z-10 flex flex-col items-center gap-3">
-                <div className="p-4 rounded-full bg-green-500/20 group-hover:bg-green-500/30 transition-all duration-300">
-                  <Phone className="h-8 w-8 text-green-400 group-hover:text-green-300 transition-colors" />
-                </div>
-                <span className="font-semibold text-white group-hover:text-green-300 transition-colors">Audio Call</span>
-                <span className="text-xs text-gray-400 text-center">Voice only</span>
-              </div>
+              <Radio className="w-3.5 h-3.5" />
+              Discussion
+              {mobileTab === 'discussion' && (
+                <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
+              )}
             </button>
-
-            {/* Video Call Option */}
             <button
-              onClick={() => handleStartCall()}
-              className="group relative flex flex-col items-center justify-center p-6 rounded-2xl bg-gradient-to-br from-blue-500/10 to-purple-600/10 border-2 border-blue-500/30 hover:border-blue-400 hover:from-blue-500/20 hover:to-purple-600/20 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-blue-500/20"
+              onClick={() => setMobileTab('chat')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors relative ${mobileTab === 'chat' ? 'text-foreground' : 'text-muted-foreground'
+                }`}
             >
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-400/0 to-purple-600/0 group-hover:from-blue-400/5 group-hover:to-purple-600/5 transition-all duration-300" />
-              <div className="relative z-10 flex flex-col items-center gap-3">
-                <div className="p-4 rounded-full bg-blue-500/20 group-hover:bg-blue-500/30 transition-all duration-300">
-                  <Video className="h-8 w-8 text-blue-400 group-hover:text-blue-300 transition-colors" />
-                </div>
-                <span className="font-semibold text-white group-hover:text-blue-300 transition-colors">Video Call</span>
-                <span className="text-xs text-gray-400 text-center">Camera & audio</span>
-              </div>
+              <MessageSquare className="w-3.5 h-3.5" />
+              Chat
+              {unreadCount > 0 && mobileTab !== 'chat' && (
+                <span className="w-4 h-4 bg-primary text-primary-foreground text-[9px] font-bold rounded-full flex items-center justify-center">{unreadCount}</span>
+              )}
+              {mobileTab === 'chat' && (
+                <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
+              )}
             </button>
           </div>
+        )}
 
-          <div className="text-center text-xs text-gray-500 pb-2">
-            All participants will be notified
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div >
+        {/* Swipeable Content Container */}
+        <div
+          className="flex-1 overflow-hidden relative"
+          onTouchStart={(e) => {
+            touchStartX.current = e.touches[0].clientX;
+            touchStartY.current = e.touches[0].clientY;
+          }}
+          onTouchEnd={(e) => {
+            if (touchStartX.current === null || touchStartY.current === null || !isInCall || !activeCall) return;
+            const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+            const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+            // Only swipe horizontally if it's more horizontal than vertical
+            if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY)) {
+              if (deltaX < 0 && mobileTab === 'discussion') setMobileTab('chat');
+              if (deltaX > 0 && mobileTab === 'chat') setMobileTab('discussion');
+            }
+            touchStartX.current = null;
+            touchStartY.current = null;
+          }}
+        >
+          {/* Discussion View (when in call and tab=discussion) */}
+          {isInCall && activeCall && mobileTab === 'discussion' && (
+            <div className="absolute inset-0 flex flex-col overflow-hidden">
+              <EmbeddedCallPanel
+                roomId={roomId}
+                roomName={roomTitle}
+                onLeave={handleLeaveSpace}
+                isMinimized={isCallMinimized}
+                onToggleMinimize={() => setIsCallMinimized(!isCallMinimized)}
+              />
+            </div>
+          )}
+
+          {/* Chat View (always shown when no call, or when tab=chat during call) */}
+          {(!isInCall || !activeCall || mobileTab === 'chat') && (
+            <div className="absolute inset-0 flex flex-col">
+              <div
+                ref={!isInCall || mobileTab === 'chat' ? scrollContainerRef : undefined}
+                onScroll={handleScroll}
+                className="flex-1 flex flex-col overflow-y-auto p-3 custom-scrollbar"
+              >
+                {messages.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <MessageSquare className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                      <p className="text-muted-foreground text-sm">No messages yet</p>
+                      <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((message) => {
+                    const isSender = message.profiles.id === user?.id;
+                    const isShare = isShareContent(message.content);
+                    return (
+                      <div key={message.id} className={`flex items-end gap-2 my-2 ${isSender ? 'flex-row-reverse' : ''}`}>
+                        <Link to={`/profile/${message.profiles.id}`}>
+                          <Avatar className="h-6 w-6 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+                            <AvatarImage src={message.profiles.avatar_url || undefined} />
+                            <AvatarFallback className="text-[10px]">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
+                          </Avatar>
+                        </Link>
+                        <div className={`${isShare ? 'p-0 bg-transparent' : `p-2 rounded-2xl text-sm ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} max-w-[80%] relative group`}>
+                          {renderMessageContent(message.content)}
+                        </div>
+                        <span className="text-[9px] text-muted-foreground shrink-0">{formatTimestamp(message.created_at)}</span>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {!isAtBottom && unreadCount > 0 && (
+                <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-20">
+                  <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 text-xs" size="sm">
+                    <ChevronDown className="h-3.5 w-3.5" /> {unreadCount} new
+                  </Button>
+                </div>
+              )}
+
+              <div className="p-2 border-t border-border/50 bg-background pb-14">
+                <TypingIndicator typingUsers={typingUsers} />
+                <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} userRole={userRole} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {isMembersSidebarOpen && <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />}
+      </div>}
+    </div>
   );
 };
