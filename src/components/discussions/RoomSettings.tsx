@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Lock, Globe, Tag, Shield } from 'lucide-react';
+import { Loader2, X, Lock, Globe, Tag, Shield, Bell, BellOff, MessageSquareOff, ImageOff, Link2Off, Filter, Clock, Pin, Smile, Volume2, VolumeX, Users } from 'lucide-react';
 import { DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -34,6 +34,23 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
   const [newTag, setNewTag] = useState('');
   const [isSubmitting, setSubmitting] = useState(false);
   const [isConfirmingDelete, setConfirmingDelete] = useState(false);
+
+  // Notification settings
+  const [muteRoom, setMuteRoom] = useState(false);
+  const [mentionsOnly, setMentionsOnly] = useState(false);
+  const [soundAlerts, setSoundAlerts] = useState(true);
+
+  // Moderation settings
+  const [slowMode, setSlowMode] = useState(false);
+  const [slowModeInterval, setSlowModeInterval] = useState(10);
+  const [allowMediaSharing, setAllowMediaSharing] = useState(true);
+  const [allowLinks, setAllowLinks] = useState(true);
+  const [profanityFilter, setProfanityFilter] = useState(false);
+
+  // Appearance settings
+  const [pinnedMessage, setPinnedMessage] = useState('');
+  const [welcomeMessage, setWelcomeMessage] = useState('');
+  const [roomEmoji, setRoomEmoji] = useState('💬');
 
   // Fetch current room settings
   useEffect(() => {
@@ -137,6 +154,27 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
             >
               <Lock className="h-4 w-4 shrink-0" />
               <span>Privacy</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="notifications"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+            >
+              <Bell className="h-4 w-4 shrink-0" />
+              <span>Notifications</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="moderation"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+            >
+              <Filter className="h-4 w-4 shrink-0" />
+              <span>Moderation</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="appearance"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+            >
+              <Smile className="h-4 w-4 shrink-0" />
+              <span>Appearance</span>
             </TabsTrigger>
             <TabsTrigger
               value="advanced"
@@ -277,6 +315,197 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
                           </Button>
                         )}
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Notifications Tab */}
+              <TabsContent value="notifications" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 tracking-tight">Notifications</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Manage how you receive notifications from this room.</p>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          {muteRoom ? <BellOff className="h-4 w-4 text-muted-foreground" /> : <Bell className="h-4 w-4 text-primary" />}
+                          Mute Room
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Silence all notifications from this room. You can still read messages.
+                        </p>
+                      </div>
+                      <Switch checked={muteRoom} onCheckedChange={setMuteRoom} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          <MessageSquareOff className="h-4 w-4 text-primary" />
+                          Mentions Only
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Only get notified when someone mentions you directly.
+                        </p>
+                      </div>
+                      <Switch checked={mentionsOnly} onCheckedChange={setMentionsOnly} disabled={muteRoom} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          {soundAlerts ? <Volume2 className="h-4 w-4 text-primary" /> : <VolumeX className="h-4 w-4 text-muted-foreground" />}
+                          Sound Alerts
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Play a sound when new messages arrive in this room.
+                        </p>
+                      </div>
+                      <Switch checked={soundAlerts} onCheckedChange={setSoundAlerts} disabled={muteRoom} />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Moderation Tab */}
+              <TabsContent value="moderation" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 tracking-tight">Moderation</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Control content and behavior in your room.</p>
+
+                  <div className="space-y-4">
+                    <div className="p-5 border border-border rounded-xl bg-muted/30 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 pr-4">
+                          <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                            <Clock className="h-4 w-4 text-primary" />
+                            Slow Mode
+                          </Label>
+                          <p className="text-sm text-muted-foreground leading-relaxed">
+                            Limit how often members can send messages.
+                          </p>
+                        </div>
+                        <Switch checked={slowMode} onCheckedChange={setSlowMode} />
+                      </div>
+                      {slowMode && (
+                        <div className="flex items-center gap-3 pt-2 border-t border-border animate-in fade-in duration-200">
+                          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground shrink-0">Interval</Label>
+                          <Select value={String(slowModeInterval)} onValueChange={(v) => setSlowModeInterval(Number(v))}>
+                            <SelectTrigger className="w-40 h-9 bg-background border-border">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="5">5 seconds</SelectItem>
+                              <SelectItem value="10">10 seconds</SelectItem>
+                              <SelectItem value="30">30 seconds</SelectItem>
+                              <SelectItem value="60">1 minute</SelectItem>
+                              <SelectItem value="300">5 minutes</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          <ImageOff className="h-4 w-4 text-primary" />
+                          Allow Media Sharing
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Let members share images, videos, and files in this room.
+                        </p>
+                      </div>
+                      <Switch checked={allowMediaSharing} onCheckedChange={setAllowMediaSharing} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          <Link2Off className="h-4 w-4 text-primary" />
+                          Allow Links
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Let members share external links in messages.
+                        </p>
+                      </div>
+                      <Switch checked={allowLinks} onCheckedChange={setAllowLinks} />
+                    </div>
+
+                    <div className="flex items-center justify-between p-5 border border-border rounded-xl bg-muted/30">
+                      <div className="flex-1 pr-4">
+                        <Label className="flex items-center gap-2 text-base font-semibold mb-1 text-foreground">
+                          <Filter className="h-4 w-4 text-primary" />
+                          Profanity Filter
+                        </Label>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Automatically filter out inappropriate language.
+                        </p>
+                      </div>
+                      <Switch checked={profanityFilter} onCheckedChange={setProfanityFilter} />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Appearance Tab */}
+              <TabsContent value="appearance" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1 tracking-tight">Appearance</h3>
+                  <p className="text-sm text-muted-foreground mb-6">Customize how your room looks and feels.</p>
+
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Room Icon</Label>
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center text-2xl border border-border">
+                          {roomEmoji}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {['💬', '🎬', '🎥', '🎮', '🎵', '📸', '🎨', '🎭', '📝', '🔥', '⭐', '🚀'].map(emoji => (
+                            <button
+                              key={emoji}
+                              onClick={() => setRoomEmoji(emoji)}
+                              className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg hover:bg-primary/10 transition-colors border ${roomEmoji === emoji ? 'border-primary bg-primary/10' : 'border-transparent'
+                                }`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Pin className="h-3.5 w-3.5" />
+                        Pinned Message
+                      </Label>
+                      <Textarea
+                        value={pinnedMessage}
+                        onChange={e => setPinnedMessage(e.target.value)}
+                        className="min-h-[80px] resize-none bg-muted/30 border-border focus:bg-background transition-colors"
+                        placeholder="Pin an important message at the top of the room..."
+                        maxLength={300}
+                      />
+                      <p className="text-[10px] text-muted-foreground text-right">{pinnedMessage.length}/300</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                        <Users className="h-3.5 w-3.5" />
+                        Welcome Message
+                      </Label>
+                      <Textarea
+                        value={welcomeMessage}
+                        onChange={e => setWelcomeMessage(e.target.value)}
+                        className="min-h-[80px] resize-none bg-muted/30 border-border focus:bg-background transition-colors"
+                        placeholder="Message shown to new members when they join..."
+                        maxLength={300}
+                      />
+                      <p className="text-[10px] text-muted-foreground text-right">{welcomeMessage.length}/300</p>
                     </div>
                   </div>
                 </div>

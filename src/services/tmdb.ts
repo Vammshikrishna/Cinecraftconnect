@@ -1,6 +1,6 @@
 export const TMDB_API_KEY = '6f333da40e57ee8319f5f977a458ef98'; // Replace with your actual API key
 export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
+export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342'; // Optimized from w500 for faster 4G loading
 
 export interface TMDBContent {
     id: number;

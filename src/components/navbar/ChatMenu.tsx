@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
+import { getDisplayMessage } from '@/lib/chat-utils';
 
 const ChatMenu = () => {
   const { hasUnread } = useUnreadMessages();
@@ -25,10 +26,21 @@ const ChatMenu = () => {
     try {
       setLoading(true);
       const { data, error } = await supabase.rpc('get_unread_message_previews' as any);
-      console.log('UNREAD PREVIEWS RPC:', data, error);
+      // console.log('UNREAD PREVIEWS RPC:', data, error);
       if (!error && Array.isArray(data)) {
-        // De-duplicate by c_id if needed, though SQL does grouping
-        const uniqueData = Array.from(new Map(data.map(item => [item.c_id, item])).values());
+        // Map RPC column names to what the UI template expects
+        const mapped = data.map((item: any) => ({
+          c_id: item.context_id || item.c_id,
+          name: item.sender_name || item.name,
+          avatar: item.sender_avatar || item.avatar,
+          last_message: item.last_message,
+          unread_count: item.unread_count,
+          last_timestamp: item.last_timestamp,
+          chat_type: item.chat_type || item.type,
+        }));
+
+        // De-duplicate by c_id
+        const uniqueData = Array.from(new Map(mapped.map((item: any) => [item.c_id, item])).values());
         setPreviews(uniqueData);
       }
     } catch (e) {
@@ -114,7 +126,7 @@ const ChatMenu = () => {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground truncate font-medium">
-                      {preview.chat_type === 'project' ? `Project: ${preview.last_message}` : preview.last_message}
+                      {preview.chat_type === 'project' ? `Project: ${getDisplayMessage(preview.last_message)}` : getDisplayMessage(preview.last_message)}
                     </p>
                   </div>
                 </Link>

@@ -214,12 +214,22 @@ export function MarketplaceShareSheet({ isOpen, onOpenChange, listingId }: Marke
 
             if (target.type === 'user') {
                 const channelId = [user.id, target.id].sort().join('-');
-                await supabase.from('direct_messages' as any).insert({
+                const { error: sendError } = await supabase.from('direct_messages' as any).insert({
                     content: messageContent,
                     sender_id: user.id,
                     channel_id: channelId,
-                    recipient_id: target.id
+                    receiver_id: target.id
                 });
+
+                if (sendError && sendError.message?.includes('receiver_id')) {
+                    // Fallback to legacy recipient_id
+                    await supabase.from('direct_messages' as any).insert({
+                        content: messageContent,
+                        sender_id: user.id,
+                        channel_id: channelId,
+                        recipient_id: target.id
+                    });
+                }
             } else if (target.type === 'project') {
                 await supabase.from('project_messages' as any).insert({
                     project_id: target.id,

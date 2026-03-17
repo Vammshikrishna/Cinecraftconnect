@@ -33,7 +33,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useToast } from '@/hooks/use-toast';
-import { useProjectEncryption } from '@/hooks/useProjectEncryption';
 
 interface ProjectSpaceProps {
   projectId: string;
@@ -60,10 +59,7 @@ export const ProjectSpace = ({
   const [isResizing, setIsResizing] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Always call hook at top level
-  const { roomKey } = useProjectEncryption(resolvedSpaceId);
-
-  // Resolve Space ID (Handle Project ID vs Space ID mismatch)
+  // Scroll active tab into view
   useEffect(() => {
     let mounted = true;
     const resolveSpace = async () => {
@@ -318,23 +314,23 @@ export const ProjectSpace = ({
       case 'chat':
         return <ProjectChatInterface projectId={projectId} />;
       case 'tasks':
-        return <Tasks project_id={resolvedSpaceId} roomKey={roomKey} />; // Use resolved ID
+        return <Tasks project_id={resolvedSpaceId} />; // Use resolved ID
       case 'files':
         return <Files project_id={resolvedSpaceId} />; // Use resolved ID
       case 'call-sheet':
-        return <CallSheet project_id={resolvedSpaceId} roomKey={roomKey} />;
+        return <CallSheet project_id={resolvedSpaceId} />;
       case 'shot-list':
-        return <ShotList project_id={resolvedSpaceId} roomKey={roomKey} />;
+        return <ShotList project_id={resolvedSpaceId} />;
       case 'legal-docs':
         return <LegalDocs project_id={resolvedSpaceId} />;
       case 'budget-sched':
-        return <BudgetSched project_id={resolvedSpaceId} roomKey={roomKey} />;
+        return <BudgetSched project_id={resolvedSpaceId} />;
       case 'team':
-        return <Team project_id={projectId} roomKey={roomKey} />;
+        return <Team project_id={projectId} />;
       case 'applicants':
         return <ProjectApplicants projectId={projectId} />;
       case 'settings':
-        return <ProjectSettings projectId={projectId} roomKey={roomKey} />;
+        return <ProjectSettings projectId={projectId} />;
       default:
         return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
     }

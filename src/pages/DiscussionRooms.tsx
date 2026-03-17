@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Card, CardContent } from '@/components/ui/card';
+
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2 } from 'lucide-react';
+import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio } from 'lucide-react';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
@@ -40,6 +40,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const [rooms, setRooms] = useState<Room[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeCallRoomIds, setActiveCallRoomIds] = useState<Set<string>>(new Set());
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
 
@@ -86,6 +87,17 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
       setRooms(formattedRooms);
       setCategories((categoriesRes.data || []).map(c => ({ ...c, description: null, icon: null })));
+
+      // Fetch active calls for discussion rooms
+      const { data: activeCalls } = await supabase
+        .from('calls' as any)
+        .select('room_id')
+        .eq('room_type', 'discussion')
+        .eq('status', 'active');
+
+      if (activeCalls) {
+        setActiveCallRoomIds(new Set(activeCalls.map((c: any) => c.room_id)));
+      }
     } catch (error: any) {
       toast({ title: "Error fetching data", description: error.message, variant: "destructive" });
     } finally {
@@ -109,6 +121,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       .on('postgres_changes', { event: '*', schema: 'public', table: 'discussion_rooms' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_categories' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, debouncedRefresh)
       .subscribe();
 
     return () => {
@@ -226,7 +239,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-            {featuredRooms.map(room => <RoomCard key={room.id} room={room} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
+            {featuredRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
           </div>
         </section>
 
@@ -269,7 +282,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
+            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -283,7 +296,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 };
 
 // --- ROOM CARD COMPONENT ---
-const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; }) => {
+const RoomCard = ({ room, onJoin, onDelete, isActive }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; isActive?: boolean; }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -311,16 +324,41 @@ const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room)
     }
   };
 
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  };
+
+  const categoryName = room.room_categories?.name || 'General';
+
   return (
-    <Card className="glass-card hover-lift flex flex-col justify-between transform hover:-translate-y-1 transition-transform duration-300 overflow-hidden border-border">
-      <CardContent className="p-5">
-        <div className="flex flex-col justify-between gap-3 mb-3">
-          <div className="flex justify-between items-start w-full">
-            <h3 className="text-lg font-bold text-foreground line-clamp-2 break-all pr-2">{room.title}</h3>
+    <div className="group h-full">
+      <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-xl h-full flex flex-col">
+
+        {/* Subtle gradient top accent */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+        <div className="p-5 flex flex-col flex-1">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-3">
+            <h3 className="text-lg font-bold tracking-tight text-foreground line-clamp-2 break-all group-hover:text-primary transition-colors duration-300 pr-2 flex-1">
+              {room.title}
+            </h3>
+            {isActive && (
+              <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0 animate-pulse">
+                <Radio className="h-3 w-3" />
+                ACTIVE
+              </span>
+            )}
             {isOwner && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 -mr-2">
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0 -mt-0.5">
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -340,32 +378,65 @@ const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room)
               </DropdownMenu>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs font-bold uppercase px-2 py-1 rounded-md bg-primary/20 text-primary whitespace-nowrap">
-              {room.room_categories?.name || 'General'}
-            </div>
+
+          {/* Category & Time Row */}
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <Badge
+              variant="secondary"
+              className="bg-primary/10 text-primary hover:bg-primary/20 transition-opacity uppercase text-[10px] tracking-widest font-bold px-2.5 py-0.5 rounded-md border-0"
+            >
+              # {categoryName}
+            </Badge>
             {room.room_type === 'private' && (
-              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
-                <Lock className="h-3 w-3" />
+              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap text-[10px] tracking-wider font-bold uppercase bg-amber-500/10 text-amber-400 border-0 rounded-md px-2.5 py-0.5">
+                <Lock className="h-2.5 w-2.5" />
                 Private
               </Badge>
             )}
+            <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1 ml-auto">
+              {timeAgo(room.created_at)}
+            </span>
+          </div>
+
+          {/* Description */}
+          <p className="text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed mb-4 flex-1">
+            {room.description || 'No description available.'}
+          </p>
+
+          {/* Members */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
+            <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
+              <Users className="h-3 w-3 text-primary" />
+            </div>
+            <span className="font-medium">{room.member_count} {room.member_count === 1 ? 'member' : 'members'}</span>
+          </div>
+
+          {/* Tags */}
+          {room.tags && room.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              {room.tags.map(tag => (
+                <span
+                  key={tag}
+                  className="px-2.5 py-0.5 rounded-full bg-secondary/40 text-secondary-foreground/80 text-[11px] font-medium border border-border/30 hover:bg-secondary/60 transition-colors"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="mt-auto pt-4 border-t border-border/30">
+            <div className="flex gap-2">
+              <Button
+                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10"
+                onClick={() => onJoin(room)}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" /> Join Discussion Room
+              </Button>
+            </div>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground h-10 mb-4 overflow-hidden">{room.description || 'No description available.'}</p>
-        <div className="flex items-center text-sm text-muted-foreground mb-4">
-          <Users className="w-4 h-4 mr-2 text-primary" /> {room.member_count} active members
-        </div>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {room.tags?.map(tag => (
-            <span key={tag} className="text-xs glass-badge">{tag}</span>
-          ))}
-        </div>
-      </CardContent>
-      <div className="bg-card/50 p-4 border-t border-border">
-        <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" onClick={() => onJoin(room)}>
-          <MessageSquare className="w-4 h-4 mr-2" /> Join Chat
-        </Button>
       </div>
 
       {/* Delete Confirmation Dialog */}
@@ -388,7 +459,7 @@ const RoomCard = ({ room, onJoin, onDelete }: { room: Room; onJoin: (room: Room)
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
 

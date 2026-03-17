@@ -112,7 +112,7 @@ const DataSettings = () => {
                         </CardHeader>
                         <CardContent>
                             <p className="text-sm text-muted-foreground">
-                                We're committed to protecting your privacy. Your data is encrypted and stored securely.
+                                We're committed to protecting your privacy. Your data is stored securely with enterprise-grade infrastructure.
                                 We never sell your personal information to third parties.
                             </p>
                         </CardContent>

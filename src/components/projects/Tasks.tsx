@@ -4,8 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Loader2, Lock } from 'lucide-react';
-import { EncryptionService } from '@/services/EncryptionService';
+import { Plus, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Task {
@@ -16,63 +15,28 @@ interface Task {
 
 interface TasksProps {
     project_id: string;
-    roomKey: CryptoKey | null;
 }
 
-const Tasks = ({ project_id, roomKey }: TasksProps) => {
+const Tasks = ({ project_id }: TasksProps) => {
     const { data: rawTasks, error: realtimeError } = useRealtimeData<Task>('tasks', 'project_space_id', project_id);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [newTask, setNewTask] = useState('');
     const [loading, setLoading] = useState(false);
-    const [decrypting, setDecrypting] = useState(false);
+
     const [error, setError] = useState<Error | null>(null);
     const { toast } = useToast();
 
     // Decrypt tasks when raw data or key changes
     useEffect(() => {
-        const decryptTasks = async () => {
-            if (!rawTasks) {
-                setTasks([]);
-                return;
-            }
-
-            if (!roomKey) {
-                setTasks(rawTasks); // Show raw content if no key
-                return;
-            }
-
-            setDecrypting(true);
-            const processed = await Promise.all(rawTasks.map(async (t) => {
-                try {
-                    // Check if content looks encrypted (JSON with iv)
-                    if (t.title && t.title.startsWith('{') && t.title.includes('"iv"') && t.title.includes('"ciphertext"')) {
-                        const parsed = JSON.parse(t.title);
-                        const decrypted = await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey);
-                        return { ...t, title: decrypted || '⚠️ Decryption Failed' };
-                    }
-                    return t; // Not encrypted
-                } catch {
-                    return t; // Fallback
-                }
-            }));
-            setTasks(processed);
-            setDecrypting(false);
-        };
-
-        decryptTasks();
-    }, [rawTasks, roomKey]);
+        setTasks(rawTasks || []);
+    }, [rawTasks]);
 
     const handleAddTask = async () => {
         if (newTask.trim() === '') return;
         setLoading(true);
         setError(null);
         try {
-            let contentToSave = newTask.trim();
-
-            if (roomKey) {
-                const encrypted = await EncryptionService.encryptGroupMessage(contentToSave, roomKey);
-                contentToSave = JSON.stringify(encrypted);
-            }
+            const contentToSave = newTask.trim();
 
             const { error: insertError } = await supabase
                 .from('tasks')
@@ -117,13 +81,7 @@ const Tasks = ({ project_id, roomKey }: TasksProps) => {
         <div className="p-4 sm:p-6 max-w-3xl mx-auto w-full h-full overflow-y-auto">
             <div className="flex justify-between items-center mb-4 sm:mb-6">
                 <h1 className="text-xl sm:text-2xl font-bold">Tasks</h1>
-                {roomKey ? (
-                    <div className="text-xs flex items-center gap-1 text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
-                        <Lock className="w-3 h-3" /> E2EE Active
-                    </div>
-                ) : (
-                    <div className="text-xs text-muted-foreground">Standard Security</div>
-                )}
+                <div className="text-xs text-muted-foreground">Standard Security</div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6 sm:mb-8">
@@ -131,7 +89,7 @@ const Tasks = ({ project_id, roomKey }: TasksProps) => {
                     type="text"
                     value={newTask}
                     onChange={(e) => setNewTask(e.target.value)}
-                    placeholder={roomKey ? "Add an encrypted task..." : "Add a new task..."}
+                    placeholder="Add a new task..."
                     className="flex-1"
                     onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
                 />
@@ -148,9 +106,7 @@ const Tasks = ({ project_id, roomKey }: TasksProps) => {
             {error && <div className="text-destructive mb-4">{error.message}</div>}
 
             <div className="space-y-3">
-                {decrypting && tasks.length === 0 ? (
-                    <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                ) : tasks && tasks.length > 0 ? (
+                {tasks && tasks.length > 0 ? (
                     tasks.map(task => (
                         <div key={task.id} className="flex items-center gap-3 p-3 bg-card rounded-lg border border-border hover:bg-accent/50 transition-colors">
                             <Checkbox

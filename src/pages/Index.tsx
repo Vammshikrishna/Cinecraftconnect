@@ -4,11 +4,9 @@ import {
   Sparkles, Shield, Globe, Lock, Bell,
   ArrowRight
 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
 import Footer from '@/components/Footer';
 
 const Index = () => {
-  const { user } = useAuth();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
@@ -157,7 +155,7 @@ const Index = () => {
             <div className="grid md:grid-cols-3 gap-6 mt-12">
               {[
                 { icon: Lock, title: 'Private Projects', desc: 'Control who sees your work' },
-                { icon: Shield, title: 'Secure Data', desc: 'End-to-end encryption' },
+                { icon: Shield, title: 'Secure Data', desc: 'Encrypted infrastructure' },
                 { icon: Globe, title: 'Public Showcase', desc: 'Share when you\'re ready' }
               ].map((item, index) => (
                 <div key={index} className="glass-card-hover p-6 rounded-2xl text-center hover-lift">

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Conversation } from '@/types/chat';
+import { getDisplayMessage } from '@/lib/chat-utils';
 
 interface ChatListItemProps {
     conversation: Conversation;
@@ -22,6 +23,10 @@ const formatTimestamp = (timestamp: string) => {
     return `${days}d`;
 };
 
+const getDisplayContent = (content: string) => {
+    return getDisplayMessage(content);
+};
+
 export const ChatListItem = ({ conversation: convo }: ChatListItemProps) => (
     <Link to={`/messages/${convo.partner.id}`} className="block">
         <div className="flex items-center p-4 rounded-2xl hover:bg-muted/50 transition-colors duration-200 border-b border-border/50 last:border-0">
@@ -37,7 +42,7 @@ export const ChatListItem = ({ conversation: convo }: ChatListItemProps) => (
                     </p>
                 </div>
                 <div className="flex justify-between items-center">
-                    <p className="text-sm text-muted-foreground truncate pr-4">{convo.last_message.content}</p>
+                    <p className="text-sm text-muted-foreground truncate pr-4">{getDisplayContent(convo.last_message.content)}</p>
                     {convo.unread_count > 0 && (
                         <Badge className="bg-primary text-primary-foreground flex-shrink-0">{convo.unread_count}</Badge>
                     )}

@@ -6,9 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, FileText, Download, Trash2, Upload, Calendar, Lock } from 'lucide-react';
+import { Plus, FileText, Download, Trash2, Upload, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { EncryptionService } from '@/services/EncryptionService';
 
 interface CallSheet {
     id: string;
@@ -25,10 +24,9 @@ interface CallSheet {
 
 interface CallSheetProps {
     project_id: string;
-    roomKey: CryptoKey | null;
 }
 
-const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
+const CallSheet = ({ project_id }: CallSheetProps) => {
     const { data: rawCallSheets, error } = useRealtimeData<CallSheet>('call_sheets', 'project_id', project_id);
     const [callSheets, setCallSheets] = useState<CallSheet[]>([]);
     const { toast } = useToast();
@@ -62,49 +60,10 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
     };
 
     useEffect(() => {
-        const decryptData = async () => {
-            if (!rawCallSheets) {
-                setCallSheets([]);
-                return;
-            }
-            if (!roomKey) {
-                setCallSheets(rawCallSheets);
-                return;
-                return;
-            }
+        setCallSheets(rawCallSheets || []);
+    }, [rawCallSheets]);
 
-            const processed = await Promise.all(rawCallSheets.map(async (sheet) => {
-                const decryptField = async (text: string | null) => {
-                    if (!text || !text.startsWith('{')) return text;
-                    try {
-                        const parsed = JSON.parse(text);
-                        if (parsed.iv && parsed.ciphertext) {
-                            return await EncryptionService.decryptGroupMessage(parsed.ciphertext, parsed.iv, roomKey) || text;
-                        }
-                    } catch { } // Ignore parse errors
-                    return text;
-                };
 
-                return {
-                    ...sheet,
-                    location: await decryptField(sheet.location),
-                    director: await decryptField(sheet.director),
-                    producer: await decryptField(sheet.producer),
-                    notes: await decryptField(sheet.notes),
-                    director_phone: await decryptField(sheet.director_phone),
-                    producer_phone: await decryptField(sheet.producer_phone),
-                };
-            }));
-            setCallSheets(processed);
-        };
-        decryptData();
-    }, [rawCallSheets, roomKey]);
-
-    const encryptValue = async (val: string) => {
-        if (!roomKey || !val) return val;
-        const encrypted = await EncryptionService.encryptGroupMessage(val, roomKey);
-        return JSON.stringify(encrypted);
-    };
 
     const handleCreate = async () => {
         if (!date) {
@@ -115,22 +74,18 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
         setCreating(true);
 
         try {
-            const encryptedData = {
-                location: await encryptValue(location),
-                director: await encryptValue(director),
-                director_phone: await encryptValue(directorPhone),
-                producer: await encryptValue(producer),
-                producer_phone: await encryptValue(producerPhone),
-                notes: await encryptValue(notes),
-            };
-
             const { error: insertError } = await supabase
                 .from('call_sheets' as any)
                 .insert([{
                     project_id,
                     date,
                     call_time: callTime || null,
-                    ...encryptedData
+                    location,
+                    director,
+                    director_phone: directorPhone,
+                    producer,
+                    producer_phone: producerPhone,
+                    notes
                 }]);
 
             if (insertError) throw insertError;
@@ -162,8 +117,6 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
 
         try {
             // Upload file to storage
-            // Note: For full E2EE on files, we would use EncryptionService.encryptFile
-            // For now, let's keep basic upload but flag it in notes
             const fileExt = selectedFile.name.split('.').pop();
             const fileName = `${project_id}/${Date.now()}.${fileExt}`;
 
@@ -178,14 +131,13 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
                 .getPublicUrl(fileName);
 
             const notesContent = `Uploaded file: ${publicUrl}`;
-            const encryptedNotes = await encryptValue(notesContent);
 
             const { error: insertError } = await supabase
                 .from('call_sheets' as any)
                 .insert([{
                     project_id,
                     date,
-                    notes: encryptedNotes
+                    notes: notesContent
                 }]);
 
             if (insertError) throw insertError;
@@ -231,11 +183,6 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-3">
                     <h1 className="text-xl sm:text-2xl font-bold">Call Sheet</h1>
-                    {roomKey && (
-                        <div className="text-xs flex items-center gap-1 text-green-500 bg-green-500/10 px-2 py-1 rounded-full">
-                            <Lock className="w-3 h-3" /> E2EE
-                        </div>
-                    )}
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
@@ -244,8 +191,8 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
                         </DialogTrigger>
                         <DialogContent className="max-w-2xl w-[95vw] rounded-lg">
                             <DialogHeader>
-                                <DialogTitle>Create Encrypted Call Sheet</DialogTitle>
-                                <DialogDescription>Details will be encrypted end-to-end.</DialogDescription>
+                                <DialogTitle>Create Call Sheet</DialogTitle>
+                                <DialogDescription>Fill in the details below.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -287,7 +234,7 @@ const CallSheet = ({ project_id, roomKey }: CallSheetProps) => {
                                     <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={4} />
                                 </div>
                                 <Button onClick={handleCreate} disabled={creating} className="w-full">
-                                    {creating ? 'Encrypting & Saving...' : 'Create Call Sheet'}
+                                    {creating ? 'Saving...' : 'Create Call Sheet'}
                                 </Button>
                             </div>
                         </DialogContent>

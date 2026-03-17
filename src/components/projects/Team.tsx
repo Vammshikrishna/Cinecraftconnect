@@ -5,9 +5,8 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check, Lock } from 'lucide-react';
+import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { EncryptionService } from '@/services/EncryptionService';
 
 interface TeamMember {
     user_id: string;
@@ -23,15 +22,13 @@ interface SearchResult {
     full_name: string | null;
     avatar_url: string | null;
     bio: string | null;
-    public_key?: string | null;
 }
 
 interface TeamProps {
     project_id: string;
-    roomKey: CryptoKey | null;
 }
 
-const Team = ({ project_id, roomKey }: TeamProps) => {
+const Team = ({ project_id }: TeamProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
     const [members, setMembers] = useState<TeamMember[]>([]);
@@ -164,7 +161,7 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
             const { data, error } = await supabase
                 .from('profiles')
                 // @ts-ignore
-                .select('id, full_name, avatar_url, bio, public_key')
+                .select('id, full_name, avatar_url, bio')
                 .ilike('full_name', `%${searchQuery}%`)
                 .limit(10);
 
@@ -176,8 +173,7 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
                 id: u.id,
                 full_name: u.full_name,
                 avatar_url: u.avatar_url,
-                bio: u.bio,
-                public_key: u.public_key
+                bio: u.bio
             })) as SearchResult[] || [];
 
             setSearchResults(filtered);
@@ -200,26 +196,6 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
                 }]);
 
             if (error) throw error;
-
-            // 2. Share Key (E2EE)
-            if (roomKey && targetUser.public_key) {
-                console.log("Sharing key with new member...");
-                const encryptedKeyData = await EncryptionService.encryptRoomKeyForUser(roomKey, targetUser.public_key);
-
-                if (encryptedKeyData) {
-                    await supabase.from('project_keys' as any).insert({
-                        project_id: project_id,
-                        user_id: targetUser.id,
-                        encrypted_key: encryptedKeyData.encryptedKey,
-                        iv: encryptedKeyData.iv,
-                    });
-                    toast({ title: "Secure Access Granted", description: "Encrypted key shared with new member." });
-                } else {
-                    toast({ title: "Encryption Warning", description: "Could not encrypt key for user. They may not see history.", variant: "destructive" });
-                }
-            } else if (roomKey && !targetUser.public_key) {
-                toast({ title: "Security Notice", description: "User has no public key. They cannot view encrypted content.", variant: "destructive" });
-            }
 
             toast({ title: "Success", description: "Member added to project" });
             setSearchResults(searchResults.filter(u => u.id !== targetUser.id));
@@ -246,9 +222,6 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
 
             if (error) throw error;
 
-            // @ts-ignore
-            await supabase.from('project_keys' as any).delete().eq('project_id', project_id).eq('user_id', userId);
-
             toast({ title: "Success", description: "Member removed" });
             fetchMembers();
         } catch (error: any) {
@@ -266,7 +239,6 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-2">
                     <h1 className="text-xl sm:text-2xl font-bold">Team Management</h1>
-                    {roomKey && <Lock className="w-4 h-4 text-green-500" />}
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
                     <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
@@ -342,7 +314,6 @@ const Team = ({ project_id, roomKey }: TeamProps) => {
                                                     <div>
                                                         <p className="font-medium">{user.full_name || 'Unknown User'}</p>
                                                         {user.bio && <p className="text-sm text-muted-foreground line-clamp-1">{user.bio}</p>}
-                                                        {roomKey && !user.public_key && <p className="text-xs text-red-400">No Public Key</p>}
                                                     </div>
                                                 </div>
                                                 <Button size="sm" onClick={() => addMember(user)}>
