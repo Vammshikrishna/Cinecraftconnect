@@ -44,7 +44,8 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
         .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
 
       // Execute in parallel
-      const [profilesResult, connectionsResult] = await Promise.all([
+      const [currentUserResult, profilesResult, connectionsResult] = await Promise.all([
+        supabase.from('profiles').select('craft').eq('id', user.id).single(),
         profilesQuery.limit(50),
         connectionsQuery
       ]);
@@ -52,11 +53,12 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
       if (profilesResult.error) throw profilesResult.error;
       if (connectionsResult.error) throw connectionsResult.error;
 
+      const userCraft = currentUserResult.data?.craft || '';
       const profilesData = profilesResult.data || [];
       const connectionsData = connectionsResult.data || [];
 
       // Map connection status
-      return profilesData.map((profile) => {
+      const mappedUsers = profilesData.map((profile) => {
         const sentConnection = connectionsData.find(
           (c) => c.follower_id === user.id && c.following_id === profile.id
         );
@@ -80,6 +82,24 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
           connection_status,
           connection_id,
         };
+      });
+
+      // Recommendation Algorithm Sorting
+      return mappedUsers.sort((a, b) => {
+        const aConnected = a.connection_status !== 'none';
+        const bConnected = b.connection_status !== 'none';
+
+        // 1. Unconnected users first
+        if (!aConnected && bConnected) return -1;
+        if (aConnected && !bConnected) return 1;
+
+        // 2. Exact craft match next
+        const aCraftMatch = a.craft === userCraft;
+        const bCraftMatch = b.craft === userCraft;
+        if (aCraftMatch && !bCraftMatch) return -1;
+        if (!aCraftMatch && bCraftMatch) return 1;
+
+        return 0;
       });
     },
     enabled: !!user,

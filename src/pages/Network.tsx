@@ -1,24 +1,24 @@
-
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Search, Users, UserPlus, Clock, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Search, Users, UserPlus, Clock, MoreHorizontal, UserCheck, ChevronRight } from "lucide-react";
+import { useState, useMemo } from "react";
 import { useUsers } from "@/hooks/useUsers";
 import { useConnections } from "@/hooks/useConnections";
-import UserCard from "@/components/network/UserCard"; // Corrected import path
+import UserCard from "@/components/network/UserCard";
 import { ConnectionRequestCard } from "@/components/network/ConnectionRequestCard";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const Network = () => {
   const { user: currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [craftFilter, setCraftFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("discover");
+  const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
 
   const { users, loading: usersLoading } = useUsers(searchQuery, craftFilter);
   const {
@@ -33,345 +33,364 @@ const Network = () => {
     removeConnection,
   } = useConnections();
 
+  const filteredConnections = useMemo(() => {
+    if (!connectionsSearchQuery) return connections;
+    const query = connectionsSearchQuery.toLowerCase();
+    return connections.filter(conn => {
+      const profile = conn.follower_id === currentUser?.id ? conn.following_profile : conn.follower_profile;
+      if (!profile) return false;
+      return (
+        profile.full_name?.toLowerCase().includes(query) ||
+        profile.username?.toLowerCase().includes(query) ||
+        profile.craft?.toLowerCase().includes(query) ||
+        profile.location?.toLowerCase().includes(query)
+      );
+    });
+  }, [connections, connectionsSearchQuery, currentUser?.id]);
+
   const craftCategories = [
-    "All",
-    "Director",
-    "Cinematographer",
-    "Editor",
-    "Sound Designer",
-    "Production Designer",
-    "Screenwriter",
-    "Producer",
+    "All", "Director", "Cinematographer", "Editor", "Sound Designer", "Production Designer", "Screenwriter", "Producer",
   ];
 
   const getInitials = (name: string | null | undefined, fallback = 'U') => {
     if (!name || !name.trim()) return fallback;
-    const initials = name
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((word) => Array.from(word)[0].toUpperCase())
-      .join('')
-      .slice(0, 2);
-    return initials || fallback;
+    return name.trim().split(/\s+/).filter(Boolean).map((word) => Array.from(word)[0].toUpperCase()).join('').slice(0, 2) || fallback;
   };
 
   return (
     <div className="min-h-screen bg-background">
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Network</h1>
-            <p className="text-muted-foreground">
-              Connect with fellow filmmakers and industry professionals
-            </p>
-          </div>
+        
+        {/* Header Structure */}
+        <div className="mb-8">
+            <h1 className="text-3xl font-bold text-foreground mb-2">My Network</h1>
+            <p className="text-muted-foreground">Grow your professional network in the film and television industry.</p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
-          <TabsList className="grid grid-cols-3 mb-6 bg-card border border-border">
-            <TabsTrigger value="discover" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Users className="mr-2 h-4 w-4" />
-              Discover
-            </TabsTrigger>
-            <TabsTrigger value="requests" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground relative">
-              <UserPlus className="mr-2 h-4 w-4" />
-              Requests
-              {pendingRequests.length > 0 && (
-                <Badge variant="destructive" className="ml-2 h-5 min-w-[20px] px-1">
-                  {pendingRequests.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="connections" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Users className="mr-2 h-4 w-4" />
-              Connections
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="discover">
-            <Card className="mb-8 border-border bg-card">
-              <CardContent className="pt-6">
-                <div className="flex flex-col md:flex-row gap-4 mb-4">
-                  <div className="relative flex-grow">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-                    <Input
-                      placeholder="Search professionals by name or craft..."
-                      className="pl-10 bg-background border-border"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {craftCategories.map((category) => (
-                    <Button
-                      key={category}
-                      variant={craftFilter === category ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCraftFilter(category)}
-                      className={craftFilter === category ? "btn-primary" : "border-border"}
-                    >
-                      {category}
-                    </Button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {usersLoading ? (
-              <div className="flex justify-center items-center py-12">
-                <LoadingSpinner size="lg" />
+        <div className="flex flex-col lg:flex-row gap-8">
+          
+          {/* LEFT SIDEBAR - LinkedIn Style */}
+          <div className="w-full lg:w-1/4 shrink-0 space-y-6">
+            <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+              <div className="py-4 px-5 border-b border-border/50">
+                  <h2 className="font-semibold text-lg text-foreground">Manage my network</h2>
               </div>
-            ) : users.length === 0 ? (
-              <Card className="border-border bg-card">
-                <CardContent className="py-12 text-center">
-                  <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">No users found</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {users.map((user) => {
-                  // Find relevant connection IDs if they exist
-                  const sentReq = sentRequests.find(r => r.following_id === user.id);
-                  const connection = connections.find(c =>
-                    (c.follower_id === user.id && c.following_id === currentUser?.id) ||
-                    (c.following_id === user.id && c.follower_id === currentUser?.id)
-                  );
+              <div className="flex flex-col py-2">
+                <Button 
+                    variant="ghost" 
+                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'connections' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                    onClick={() => setActiveTab('connections')}
+                >
+                    <span className="flex items-center"><Users className="w-5 h-5 mr-3"/> Connections</span>
+                    <span className={activeTab === 'connections' ? 'text-primary' : 'text-muted-foreground'}>{connections.length}</span>
+                </Button>
 
-                  return (
-                    <UserCard
-                      key={user.id}
-                      user={{
-                        ...user,
-                        // Ensure status is accurately reflected from stats if not already present
-                        connection_status: sentReq ? 'pending_sent' :
-                          connection ? 'connected' :
-                            user.connection_status || 'none'
-                      }}
-                      onConnect={sendConnectionRequest}
-                      onAccept={(id) => {
-                        // Acceptance usually happens in Requests tab, but if we do it here, we need the request ID.
-                        // For "Discover" tab, "Accept" only shows if status is pending_received.
-                        // Let's implement looking up the request if needed.
-                        const req = pendingRequests.find(r => r.follower_id === id);
-                        if (req) acceptConnectionRequest(req.id);
-                      }}
-                      onCancelRequest={(id) => {
-                        const req = sentRequests.find(r => r.following_id === id);
-                        if (req) cancelConnectionRequest(req.id);
-                      }}
-                      onRemoveConnection={(id) => {
-                        const conn = connections.find(c =>
-                          c.follower_id === id || c.following_id === id
-                        );
-                        if (conn) removeConnection(conn.id);
-                      }}
-                    />
-                  );
-                })}
+                <Button 
+                    variant="ghost" 
+                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'requests' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                    onClick={() => setActiveTab('requests')}
+                >
+                    <span className="flex items-center"><UserPlus className="w-5 h-5 mr-3"/> Requests</span>
+                    {pendingRequests.length > 0 ? (
+                        <Badge variant="default" className="bg-primary text-primary-foreground">{pendingRequests.length}</Badge>
+                    ) : (
+                        <span className={activeTab === 'requests' ? 'text-primary' : 'text-muted-foreground'}>{pendingRequests.length}</span>
+                    )}
+                </Button>
+
+                <Button 
+                    variant="ghost" 
+                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'discover' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                    onClick={() => setActiveTab('discover')}
+                >
+                    <span className="flex items-center"><Search className="w-5 h-5 mr-3"/> Discover</span>
+                    <ChevronRight className="w-4 h-4 opacity-50" />
+                </Button>
+              </div>
+            </Card>
+          </div>
+
+          {/* MAIN CONTENT AREA */}
+          <div className="w-full lg:w-3/4 space-y-6">
+
+            {/* IF TAB IS DISCOVER */}
+            {activeTab === 'discover' && (
+              <>
+                {/* Mini pending requests banner if there are any */}
+                {pendingRequests.length > 0 && (
+                    <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm flex flex-col sm:flex-row items-center justify-between p-4 px-6 mb-6 group cursor-pointer hover:bg-card/60 transition-colors" onClick={() => setActiveTab('requests')}>
+                        <div className="flex items-center mb-0">
+                            <UserPlus className="w-6 h-6 text-primary mr-4" />
+                            <div>
+                                <h3 className="font-semibold text-lg">Invitations</h3>
+                                <p className="text-sm text-muted-foreground">You have {pendingRequests.length} new connection requests</p>
+                            </div>
+                        </div>
+                        <Button variant="ghost" className="text-primary hover:text-primary hover:bg-primary/10 mt-4 sm:mt-0">Manage all</Button>
+                    </Card>
+                )}
+
+                <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+                    <div className="p-4 sm:p-6 border-b border-border/50 bg-muted/10">
+                        <h2 className="text-xl font-semibold mb-4">People you may know</h2>
+                        <div className="flex flex-col md:flex-row gap-4 mb-4">
+                            <div className="relative flex-grow">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
+                                <Input
+                                    placeholder="Search by name, role, or craft..."
+                                    className="pl-10 bg-background/50 border-border/60 hover:border-primary/30 transition-colors focus-visible:ring-primary/20"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {craftCategories.map((category) => (
+                                <Button
+                                    key={category}
+                                    variant={craftFilter === category ? "default" : "outline"}
+                                    size="sm"
+                                    onClick={() => setCraftFilter(category)}
+                                    className={`rounded-full px-4 text-xs font-medium transition-all ${craftFilter === category ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20" : "bg-card/50 border-border/60 hover:border-primary/40 hover:bg-primary/5 text-muted-foreground"}`}
+                                >
+                                    {category}
+                                </Button>
+                            ))}
+                        </div>
+                    </div>
+                </Card>
+
+                {usersLoading ? (
+                  <div className="flex justify-center items-center py-20">
+                    <LoadingSpinner size="lg" />
+                  </div>
+                ) : users.length === 0 ? (
+                  <Card className="border-border/50 bg-card/20 shadow-none border-dashed p-12 text-center">
+                    <Search className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
+                    <p className="text-muted-foreground font-medium text-lg">No professionals found</p>
+                    <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your search criteria</p>
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                    {users.map((user) => {
+                      const sentReq = sentRequests.find(r => r.following_id === user.id);
+                      const connection = connections.find(c =>
+                        (c.follower_id === user.id && c.following_id === currentUser?.id) ||
+                        (c.following_id === user.id && c.follower_id === currentUser?.id)
+                      );
+
+                      return (
+                        <UserCard
+                          key={user.id}
+                          user={{
+                            ...user,
+                            connection_status: sentReq ? 'pending_sent' :
+                              connection ? 'connected' :
+                                user.connection_status || 'none'
+                          }}
+                          onConnect={sendConnectionRequest}
+                          onAccept={(id) => {
+                            const req = pendingRequests.find(r => r.follower_id === id);
+                            if (req) acceptConnectionRequest(req.id);
+                          }}
+                          onCancelRequest={(id) => {
+                            const req = sentRequests.find(r => r.following_id === id);
+                            if (req) cancelConnectionRequest(req.id);
+                          }}
+                          onRemoveConnection={(id) => {
+                            const conn = connections.find(c => c.follower_id === id || c.following_id === id);
+                            if (conn) removeConnection(conn.id);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* IF TAB IS REQUESTS */}
+            {activeTab === 'requests' && (
+              <div className="space-y-6">
+                <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm">
+                  <div className="p-5 border-b border-border/50 flex items-center justify-between">
+                      <h2 className="text-xl font-semibold flex items-center">
+                          Invitations
+                          {pendingRequests.length > 0 && (
+                          <Badge className="ml-3 bg-primary/20 text-primary border-none hover:bg-primary/20 text-sm">{pendingRequests.length}</Badge>
+                          )}
+                      </h2>
+                  </div>
+                  <CardContent className="p-0 sm:p-5">
+                    {connectionsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <LoadingSpinner />
+                      </div>
+                    ) : pendingRequests.length === 0 ? (
+                      <div className="text-center py-16">
+                        <UserCheck className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-1">No pending invitations</h3>
+                        <p className="text-muted-foreground text-sm">When someone invites you to connect, you'll find it here.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                        {pendingRequests.map((request) => (
+                          <ConnectionRequestCard
+                            key={request.id}
+                            connection={request}
+                            onAccept={acceptConnectionRequest}
+                            onReject={rejectConnectionRequest}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
+                  <div className="p-5 border-b border-border/50">
+                      <h2 className="text-xl font-semibold flex items-center">
+                          Sent Requests
+                          {sentRequests.length > 0 && (
+                          <span className="ml-3 text-muted-foreground font-normal text-sm">({sentRequests.length})</span>
+                          )}
+                      </h2>
+                  </div>
+                  <div className="p-0 sm:p-5">
+                    {connectionsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <LoadingSpinner />
+                      </div>
+                    ) : sentRequests.length === 0 ? (
+                      <div className="text-center py-16">
+                         <p className="text-muted-foreground">You have no pending sent requests.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {sentRequests.map((request) => {
+                          const profile = request.following_profile;
+                          if (!profile) return null;
+
+                          return (
+                            <div key={request.id} className="bg-card hover:bg-muted/10 transition-colors border border-border/60 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                  <Link to={`/profile/${profile.id}`} className="shrink-0 hover:opacity-80 transition-opacity">
+                                    <Avatar className="h-14 w-14 border border-border/50 shadow-sm">
+                                        <AvatarImage src={profile.avatar_url || ''} />
+                                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{getInitials(profile.full_name || profile.username)}</AvatarFallback>
+                                    </Avatar>
+                                  </Link>
+                                  <div className="flex flex-col">
+                                    <Link to={`/profile/${profile.id}`} className="hover:underline hover:text-primary transition-colors">
+                                      <p className="font-semibold text-foreground text-base">
+                                        {profile.full_name || profile.username}
+                                      </p>
+                                    </Link>
+                                    <p className="text-sm text-muted-foreground line-clamp-1">{profile.craft}</p>
+                                    <p className="text-xs text-muted-foreground/60 flex items-center gap-1 mt-0.5"><Clock className="w-3 h-3"/> Pending</p>
+                                  </div>
+                                </div>
+                                <Button size="sm" variant="outline" onClick={() => cancelConnectionRequest(request.id)} className="w-full md:w-auto hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30">
+                                  Withdraw
+                                </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </Card>
               </div>
             )}
-          </TabsContent>
 
-          <TabsContent value="requests">
-            <div className="space-y-6">
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-foreground">
-                    <UserPlus className="mr-2 h-5 w-5" />
-                    Pending Requests
-                    {pendingRequests.length > 0 && (
-                      <Badge variant="secondary" className="ml-2">
-                        {pendingRequests.length}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>People who want to connect with you</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {connectionsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <LoadingSpinner />
-                    </div>
-                  ) : pendingRequests.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">
-                      No pending connection requests
-                    </p>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {pendingRequests.map((request) => (
-                        <ConnectionRequestCard
-                          key={request.id}
-                          connection={request}
-                          onAccept={acceptConnectionRequest}
-                          onReject={rejectConnectionRequest}
+            {/* IF TAB IS CONNECTIONS */}
+            {activeTab === 'connections' && (
+              <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm min-h-[500px]">
+                <div className="p-5 border-b border-border/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h2 className="text-xl font-semibold flex items-center shrink-0">
+                        {connections.length} Connections
+                    </h2>
+                    <div className="relative w-full md:max-w-xs">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
+                        <Input 
+                            placeholder="Search by name, role, or location"
+                            className="pl-9 bg-background/50 border-border/60 hover:border-primary/30 transition-colors h-9 text-sm"
+                            value={connectionsSearchQuery}
+                            onChange={(e) => setConnectionsSearchQuery(e.target.value)}
                         />
-                      ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card className="border-border bg-card">
-                <CardHeader>
-                  <CardTitle className="flex items-center text-foreground">
-                    <Clock className="mr-2 h-5 w-5" />
-                    Sent Requests
-                    {sentRequests.length > 0 && (
-                      <Badge variant="secondary" className="ml-2">
-                        {sentRequests.length}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  <CardDescription>Requests you've sent to others</CardDescription>
-                </CardHeader>
-                <CardContent>
+                </div>
+                <div className="p-0 sm:p-5">
                   {connectionsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <LoadingSpinner />
+                    <div className="flex justify-center py-20">
+                      <LoadingSpinner size="lg" />
                     </div>
-                  ) : sentRequests.length === 0 ? (
-                    <p className="text-muted-foreground text-center py-8">
-                      No sent requests
-                    </p>
+                  ) : filteredConnections.length === 0 ? (
+                    <div className="text-center py-24">
+                      {connectionsSearchQuery ? (
+                         <>
+                            <Search className="h-16 w-16 mx-auto mb-4 text-muted-foreground/30" />
+                            <h3 className="text-lg font-medium text-foreground mb-2">No results for "{connectionsSearchQuery}"</h3>
+                            <p className="text-muted-foreground mb-6">Try searching for a different name, role, or location.</p>
+                            <Button variant="outline" onClick={() => setConnectionsSearchQuery("")}>Clear search</Button>
+                         </>
+                      ) : (
+                        <>
+                          <Users className="h-16 w-16 mx-auto mb-4 text-muted-foreground/30" />
+                          <h3 className="text-lg font-medium text-foreground mb-2">You don't have any connections yet</h3>
+                          <p className="text-muted-foreground mb-6 max-w-sm mx-auto">Build your network by connecting with peers, finding new colleagues, or reaching out to industry leaders.</p>
+                          <Button onClick={() => setActiveTab("discover")} className="bg-primary hover:bg-primary/90">
+                            Find people to connect with
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {sentRequests.map((request) => {
-                        const profile = request.following_profile;
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                      {filteredConnections.map((connection) => {
+                        const profile = connection.follower_id === currentUser?.id ? connection.following_profile : connection.follower_profile;
                         if (!profile) return null;
 
                         return (
-                          <div
-                            key={request.id}
-                            className="bg-card border border-border rounded-2xl p-4"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Link to={`/profile/${profile.id}`} className="hover:opacity-80 transition-opacity">
-                                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                                    {getInitials(profile.full_name || profile.username)}
-                                  </div>
+                          <div key={connection.id} className="bg-card border border-border/60 hover:border-primary/30 hover:shadow-md transition-all rounded-xl p-5 flex flex-col group">
+                              <div className="flex items-start gap-4 mb-5">
+                                <Link to={`/profile/${profile.id}`} className="shrink-0">
+                                    <Avatar className="h-14 w-14 border border-border/50 group-hover:border-primary/20 transition-colors shadow-sm">
+                                        <AvatarImage src={profile.avatar_url || ''} />
+                                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{getInitials(profile.full_name || profile.username)}</AvatarFallback>
+                                    </Avatar>
                                 </Link>
-                                <div>
-                                  <Link to={`/profile/${profile.id}`} className="hover:underline decoration-primary underline-offset-4">
-                                    <p className="font-semibold text-foreground">
+                                <div className="flex-1 min-w-0">
+                                  <Link to={`/profile/${profile.id}`} className="group-hover:text-primary transition-colors">
+                                    <p className="font-semibold text-foreground text-base truncate">
                                       {profile.full_name || profile.username}
                                     </p>
                                   </Link>
-                                  <p className="text-sm text-muted-foreground">{profile.craft}</p>
+                                  <p className="text-sm text-primary/80 truncate mb-1">{profile.craft}</p>
+                                  {profile.location && (
+                                    <p className="text-xs text-muted-foreground truncate">{profile.location}</p>
+                                  )}
                                 </div>
                               </div>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => cancelConnectionRequest(request.id)}
-                                className="border-border"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
+                              <div className="mt-auto pt-4 border-t border-border/40 flex gap-2">
+                                <Button asChild size="sm" variant="secondary" className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary font-semibold">
+                                  <Link to={`/messages/${profile.id}`}>Message</Link>
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => removeConnection(connection.id)} className="px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </Button>
+                              </div>
                           </div>
                         );
                       })}
                     </div>
                   )}
-                </CardContent>
+                </div>
               </Card>
-            </div>
-          </TabsContent>
+            )}
 
-          <TabsContent value="connections">
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center text-foreground">
-                  <Users className="mr-2 h-5 w-5" />
-                  Your Connections
-                  {connections.length > 0 && (
-                    <Badge variant="secondary" className="ml-2">
-                      {connections.length}
-                    </Badge>
-                  )}
-                </CardTitle>
-                <CardDescription>
-                  People you're connected with
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {connectionsLoading ? (
-                  <div className="flex justify-center py-8">
-                    <LoadingSpinner />
-                  </div>
-                ) : connections.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Users className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-muted-foreground mb-4">No connections yet</p>
-                    <Button onClick={() => setActiveTab("discover")} className="btn-primary">
-                      Discover Professionals
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {connections.map((connection) => {
-                      const profile =
-                        connection.follower_id === currentUser?.id
-                          ? connection.following_profile
-                          : connection.follower_profile;
-
-                      if (!profile) return null;
-
-                      return (
-                        <div
-                          key={connection.id}
-                          className="bg-card border border-border rounded-2xl p-4 flex flex-col justify-between"
-                        >
-                          <div>
-                            <div className="flex items-start gap-3 mb-3">
-                              <Link to={`/profile/${profile.id}`} className="hover:opacity-80 transition-opacity">
-                                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
-                                  {getInitials(profile.full_name || profile.username)}
-                                </div>
-                              </Link>
-                              <div className="flex-1 min-w-0">
-                                <Link to={`/profile/${profile.id}`} className="hover:underline decoration-primary underline-offset-4">
-                                  <p className="font-semibold text-foreground truncate">
-                                    {profile.full_name || profile.username}
-                                  </p>
-                                </Link>
-                                <p className="text-sm text-primary">{profile.craft}</p>
-                                {profile.location && (
-                                  <p className="text-xs text-muted-foreground">{profile.location}</p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => removeConnection(connection.id)}
-                              className="w-full border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
-                            >
-                              Remove
-                            </Button>
-                            <Button asChild size="sm" className="w-full btn-primary">
-                              <Link to={`/messages/${profile.id}`} className="flex items-center justify-center">
-                                <MessageCircle className="w-4 h-4 mr-2" />
-                                Message
-                              </Link>
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-        </Tabs>
+          </div>
+        </div>
       </main>
     </div>
   );

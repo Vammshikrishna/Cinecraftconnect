@@ -24,21 +24,59 @@ import { Plus, Briefcase } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { JobType, ExperienceLevel, JOB_TYPES, EXPERIENCE_LEVELS } from '@/types/jobs';
+import { useMyPages } from '@/hooks/useCompanyPages';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { User, Building2 } from 'lucide-react';
 
 interface JobCreationModalProps {
   onJobCreated?: () => void;
   defaultOpen?: boolean;
+  defaultPageId?: string;
+  triggerButton?: React.ReactNode;
+  jobToEdit?: any;
 }
 
-export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreationModalProps) => {
+export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPageId = "user", triggerButton, jobToEdit }: JobCreationModalProps) => {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { data: myPages } = useMyPages();
+  const [selectedPageId, setSelectedPageId] = useState<string | "user">(defaultPageId);
 
   useEffect(() => {
     if (defaultOpen) setIsOpen(true);
   }, [defaultOpen]);
+
+  useEffect(() => {
+    if (jobToEdit && isOpen) {
+      setJobData({
+        title: jobToEdit.title || '',
+        description: jobToEdit.description || '',
+        company: jobToEdit.company || jobToEdit.company_pages?.name || '',
+        location: jobToEdit.location || '',
+        type: jobToEdit.type || '' as JobType,
+        salary_min: jobToEdit.salary_min ? String(jobToEdit.salary_min) : '',
+        salary_max: jobToEdit.salary_max ? String(jobToEdit.salary_max) : '',
+        experience_level: jobToEdit.experience_level || '' as ExperienceLevel,
+        requirements: jobToEdit.requirements || ''
+      });
+      setSelectedPageId(jobToEdit.page_id || "user");
+    } else if (!jobToEdit && isOpen) {
+      setJobData({
+        title: '',
+        description: '',
+        company: '',
+        location: '',
+        type: '' as JobType,
+        salary_min: '',
+        salary_max: '',
+        experience_level: '' as ExperienceLevel,
+        requirements: ''
+      });
+      setSelectedPageId(defaultPageId);
+    }
+  }, [jobToEdit, isOpen, defaultPageId]);
 
   const [jobData, setJobData] = useState({
     title: '',
@@ -51,6 +89,18 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreat
     experience_level: '' as ExperienceLevel,
     requirements: ''
   });
+
+  const handlePageChange = (value: string) => {
+    setSelectedPageId(value);
+    if (value !== "user") {
+      const page = myPages?.find(p => p.id === value);
+      if (page) {
+        setJobData(prev => ({ ...prev, company: page.name }));
+      }
+    } else {
+      setJobData(prev => ({ ...prev, company: "" }));
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,40 +126,50 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreat
     setLoading(true);
 
     try {
-      const { error } = await supabase
-        .from('jobs')
-        .insert({
-          title: jobData.title,
-          description: jobData.description,
-          company: jobData.company,
-          location: jobData.location,
-          type: jobData.type || 'full-time',
-          salary_min: jobData.salary_min ? parseFloat(jobData.salary_min) : null,
-          salary_max: jobData.salary_max ? parseFloat(jobData.salary_max) : null,
-          experience_level: jobData.experience_level || 'mid',
-          requirements: jobData.requirements,
-          posted_by: user.id
-        });
+      const payload = {
+        title: jobData.title,
+        description: jobData.description,
+        company: jobData.company,
+        location: jobData.location,
+        type: jobData.type || 'full-time',
+        salary_min: jobData.salary_min ? parseFloat(jobData.salary_min) : null,
+        salary_max: jobData.salary_max ? parseFloat(jobData.salary_max) : null,
+        experience_level: jobData.experience_level || 'mid',
+        requirements: jobData.requirements,
+        posted_by: user.id,
+        page_id: selectedPageId === "user" ? null : selectedPageId
+      };
 
-      if (error) throw error;
+      if (jobToEdit?.id) {
+          const { error } = await supabase.from('jobs').update(payload).eq('id', jobToEdit.id);
+          if (error) throw error;
+          toast({
+            title: "Job Updated Successfully!",
+            description: "Your job posting has been updated.",
+          });
+      } else {
+          const { error } = await supabase.from('jobs').insert(payload);
+          if (error) throw error;
+          toast({
+            title: "Job Posted Successfully!",
+            description: "Your job posting has been created and is now live.",
+          });
+      }
 
-      toast({
-        title: "Job Posted Successfully!",
-        description: "Your job posting has been created and is now live.",
-      });
-
-      // Reset form
-      setJobData({
-        title: '',
-        description: '',
-        company: '',
-        location: '',
-        type: '' as JobType,
-        salary_min: '',
-        salary_max: '',
-        experience_level: '' as ExperienceLevel,
-        requirements: ''
-      });
+      // Reset form if it is a new post
+      if (!jobToEdit) {
+          setJobData({
+            title: '',
+            description: '',
+            company: '',
+            location: '',
+            type: '' as JobType,
+            salary_min: '',
+            salary_max: '',
+            experience_level: '' as ExperienceLevel,
+            requirements: ''
+          });
+      }
 
       setIsOpen(false);
       onJobCreated?.();
@@ -128,23 +188,56 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreat
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-primary hover:bg-primary/90">
-          <Plus className="mr-2 h-4 w-4" />
-          Post a Job
-        </Button>
+        {triggerButton || (
+          <Button className="bg-primary hover:bg-primary/90">
+            <Plus className="mr-2 h-4 w-4" />
+            Post a Job
+          </Button>
+        )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto w-[95vw]">
         <DialogHeader>
           <DialogTitle className="flex items-center">
             <Briefcase className="mr-2 h-5 w-5" />
-            Post New Job
+            {jobToEdit ? "Edit Job Posting" : "Post New Job"}
           </DialogTitle>
           <DialogDescription>
-            Create a new job posting to find the perfect candidates for your project.
+            {jobToEdit ? "Update the details of this job posting." : "Create a new job posting to find the perfect candidates for your project."}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2 pb-4 border-b border-white/10">
+            <Label className="text-muted-foreground text-xs uppercase font-bold tracking-wider">Post job as:</Label>
+            <Select value={selectedPageId} onValueChange={handlePageChange}>
+              <SelectTrigger className="w-full glass-card border-white/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="glass-card border-white/10">
+                <SelectItem value="user">
+                  <div className="flex items-center gap-2 py-1">
+                    <Avatar className="h-6 w-6">
+                      <AvatarImage src={user?.user_metadata?.avatar_url} />
+                      <AvatarFallback><User className="h-3 w-3" /></AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium text-foreground">Personal Identity</span>
+                  </div>
+                </SelectItem>
+                {(myPages || []).map(page => (
+                  <SelectItem key={page.id} value={page.id}>
+                    <div className="flex items-center gap-2 py-1 text-primary">
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={page.logo_url || ""} />
+                        <AvatarFallback><Building2 className="h-3 w-3" /></AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{page.name}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="title">Job Title *</Label>
@@ -262,7 +355,7 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false }: JobCreat
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Creating...' : 'Post Job'}
+              {loading ? (jobToEdit ? 'Updating...' : 'Creating...') : (jobToEdit ? 'Update Job' : 'Post Job')}
             </Button>
           </DialogFooter>
         </form>

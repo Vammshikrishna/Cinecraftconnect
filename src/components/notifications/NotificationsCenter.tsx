@@ -3,6 +3,7 @@ import { Bell, Check } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { getDisplayMessage } from '@/lib/chat-utils';
 
 const NotificationsCenter = () => {
   const [items, setItems] = useState<any[]>([]);
@@ -64,7 +65,7 @@ const NotificationsCenter = () => {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="font-medium">{n.title}</div>
-                    <div className="text-sm text-muted-foreground">{n.message}</div>
+                    <div className="text-sm text-muted-foreground">{getDisplayMessage(n.message)}</div>
                     {n.action_url && (
                       <a href={n.action_url} className="text-primary text-sm story-link mt-2 inline-block">Open</a>
                     )}

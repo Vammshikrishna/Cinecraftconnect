@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { MentionTextarea } from '@/components/ui/mention-textarea';
 import { Card } from '@/components/ui/card';
 import { PlusCircle } from 'lucide-react';
 import MediaUpload from '@/components/feed/MediaUpload';
@@ -10,24 +10,45 @@ import { useAuth } from '@/contexts/AuthContext';
 import { z } from 'zod';
 import { cacheManager } from '@/utils/caching';
 import { performanceMonitor } from '@/utils/monitoring';
+import { useMyPages } from '@/hooks/useCompanyPages';
+import { 
+    Select, 
+    SelectContent, 
+    SelectItem, 
+    SelectTrigger, 
+    SelectValue 
+} from '@/components/ui/select';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { User, Building2, Loader2 } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 const postSchema = z.object({
     content: z.string().trim().optional(),
     tags: z.array(z.string().max(50)).max(10).optional()
 });
 
+interface MediaItem {
+    url: string;
+    type: 'image' | 'video';
+}
+
 interface CreatePostWidgetProps {
     onPostCreated?: () => void;
     defaultExpanded?: boolean;
+    defaultPageId?: string;
 }
 
-export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: CreatePostWidgetProps) {
+export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defaultPageId = "user" }: CreatePostWidgetProps) {
     const { user } = useAuth();
     const { toast } = useToast();
+    const { data: myPages } = useMyPages();
     const [showCreatePost, setShowCreatePost] = useState(defaultExpanded);
     const [newPostContent, setNewPostContent] = useState("");
-    const [postMediaUrl, setPostMediaUrl] = useState("");
-    const [postMediaType, setPostMediaType] = useState<'image' | 'video' | null>(null);
+    const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+    const [mentionedIds, setMentionedIds] = useState<Set<string>>(new Set());
+    const [selectedPageId, setSelectedPageId] = useState<string | "user">(defaultPageId);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         if (defaultExpanded) {
@@ -35,13 +56,15 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
         }
     }, [defaultExpanded]);
 
-    const handleMediaUpload = (mediaUrl: string, mediaType: 'image' | 'video') => {
-        setPostMediaUrl(mediaUrl);
-        setPostMediaType(mediaType);
+    const handleMediaUpload = (items: MediaItem[]) => {
+        setMediaItems(items);
     };
 
     const createPost = async () => {
+        if ((!newPostContent.trim() && mediaItems.length === 0) || isSubmitting) return;
+
         try {
+            setIsSubmitting(true);
             const validation = postSchema.safeParse({
                 content: newPostContent,
                 tags: []
@@ -56,7 +79,7 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
                 return;
             }
 
-            if (!validation.data.content && !postMediaUrl) {
+            if (!validation.data.content && mediaItems.length === 0) {
                 toast({
                     title: "Empty post",
                     description: "Please add some text or attach media to create a post",
@@ -74,27 +97,45 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
                 return;
             }
 
-            const { error } = await supabase
+            const { data: postData, error } = await supabase
                 .from('posts')
                 .insert([
                     {
                         author_id: user.id,
+                        page_id: selectedPageId === "user" ? null : selectedPageId,
                         content: validation.data.content || "",
-                        media_url: postMediaUrl || null,
-                        media_type: postMediaType || null,
+                        media_url: mediaItems.length > 0 ? mediaItems[0].url : null,
+                        media_type: mediaItems.length > 0 ? mediaItems[0].type : null,
+                        media_items: mediaItems,
                         tags: validation.data.tags || [],
                     }
-                ]);
+                ])
+                .select()
+                .single();
 
             if (error) throw error;
 
+            // Handle Mentions Persistence
+            if (mentionedIds.size > 0 && postData) {
+              const mentionsToInsert = Array.from(mentionedIds).map(mentionedId => ({
+                mentioner_id: user.id,
+                mentioned_id: mentionedId,
+                related_id: postData.id,
+                related_type: 'post'
+              }));
+              
+              await supabase.from('mentions' as any).insert(mentionsToInsert as any);
+            }
+
             setNewPostContent("");
-            setPostMediaUrl("");
-            setPostMediaType(null);
+            setMediaItems([]);
+            setMentionedIds(new Set());
+            setSelectedPageId("user");
             setShowCreatePost(false);
 
             // Invalidate cache
             cacheManager.invalidate('posts-feed');
+            queryClient.invalidateQueries({ queryKey: ['home-feed-data'] });
 
             if (onPostCreated) {
                 onPostCreated();
@@ -113,6 +154,8 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
                 description: "Failed to create post",
                 variant: "destructive",
             });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -131,10 +174,44 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
                 </Button>
             ) : (
                 <div className="space-y-4">
-                    <Textarea
+                    <div className="flex items-center justify-between pb-2 border-b border-border">
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-muted-foreground mr-1">Post as:</span>
+                            <Select value={selectedPageId} onValueChange={setSelectedPageId}>
+                                <SelectTrigger className="w-[200px] h-9 glass-card-nav text-xs font-semibold">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="glass-card">
+                                    <SelectItem value="user">
+                                        <div className="flex items-center gap-2">
+                                            <Avatar className="h-5 w-5">
+                                                <AvatarImage src={user?.user_metadata?.avatar_url} />
+                                                <AvatarFallback><User className="h-3 w-3" /></AvatarFallback>
+                                            </Avatar>
+                                            <span>Personal</span>
+                                        </div>
+                                    </SelectItem>
+                                    {(myPages || []).map(page => (
+                                        <SelectItem key={page.id} value={page.id}>
+                                            <div className="flex items-center gap-2 text-primary">
+                                                <Avatar className="h-5 w-5">
+                                                    <AvatarImage src={page.logo_url || ""} />
+                                                    <AvatarFallback><Building2 className="h-3 w-3" /></AvatarFallback>
+                                                </Avatar>
+                                                <span>{page.name}</span>
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
+                    <MentionTextarea
                         placeholder="What's happening in your creative world?"
                         value={newPostContent}
                         onChange={(e) => setNewPostContent(e.target.value)}
+                        onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
                         className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
                         autoFocus
                     />
@@ -144,30 +221,25 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false }: Cre
                         disabled={false}
                     />
 
-                    <div className="flex justify-between items-center">
-                        <div className="text-xs text-muted-foreground">
-                            {postMediaUrl && `${postMediaType} attached`}
-                        </div>
-                        <div className="flex space-x-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => {
-                                    setShowCreatePost(false);
-                                    setNewPostContent("");
-                                    setPostMediaUrl("");
-                                    setPostMediaType(null);
-                                }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                onClick={createPost}
-                                disabled={!newPostContent.trim() && !postMediaUrl}
-                                className="bg-gradient-to-r from-primary to-primary/80"
-                            >
-                                Post
-                            </Button>
-                        </div>
+                    <div className="flex justify-end items-center space-x-2 pt-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setShowCreatePost(false);
+                                setNewPostContent("");
+                                setMediaItems([]);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={createPost}
+                            disabled={(!newPostContent.trim() && mediaItems.length === 0) || isSubmitting}
+                            className="bg-gradient-to-r from-primary to-primary/80 px-8"
+                        >
+                            {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            {isSubmitting ? "Posting..." : "Post"}
+                        </Button>
                     </div>
                 </div>
             )}

@@ -1,6 +1,6 @@
 // Mobile navigation bar for mobile view
 import { Link, useLocation } from "react-router-dom";
-import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star, MessageSquare } from "lucide-react";
+import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star, MessageSquare, FileStack } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -59,6 +59,7 @@ export function MobileNav() {
                   location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
                   location.pathname.startsWith("/vendors") ||
+                  location.pathname.startsWith("/pages") ||
                   location.pathname.startsWith("/messages") ||
                   location.pathname.startsWith("/dm")
                   ? "text-primary"
@@ -71,6 +72,7 @@ export function MobileNav() {
                   location.pathname.startsWith("/learn") ||
                   location.pathname.startsWith("/marketplace") ||
                   location.pathname.startsWith("/vendors") ||
+                  location.pathname.startsWith("/pages") ||
                   location.pathname.startsWith("/messages") ||
                   location.pathname.startsWith("/dm")) && (
                     <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
@@ -112,6 +114,12 @@ export function MobileNav() {
                 <Link to="/vendors" className="flex items-center gap-3 cursor-pointer">
                   <Building2 size={18} />
                   <span>Vendors</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to="/pages" className="flex items-center gap-3 cursor-pointer">
+                  <FileStack size={18} />
+                  <span>Pages</span>
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>

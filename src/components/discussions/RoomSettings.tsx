@@ -12,6 +12,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface RoomSettingsProps {
   roomId: string;
@@ -121,6 +132,24 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
     } finally {
       setSubmitting(false);
       setConfirmingDelete(false);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('room_messages')
+        .delete()
+        .eq('room_id', roomId);
+      
+      if (error) throw error;
+
+      toast({ title: "History Cleared", description: "All messages in this room have been removed." });
+    } catch (error: any) {
+      toast({ title: "Error", description: "Failed to clear history: " + error.message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -542,6 +571,41 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
                             </Button>
                           </div>
                         )}
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-destructive/10">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-red-100 dark:bg-red-900/20 rounded-full shrink-0">
+                          <Clock className="h-6 w-6 text-destructive" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-lg text-foreground mb-1">Clear Chat History</h4>
+                          <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                            Delete all messages in this room while keeping the room itself. This action cannot be undone.
+                          </p>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                                Clear History
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Clear chat history?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete all messages and media shared in this room. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleClearHistory} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                  Clear Everything
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </div>
                     </div>
                   </div>

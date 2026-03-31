@@ -48,6 +48,11 @@ const SearchPage = lazy(() => import("./pages/SearchPage"));
 const ContentDetailPage = lazy(() => import("./pages/ContentDetailPage"));
 const RatingsPage = lazy(() => import("./pages/RatingsPage"));
 const AnnouncementsPage = lazy(() => import("./pages/AnnouncementsPage"));
+const CompanyPages = lazy(() => import("./pages/CompanyPages"));
+const CompanyPageDetail = lazy(() => import("./pages/CompanyPageDetail"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const JobDetail = lazy(() => import("@/pages/JobDetail"));
+const PostDetailPage = lazy(() => import("@/pages/PostDetailPage"));
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -78,6 +83,7 @@ const App = () => {
             <Route path="/auth" element={<Auth />} />
             <Route path="/register" element={<Auth />} />
             <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+            <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
             <Route path="/profile/:userId" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
@@ -107,12 +113,16 @@ const App = () => {
             <Route path="/marketplace/:listingId" element={<ProtectedRoute><MarketplaceListingDetail /></ProtectedRoute>} />
             <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
             <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
+            <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
             <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
             <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
             <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
             <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
             <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
             <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+            <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
+            <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

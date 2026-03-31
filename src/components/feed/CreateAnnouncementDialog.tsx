@@ -12,9 +12,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { MentionTextarea } from '@/components/ui/mention-textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, User } from 'lucide-react';
+import { useMyPages } from '@/hooks/useCompanyPages';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 interface CreateAnnouncementDialogProps {
     open: boolean;
@@ -32,6 +35,10 @@ export const CreateAnnouncementDialog = ({
     const [isLoading, setIsLoading] = useState(false);
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
+    const [mentionedIds, setMentionedIds] = useState<Set<string>>(new Set());
+    const [selectedPageId, setSelectedPageId] = useState<string>('personal');
+    
+    const { data: myPages = [] } = useMyPages();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -49,16 +56,31 @@ export const CreateAnnouncementDialog = ({
         setIsLoading(true);
 
         try {
-            const { error } = await supabase
+            const { data: announcementData, error } = await supabase
                 .from('announcements')
                 .insert({
                     title: title.trim(),
                     content: content.trim(),
                     author_id: user.id,
+                    publisher_page_id: selectedPageId === 'personal' ? null : selectedPageId,
                     posted_at: new Date().toISOString()
-                });
+                })
+                .select()
+                .single();
 
             if (error) throw error;
+
+            // Handle Mentions Persistence for Announcements
+            if (mentionedIds.size > 0 && announcementData) {
+              const mentionsToInsert = Array.from(mentionedIds).map(mentionedId => ({
+                mentioner_id: user.id,
+                mentioned_id: mentionedId,
+                related_id: announcementData.id,
+                related_type: 'announcement'
+              }));
+              
+              await supabase.from('mentions' as any).insert(mentionsToInsert as any);
+            }
 
             toast({
                 title: "Success",
@@ -67,6 +89,7 @@ export const CreateAnnouncementDialog = ({
 
             setTitle('');
             setContent('');
+            setMentionedIds(new Set());
             onAnnouncementCreated();
             onOpenChange(false);
 
@@ -92,24 +115,64 @@ export const CreateAnnouncementDialog = ({
                     </DialogDescription>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4 py-4">
+                <form onSubmit={handleSubmit} className="space-y-6 pt-4">
+                    {myPages.length > 0 && (
+                        <div className="space-y-2">
+                            <Label className="text-sm font-semibold opacity-70">Post as...</Label>
+                            <Select value={selectedPageId} onValueChange={setSelectedPageId}>
+                                <SelectTrigger className="w-full h-14 bg-background/50 border-border/50">
+                                    <SelectValue placeholder="Choose identity" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="personal" className="py-3">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-primary/10 rounded-lg">
+                                                <User className="h-4 w-4 text-primary" />
+                                            </div>
+                                            <div className="flex flex-col items-start">
+                                                <span className="font-semibold text-sm">Personal Profile</span>
+                                                <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">Default</span>
+                                            </div>
+                                        </div>
+                                    </SelectItem>
+                                    {myPages.map(page => (
+                                        <SelectItem key={page.id} value={page.id} className="py-3">
+                                            <div className="flex items-center gap-3">
+                                                <Avatar className="h-8 w-8 border border-border">
+                                                    <AvatarImage src={page.logo_url || undefined} />
+                                                    <AvatarFallback>{page.name.charAt(0)}</AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex flex-col items-start">
+                                                    <span className="font-semibold text-sm">{page.name}</span>
+                                                    <span className="text-[10px] text-primary uppercase tracking-wider font-bold">Company Page</span>
+                                                </div>
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    )}
+
                     <div className="space-y-2">
-                        <Label htmlFor="title">Title</Label>
+                        <Label htmlFor="title" className="text-sm font-semibold opacity-70">Headline</Label>
                         <Input
                             id="title"
-                            placeholder="Announcement Title"
+                            placeholder="What's the big news?"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
+                            className="h-12 bg-background/50 border-border/50 focus:ring-primary/20"
                             disabled={isLoading}
                         />
                     </div>
                     <div className="space-y-2">
                         <Label htmlFor="content">Content</Label>
-                        <Textarea
+                        <MentionTextarea
                             id="content"
                             placeholder="Write your announcement details here..."
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
+                            onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
                             className="min-h-[150px]"
                             disabled={isLoading}
                         />

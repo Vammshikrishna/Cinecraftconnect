@@ -58,6 +58,8 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
   const { toast } = useToast();
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(profile.cover_image_url);
 
   const form = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),
@@ -84,6 +86,14 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       const file = e.target.files[0];
       setAvatarFile(file);
       setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
     }
   };
 
@@ -117,11 +127,26 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         avatar_url = urlData.publicUrl;
       }
 
+      let cover_image_url = profile.cover_image_url;
+      if (coverFile) {
+        const fileExt = coverFile.name.split('.').pop();
+        const fileName = `cover-${user.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('avatars') // Using avatars bucket for both for now, or consider a 'covers' bucket
+          .upload(fileName, coverFile);
+
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+          cover_image_url = urlData.publicUrl;
+        }
+      }
+
       // Optimized: No need to select() after update, we already have the data
       const updatedData = {
         ...profile,
         ...values,
         avatar_url,
+        cover_image_url,
         updated_at: new Date().toISOString(),
       };
 
@@ -130,6 +155,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         .update({
           ...values,
           avatar_url,
+          cover_image_url,
           updated_at: updatedData.updated_at,
         })
         .eq('id', user.id);
@@ -159,16 +185,30 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
 
   return (
     <Form {...form}>
-      <div className="flex flex-col items-center gap-4 mb-8">
-        <Avatar className="w-36 h-36 border-4 border-gray-800">
-          <AvatarImage src={avatarPreview || ''} alt="Avatar Preview" />
-          <AvatarFallback className="bg-gray-700 text-5xl">
-            {profile.username?.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div>
-          <FormLabel htmlFor="avatar-upload" className="cursor-pointer text-blue-500 hover:underline font-semibold">Change Photo</FormLabel>
-          <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+      <div className="space-y-6 mb-8">
+        <div className="relative group w-full h-40 rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+          {coverPreview ? (
+            <img src={coverPreview} alt="Cover Preview" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-600 italic">No banner set</div>
+          )}
+          <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+            <span className="font-semibold px-4 py-2 bg-black/60 rounded-lg">Change Banner</span>
+            <input type="file" accept="image/*" onChange={handleCoverChange} className="hidden" />
+          </label>
+        </div>
+
+        <div className="flex flex-col items-center gap-4 -mt-20 relative z-10">
+          <Avatar className="w-36 h-36 border-4 border-gray-800 shadow-xl">
+            <AvatarImage src={avatarPreview || ''} alt="Avatar Preview" />
+            <AvatarFallback className="bg-gray-700 text-5xl">
+              {profile.username?.charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="bg-black/60 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">
+            <FormLabel htmlFor="avatar-upload" className="cursor-pointer text-blue-400 hover:text-blue-300 font-semibold text-sm">Change Photo</FormLabel>
+            <Input id="avatar-upload" type="file" accept="image/*" onChange={handleAvatarChange} className="hidden" />
+          </div>
         </div>
       </div>
 

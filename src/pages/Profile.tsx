@@ -12,9 +12,10 @@ import { UserAnnouncements } from '@/components/profile/UserAnnouncements';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { UserProjects } from '@/components/profile/UserProjects';
 import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
-import EditProfileForm from '@/components/profile/EditProfileForm';
 import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
+import { SavedPosts } from '@/components/profile/SavedPosts';
+import EditProfileForm from '@/components/profile/EditProfileForm';
 import {
   Briefcase,
   MapPin,
@@ -162,14 +163,21 @@ const ProfilePage = () => {
       <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
       <div className="w-full max-w-4xl px-1 sm:px-4 relative z-10">
-        <header className="glass-card p-8 mb-8 relative overflow-hidden group">
-          {/* Decorative background gradient inside card */}
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
+        <header className="glass-card mb-8 relative overflow-hidden group pb-8">
+          {/* Cover Photo */}
+          <div className="h-32 md:h-48 w-full relative overflow-hidden">
+            {profile.cover_image_url ? (
+              <img src={profile.cover_image_url} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-primary/20 via-primary/5 to-secondary/10" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+          </div>
 
-          <div className="relative z-10 flex flex-col items-center text-center gap-6">
+          <div className="relative z-10 flex flex-col items-center text-center gap-4 -mt-16">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-full blur opacity-75 group-hover:opacity-100 transition duration-500"></div>
-              <Avatar className="w-32 h-32 border-4 border-background relative">
+              <Avatar className="w-32 h-32 border-4 border-background relative shadow-2xl">
                 <AvatarImage src={profile.avatar_url || ''} alt={profile.username || 'User'} className="object-cover" />
                 <AvatarFallback className="bg-muted text-4xl font-bold text-muted-foreground">
                   {profile.username?.charAt(0).toUpperCase()}
@@ -287,7 +295,7 @@ const ProfilePage = () => {
           <div className="relative w-full mb-6">
             <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide w-full md:justify-center" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               <TabsList className="flex h-auto bg-transparent gap-2 p-0">
-                {['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'skills', 'experience'].map((tab) => (
+                {['posts', 'saved', 'portfolio', 'projects', 'announcements', 'analytics', 'skills', 'experience'].map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}
@@ -312,6 +320,7 @@ const ProfilePage = () => {
           <TabsContent value="analytics" className="py-8"><RealTimeAnalytics /></TabsContent>
           <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
           <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
+          <TabsContent value="saved" className="py-8"><SavedPosts /></TabsContent>
         </Tabs>
       </div>
     </div>

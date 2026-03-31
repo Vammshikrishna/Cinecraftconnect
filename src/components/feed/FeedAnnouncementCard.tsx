@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FormattedText } from "@/components/ui/formatted-text";
+import { JobShareCard } from "@/components/chat/JobShareCard";
 
 
 interface FeedAnnouncementCardProps {
@@ -33,6 +35,13 @@ interface FeedAnnouncementCardProps {
         content: string;
         created_at: string;
         author_id?: string | null;
+        publisher_page_id?: string | null;
+        company_pages?: {
+            id: string;
+            name: string;
+            logo_url: string;
+            slug: string;
+        } | null;
     };
 }
 
@@ -47,7 +56,7 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [editTitle, setEditTitle] = useState(announcement.title);
-    const [editContent, setEditContent] = useState(announcement.content);
+    const [editContent, setEditContent] = useState(announcement.content.includes('JOB_SHARE::') ? announcement.content.split('JOB_SHARE::')[0].trim() : announcement.content);
 
     const isOwner = user?.id === announcement.author_id;
 
@@ -86,13 +95,21 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
     };
 
     const handleUpdate = async () => {
-        setIsSaving(true);
+        let finalContent = editContent.trim();
+        
+        // Preserve JOB_SHARE metadata if it exists
+        if (announcement.content.includes('JOB_SHARE::')) {
+            const parts = announcement.content.split('JOB_SHARE::');
+            const jsonPart = parts[parts.length - 1];
+            finalContent = finalContent ? `${finalContent}\n\nJOB_SHARE::${jsonPart}` : `JOB_SHARE::${jsonPart}`;
+        }
+
         try {
             const { error } = await supabase
                 .from('announcements')
                 .update({
                     title: editTitle,
-                    content: editContent
+                    content: finalContent
                 })
                 .eq('id', announcement.id);
 
@@ -137,8 +154,12 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
 
                         <div className="relative p-6 flex flex-col h-full z-10">
                             <div className="flex items-start gap-4 mb-4">
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 group-hover:scale-110 transition-transform duration-300">
-                                    <Megaphone className="h-6 w-6 fill-white/20" />
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
+                                    {announcement.company_pages?.logo_url ? (
+                                        <img src={announcement.company_pages.logo_url} alt={announcement.company_pages.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <Megaphone className="h-6 w-6 fill-white/20" />
+                                    )}
                                 </div>
 
                                 <div className="flex-1 min-w-0">
@@ -152,9 +173,29 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                                 </div>
                             </div>
 
-                            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-6 flex-1">
-                                {announcement.content}
-                            </p>
+                            {announcement.content.includes('JOB_SHARE::') ? (
+                                (() => {
+                                    try {
+                                        const parts = announcement.content.split('JOB_SHARE::');
+                                        const caption = parts[0].trim();
+                                        const jsonStr = parts[parts.length - 1].trim();
+                                        const shareData = JSON.parse(jsonStr);
+                                        return (
+                                            <div className="mb-6 space-y-3">
+                                                {caption && <FormattedText text={caption} className="text-sm text-muted-foreground leading-relaxed" />}
+                                                <JobShareCard {...shareData} />
+                                            </div>
+                                        );
+                                    } catch (e) {
+                                        return <FormattedText text={announcement.content} className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-6 flex-1" />;
+                                    }
+                                })()
+                            ) : (
+                                <FormattedText 
+                                    text={announcement.content} 
+                                    className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-6 flex-1" 
+                                />
+                            )}
 
                             {isOwner && (
                                 <div className="absolute top-4 right-4 z-20" onClick={(e) => e.stopPropagation()}>
@@ -179,8 +220,8 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                             )}
 
                             <div className="flex items-center justify-between pt-4 border-t border-black/5 dark:border-white/5 mt-auto">
-                                <span className="text-xs font-bold text-orange-500/80 uppercase tracking-wider bg-orange-500/10 px-2 py-1 rounded-md">
-                                    Announcement
+                                <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-1 rounded-md">
+                                    {announcement.company_pages?.name || 'Official Announcement'}
                                 </span>
 
                                 <Button
@@ -222,11 +263,26 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                     </DialogHeader>
 
                     <div className="p-6 pt-4 text-base leading-relaxed text-foreground/90 z-10 relative max-h-[60vh] overflow-y-auto custom-scrollbar">
-                        <div className="prose dark:prose-invert max-w-none">
-                            {announcement.content.split('\n').map((paragraph, idx) => (
-                                <p key={idx} className="mb-4 last:mb-0">{paragraph}</p>
-                            ))}
-                        </div>
+                        {announcement.content.includes('JOB_SHARE::') ? (
+                            (() => {
+                                try {
+                                    const parts = announcement.content.split('JOB_SHARE::');
+                                    const caption = parts[0].trim();
+                                    const jsonStr = parts[parts.length - 1].trim();
+                                    const shareData = JSON.parse(jsonStr);
+                                    return (
+                                        <div className="space-y-4">
+                                            {caption && <FormattedText text={caption} className="text-base leading-relaxed" />}
+                                            <JobShareCard {...shareData} />
+                                        </div>
+                                    );
+                                } catch (e) {
+                                    return <FormattedText text={announcement.content} className="text-base leading-relaxed" />;
+                                }
+                            })()
+                        ) : (
+                            <FormattedText text={announcement.content} className="text-base leading-relaxed" />
+                        )}
                     </div>
 
                     <DialogFooter className="p-6 pt-4 bg-muted/30 z-10 relative flex flex-row gap-2 justify-end">

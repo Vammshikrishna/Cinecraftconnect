@@ -15,6 +15,13 @@ interface Announcement {
     created_at: string;
     posted_at: string;
     author_id?: string | null;
+    publisher_page_id?: string | null;
+    company_pages?: {
+        id: string;
+        name: string;
+        logo_url: string;
+        slug: string;
+    } | null;
 }
 
 const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
@@ -36,17 +43,17 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
         try {
             const { data, error } = await supabase
                 .from('announcements')
-                .select('*')
+                .select('*, company_pages:publisher_page_id(id, name, logo_url, slug)')
                 .order('posted_at', { ascending: false });
 
             if (error) throw error;
 
-            const mappedData = (data || []).map(item => ({
+            const mappedData = (data as any || []).map((item: any) => ({
                 ...item,
                 created_at: item.posted_at || new Date().toISOString()
             }));
 
-            setAnnouncements(mappedData);
+            setAnnouncements(mappedData as Announcement[]);
         } catch (error) {
             console.error('Error fetching announcements:', error);
             toast({
@@ -117,7 +124,9 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                                     title: announcement.title,
                                     content: announcement.content,
                                     created_at: announcement.posted_at || announcement.created_at,
-                                    author_id: announcement.author_id
+                                    author_id: announcement.author_id,
+                                    publisher_page_id: announcement.publisher_page_id,
+                                    company_pages: announcement.company_pages
                                 }}
                             />
                         ))}

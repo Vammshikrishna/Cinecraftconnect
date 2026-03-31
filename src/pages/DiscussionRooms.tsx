@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio } from 'lucide-react';
+import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2 } from 'lucide-react';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
@@ -43,6 +44,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const [activeCallRoomIds, setActiveCallRoomIds] = useState<Set<string>>(new Set());
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Use URL as the source of truth for the selected room
   const activeRoom = useMemo(() => {
@@ -54,6 +56,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const [filterCategory, setFilterCategory] = useState('all');
   const [sortBy, setSortBy] = useState('popularity');
   const [isCreateModalOpen, setCreateModalOpen] = useState(openCreate);
+  const [roomToShare, setRoomToShare] = useState<Room | null>(null);
+  const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -196,10 +200,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   if (activeRoom) {
     return (
-      <div className="fixed inset-x-0 top-16 bottom-0 bg-background text-foreground flex flex-col z-40">
+      <div className="fixed inset-x-0 top-16 bottom-0 bg-background text-foreground flex flex-col z-40 pb-16 lg:pb-0">
         <DiscussionChatInterface
           roomId={activeRoom.id}
-          userRole="member"
+          userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
           roomTitle={activeRoom.title}
           roomDescription={activeRoom.description}
           categoryId={activeRoom.category_id}
@@ -239,7 +243,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-            {featuredRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
+            {featuredRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
           </div>
         </section>
 
@@ -282,7 +286,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} />)}
+            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -290,13 +294,31 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             </div>
           )}
         </section>
+
+        {/* Universal Share Sheet */}
+        {roomToShare && (
+           <UniversalShareSheet 
+            isOpen={isShareSheetOpen}
+            onOpenChange={setIsShareSheetOpen}
+            shareType="room"
+            shareId={roomToShare.id}
+            shareData={{
+              roomId: roomToShare.id,
+              title: roomToShare.title,
+              category: roomToShare.room_categories?.name,
+              memberCount: roomToShare.member_count,
+              roomType: roomToShare.room_type,
+              isActive: activeCallRoomIds.has(roomToShare.id)
+            }}
+           />
+        )}
       </div>
     </div>
   );
 };
 
 // --- ROOM CARD COMPONENT ---
-const RoomCard = ({ room, onJoin, onDelete, isActive }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; isActive?: boolean; }) => {
+const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; onShare?: (room: Room) => void; isActive?: boolean; }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -374,8 +396,22 @@ const RoomCard = ({ room, onJoin, onDelete, isActive }: { room: Room; onJoin: (r
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete Room
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onShare?.(room)} className="cursor-pointer">
+                    <Share2 className="h-4 w-4 mr-2" />
+                    Share Room
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            )}
+            {!isOwner && (
+               <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0 -mt-0.5"
+                onClick={(e) => { e.stopPropagation(); onShare?.(room); }}
+               >
+                 <Share2 className="h-4 w-4" />
+               </Button>
             )}
           </div>
 

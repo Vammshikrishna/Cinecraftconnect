@@ -297,12 +297,15 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         id: post.author_id,
                                         name: authorName,
                                         role: authorRole,
+                                        craft: author?.craft || undefined,
                                         initials: getInitials(authorName),
                                         avatar: post.profiles?.avatar_url || undefined
                                     }}
                                     timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                                    createdAt={post.created_at}
                                     content={post.content}
                                     mediaUrl={post.media_url}
+                                    mediaItems={post.media_items}
                                     hasImage={post.media_type === 'image'}
                                     hasVideo={post.media_type === 'video'}
                                     like_count={post.like_count || 0}
@@ -312,6 +315,16 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     onRate={onRate}
                                     currentUserLiked={feedData.likedPostIds.has(post.id)}
                                     onLikeToggle={handleLikeToggle}
+                                    pageInfo={post.company_pages}
+                                    onDelete={(postId) => {
+                                      queryClient.setQueryData(['home-feed-data', user?.id], (old: HomeFeedData | undefined) => {
+                                        if (!old) return old;
+                                        return {
+                                          ...old,
+                                          posts: old.posts.filter((p: any) => p.id !== postId)
+                                        };
+                                      });
+                                    }}
                                 />
                             </div>
 

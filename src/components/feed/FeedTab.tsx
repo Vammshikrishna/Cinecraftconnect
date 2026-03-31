@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "./PostCard";
@@ -35,8 +36,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
   const [newPostContent, setNewPostContent] = useState("");
   const [showCreatePost, setShowCreatePost] = useState(false);
-  const [postMediaUrl, setPostMediaUrl] = useState("");
-  const [postMediaType, setPostMediaType] = useState<'image' | 'video' | null>(null);
+  const [mediaItems, setMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
   const { toast } = useToast();
 
   // 1. Fetch Holistic Feed Data
@@ -47,8 +47,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   useEffect(() => {
     if (homeFeed?.posts) {
       setLocalPosts((prev) => {
-        // Merge logic if needed, but for now reset on fresh fetch to respect algorithm
-        // Or better, only set if empty to allow realtime additions.
         if (prev.length === 0) return homeFeed.posts;
         return prev;
       });
@@ -61,7 +59,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   // Real-time posts subscription
   useRealtimePosts({
     onInsert: (newPost) => {
-      // Add new items to top locally
       setLocalPosts(prev => [newPost as Post, ...prev]);
       cacheManager.invalidate('posts-feed');
       toast({
@@ -83,17 +80,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const feedItems = useMemo(() => {
     if (!localPosts.length) return [];
 
-    // 1. Identify Connection IDs
     const connectionIds = new Set<string>();
     connections.forEach(c => {
       connectionIds.add(c.follower_id);
       connectionIds.add(c.following_id);
     });
-
-    // 2. Sorting Algorithm
-    // - Bucket 1: My Posts & Connection Posts (Recent)
-    // - Bucket 2: Others (Sorted by "Smart" score: Likes + Recent?) -> For now, purely chronological for "Others" but we could sort by likes.
-    // User requested: "first user connectttion post and next smart in between the posts all the others"
 
     const myAndFriendsPosts = [];
     const otherPosts = [];
@@ -106,46 +97,21 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       }
     }
 
-    // Sort friends posts by date (newest first)
     myAndFriendsPosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    // Sort others by "Smart" (e.g. Likes count desc) to fulfill "Smart" requirement, then Date
-    // Actually user said "next smart... all others". Let's split others into "Top" and "Rest".
-    // Let's define "Smart" as posts with > 5 likes? Or just top 20%?
-    // Simplified: Sort 'otherPosts' by like_count descending first? 
-    // Let's keep strict chronological for 'others' to avoid stale old posts showing up just because they are popular, 
-    // unless we implement a real score ( (likes+1) / (age+2)^1.8 ).
-    // For now, let's just stick to: Connections -> Others.
-
-    // Check if user specifically requested "Smart" as a category. Yes.
-    // Let's try to bubble up high-engagement non-connection posts.
-    const smartThreshold = 2; // Arbitrary
+    const smartThreshold = 2;
     const smartPosts = otherPosts.filter(p => (p.like_count || 0) >= smartThreshold);
     const normalPosts = otherPosts.filter(p => (p.like_count || 0) < smartThreshold);
 
-    // Sort smart by likes
     smartPosts.sort((a, b) => (b.like_count || 0) - (a.like_count || 0));
-
-    // Sort normal by date
     normalPosts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    // Combined List
     const sortedPosts = [...myAndFriendsPosts, ...smartPosts, ...normalPosts];
-
-    // 3. Injection Logic
-    // "for 4 posts there need show [Block A] and for three post the [Block B]"
-    // Interpretation: 
-    // Index 0-3: Posts (4 posts)
-    // Index 4: Block A
-    // Index 4-6 (orig 4-6): Posts (3 posts) -> RANDOMIZE THESE
-    // Index 7: Block B
-    // Rest of posts
 
     const items = [];
     const blockAIndex = 4;
-    const blockBIndex = 7; // 4 + 3
+    const blockBIndex = 7;
 
-    // Helper: Random shuffle
     const shuffleArray = (array: any[]) => {
       for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -154,68 +120,37 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       return array;
     };
 
-    // Slice out the group between A and B
-    // Group 1: 0-4 (0, 1, 2, 3)
-    // Group 2: 4-7 (4, 5, 6) -> Shuffle this!
-    // Group 3: 7+
-
-    // We only shuffle if we have enough items to fill the gap.
     if (sortedPosts.length >= blockBIndex) {
       const group1 = sortedPosts.slice(0, blockAIndex);
       const group2 = sortedPosts.slice(blockAIndex, blockBIndex);
       const group3 = sortedPosts.slice(blockBIndex);
-
-      const shuffledGroup2 = shuffleArray([...group2]); // Shuffle copy
-
-      // Reassemble
+      const shuffledGroup2 = shuffleArray([...group2]);
       const finalPosts = [...group1, ...shuffledGroup2, ...group3];
 
       for (let i = 0; i < finalPosts.length; i++) {
         items.push({ type: 'post', data: finalPosts[i] });
-
-        if (i + 1 === blockAIndex) {
-          items.push({ type: 'blockA', data: null });
-        }
-        if (i + 1 === blockBIndex) {
-          items.push({ type: 'blockB', data: null });
-        }
+        if (i + 1 === blockAIndex) items.push({ type: 'blockA', data: null });
+        if (i + 1 === blockBIndex) items.push({ type: 'blockB', data: null });
       }
     } else {
-      // Fallback for short lists (no shuffle needed or possible)
       for (let i = 0; i < sortedPosts.length; i++) {
         items.push({ type: 'post', data: sortedPosts[i] });
-
-        if (i + 1 === blockAIndex) {
-          items.push({ type: 'blockA', data: null });
-        }
-        if (i + 1 === blockBIndex) {
-          items.push({ type: 'blockB', data: null });
-        }
+        if (i + 1 === blockAIndex) items.push({ type: 'blockA', data: null });
+        if (i + 1 === blockBIndex) items.push({ type: 'blockB', data: null });
       }
     }
 
-    // If we have fewer posts than the blocks, we might want to append widgets at the end?
-    // Current logic: only injects if we have enough posts. 
-    // If < 4 posts, Block A won't show.
-    // Let's force show them if we run out of posts? 
-    // User said "in between", implying separation. I'll leave as is.
-    // But realistically, if only 2 posts exist, we might still want to see Announcements.
-    // Let's ensure they appear at the end if not already injected.
-
     const hasBlockA = sortedPosts.length >= blockAIndex;
     const hasBlockB = sortedPosts.length >= blockBIndex;
-
     if (!hasBlockA) items.push({ type: 'blockA', data: null });
-    else if (!hasBlockB && sortedPosts.length >= blockAIndex) items.push({ type: 'blockB', data: null }); // Only if passed A but not B
+    else if (!hasBlockB && sortedPosts.length >= blockAIndex) items.push({ type: 'blockB', data: null });
 
     return items;
   }, [localPosts, connections, user?.id]);
 
 
-  // Create new post
   const createPost = async () => {
     try {
-      // Validate input
       const validation = postSchema.safeParse({
         content: newPostContent,
         tags: []
@@ -230,7 +165,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         return;
       }
 
-      if (!validation.data.content && !postMediaUrl) {
+      if (!validation.data.content && mediaItems.length === 0) {
         toast({
           title: "Empty post",
           description: "Please add some text or attach media to create a post",
@@ -239,7 +174,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         toast({
           title: "Authentication required",
@@ -255,8 +189,9 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
           {
             author_id: user.id,
             content: validation.data.content || "",
-            media_url: postMediaUrl || null,
-            media_type: postMediaType || null,
+            media_url: mediaItems.length > 0 ? mediaItems[0].url : null,
+            media_type: mediaItems.length > 0 ? mediaItems[0].type : null,
+            media_items: mediaItems,
             tags: validation.data.tags || [],
           }
         ]);
@@ -264,11 +199,9 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
       if (error) throw error;
 
       setNewPostContent("");
-      setPostMediaUrl("");
-      setPostMediaType(null);
+      setMediaItems([]);
       setShowCreatePost(false);
       cacheManager.invalidate('posts-feed');
-      // refetch(); // No need, realtime handles it
       toast({
         title: "Success",
         description: "Post created successfully!",
@@ -285,19 +218,15 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
     }
   };
 
-  const handleMediaUpload = (mediaUrl: string, mediaType: 'image' | 'video') => {
-    setPostMediaUrl(mediaUrl);
-    setPostMediaType(mediaType);
+  const handleMediaUpload = (items: { url: string, type: 'image' | 'video' }[]) => {
+    setMediaItems(items);
   };
 
   const handleLikeToggle = (postId: string, isLiked: boolean) => {
     setLikedPostIds(prev => {
       const newSet = new Set(prev);
-      if (isLiked) {
-        newSet.add(postId);
-      } else {
-        newSet.delete(postId);
-      }
+      if (isLiked) newSet.add(postId);
+      else newSet.delete(postId);
       return newSet;
     });
 
@@ -327,7 +256,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         onFilterChange={setActiveFilter}
       />
 
-      {/* Create Post Card */}
       <Card className="glass-card p-6">
         {!showCreatePost ? (
           <Button
@@ -354,25 +282,13 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
 
             <div className="flex justify-between items-center">
               <div className="text-xs text-muted-foreground">
-                {postMediaUrl && `${postMediaType} attached`}
+                {mediaItems.length > 0 && `${mediaItems.length} items attached`}
               </div>
               <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowCreatePost(false);
-                    setNewPostContent("");
-                    setPostMediaUrl("");
-                    setPostMediaType(null);
-                  }}
-                >
+                <Button variant="outline" onClick={() => { setShowCreatePost(false); setNewPostContent(""); setMediaItems([]); }}>
                   Cancel
                 </Button>
-                <Button
-                  onClick={createPost}
-                  disabled={!newPostContent.trim() && !postMediaUrl}
-                  className="bg-gradient-to-r from-primary to-primary/80"
-                >
+                <Button onClick={createPost} disabled={!newPostContent.trim() && mediaItems.length === 0} className="bg-gradient-to-r from-primary to-primary/80">
                   Post
                 </Button>
               </div>
@@ -381,7 +297,6 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         )}
       </Card>
 
-      {/* Posts Feed with Injected Blocks */}
       <div className="mt-6 space-y-6">
         {feedItems.length === 0 ? (
           <Card className="glass-card p-8 text-center">
@@ -416,16 +331,13 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 );
               }
 
-              // Post
               const post = item.data;
               if (!post) return null;
 
               const author = post.profiles;
               const authorName = author?.full_name || author?.username || 'Anonymous User';
               const authorRole = author?.craft || 'Creator';
-              const getInitials = (name: string) => {
-                return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
-              };
+              const getInitials = (name: string) => name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
 
               return (
                 <PostCard
@@ -435,10 +347,12 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     id: author?.id,
                     name: authorName,
                     role: authorRole,
+                    craft: author?.craft || undefined,
                     initials: getInitials(authorName),
                     avatar: author?.avatar_url || undefined
                   }}
-                  timeAgo={new Date(post.created_at).toLocaleDateString()}
+                  timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                  createdAt={post.created_at}
                   content={post.content}
                   hasImage={post.media_type === 'image'}
                   imageAlt={post.media_type === 'image' ? 'Post image' : undefined}
@@ -454,6 +368,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                   onRate={onRate}
                   onLikeToggle={handleLikeToggle}
                   mediaUrl={post.media_url}
+                  mediaItems={post.media_items}
+                  authorId={post.author_id}
+                  onDelete={(postId) => {
+                    setLocalPosts(prev => prev.filter(p => p.id !== postId));
+                  }}
                 />
               );
             })}

@@ -20,8 +20,10 @@ import {
   MoreVertical,
   Edit,
   Trash2,
-  Loader2
+  Loader2,
+  Share2
 } from 'lucide-react';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,6 +59,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [projectToShare, setProjectToShare] = useState<Project | null>(null);
+  const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { projects, loading, toggleBookmark, deleteProject, refetch } = useProjects(activeTab);
@@ -88,6 +92,12 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     const handleBookmarkClick = async (e: React.MouseEvent) => {
       e.stopPropagation();
       await handleBookmarkToggle(project, e);
+    };
+
+    const handleShareClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setProjectToShare(project);
+      setIsShareSheetOpen(true);
     };
 
     return (
@@ -141,8 +151,23 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
                   >
                     <Trash2 className="mr-2 h-4 w-4" /> Delete
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleShareClick}>
+                    <Share2 className="mr-2 h-4 w-4" /> Share
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+          )}
+
+          {/* Share Button for Non-Owners */}
+          {user?.id !== project.creator_id && (
+            <div className="absolute bottom-3 right-3 z-20" onClick={(e) => e.stopPropagation()}>
+               <button
+                onClick={handleShareClick}
+                className="p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 shadow-sm"
+               >
+                 <Share2 className="w-4 h-4 text-muted-foreground hover:text-primary transition-colors" />
+               </button>
             </div>
           )}
 
@@ -286,6 +311,23 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Universal Share Sheet */}
+        {projectToShare && (
+           <UniversalShareSheet 
+            isOpen={isShareSheetOpen}
+            onOpenChange={setIsShareSheetOpen}
+            shareType="project"
+            shareId={projectToShare.id}
+            shareData={{
+              projectId: projectToShare.id,
+              title: projectToShare.title,
+              description: projectToShare.description,
+              location: projectToShare.location,
+              status: projectToShare.status
+            }}
+           />
+        )}
       </div>
     </div>
   );
