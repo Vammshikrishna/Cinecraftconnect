@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom';
 import { Card } from '../ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
-import { MessageCircle, UserPlus, UserCheck, Clock } from 'lucide-react';
+import { Badge } from '../ui/badge';
+import { MessageCircle, UserPlus, UserCheck, Clock, MapPin, Briefcase } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface UserCardProps {
@@ -12,7 +13,8 @@ interface UserCardProps {
     full_name: string | null;
     username: string | null;
     craft: string | null;
-    // FINAL FIX: Made connection_status optional to match the UserProfile type.
+    location?: string | null;
+    bio?: string | null;
     connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
   };
   onConnect: (userId: string) => void;
@@ -23,6 +25,7 @@ interface UserCardProps {
 
 const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancelRequest, onRemoveConnection }) => {
   const { user: currentUser } = useAuth();
+  const status = user.connection_status || 'none';
 
   const getInitials = (name: string | null | undefined): string => {
     if (!name) return 'U';
@@ -32,74 +35,116 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
   const renderActionButton = () => {
     if (user.id === currentUser?.id) return null;
 
-    // FINAL FIX: Default to 'none' if the status is not provided.
-    const status = user.connection_status || 'none';
-
     switch (status) {
       case 'connected':
         return (
-          <Button size="sm" variant="outline" className="flex-1" onClick={() => onRemoveConnection && onRemoveConnection(user.id)}>
-            <UserCheck size={14} className="mr-1" /> Connected
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="w-full border-primary/20 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all text-xs font-semibold" 
+            onClick={() => onRemoveConnection && onRemoveConnection(user.id)}
+          >
+            <UserCheck size={14} className="mr-1.5" /> Disconnect
           </Button>
         );
       case 'pending_sent':
         return (
-          <Button size="sm" variant="outline" className="flex-1" onClick={() => onCancelRequest && onCancelRequest(user.id)}>
-            <Clock size={14} className="mr-1" /> Pending
+          <Button 
+            size="sm" 
+            variant="secondary" 
+            className="w-full bg-muted/50 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all text-xs font-semibold" 
+            onClick={() => onCancelRequest && onCancelRequest(user.id)}
+          >
+            <Clock size={14} className="mr-1.5" /> Withdraw
           </Button>
         );
       case 'pending_received':
         return (
-          <Button size="sm" variant="default" className="flex-1 hover-glow" onClick={() => onAccept(user.id)}>
-            <UserCheck size={14} className="mr-1" /> Accept
+          <Button 
+            size="sm" 
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-xs font-bold uppercase tracking-wider" 
+            onClick={() => onAccept(user.id)}
+          >
+            <UserCheck size={14} className="mr-1.5" /> Accept
           </Button>
         );
       default:
         return (
-          <Button size="sm" variant="default" className="flex-1 hover-glow" onClick={() => onConnect(user.id)}>
-            <UserPlus size={14} className="mr-1" /> Connect
+          <Button 
+            size="sm" 
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-xs font-bold uppercase tracking-wider" 
+            onClick={() => onConnect(user.id)}
+          >
+            <UserPlus size={14} className="mr-1.5" /> Connect
           </Button>
         );
     }
   };
 
   return (
-    <Card className="p-4 transition-all duration-300 hover:shadow-lg hover:shadow-primary/20">
-      <div className="flex items-center space-x-4">
-        <Link to={`/profile/${user.id}`} className="hover:opacity-80 transition-opacity">
-          <Avatar className="h-16 w-16">
-            <AvatarImage src={user.avatar_url || undefined} alt={user.full_name || 'User'} />
-            <AvatarFallback>{getInitials(user.full_name)}</AvatarFallback>
-          </Avatar>
-        </Link>
-        <div className="flex-1">
-          <div className="flex justify-between items-start">
-            <div>
-              <Link to={`/profile/${user.id}`} className="hover:underline decoration-primary underline-offset-4">
-                <h3 className="font-bold text-lg leading-tight">{user.full_name}</h3>
-              </Link>
-              <Link to={`/profile/${user.id}`} className="hover:text-primary transition-colors">
-                <p className="text-sm text-muted-foreground">@{user.username}</p>
-              </Link>
-              <p className="text-sm text-primary mt-1">{user.craft}</p>
-            </div>
-          </div>
+    <Card className="group relative overflow-hidden bg-card/40 backdrop-blur-sm border-border/50 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 hover:-translate-y-1 flex flex-col items-center text-center p-0">
+      {/* Decorative Background Header */}
+      <div className="w-full h-20 bg-gradient-to-br from-primary/20 via-primary/5 to-transparent border-b border-border/20 group-hover:from-primary/30 transition-all duration-500" />
+      
+      <div className="px-5 pb-6 pt-0 w-full flex flex-col items-center">
+        {/* Avatar Section */}
+        <div className="-mt-10 mb-3 relative">
+          <Link to={`/profile/${user.id}`} className="block relative group/avatar">
+            <div className="absolute inset-0 bg-primary/20 rounded-full blur-md opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-500" />
+            <Avatar className="h-20 w-20 border-4 border-background shadow-xl scale-100 group-hover/avatar:scale-105 transition-transform duration-500 ring-1 ring-border/50">
+              <AvatarImage src={user.avatar_url || undefined} alt={user.full_name || 'User'} className="object-cover" />
+              <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
+                {getInitials(user.full_name || user.username)}
+              </AvatarFallback>
+            </Avatar>
+          </Link>
         </div>
-      </div>
-      <div className="mt-4 flex gap-2 flex-wrap">
-        {renderActionButton()}
-        {(user.connection_status || 'none') === 'connected' && (
-          <Button
-            size="sm"
-            variant="default"
-            className="flex-1 min-w-[100px]"
-            asChild
-          >
-            <Link to={`/dm/${user.id}`}>
-              <MessageCircle size={14} className="mr-1" /> Message
-            </Link>
-          </Button>
-        )}
+
+        {/* Name and Info */}
+        <div className="space-y-1 mb-4 w-full">
+          <Link to={`/profile/${user.id}`} className="block">
+            <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-none pt-1">
+              {user.full_name || user.username}
+            </h3>
+            <p className="text-xs text-muted-foreground font-medium">@{user.username}</p>
+          </Link>
+          
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-2 py-0 h-5 text-[10px] font-bold uppercase tracking-tighter">
+              <Briefcase size={10} className="mr-1" /> {user.craft || 'Filmmaker'}
+            </Badge>
+          </div>
+
+          {user.location && (
+            <p className="text-[11px] text-muted-foreground/70 flex items-center justify-center mt-1 font-medium">
+              <MapPin size={10} className="mr-1 text-primary/50" /> {user.location}
+            </p>
+          )}
+
+          {user.bio && (
+            <p className="text-xs text-muted-foreground/80 line-clamp-2 mt-3 px-2 leading-relaxed h-8 overflow-hidden italic italic-serif">
+               "{user.bio}"
+            </p>
+          )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="grid grid-cols-1 w-full gap-2 mt-2">
+          {renderActionButton()}
+          
+          {status === 'connected' && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full bg-primary/5 hover:bg-primary/10 text-primary border border-primary/10 transition-all text-xs font-semibold"
+              asChild
+            >
+              <Link to={`/messages/${user.id}`}>
+                <MessageCircle size={14} className="mr-1.5" /> Message
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
     </Card>
   );

@@ -21,13 +21,14 @@ import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
+import { getDisplayMessage } from '@/lib/chat-utils';
 
 // Notification type (excluding new_message which is handled by MessageSquare icon)
 interface Notification {
   id: string;
   user_id: string;
   trigger_user_id?: string; // User who caused the notification
-  type: 'new_follower' | 'project_invite' | 'system_announcement' | 'generic';
+  type: 'new_follower' | 'project_invite' | 'system_announcement' | 'generic' | 'like' | 'comment' | 'job_application' | 'project_application';
   title: string;
   message: string;
   action_url: string | null;
@@ -40,8 +41,12 @@ const NotificationIcon = ({ type, is_read }: { type: Notification['type'], is_re
   const commonClass = `h-5 w-5 ${is_read ? 'text-muted-foreground' : 'text-primary'}`;
   switch (type) {
     case 'new_follower': return <UserPlus className={commonClass} />;
-    case 'project_invite': return <Briefcase className={commonClass} />;
+    case 'project_invite':
+    case 'project_application': return <Briefcase className={commonClass} />;
     case 'system_announcement': return <Megaphone className={commonClass} />;
+    case 'like': return <span className="text-pink-500">❤️</span>;
+    case 'comment': return <span className="text-blue-500">💬</span>;
+    case 'job_application': return <span className="text-emerald-500">💼</span>;
     default: return <Bell className={commonClass} />;
   }
 }
@@ -124,7 +129,7 @@ const NotificationsDropdown = () => {
         </div>
         <div className="flex-1">
           <p className={`text-sm font-semibold ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}>{notification.title}</p>
-          <p className="text-xs text-muted-foreground mt-1">{notification.message}</p>
+          <p className="text-xs text-muted-foreground mt-1">{getDisplayMessage(notification.message)}</p>
           <p className="text-xs text-muted-foreground/80 mt-1.5">
             {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
           </p>
@@ -164,6 +169,15 @@ const NotificationsDropdown = () => {
           ) : (
             notifications.map((n: Notification) => <NotificationItem key={n.id} notification={n} />)
           )}
+        </div>
+        <DropdownMenuSeparator />
+        <div className="p-2 border-t border-border/10 mt-auto">
+          <Link to="/notifications">
+            <Button variant="ghost" className="w-full justify-center group">
+              View All Notifications
+              <Bell className="ml-2 h-4 w-4 group-hover:scale-110 transition-transform" />
+            </Button>
+          </Link>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

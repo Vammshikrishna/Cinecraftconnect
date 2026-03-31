@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { MentionTextarea } from "@/components/ui/mention-textarea";
+import { FormattedText } from "@/components/ui/formatted-text";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +17,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [mentionedIds, setMentionedIds] = useState<Set<string>>(new Set());
 
   const fetchComments = useCallback(async () => {
     if (!postId) return;
@@ -72,17 +74,30 @@ const CommentSection = ({ postId }: { postId: string }) => {
     const originalNewComment = newComment;
     setNewComment("");
 
-    const { error } = await supabase.from("post_comments" as any).insert({
-      post_id: postId,
-      user_id: user.id,
-      content: originalNewComment.trim(),
-    });
-
-    if (error) {
-      toast({ title: "Failed to add comment", description: error.message, variant: "destructive" });
-      setComments((prev) => prev.filter((c) => c.id !== tempId)); // Rollback
-      setNewComment(originalNewComment);
-    }
+     const { data: commentData, error } = await supabase.from("post_comments" as any).insert({
+       post_id: postId,
+       user_id: user.id,
+       content: originalNewComment.trim(),
+     }).select().single();
+ 
+     if (error) {
+       toast({ title: "Failed to add comment", description: error.message, variant: "destructive" });
+       setComments((prev) => prev.filter((c) => c.id !== tempId)); // Rollback
+       setNewComment(originalNewComment);
+     } else {
+       // Handle Mentions Persistence for Comments
+       if (mentionedIds.size > 0 && commentData) {
+         const mentionsToInsert = Array.from(mentionedIds).map(mentionedId => ({
+           mentioner_id: user.id,
+           mentioned_id: mentionedId,
+           related_id: postId, // Link to the post
+           related_type: 'post'
+         }));
+         
+         await supabase.from('mentions' as any).insert(mentionsToInsert as any);
+       }
+       setMentionedIds(new Set());
+     }
   };
 
   const handleDeleteComment = async (commentId: string) => {
@@ -105,18 +120,22 @@ const CommentSection = ({ postId }: { postId: string }) => {
     <div className="mt-4">
       {user && (
         <form onSubmit={handleAddComment} className="flex items-center space-x-3 mb-6">
-          <Avatar className="h-9 w-9">
-            {user.user_metadata?.avatar_url && <AvatarImage src={user.user_metadata.avatar_url} />}
-            <AvatarFallback>{getInitials(user.user_metadata?.full_name || 'U')}</AvatarFallback>
-          </Avatar>
-          <Input
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            placeholder="Add a comment..."
-            className="flex-1"
-          />
-          <Button type="submit">Post</Button>
-        </form>
+           <Avatar className="h-9 w-9">
+             {user.user_metadata?.avatar_url && <AvatarImage src={user.user_metadata.avatar_url} />}
+             <AvatarFallback>{getInitials(user.user_metadata?.full_name || 'U')}</AvatarFallback>
+           </Avatar>
+           <div className="flex-1">
+             <MentionTextarea
+               value={newComment}
+               onChange={(e) => setNewComment(e.target.value)}
+               onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
+               placeholder="Add a comment..."
+               className="min-h-[40px] resize-none py-2"
+               rows={1}
+             />
+           </div>
+           <Button type="submit">Post</Button>
+         </form>
       )}
       <div className="space-y-4">
         {comments.map((comment) => {
@@ -138,11 +157,11 @@ const CommentSection = ({ postId }: { postId: string }) => {
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteComment(comment.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
-                  )}
-                </div>
-                <p className="text-sm">{comment.content}</p>
-              </div>
-            </div>
+                   )}
+                 </div>
+                 <FormattedText text={comment.content} className="text-sm text-foreground/90 whitespace-pre-wrap" />
+               </div>
+             </div>
           );
         })}
       </div>

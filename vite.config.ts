@@ -43,4 +43,7 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
   },
+  esbuild: mode === 'production' ? {
+    drop: ['console', 'debugger'],
+  } : undefined,
 }));

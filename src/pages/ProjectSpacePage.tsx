@@ -33,13 +33,16 @@ const ProjectSpacePage = () => {
           .from('projects')
           .select('id, title, description')
           .eq('id', projectId)
-          .single();
+          .maybeSingle();
 
         if (projectError) throw projectError;
+        
         if (!projectData) {
           setError('Project not found');
+          setLoading(false);
           return;
         }
+        
         setProject({ id: projectData.id, title: projectData.title, description: projectData.description });
 
       } catch (err) {

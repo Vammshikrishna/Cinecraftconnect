@@ -49,7 +49,6 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
     setLoading(true);
     try {
       const results: SearchResult[] = [];
-      const queryLower = query.toLowerCase();
 
       // Search Users
       if (filter === 'all' || filter === 'user') {
@@ -64,12 +63,11 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
       // Search Projects
       if (filter === 'all' || filter === 'project') {
         const { data } = await supabase
-          .from('project_spaces')
-          .select('id, name, status')
-          .ilike('name', `%${query}%`)
-          .eq('project_space_type', 'public')
+          .from('projects')
+          .select('id, title, status')
+          .ilike('title', `%${query}%`)
           .limit(5);
-        data?.forEach(p => results.push({ type: 'project', id: p.id, title: p.name, subtitle: `Status: ${p.status}`, icon: Briefcase }));
+        data?.forEach(p => results.push({ type: 'project', id: p.id, title: p.title, subtitle: `Status: ${p.status || 'Active'}`, icon: Briefcase }));
       }
 
       // Search Posts

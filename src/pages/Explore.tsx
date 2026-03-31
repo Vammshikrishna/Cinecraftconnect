@@ -1,7 +1,6 @@
 
 import { useState } from 'react';
-import { Search, Compass, TrendingUp } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Compass } from 'lucide-react';
 import AdvancedSearch from '@/components/search/AdvancedSearch';
 import SavedSearches from '@/components/search/SavedSearches';
 import SearchResults from '@/components/search/SearchResults';
@@ -31,17 +30,9 @@ const Explore = () => {
     sortBy: 'relevance',
     mediaOnly: false
   });
-  const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async (filters: SearchFilters) => {
-    setLoading(true);
     setActiveFilters(filters);
-    setHasSearched(true);
-    
-    setTimeout(() => {
-      setLoading(false);
-    }, 1000);
   };
 
   const handleSaveSearch = async (name: string, filters: SearchFilters) => {
@@ -74,7 +65,7 @@ const Explore = () => {
         search_type: 'global' as const,
       };
 
-      const { error } = await supabase.from('saved_searches').insert([payload as any]);
+      const { error } = await supabase.from('saved_searches').insert([payload]);
       if (error) throw error;
       toast({ title: 'Search saved', description: `Saved "${name}"` });
     } catch (e: any) {
@@ -105,33 +96,18 @@ const Explore = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-3 space-y-6">
-            <AdvancedSearch 
-              onSearch={handleSearch}
-              onSaveSearch={handleSaveSearch}
-            />
+          <div className="lg:col-span-3">
+            <div className="mb-10 animate-in slide-in-from-bottom duration-700">
+              <AdvancedSearch 
+                onSearch={handleSearch}
+                onSaveSearch={handleSaveSearch}
+              />
+            </div>
 
             <SearchResults
               query={activeFilters.query}
               filters={activeFilters}
-              loading={loading}
             />
-
-            {!hasSearched && !loading && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-primary" />
-                    Trending Now
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">Use the search above to discover content</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
           </div>
 
           <div className="space-y-6">

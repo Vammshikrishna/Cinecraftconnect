@@ -4,7 +4,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, Calendar, MapPin, Building2, ArrowLeft } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2, Calendar, MapPin, Building2, ArrowLeft, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 
@@ -24,6 +25,7 @@ const MyApplications = () => {
     const [applications, setApplications] = useState<Application[]>([]);
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
+    const { toast } = useToast();
 
     useEffect(() => {
         const fetchApplications = async () => {
@@ -56,6 +58,33 @@ const MyApplications = () => {
 
         fetchApplications();
     }, [user?.id]);
+
+    const handleWithdraw = async (applicationId: string) => {
+        if (!confirm("Are you sure you want to withdraw this application? This action cannot be undone.")) return;
+        
+        try {
+            const { error } = await supabase
+                .from('job_applications')
+                .delete()
+                .eq('id', applicationId);
+
+            if (error) throw error;
+
+            toast({
+                title: "Application Withdrawn",
+                description: "Your application has been successfully removed.",
+            });
+
+            setApplications(prev => prev.filter(app => app.id !== applicationId));
+        } catch (error) {
+            console.error('Error withdrawing application:', error);
+            toast({
+                title: "Error",
+                description: "Failed to withdraw application. Please try again.",
+                variant: "destructive"
+            });
+        }
+    };
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -111,9 +140,21 @@ const MyApplications = () => {
                                                 {app.jobs.company}
                                             </div>
                                         </div>
-                                        <Badge className={`${getStatusColor(app.status)} capitalize`}>
-                                            {app.status}
-                                        </Badge>
+                                        <div className="flex items-center gap-3">
+                                            <Badge className={`${getStatusColor(app.status)} capitalize`}>
+                                                {app.status}
+                                            </Badge>
+                                            {app.status === 'pending' && (
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                                    onClick={() => handleWithdraw(app.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardHeader>
                                 <CardContent>

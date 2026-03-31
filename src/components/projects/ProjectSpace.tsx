@@ -65,23 +65,19 @@ export const ProjectSpace = ({
     const resolveSpace = async () => {
       if (!projectId) return;
       try {
-        console.log("Resolving space for project:", projectId);
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('project_spaces')
           .select('id')
           .eq('project_id', projectId)
           .maybeSingle();
 
-        if (error) console.error("Error resolving space query:", error);
 
         if (mounted && data) {
-          console.log("Resolved space ID:", data.id);
           setResolvedSpaceId(data.id);
         } else if (mounted) {
-          console.warn("No space found for project:", projectId);
         }
       } catch (e) {
-        console.error("Error resolving space:", e);
+        // Silent catch for resolution
       }
     };
     resolveSpace();
@@ -140,25 +136,21 @@ export const ProjectSpace = ({
         if (active) setCheckingAccess(false);
         return;
       }
-      console.log(`Checking access for User: ${user.id}, Space: ${resolvedSpaceId}`);
 
       try {
         // 1. Check Membership
-        const { data: membership, error: memError } = await supabase
+        const { data: membership } = await supabase
           .from('project_space_members')
           .select('role')
           .eq('project_space_id', resolvedSpaceId)
           .eq('user_id', user.id)
           .maybeSingle();
 
-        if (!active) return; // Stop if unmounted or new effect fired
-
-        console.log("Membership check:", { membership, error: memError });
+        if (!active) return;
 
         if (membership) {
-          console.log("User is member. Role:", membership.role);
           setUserRole('member');
-          return; // Exit early
+          return;
         }
 
         // 2. Check Creator Status
@@ -171,13 +163,12 @@ export const ProjectSpace = ({
         if (!active) return;
 
         if (project && project.creator_id === user.id) {
-          console.log("User is creator.");
           setUserRole('creator');
           return;
         }
 
         // 3. Check for pending join request
-        const { data: request, error: reqError } = await supabase
+        const { data: request } = await supabase
           .from('project_space_join_requests' as any)
           .select('status, id')
           .eq('project_space_id', resolvedSpaceId)
@@ -186,21 +177,18 @@ export const ProjectSpace = ({
 
         if (!active) return;
 
-        console.log("Request check:", { request, error: reqError });
-
         if (request && (request as any).status === 'pending') {
           setRequestStatus('pending');
         } else if (request && (request as any).status === 'rejected') {
           setRequestStatus('rejected');
         } else if (request && (request as any).status === 'approved') {
-          console.log("Request is approved (But member check failed/empty).");
           setRequestStatus('approved');
         }
 
         setUserRole('guest');
 
       } catch (err) {
-        console.error('Error fetching user role:', err);
+        // Silent catch for access check
       } finally {
         if (active) setCheckingAccess(false);
       }
@@ -212,7 +200,6 @@ export const ProjectSpace = ({
   }, [projectId, resolvedSpaceId, user]);
 
   const handleJoinRequest = async () => {
-    console.log("Handle Join Request clicked", { user: user?.id, resolvedSpaceId });
 
     if (!user) {
       toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
@@ -232,7 +219,6 @@ export const ProjectSpace = ({
         });
 
       if (error) {
-        console.error("Join request specific error:", error);
         if (error.code === '23505') {
           // Duplicate request, treat as success/pending
           setRequestStatus('pending');
@@ -244,7 +230,6 @@ export const ProjectSpace = ({
       setRequestStatus('pending');
       toast({ title: "Request Sent", description: "Your request has been sent to the project owner." });
     } catch (e: any) {
-      console.error("Join request failed exception:", e);
       toast({ title: "Error", description: "Failed to send request: " + (e.message || "Unknown error"), variant: "destructive" });
     }
   };

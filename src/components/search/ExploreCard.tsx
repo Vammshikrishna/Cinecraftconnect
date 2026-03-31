@@ -101,7 +101,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                     <Link to={`/projects/${item.id}/space`} className={`block aspect-square relative group overflow-hidden ${getGradient(item.id)} p-4 flex flex-col items-center justify-center text-center`}>
                         <TypeIcon icon={Layers} />
                         <div className="bg-white/10 backdrop-blur-sm p-3 rounded-xl border border-white/20 w-full h-full flex flex-col items-center justify-center">
-                            <h3 className="text-white font-bold text-lg line-clamp-2 mb-2">{item.name}</h3>
+                            <h3 className="text-white font-bold text-lg line-clamp-2 mb-2">{item.title || item.name}</h3>
                             <p className="text-white/90 text-xs line-clamp-3">{item.description}</p>
                         </div>
                     </Link>

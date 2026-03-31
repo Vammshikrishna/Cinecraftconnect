@@ -207,8 +207,10 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_deleted: boolean | null
           read_at: string | null
           recipient_id: string
+          reply_to_id: string | null
           sender_id: string
         }
         Insert: {
@@ -216,8 +218,10 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           read_at?: string | null
           recipient_id: string
+          reply_to_id?: string | null
           sender_id: string
         }
         Update: {
@@ -225,8 +229,10 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           read_at?: string | null
           recipient_id?: string
+          reply_to_id?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -703,7 +709,9 @@ export type Database = {
           conversation_id: string
           created_at: string
           id: string
+          is_deleted: boolean | null
           is_read: boolean | null
+          reply_to_id: string | null
           sender_id: string
         }
         Insert: {
@@ -711,7 +719,9 @@ export type Database = {
           conversation_id: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           is_read?: boolean | null
+          reply_to_id?: string | null
           sender_id: string
         }
         Update: {
@@ -719,7 +729,9 @@ export type Database = {
           conversation_id?: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           is_read?: boolean | null
+          reply_to_id?: string | null
           sender_id?: string
         }
         Relationships: [
@@ -1114,7 +1126,9 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_deleted: boolean | null
           project_id: string
+          reply_to_id: string | null
           updated_at: string
           user_id: string
         }
@@ -1122,7 +1136,9 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           project_id: string
+          reply_to_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1130,7 +1146,9 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           project_id?: string
+          reply_to_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1245,24 +1263,30 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          is_deleted: boolean | null
           is_read: boolean | null
           project_space_id: string
+          reply_to_id: string | null
           user_id: string
         }
         Insert: {
           content: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           is_read?: boolean | null
           project_space_id: string
+          reply_to_id?: string | null
           user_id: string
         }
         Update: {
           content?: string
           created_at?: string
           id?: string
+          is_deleted?: boolean | null
           is_read?: boolean | null
           project_space_id?: string
+          reply_to_id?: string | null
           user_id?: string
         }
         Relationships: []
@@ -1857,6 +1881,36 @@ export type Database = {
           updated_at?: string | null
           verification_date?: string | null
           website?: string | null
+        }
+        Relationships: []
+      }
+      saved_searches: {
+        Row: {
+          created_at: string
+          id: string
+          search_filters: Json
+          search_name: string
+          search_query: string
+          search_type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          search_filters: Json
+          search_name: string
+          search_query: string
+          search_type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          search_filters?: Json
+          search_name?: string
+          search_query?: string
+          search_type?: string
+          user_id?: string
         }
         Relationships: []
       }

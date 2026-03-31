@@ -32,7 +32,7 @@ export const useHomeFeed = () => {
             // Fallback to parallel fetching
             const postsPromise = supabase
                 .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
+                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft), company_pages:page_id(id, name, logo_url, slug)')
                 .order('created_at', { ascending: false })
                 .limit(20);
 

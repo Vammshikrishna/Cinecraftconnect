@@ -21,6 +21,16 @@ export interface Job {
         avatar_url: string | null;
         username: string | null;
     };
+    company_pages?: {
+        id: string;
+        name: string;
+        logo_url: string | null;
+        slug: string;
+        tagline?: string | null;
+        description?: string | null;
+        headquarters?: string | null;
+        company_size?: string | null;
+    };
 }
 
 export const JOB_TYPES: JobType[] = [

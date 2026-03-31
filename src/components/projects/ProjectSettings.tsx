@@ -157,6 +157,40 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
         }
     };
 
+    const handleClearChatHistory = async () => {
+        setSaving(true);
+        try {
+            const { data: spaces } = await supabase
+                .from('project_spaces')
+                .select('id')
+                .eq('project_id', projectId);
+            
+            if (spaces && spaces.length > 0) {
+                const spaceIds = spaces.map(s => s.id);
+                const { error } = await supabase
+                    .from('project_space_messages' as any)
+                    .delete()
+                    .in('project_space_id', spaceIds);
+                
+                if (error) throw error;
+            }
+
+            toast({
+                title: "Success",
+                description: "All project chat history has been cleared",
+            });
+        } catch (error: any) {
+            console.error('Error clearing chat history:', error);
+            toast({
+                title: "Error",
+                description: "Failed to clear chat history",
+                variant: "destructive"
+            });
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (loading) {
         return <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
     }
@@ -353,6 +387,37 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                                         <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                                             Delete Project
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-between p-4 border border-destructive/20 rounded-lg bg-destructive/5">
+                            <div>
+                                <h4 className="font-medium text-destructive text-base">Clear Chat History</h4>
+                                <p className="text-sm text-muted-foreground">
+                                    Permanently delete all messages in this project's chats.
+                                </p>
+                            </div>
+
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors" disabled={saving}>
+                                        Clear History
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This will permanently delete all messages across all project spaces. This action cannot be undone.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleClearChatHistory} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                                            Clear Everything
                                         </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>

@@ -12,7 +12,7 @@ import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 // Basic type definitions for search results
 interface ProjectResult {
     id: string;
-    name: string;
+    title: string;
     description: string;
     type: 'project';
 }
@@ -102,7 +102,7 @@ const SearchPage = () => {
         try {
             // Fetch a mix of recent content for the explore page
             const results = await Promise.allSettled([
-                supabase.from('project_spaces').select('id, name, description').limit(6),
+                supabase.from('projects').select('id, title, description').limit(6),
                 supabase.from('discussion_rooms').select('id, title, description').limit(6),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name)').limit(18),
                 supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(6),
@@ -130,7 +130,7 @@ const SearchPage = () => {
             const vendors = getData(results[3]);
             const marketplace = getData(results[4]);
 
-            if (projects) items.push(...projects.map((p: any) => ({ ...p, description: p.description || undefined, type: 'project' as const })));
+            if (projects) items.push(...projects.map((p: any) => ({ ...p, title: p.title, name: p.title, description: p.description || undefined, type: 'project' as const })));
             if (discussions) items.push(...discussions.map((d: any) => ({ ...d, description: d.description || undefined, type: 'discussion' as const })));
             if (posts) items.push(...posts.map((p: any) => ({
                 id: p.id,
@@ -162,9 +162,9 @@ const SearchPage = () => {
         setLoading(true);
         try {
             const results = await Promise.allSettled([
-                supabase.from('project_spaces')
-                    .select('id, name, description')
-                    .or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
+                supabase.from('projects')
+                    .select('id, title, description')
+                    .or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
                     .limit(5),
                 supabase.from('profiles')
                     .select('id, username, full_name, avatar_url')
@@ -221,7 +221,8 @@ const SearchPage = () => {
 
             const projects = (projectsData || []).map((p: any) => ({
                 id: p.id,
-                name: p.name,
+                name: p.title,
+                title: p.title,
                 description: p.description || '',
                 type: 'project' as const
             }));
@@ -405,7 +406,7 @@ const SearchPage = () => {
                                                     <Search size={24} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="font-semibold text-lg">{result.name}</h3>
+                                                    <h3 className="font-semibold text-lg">{result.title}</h3>
                                                     <p className="text-muted-foreground line-clamp-2">{result.description}</p>
                                                     <span className="inline-block mt-2 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">Project</span>
                                                 </div>

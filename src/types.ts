@@ -4,6 +4,7 @@ export interface Post {
   content: string;
   media_url?: string;
   media_type?: string;
+  media_items?: { url: string; type: "image" | "video" }[];
   has_ai_generated: boolean;
   tags?: string[];
   like_count: number;
@@ -16,6 +17,12 @@ export interface Post {
     username: string | null;
     avatar_url: string | null;
     craft: string | null;
+  };
+  page_id?: string;
+  company_pages?: {
+    name: string;
+    logo_url: string | null;
+    slug: string;
   };
 }
 
@@ -34,6 +41,7 @@ export interface Comment {
 export interface Profile {
   id: string;
   avatar_url: string | null;
+  cover_image_url: string | null;
   bio: string | null;
   craft: string | null;
   experience: string | null;

@@ -12,7 +12,7 @@ interface Call {
     started_by: string;
 }
 
-export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
+export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: string) => {
     const { user } = useAuth();
     const [activeCall, setActiveCall] = useState<Call | null>(null);
     const [loading, setLoading] = useState(false);
@@ -75,12 +75,21 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
                 return existingCall;
             }
 
-            // Generate unique room name for Native Call
+            // Safety: ensure no other calls are marked active (cleanup)
+            await supabase
+                .from('calls' as any)
+                .update({ status: 'ended', ended_at: new Date().toISOString() })
+                .eq('room_type', roomType)
+                .eq('room_id', roomId)
+                .eq('status', 'active');
+
+            // Generate unique room name for LiveKit
             const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substr(2);
             const roomName = `CineCraft_${roomType}_${roomId}_${uniqueSuffix}`;
-            const nativeUrl = `native://${roomName}`;
+            // We use the same name for URL as LiveKit URLs are handled by the server URL + token
+            const roomUrl = roomName;
 
-            console.log("Starting Native call for room:", roomId);
+            console.log("Starting LiveKit call for room:", roomId);
 
             // Create new call
             const { data, error } = await supabase
@@ -89,7 +98,7 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
                     room_type: roomType,
                     room_id: roomId,
                     daily_room_name: roomName,
-                    daily_room_url: nativeUrl,
+                    daily_room_url: roomUrl,
                     started_by: user.id,
                     status: 'active'
                 }])
@@ -148,17 +157,46 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
     };
 
     const endCall = async () => {
-        if (!activeCall) return;
-
         try {
-            await supabase
+            console.log("Ending all active calls for room:", roomId);
+            const { error } = await supabase
                 .from('calls' as any)
                 .update({ status: 'ended', ended_at: new Date().toISOString() })
-                .eq('id', activeCall.id);
+                .eq('room_type', roomType)
+                .eq('room_id', roomId)
+                .eq('status', 'active');
+
+            if (error) {
+                console.error("Failed to end calls in DB:", error);
+                throw error;
+            }
 
             setActiveCall(null);
         } catch (error) {
             console.error('Error ending call:', error);
+        }
+    };
+
+    const leaveCall = async () => {
+        if (!activeCall || !user) return;
+
+        try {
+            console.log("Leaving call for user:", user.id);
+            const { error } = await supabase
+                .from('call_participants' as any)
+                .update({ status: 'left', left_at: new Date().toISOString() })
+                .eq('call_id', activeCall.id)
+                .eq('user_id', user.id);
+
+            if (error) {
+                console.error("Failed to update participation status:", error);
+            }
+
+            // Also check if we should end the call if we're the only one (this usually is handled by server but good practice)
+            // For now just clear local state
+            setActiveCall(null);
+        } catch (error) {
+            console.error('Error leaving call:', error);
         }
     };
 
@@ -167,6 +205,7 @@ export const useCall = (roomType: 'project' | 'discussion', roomId: string) => {
         loading,
         startCall,
         joinCall,
-        endCall
+        endCall,
+        leaveCall
     };
 };

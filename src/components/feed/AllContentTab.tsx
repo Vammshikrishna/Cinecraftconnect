@@ -226,10 +226,19 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
             <PostCard
               key={`post-${item.id}`}
               id={item.id}
-              author={{ id: item.author_id, name: authorName, role: authorRole, initials: getInitials(authorName), avatar: item.profiles?.avatar_url || undefined }}
+              author={{
+                id: item.author_id,
+                name: authorName,
+                role: authorRole,
+                craft: author?.craft || undefined,
+                initials: getInitials(authorName),
+                avatar: item.profiles?.avatar_url || undefined
+              }}
               timeAgo={formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
+              createdAt={item.created_at}
               content={item.content}
               mediaUrl={item.media_url}
+              mediaItems={item.media_items}
               hasImage={item.media_type === 'image'}
               hasVideo={item.media_type === 'video'}
               like_count={item.like_count}
@@ -239,6 +248,9 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
               onRate={onRate}
               currentUserLiked={likedPostIds.has(item.id)}
               onLikeToggle={handleLikeToggle}
+              onDelete={(postId) => {
+                setFeed(prev => prev.filter(item => !(item.itemType === 'post' && item.id === postId)));
+              }}
             />
           );
         } else if (item.itemType === 'project') {

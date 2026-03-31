@@ -6,6 +6,8 @@ import { ChatWindow } from './ChatWindow';
 import { MessageInput } from './MessageInput';
 import { Message as MessageType } from '@/types/chat';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { useCall } from '@/hooks/useCall';
+import { LiveKitCallContainer } from '@/components/calls/LiveKitCallContainer';
 
 interface RealTimeChatProps {
     roomId: string;
@@ -19,21 +21,26 @@ const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBack
     const { user } = useAuth();
     const [messages, setMessages] = useState<MessageType[]>([]);
     const [loading, setLoading] = useState(true);
-    const channelRef = useRef(null);
+    const channelRef = useRef<any>(null);
+
+    const { activeCall, startCall, joinCall } = useCall('direct', roomId);
+    const [inCall, setInCall] = useState(false);
 
     useEffect(() => {
+        if (!user) return;
+
         const fetchInitialMessages = async () => {
             setLoading(true);
             const { data, error } = await supabase
                 .from('direct_messages')
                 .select('*')
-                .or(`(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
+                .or(`(sender_id.eq.${user.id},recipient_id.eq.${partnerId}),(sender_id.eq.${partnerId},recipient_id.eq.${user.id})`)
                 .order('created_at', { ascending: true });
 
             if (error) {
                 console.error("Error fetching messages:", error);
             } else {
-                setMessages(data as MessageType[]);
+                setMessages(data as any[]);
             }
             setLoading(false);
         };
@@ -46,10 +53,11 @@ const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBack
             },
         });
 
-        const subscription = channel
+        channel
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, (payload) => {
-                if ((payload.new as MessageType).sender_id === user.id || (payload.new as MessageType).receiver_id === user.id) {
-                    setMessages(currentMessages => [...currentMessages, payload.new as MessageType]);
+                const newMessage = payload.new as any;
+                if (newMessage.sender_id === user.id || newMessage.recipient_id === user.id) {
+                    setMessages(currentMessages => [...currentMessages, newMessage]);
                 }
             })
             .subscribe();
@@ -59,24 +67,51 @@ const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBack
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [roomId, user.id, partnerId]);
+    }, [roomId, user, partnerId]);
 
     const handleSendMessage = async (content: string) => {
         if (!content.trim() || !user) return;
 
         const message = {
             sender_id: user.id,
-            receiver_id: partnerId,
+            recipient_id: partnerId,
             content: content.trim(),
+            channel_id: roomId
         };
 
-        const { error } = await supabase.from('direct_messages').insert(message);
+        const { error } = await supabase.from('direct_messages').insert(message as any);
         if (error) console.error('Error sending message:', error);
     };
 
+    const handleStartCall = async () => {
+        const call = await startCall();
+        if (call) setInCall(true);
+    };
+
+    const handleJoinCall = async () => {
+        const success = await joinCall();
+        if (success) setInCall(true);
+    };
+
+    if (inCall && activeCall) {
+        return (
+            <LiveKitCallContainer
+                roomId={roomId}
+                onLeave={() => setInCall(false)}
+                roomName={`Call with ${partnerName}`}
+            />
+        );
+    }
+
     return (
         <div className="h-full flex flex-col bg-gray-900 text-white">
-            <ChatHeader partnerName={partnerName} partnerAvatarUrl={partnerAvatarUrl} onBackClick={onBackClick} />
+            <ChatHeader 
+                partnerName={partnerName} 
+                partnerAvatarUrl={partnerAvatarUrl} 
+                onBackClick={onBackClick}
+                onPhoneClick={activeCall ? handleJoinCall : handleStartCall}
+                onVideoClick={activeCall ? handleJoinCall : handleStartCall}
+            />
             {loading ? <LoadingSpinner size="lg" /> : <ChatWindow messages={messages} />}
             <MessageInput onSendMessage={handleSendMessage} />
         </div>

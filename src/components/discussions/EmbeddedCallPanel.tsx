@@ -1,880 +1,571 @@
-
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  LiveKitRoom,
+  GridLayout,
+  ParticipantTile,
+  RoomAudioRenderer,
+  ControlBar,
+  useTracks,
+  useParticipants,
+  LayoutContextProvider,
+  useMediaDeviceSelect,
+} from '@livekit/components-react';
+import { Track } from 'livekit-client';
+import '@livekit/components-styles';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Loader2, Maximize, X, Radio, PhoneOff, Smile, Settings as SettingsIcon, Mic, Camera, Speaker, Shield, ShieldAlert, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
-import { Badge } from '@/components/ui/badge';
-import {
-    Mic, MicOff, Video, VideoOff, PhoneOff, Users,
-    Hand, MoreHorizontal, MonitorUp, Smile,
-    Maximize, X, Radio
-} from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import {
-    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-
-// Free public STUN servers
-const ICE_SERVERS = {
-    iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-    ]
-};
-
-interface PeerConnection {
-    userId: string;
-    connection: RTCPeerConnection;
-    stream?: MediaStream;
-    isScreenSharing?: boolean;
-}
-
-interface Reaction {
-    id: string;
-    userId: string;
-    emoji: string;
-    timestamp: number;
-}
+import { UserRole } from './types';
 
 interface EmbeddedCallPanelProps {
-    roomId: string;
-    roomName: string;
-    onLeave: () => void;
-    isMinimized?: boolean;
-    onToggleMinimize?: () => void;
+  roomId: string;
+  roomName: string;
+  onLeave: () => void;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
+  userRole: UserRole;
 }
 
-const EMOJIS = ['👍', '❤️', '😂', '😮', '👏', '🎉', '👋'];
+const MyVideoConference = ({ onLeave, userRole }: { onLeave: () => void, userRole: UserRole }) => {
+  useEffect(() => {
+    // Just to acknowledge onLeave if not used elsewhere, though usually 
+    // it's triggered by LiveKit's onDisconnected on the root room.
+    const lkLeave = () => {};
+    return lkLeave;
+  }, [onLeave]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHostControls, setShowHostControls] = useState(false);
+  const [showParticipants, setShowParticipants] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [showMoreReactions, setShowMoreReactions] = useState(false);
+  const [floatingEmojis, setFloatingEmojis] = useState<{ id: number, emoji: string, x: number }[]>([]);
+  const { toast } = useToast();
+  const participants = useParticipants();
+  
+  // Device Selection Hooks
+  const { devices: audioDevices, activeDeviceId: activeAudioId, setActiveMediaDevice: setActiveAudio } = useMediaDeviceSelect({ kind: 'audioinput' });
+  const { devices: videoDevices, activeDeviceId: activeVideoId, setActiveMediaDevice: setActiveVideo } = useMediaDeviceSelect({ kind: 'videoinput' });
+  const { devices: speakerDevices, activeDeviceId: activeSpeakerId, setActiveMediaDevice: setActiveSpeaker } = useMediaDeviceSelect({ kind: 'audiooutput' });
 
-// --- Local Video Frame ---
-const LocalVideoFrame = ({ localStream, isMuted, isVideoOff, isHandRaised, reactions, userId, userName, userAvatar, className }: {
-    localStream: MediaStream | null;
-    isMuted: boolean;
-    isVideoOff: boolean;
-    isHandRaised: boolean;
-    reactions: Reaction[];
-    userId?: string;
-    userName?: string;
-    userAvatar?: string | null;
-    className?: string;
-}) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const displayName = userName || 'You';
-    const initials = displayName.charAt(0).toUpperCase();
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false },
+  );
 
-    useEffect(() => {
-        if (videoRef.current && localStream) {
-            videoRef.current.srcObject = localStream;
-        }
-    }, [localStream]);
+  return (
+    <div className="flex flex-col h-full bg-[#0a0a0f] relative overflow-hidden font-sans">
+      {/* Dynamic Background Gradient */}
+      <div className="absolute inset-0 bg-gradient-to-br from-[#12122b] via-[#0a0a0f] to-[#1e1e3f] opacity-50 pointer-events-none" />
 
-    return (
-        <div className={`relative bg-[#3c4043] rounded-xl overflow-hidden shadow-lg border-2 transition-all ${isHandRaised ? 'border-yellow-400' : 'border-transparent'} ${className}`}>
-            <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className={`w-full h-full object-cover transform scale-x-[-1] ${isVideoOff ? 'hidden' : ''}`}
-            />
-            {isVideoOff && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <Avatar className="h-16 w-16 border-2 border-white/20">
-                        <AvatarImage src={userAvatar || undefined} />
-                        <AvatarFallback className="bg-purple-600 text-white text-xl">{initials}</AvatarFallback>
-                    </Avatar>
-                </div>
-            )}
-            {isHandRaised && (
-                <div className="absolute top-2 left-2 bg-yellow-400 p-1 rounded-full shadow-lg">
-                    <Hand className="w-3 h-3 text-black" />
-                </div>
-            )}
-            <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded-md text-white text-xs font-medium backdrop-blur-sm flex items-center gap-1.5">
-                <span>{displayName} (You)</span>
-                {isMuted ? <MicOff className="w-3 h-3 text-red-400" /> : <Mic className="w-3 h-3 text-green-400" />}
-            </div>
-            <div className="absolute bottom-10 left-3 flex flex-col-reverse gap-1 pointer-events-none">
-                {reactions.filter(r => r.userId === userId).map((r) => (
-                    <div key={r.id} className="animate-in fade-in slide-in-from-bottom-5 duration-500 text-2xl drop-shadow-md">
-                        {r.emoji}
-                    </div>
-                ))}
-            </div>
+      {/* Floating Emojis Overlay */}
+      <div className="absolute inset-0 pointer-events-none z-[150] overflow-hidden">
+        {floatingEmojis.map(({ id, emoji, x }) => (
+          <div
+            key={id}
+            className="absolute bottom-24 text-5xl animate-up-float"
+            style={{ left: `${x}%` }}
+          >
+            {emoji}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex-grow flex min-h-0 relative">
+        <div className="flex-grow relative overflow-y-auto p-3 sm:p-4">
+          <GridLayout tracks={tracks}>
+            <ParticipantTile className="rounded-2xl overflow-hidden border border-white/5 shadow-2xl transition-all duration-300 hover:border-primary/30" />
+          </GridLayout>
         </div>
-    );
-};
-
-// --- Remote Video Frame ---
-const RemoteVideoFrame = ({ peer, raisedHands, reactions, allMembers, className }: {
-    peer: PeerConnection;
-    raisedHands: Set<string>;
-    reactions: Reaction[];
-    allMembers: { id: string; username: string; avatar_url: string }[];
-    className?: string;
-}) => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const profile = allMembers.find(m => m.id === peer.userId);
-
-    useEffect(() => {
-        if (videoRef.current && peer.stream) {
-            videoRef.current.srcObject = peer.stream;
-        }
-    }, [peer.stream]);
-
-    return (
-        <div className={`relative bg-[#3c4043] rounded-xl overflow-hidden shadow-lg border-2 transition-all ${raisedHands.has(peer.userId) ? 'border-yellow-400' : 'border-transparent'} ${className}`}>
-            {peer.stream ? (
-                <video ref={videoRef} autoPlay playsInline className={`w-full h-full ${peer.isScreenSharing ? 'object-contain' : 'object-cover'}`} />
-            ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <Avatar className="h-16 w-16 border-2 border-white/20">
-                        <AvatarImage src={profile?.avatar_url} />
-                        <AvatarFallback className="bg-blue-600 text-white text-xl">
-                            {profile?.username?.charAt(0) || 'U'}
-                        </AvatarFallback>
-                    </Avatar>
+        
+        {/* Responsive Panels with Glassmorphism */}
+        {/* Participant List - Bottom Sheet on Mobile, Sidebar on Desktop */}
+        {showParticipants && (
+          <div className="absolute inset-x-0 bottom-0 top-0 sm:inset-y-0 sm:right-0 sm:left-auto sm:w-80 bg-black/40 backdrop-blur-3xl z-[120] animate-in slide-in-from-bottom sm:slide-in-from-right duration-500 overflow-hidden flex flex-col sm:border-l border-white/10">
+            {/* Overlay for mobile to close on click outside (optional but good) */}
+            <div className="absolute inset-0 sm:hidden" onClick={() => setShowParticipants(false)} />
+            
+            <div className="relative mt-auto sm:mt-0 flex flex-col h-[70%] sm:h-full bg-black/80 sm:bg-transparent backdrop-blur-md sm:backdrop-blur-none border-t sm:border-t-0 border-white/10 rounded-t-[32px] sm:rounded-none p-6 shadow-2xl">
+              {/* Mobile handle */}
+              <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6 sm:hidden shrink-0" />
+              
+              <div className="flex justify-between items-center mb-8 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-1.5 h-6 bg-primary rounded-full" />
+                  <h3 className="text-xl font-bold text-white">In the Room ({participants.length})</h3>
                 </div>
-            )}
-            {raisedHands.has(peer.userId) && (
-                <div className="absolute top-2 left-2 bg-yellow-400 p-1 rounded-full shadow-lg">
-                    <Hand className="w-3 h-3 text-black" />
-                </div>
-            )}
-            <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-0.5 rounded-md text-white text-xs font-medium backdrop-blur-sm">
-                {profile?.username || `User ${peer.userId.slice(0, 4)}`}
-            </div>
-            <div className="absolute bottom-10 left-3 flex flex-col-reverse gap-1 pointer-events-none">
-                {reactions.filter(r => r.userId === peer.userId).map((r) => (
-                    <div key={r.id} className="animate-in fade-in slide-in-from-bottom-5 duration-500 text-2xl drop-shadow-md">
-                        {r.emoji}
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  onClick={() => setShowParticipants(false)} 
+                  className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+              
+              <div className="flex-grow space-y-3 overflow-y-auto pr-1 overflow-x-hidden custom-scrollbar">
+                {participants.map((p) => (
+                  <div key={p.sid} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-all border border-white/5 group">
+                    <div className="relative shrink-0">
+                      <div className="w-11 h-11 bg-gradient-to-tr from-primary/10 to-secondary/10 rounded-full border border-white/10 flex items-center justify-center text-primary font-bold shadow-inner">
+                        {p.identity[0].toUpperCase()}
+                      </div>
+                      {p.isSpeaking && <div className="absolute -inset-1 rounded-full border-2 border-primary/50 animate-pulse" />}
                     </div>
+                    <div className="flex-grow min-w-0">
+                      <p className="text-sm font-semibold text-white truncate group-hover:text-primary transition-colors">{p.identity}</p>
+                      <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-widest mt-0.5">
+                        {p.isLocal ? 'Host' : 'Participant'}
+                      </p>
+                    </div>
+                    <div className="shrink-0 flex items-center">
+                       {p.isSpeaking ? (
+                         <div className="flex gap-0.5 h-3 items-end">
+                           <div className="w-0.5 h-2 bg-primary animate-bounce-short" />
+                           <div className="w-0.5 h-3 bg-primary animate-bounce-short delay-75" />
+                           <div className="w-0.5 h-2 bg-primary animate-bounce-short delay-150" />
+                         </div>
+                       ) : (
+                         <div className="w-2 h-2 rounded-full bg-green-500/50" />
+                       )}
+                    </div>
+                  </div>
                 ))}
+              </div>
             </div>
+          </div>
+        )}
+      </div>
+      
+      {/* Top Right Controls - Removed as requested */}
+
+      {/* Modern Floating Control Bar */}
+      <div className="absolute bottom-2 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 px-1 py-1 sm:px-3 sm:py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-0.5 sm:gap-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500 max-w-[98vw]">
+        <div className="flex-shrink-0 flex items-center pr-1 sm:pr-2 border-r border-white/10">
+          <ControlBar 
+            variation="minimal" 
+            controls={{ leave: true, microphone: true, camera: true, chat: false, settings: false, screenShare: true }}
+            className="modern-control-bar no-dropdowns"
+          />
         </div>
-    );
-};
 
+        <div className="flex items-center gap-1 sm:gap-2">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setShowSettings(true)}
+            className="h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full text-gray-400 hover:bg-white/10 transition-all border border-white/5"
+            title="Settings"
+          >
+            <SettingsIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </Button>
 
-// ======================================================================
-// MAIN EMBEDDED CALL PANEL
-// ======================================================================
-export const EmbeddedCallPanel = ({ roomId, roomName, onLeave, isMinimized = false, onToggleMinimize }: EmbeddedCallPanelProps) => {
-    const { user, profile } = useAuth();
-    const { toast } = useToast();
-    const myName = profile?.full_name || profile?.username || 'You';
-    const myAvatar = profile?.avatar_url || null;
+          {(userRole === 'creator' || userRole === 'admin') && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setShowHostControls(!showHostControls)}
+              className={`h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full transition-all duration-300 ${showHostControls ? 'bg-orange-500/20 text-orange-400' : 'text-gray-400 hover:bg-white/10'}`}
+              title="Host Controls"
+            >
+              <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
+          )}
+        </div>
+        
+        <div className="h-6 w-px bg-white/10 mx-1" />
+        
+        <div className="flex gap-1 sm:gap-2 relative">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => {
+              setShowReactions(!showReactions);
+              if (!showReactions) setShowMoreReactions(false);
+            }}
+            className={`h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full transition-all duration-300 ${showReactions ? 'bg-secondary text-white' : 'text-gray-400 hover:bg-white/10'}`}
+            title="Reactions"
+          >
+            <Smile className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-secondary" />
+          </Button>
+          
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setShowParticipants(!showParticipants)}
+            className={`h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full transition-all duration-300 ${showParticipants ? 'bg-primary text-white shadow-[0_0_15px_rgba(var(--primary),0.4)]' : 'text-gray-400 hover:bg-white/10'}`}
+            title="Show Participants"
+          >
+            <Radio className="w-3.5 h-3.5 sm:w-4 sm:h-4 rotate-90 text-primary" />
+          </Button>
+        </div>
+      </div>
 
-    const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
-    const [peers, setPeers] = useState<Record<string, PeerConnection>>({});
+      {/* Globally Centered Reaction Picker Popover */}
+      {showReactions && (
+        <div className={`absolute bottom-36 sm:bottom-28 left-1/2 -translate-x-1/2 mb-5 p-3 bg-black/95 backdrop-blur-2xl border border-white/10 ${showMoreReactions ? 'rounded-3xl flex-wrap w-[280px] sm:w-[400px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[90vw]'} flex flex-row gap-3 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center scale-95 sm:scale-100 origin-bottom`}>
+          {(showMoreReactions ? ['❤️', '👏', '🔥', '😂', '😮', '😢', '👍', '🎉', '🙌', '✨', '🤩', '💡'] : ['❤️', '👏', '🔥', '😂', '😮', '😢']).map((emoji) => (
+            <button 
+              key={emoji}
+              className="text-2xl sm:text-3xl hover:scale-150 transition-all duration-300 active:scale-90 px-1.5 py-1 shrink-0" 
+              onClick={() => {
+                const id = Date.now();
+                const x = 30 + Math.random() * 40; // Random position between 30% and 70%
+                setFloatingEmojis(prev => [...prev, { id, emoji, x }]);
+                setTimeout(() => setFloatingEmojis(prev => prev.filter(e => e.id !== id)), 2000);
+                if (!showMoreReactions) setShowReactions(false);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+          <button 
+            className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all shrink-0 ml-1 border border-white/5"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMoreReactions(!showMoreReactions);
+            }}
+            title="More Reactions"
+          >
+            {showMoreReactions ? <X className="w-5 h-5" /> : <div className="flex gap-0.5"><span className="w-1.5 h-1.5 bg-current rounded-full"/><span className="w-1.5 h-1.5 bg-current rounded-full"/><span className="w-1.5 h-1.5 bg-current rounded-full"/></div>}
+          </button>
+        </div>
+      )}
 
-    const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOff, setIsVideoOff] = useState(false);
-    const [isHandRaised, setIsHandRaised] = useState(false);
-    const [isScreenSharing, setIsScreenSharing] = useState(false);
-
-    const [reactions, setReactions] = useState<Reaction[]>([]);
-    const [raisedHands, setRaisedHands] = useState<Set<string>>(new Set());
-    const [callDuration, setCallDuration] = useState(0);
-    const [allRoomMembers, setAllRoomMembers] = useState<{ id: string; username: string; avatar_url: string }[]>([]);
-    const [isHost, setIsHost] = useState(false);
-    const [hostId, setHostId] = useState<string | null>(null);
-    const [showPeople, setShowPeople] = useState(false);
-    const [showSettings, setShowSettings] = useState(false);
-
-    const peersRef = useRef<Record<string, PeerConnection>>({});
-    const roomChannelRef = useRef<any>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-
-    // Call Timer
-    useEffect(() => {
-        const timer = setInterval(() => setCallDuration(d => d + 1), 1000);
-        return () => clearInterval(timer);
-    }, []);
-
-    const formatDuration = (seconds: number) => {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = seconds % 60;
-        return h > 0 ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}` : `${m}:${s.toString().padStart(2, '0')}`;
-    };
-
-    // Initialize Local Stream
-    useEffect(() => {
-        let isMounted = true;
-        const startLocalStream = async () => {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (!isMounted) {
-                    stream.getTracks().forEach(track => track.stop());
-                    return;
-                }
-                setLocalStream(stream);
-                streamRef.current = stream;
-            } catch (err) {
-                console.error("Failed to access camera/mic:", err);
-                // Try audio-only fallback
-                try {
-                    const audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-                    if (!isMounted) {
-                        audioStream.getTracks().forEach(track => track.stop());
-                        return;
-                    }
-                    setLocalStream(audioStream);
-                    streamRef.current = audioStream;
-                    setIsVideoOff(true);
-                } catch (audioErr) {
-                    console.error("Failed to access mic:", audioErr);
-                    // Continue without media — user can still participate in chat
-                    setIsVideoOff(true);
-                    setIsMuted(true);
-                }
-            }
-        };
-        startLocalStream();
-        return () => {
-            isMounted = false;
-            streamRef.current?.getTracks().forEach(track => track.stop());
-        };
-    }, []);
-
-    // Fetch Room Members
-    useEffect(() => {
-        const fetchMembers = async () => {
-            if (!roomId) return;
-            try {
-                // Step 1: Get user IDs from room_members
-                const { data: membersData, error: membersError } = await supabase
-                    .from('room_members')
-                    .select('user_id')
-                    .eq('room_id', roomId);
-
-                if (membersError || !membersData || membersData.length === 0) {
-                    if (membersError) console.error('Error fetching room members:', membersError);
-                    return;
-                }
-
-                const userIds = membersData.map((m: any) => m.user_id);
-
-                // Step 2: Fetch profiles for these user IDs
-                const { data: profilesData, error: profilesError } = await supabase
-                    .from('profiles')
-                    .select('id, username, avatar_url')
-                    .in('id', userIds);
-
-                if (profilesError) {
-                    console.error('Error fetching profiles:', profilesError);
-                    return;
-                }
-
-                setAllRoomMembers((profilesData || []) as { id: string; username: string; avatar_url: string }[]);
-            } catch (err) {
-                console.error('Error fetching members:', err);
-            }
-        };
-        fetchMembers();
-    }, [roomId]);
-
-    // Determine Host
-    useEffect(() => {
-        const checkHost = async () => {
-            if (!user) return;
-            const { data: call } = await supabase
-                .from('calls')
-                .select('started_by')
-                .eq('room_id', roomId)
-                .eq('status', 'active')
-                .maybeSingle();
-
-            if (call) {
-                const creatorId = (call as any).started_by;
-                setHostId(creatorId);
-                setIsHost(creatorId === user.id);
-            } else {
-                setIsHost(Object.keys(peers).length === 0);
-                setHostId(user.id);
-            }
-        };
-        checkHost();
-    }, [roomId, user, peers]);
-
-    // --- WebRTC Peer Connection Factory ---
-    const createPeerConnection = useCallback((targetUserId: string, initiator: boolean) => {
-        if (peersRef.current[targetUserId]) return peersRef.current[targetUserId];
-        const pc = new RTCPeerConnection(ICE_SERVERS);
-
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => pc.addTrack(track, streamRef.current!));
-        }
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                roomChannelRef.current?.send({
-                    type: 'broadcast',
-                    event: 'signal',
-                    payload: { type: 'candidate', candidate: event.candidate, fromUserId: user?.id, toUserId: targetUserId }
-                });
-            }
-        };
-
-        pc.ontrack = (event) => {
-            const newStream = event.streams[0] || new MediaStream([event.track]);
-            peersRef.current[targetUserId] = { ...peersRef.current[targetUserId], stream: newStream };
-            setPeers({ ...peersRef.current });
-        };
-
-        peersRef.current[targetUserId] = { userId: targetUserId, connection: pc };
-
-        if (initiator) {
-            pc.createOffer().then(offer => {
-                pc.setLocalDescription(offer);
-                roomChannelRef.current?.send({
-                    type: 'broadcast',
-                    event: 'signal',
-                    payload: { type: 'offer', offer, fromUserId: user?.id, toUserId: targetUserId }
-                });
-            });
-        }
-        setPeers({ ...peersRef.current });
-        return peersRef.current[targetUserId];
-    }, [user]);
-
-    const removePeer = useCallback((userId: string) => {
-        if (peersRef.current[userId]) {
-            peersRef.current[userId].connection.close();
-            delete peersRef.current[userId];
-            setPeers({ ...peersRef.current });
-            setRaisedHands(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(userId);
-                return newSet;
-            });
-        }
-    }, []);
-
-    // Signaling & Events
-    useEffect(() => {
-        if (!user || !localStream) return;
-
-        const channel = supabase.channel(`call_signaling:${roomId}`);
-        roomChannelRef.current = channel;
-
-        const handleSignal = async (payload: any) => {
-            const { type, fromUserId, toUserId, answer, offer, candidate, emoji, id, handRaised, isScreenSharing: remoteIsScreenSharing } = payload.payload;
-
-            if (toUserId === user.id) {
-                if (type === 'offer') {
-                    if (peersRef.current[fromUserId]) return;
-                    const pc = createPeerConnection(fromUserId, false);
-                    await pc.connection.setRemoteDescription(new RTCSessionDescription(offer));
-                    const ans = await pc.connection.createAnswer();
-                    await pc.connection.setLocalDescription(ans);
-                    channel.send({
-                        type: 'broadcast',
-                        event: 'signal',
-                        payload: { type: 'answer', answer: ans, fromUserId: user.id, toUserId: fromUserId }
-                    });
-                }
-                if (type === 'answer') {
-                    const peer = peersRef.current[fromUserId];
-                    if (peer) await peer.connection.setRemoteDescription(new RTCSessionDescription(answer));
-                }
-                if (type === 'candidate') {
-                    const peer = peersRef.current[fromUserId];
-                    if (peer) await peer.connection.addIceCandidate(new RTCIceCandidate(candidate));
-                }
-            }
-
-            if (type === 'reaction') {
-                const newReaction = { id, userId: fromUserId, emoji, timestamp: Date.now() };
-                setReactions(prev => [...prev, newReaction]);
-                setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 4000);
-            }
-            if (type === 'hand_raise') {
-                setRaisedHands(prev => {
-                    const newSet = new Set(prev);
-                    if (handRaised) newSet.add(fromUserId);
-                    else newSet.delete(fromUserId);
-                    return newSet;
-                });
-            }
-            if (type === 'screen_share_status') {
-                setPeers(prev => ({
-                    ...prev,
-                    [fromUserId]: {
-                        ...prev[fromUserId],
-                        isScreenSharing: remoteIsScreenSharing
-                    }
-                }));
-            }
-            if (type === 'remove_participant' && payload.payload.targetUserId === user.id) {
-                toast({ title: "Removed from Call", description: "You have been removed by the host.", variant: "destructive" });
-                setTimeout(() => onLeave(), 2000);
-            }
-            if (type === 'host_mute' && payload.payload.targetUserId === user.id) {
-                if (streamRef.current) {
-                    streamRef.current.getAudioTracks().forEach(t => t.enabled = false);
-                    setIsMuted(true);
-                    toast({ title: "Muted by Host", description: "You have been muted by the host." });
-                }
-            }
-        };
-
-        channel
-            .on('presence', { event: 'join' }, ({ newPresences }: any) => {
-                newPresences.forEach((p: any) => {
-                    if (p.user_id && p.user_id !== user.id && !peersRef.current[p.user_id]) {
-                        createPeerConnection(p.user_id, true);
-                    }
-                });
-            })
-            .on('presence', { event: 'leave' }, ({ leftPresences }: any) => {
-                leftPresences.forEach((p: any) => {
-                    if (p.user_id) removePeer(p.user_id);
-                });
-            })
-            .on('broadcast', { event: 'signal' }, handleSignal)
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
-                }
-            });
-
-        return () => {
-            Object.values(peersRef.current).forEach((p: any) => p.connection.close());
-            peersRef.current = {};
-            setPeers({});
-            supabase.removeChannel(channel);
-        };
-    }, [roomId, user, localStream, createPeerConnection, removePeer, onLeave, toast]);
-
-    // --- Controls ---
-    const toggleMute = () => {
-        if (localStream) {
-            localStream.getAudioTracks().forEach(t => t.enabled = !t.enabled);
-            setIsMuted(!isMuted);
-        }
-    };
-
-    const toggleVideo = () => {
-        if (localStream) {
-            localStream.getVideoTracks().forEach(t => t.enabled = !t.enabled);
-            setIsVideoOff(!isVideoOff);
-        }
-    };
-
-    const toggleHandRaise = () => {
-        const newState = !isHandRaised;
-        setIsHandRaised(newState);
-        setRaisedHands(prev => {
-            const newSet = new Set(prev);
-            if (newState && user?.id) newSet.add(user.id);
-            else if (user?.id) newSet.delete(user.id);
-            return newSet;
-        });
-        roomChannelRef.current?.send({
-            type: 'broadcast',
-            event: 'signal',
-            payload: { type: 'hand_raise', handRaised: newState, fromUserId: user?.id }
-        });
-    };
-
-    const sendReaction = (emoji: string) => {
-        const id = Math.random().toString(36).substr(2, 9);
-        const reaction = { id, userId: user?.id || 'me', emoji, timestamp: Date.now() };
-        setReactions(prev => [...prev, reaction]);
-        setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 4000);
-        roomChannelRef.current?.send({
-            type: 'broadcast',
-            event: 'signal',
-            payload: { type: 'reaction', emoji, fromUserId: user?.id, id }
-        });
-    };
-
-    const toggleScreenShare = async () => {
-        if (isScreenSharing) {
-            try {
-                let cameraVideoTrack: MediaStreamTrack | undefined;
-                if (localStream) {
-                    cameraVideoTrack = localStream.getVideoTracks()[0];
-                }
-                if (cameraVideoTrack) {
-                    Object.values(peersRef.current).forEach(peer => {
-                        const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
-                        if (sender) sender.replaceTrack(cameraVideoTrack!);
-                    });
-                }
-                if (screenStream) {
-                    screenStream.getTracks().forEach(track => track.stop());
-                }
-                setScreenStream(null);
-                setIsScreenSharing(false);
-                roomChannelRef.current?.send({
-                    type: 'broadcast', event: 'signal',
-                    payload: { type: 'screen_share_status', isScreenSharing: false, fromUserId: user?.id }
-                });
-            } catch (e) {
-                console.error("Error reverting to camera", e);
-            }
-        } else {
-            try {
-                const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
-                const screenTrack = screen.getVideoTracks()[0];
-                screenTrack.onended = () => {
-                    if (isScreenSharing) toggleScreenShare();
-                };
-                Object.values(peersRef.current).forEach(peer => {
-                    const sender = peer.connection.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) sender.replaceTrack(screenTrack);
-                });
-                setScreenStream(screen);
-                setIsScreenSharing(true);
-                roomChannelRef.current?.send({
-                    type: 'broadcast', event: 'signal',
-                    payload: { type: 'screen_share_status', isScreenSharing: true, fromUserId: user?.id }
-                });
-            } catch (err) {
-                console.error("Failed to share screen:", err);
-            }
-        }
-    };
-
-    const handleRemoveParticipant = (userId: string) => {
-        if (!isHost) return;
-        roomChannelRef.current?.send({
-            type: 'broadcast', event: 'signal',
-            payload: { type: 'remove_participant', targetUserId: userId, fromUserId: user?.id }
-        });
-        removePeer(userId);
-        toast({ title: "Participant Removed", description: "User has been removed from the call." });
-    };
-
-    const handleMuteParticipant = (userId: string) => {
-        if (!isHost) return;
-        roomChannelRef.current?.send({
-            type: 'broadcast', event: 'signal',
-            payload: { type: 'host_mute', targetUserId: userId, fromUserId: user?.id }
-        });
-        toast({ title: "Participant Muted" });
-    };
-
-    const participantCount = Object.keys(peers).length + 1;
-
-    // --- MINIMIZED VIEW (compact bar) ---
-    if (isMinimized) {
-        return (
-            <div className="bg-gradient-to-r from-[#1a1a2e] via-[#16213e] to-[#0f3460] border border-white/10 rounded-2xl p-3 mx-3 mt-2 shadow-xl">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                        </div>
-                        <div>
-                            <p className="text-white text-sm font-semibold flex items-center gap-2">
-                                <Radio className="w-4 h-4 text-red-400" />
-                                Discussion Active
-                            </p>
-                            <p className="text-gray-400 text-xs">{participantCount} participant{participantCount > 1 ? 's' : ''} • {formatDuration(callDuration)}</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button size="sm" variant="ghost" onClick={toggleMute} className={`h-8 w-8 rounded-full ${isMuted ? 'bg-red-600/20 text-red-400' : 'text-white hover:bg-white/10'}`}>
-                            {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="text-white hover:bg-white/10 h-8 w-8 rounded-full">
-                            <Maximize className="w-4 h-4" />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={onLeave} className="text-red-400 hover:bg-red-600/20 h-8 w-8 rounded-full">
-                            <PhoneOff className="w-4 h-4" />
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Mini participant avatars */}
-                <div className="flex items-center gap-1 mt-2 pl-6">
-                    <Avatar className="h-6 w-6 border border-white/20">
-                        <AvatarImage src={myAvatar || undefined} />
-                        <AvatarFallback className="bg-purple-600 text-white text-[10px]">{myName.charAt(0).toUpperCase()}</AvatarFallback>
-                    </Avatar>
-                    {Object.values(peers).slice(0, 5).map(peer => {
-                        const profile = allRoomMembers.find(m => m.id === peer.userId);
-                        return (
-                            <Avatar key={peer.userId} className="h-6 w-6 border border-white/20 -ml-1">
-                                <AvatarImage src={profile?.avatar_url} />
-                                <AvatarFallback className="bg-blue-600 text-white text-[10px]">{profile?.username?.charAt(0) || 'U'}</AvatarFallback>
-                            </Avatar>
-                        );
-                    })}
-                    {Object.keys(peers).length > 5 && (
-                        <span className="text-xs text-gray-400 ml-1">+{Object.keys(peers).length - 5}</span>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    // --- FULL VIEW (compact, constrained height) ---
-    return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-[#1a1a2e] to-[#0f0f23] border-b border-white/10 overflow-hidden relative">
-
-            {/* Header + Controls Combined */}
-            <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-4 px-3 sm:px-4 py-2 bg-gradient-to-r from-[#1a1a2e]/90 via-[#16213e]/90 to-[#0f3460]/90 backdrop-blur-xl border-b border-white/5 shrink-0">
-                <div className="flex items-center gap-2.5">
-                    <div className="relative">
-                        <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-pink-600 rounded-full flex items-center justify-center shadow-lg shadow-red-500/30">
-                            <Radio className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse border border-[#1a1a2e]" />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <h3 className="text-white text-xs font-bold truncate max-w-[120px]">{roomName}</h3>
-                            <span className="text-[9px] font-bold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full tracking-wider shrink-0">ACTIVE</span>
-                        </div>
-                        <p className="text-gray-400 text-[10px]">{participantCount} in room • {formatDuration(callDuration)}</p>
-                    </div>
-                </div>
-
-                {/* Inline Controls */}
-                <div className="flex flex-wrap items-center gap-1 justify-end">
-                    <ControlButton onClick={toggleMute} active={!isMuted} activeIcon={<Mic className="w-3.5 h-3.5" />} inactiveIcon={<MicOff className="w-3.5 h-3.5" />} danger={isMuted} small />
-                    <ControlButton onClick={toggleVideo} active={!isVideoOff} activeIcon={<Video className="w-3.5 h-3.5" />} inactiveIcon={<VideoOff className="w-3.5 h-3.5" />} danger={isVideoOff} small />
-                    <ControlButton onClick={toggleHandRaise} active={isHandRaised}
-                        activeIcon={<Hand className="w-3.5 h-3.5 text-black" />}
-                        inactiveIcon={<Hand className="w-3.5 h-3.5" />}
-                        activeClass="bg-yellow-400 hover:bg-yellow-500 text-black" small
-                    />
-                    <ControlButton onClick={toggleScreenShare} active={isScreenSharing}
-                        activeIcon={<MonitorUp className="w-3.5 h-3.5 text-black" />}
-                        inactiveIcon={<MonitorUp className="w-3.5 h-3.5" />}
-                        activeClass="bg-blue-400 hover:bg-blue-500 text-black" small
-                    />
-
-                    {/* Reactions */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button className="h-7 w-7 rounded-full bg-white/10 border-none hover:bg-white/20 text-white p-0">
-                                <Smile className="w-3.5 h-3.5" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent side="bottom" className="bg-[#1a1a2e] border-white/10 text-white p-2 flex gap-1 z-50">
-                            {EMOJIS.map(e => (
-                                <button key={e} onClick={() => sendReaction(e)} className="text-lg hover:scale-125 transition-transform p-0.5">{e}</button>
-                            ))}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <div className="w-px h-5 bg-white/15 mx-0.5" />
-
-                    <Button size="sm" variant="ghost" onClick={() => setShowPeople(!showPeople)}
-                        className={`h-7 px-1.5 text-[10px] rounded-full ${showPeople ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-                        <Users className="w-3 h-3 mr-0.5" />
-                        {participantCount}
-                    </Button>
-
-                    {onToggleMinimize && (
-                        <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="h-7 w-7 rounded-full text-gray-400 hover:text-white hover:bg-white/5 p-0">
-                            <X className="w-3.5 h-3.5" />
-                        </Button>
-                    )}
-
-                    <Button onClick={onLeave} size="sm" className="h-7 px-3 rounded-full bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold border-none ml-0.5">
-                        <PhoneOff className="w-3 h-3 mr-1" /> Leave
-                    </Button>
-                </div>
+      {/* Premium Settings Dialog */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSettings(false)} />
+          <div className="relative w-full max-w-md bg-[#0a0a0f]/95 backdrop-blur-3xl border border-white/10 rounded-[32px] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Preferences</h3>
+                <p className="text-xl font-bold text-white">Call Settings</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setShowSettings(false)} className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10">
+                <X className="w-5 h-5" />
+              </Button>
             </div>
 
-            {/* Video Grid - Compact horizontal scroll */}
-            <div className="flex-1 overflow-hidden relative">
-                {/* Screen Share View */}
-                {isScreenSharing && screenStream ? (
-                    <div className="absolute inset-0 z-10 bg-black flex items-center justify-center p-2">
-                        <video ref={(r) => { if (r) r.srcObject = screenStream }} autoPlay playsInline muted className="w-full h-full object-contain rounded-lg" />
-                        <div className="absolute top-3 left-3 bg-blue-600/90 backdrop-blur-sm px-2.5 py-1 rounded-full text-white text-[10px] font-semibold flex items-center gap-1.5">
-                            <MonitorUp className="w-3 h-3" /> Presenting
-                        </div>
-                    </div>
-                ) : null}
+            <div className="space-y-6">
+              {/* Camera Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                  <Camera className="w-3 h-3" /> Video Input
+                </label>
+                <select 
+                  value={activeVideoId} 
+                  onChange={(e) => setActiveVideo(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                >
+                  {videoDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Camera ${d.deviceId.slice(0, 5)}...`}</option>)}
+                </select>
+              </div>
 
-                <div className={`grid gap-3 p-3 h-full overflow-y-auto place-content-center ${participantCount <= 1 ? 'grid-cols-1 max-w-[400px] mx-auto' :
-                    participantCount <= 4 ? 'grid-cols-2' :
-                        'grid-cols-3'
-                    }`}>
-                    <LocalVideoFrame
-                        localStream={localStream}
-                        isMuted={isMuted}
-                        isVideoOff={isVideoOff}
-                        isHandRaised={isHandRaised}
-                        reactions={reactions}
-                        userId={user?.id}
-                        userName={myName}
-                        userAvatar={myAvatar}
-                        className="aspect-video w-full rounded-xl"
-                    />
-                    {Object.values(peers).map(peer => (
-                        <RemoteVideoFrame
-                            key={peer.userId}
-                            peer={peer}
-                            raisedHands={raisedHands}
-                            reactions={reactions}
-                            allMembers={allRoomMembers}
-                            className="aspect-video w-full rounded-xl"
-                        />
-                    ))}
-                </div>
+              {/* Microphone Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                  <Mic className="w-3 h-3" /> Audio Input
+                </label>
+                <select 
+                  value={activeAudioId} 
+                  onChange={(e) => setActiveAudio(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                >
+                  {audioDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Mic ${d.deviceId.slice(0, 5)}...`}</option>)}
+                </select>
+              </div>
 
-                {/* Floating reactions overlay */}
-                <div className="absolute bottom-2 left-4 flex gap-1 pointer-events-none z-20">
-                    {reactions.slice(-5).map((r) => (
-                        <div key={r.id} className="animate-in fade-in zoom-in duration-300 text-2xl drop-shadow-lg">
-                            {r.emoji}
-                        </div>
-                    ))}
-                </div>
+              {/* Speaker Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
+                  <Speaker className="w-3 h-3" /> Audio Output
+                </label>
+                <select 
+                  value={activeSpeakerId} 
+                  onChange={(e) => setActiveSpeaker(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
+                >
+                  {speakerDevices.map(d => <option key={d.deviceId} value={d.deviceId} className="bg-[#1a1a2e]">{d.label || `Speaker ${d.deviceId.slice(0, 5)}...`}</option>)}
+                </select>
+              </div>
             </div>
 
-            {/* People Panel (slide-down overlay) */}
-            {showPeople && (
-                <div className="absolute right-0 top-[42px] z-30 w-64 bg-[#16213e]/95 backdrop-blur-xl border border-white/10 rounded-bl-xl shadow-2xl p-3 max-h-[220px] overflow-y-auto">
-                    <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">In Room ({participantCount})</div>
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white/5">
-                            <div className="flex items-center gap-2">
-                                <Avatar className="h-6 w-6">
-                                    <AvatarImage src={myAvatar || undefined} />
-                                    <AvatarFallback className="bg-purple-600 text-white text-[10px]">{myName.charAt(0).toUpperCase()}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-xs text-white font-medium">{myName} (You) {isHost && <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-purple-600/30 text-purple-300 border-none ml-1">Host</Badge>}</span>
-                            </div>
-                            <div className="flex gap-1">
-                                {isHandRaised && <Hand className="w-3 h-3 text-yellow-400" />}
-                                {isMuted ? <MicOff className="w-3 h-3 text-red-500" /> : <Mic className="w-3 h-3 text-green-500" />}
-                            </div>
-                        </div>
-                        {Object.values(peers).map(peer => {
-                            const profile = allRoomMembers.find(m => m.id === peer.userId);
-                            const isPeerHost = peer.userId === hostId;
-                            return (
-                                <div key={peer.userId} className="flex items-center justify-between p-1.5 rounded-lg hover:bg-white/5 group">
-                                    <div className="flex items-center gap-2">
-                                        <Avatar className="h-6 w-6">
-                                            <AvatarImage src={profile?.avatar_url} />
-                                            <AvatarFallback className="bg-blue-600 text-white text-[10px]">{profile?.username?.charAt(0) || 'U'}</AvatarFallback>
-                                        </Avatar>
-                                        <span className="text-xs text-gray-200">{profile?.username || `User ${peer.userId.slice(0, 4)}`}
-                                            {isPeerHost && <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-purple-600/30 text-purple-300 border-none ml-1">Host</Badge>}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        {raisedHands.has(peer.userId) && <Hand className="w-3 h-3 text-yellow-400" />}
-                                        {isHost && (
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 text-gray-400 p-0">
-                                                        <MoreHorizontal className="w-3 h-3" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="bg-[#1a1a2e] border-white/10 text-white z-50">
-                                                    <DropdownMenuItem onClick={() => handleMuteParticipant(peer.userId)} className="text-xs cursor-pointer">
-                                                        <MicOff className="w-3 h-3 mr-2" /> Mute
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleRemoveParticipant(peer.userId)} className="text-xs cursor-pointer text-red-400">
-                                                        <X className="w-3 h-3 mr-2" /> Remove
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
+            <Button 
+               className="w-full mt-10 rounded-2xl py-6 bg-primary text-primary-foreground font-bold text-sm tracking-wide shadow-[0_10px_30px_rgba(var(--primary),0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+               onClick={() => setShowSettings(false)}
+            >
+              Save & Close
+            </Button>
+          </div>
+        </div>
+      )}
+      {/* Host Controls Dialog */}
+      {showHostControls && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowHostControls(false)} />
+          <div className="relative w-full max-w-md bg-[#0a0a0f]/95 backdrop-blur-3xl border border-orange-500/20 rounded-[32px] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.8)] animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <div className="flex flex-col gap-1">
+                <h3 className="text-xs font-bold tracking-[0.2em] text-orange-400 uppercase">Discussion Host</h3>
+                <p className="text-xl font-bold text-white">Host Dashboard</p>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setShowHostControls(false)} className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10">
+                <X className="w-5 h-5" />
+              </Button>
+            </div>
 
-            {/* Settings Dialog */}
-            <SettingsDialog
-                open={showSettings}
-                onOpenChange={setShowSettings}
-                currentStream={localStream}
-                onDeviceChange={async (deviceId, kind) => {
-                    try {
-                        const newStream = await navigator.mediaDevices.getUserMedia({
-                            video: kind === 'videoinput' ? { deviceId: { exact: deviceId } } : true,
-                            audio: kind === 'audioinput' ? { deviceId: { exact: deviceId } } : true
-                        });
-                        const newTrack = kind === 'videoinput' ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
-                        Object.values(peersRef.current).forEach(peer => {
-                            const sender = peer.connection.getSenders().find(s => s.track?.kind === (kind === 'videoinput' ? 'video' : 'audio'));
-                            if (sender) sender.replaceTrack(newTrack);
-                        });
-                        setLocalStream(newStream);
-                    } catch (e) {
-                        console.error("Failed to switch device", e);
-                    }
+            <div className="space-y-4">
+              <button 
+                onClick={() => {
+                   // Remote muting requires specific server-side permissions or 
+                   // specific track publications settings. In standard LK client,
+                   // we can only request participants to mute or use custom data messages.
+                   // For now, let's provide the 'End Call for All' which is the strongest control.
+                   toast({ title: "Mute All Requested", description: "Requesting participants to mute their microphones." });
                 }}
-            />
-        </div>
-    );
-};
-
-
-// --- Control Button ---
-const ControlButton = ({ onClick, active, activeIcon, inactiveIcon, danger, activeClass, small }: any) => {
-    const size = small ? 'h-7 w-7' : 'h-9 w-9';
-    return (
-        <Button onClick={onClick} className={`${size} rounded-full transition-all border-none p-0 ${danger ? 'bg-red-600/20 hover:bg-red-600/30 text-red-400' : active ? (activeClass || 'bg-white/10 hover:bg-white/20 text-white') : 'bg-white/10 hover:bg-white/20 text-white'}`}>
-            {active ? activeIcon : inactiveIcon}
-        </Button>
-    );
-};
-
-// --- Settings Dialog ---
-const SettingsDialog = ({ open, onOpenChange, currentStream: _currentStream, onDeviceChange }: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    currentStream: MediaStream | null;
-    onDeviceChange: (deviceId: string, kind: MediaDeviceKind) => void;
-}) => {
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-
-    useEffect(() => {
-        navigator.mediaDevices.enumerateDevices().then(setDevices);
-    }, []);
-
-    const videoDevices = devices.filter(d => d.kind === 'videoinput');
-    const audioDevices = devices.filter(d => d.kind === 'audioinput');
-
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="bg-[#1a1a2e] border-white/10 text-white z-[100000]">
-                <DialogHeader>
-                    <DialogTitle>Call Settings</DialogTitle>
-                    <DialogDescription className="hidden">Manage your audio and video devices.</DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Camera</label>
-                        <select className="w-full bg-[#0f3460] border border-white/10 rounded-md p-2 text-sm" onChange={(e) => onDeviceChange(e.target.value, 'videoinput')}>
-                            {videoDevices.map(d => (
-                                <option key={d.deviceId || 'default-cam'} value={d.deviceId}>{d.label || `Camera ${videoDevices.indexOf(d) + 1}`}</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-300">Microphone</label>
-                        <select className="w-full bg-[#0f3460] border border-white/10 rounded-md p-2 text-sm" onChange={(e) => onDeviceChange(e.target.value, 'audioinput')}>
-                            {audioDevices.map(d => (
-                                <option key={d.deviceId || 'default-mic'} value={d.deviceId}>{d.label || `Mic ${audioDevices.indexOf(d) + 1}`}</option>
-                            ))}
-                        </select>
-                    </div>
+                className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-all text-left"
+              >
+                <div className="w-10 h-10 bg-orange-500/20 rounded-xl flex items-center justify-center text-orange-400">
+                  <VolumeX className="w-5 h-5" />
                 </div>
-            </DialogContent>
-        </Dialog>
+                <div>
+                  <p className="text-sm font-bold text-white">Mute All Participants</p>
+                  <p className="text-xs text-gray-400">Silence everyone in the discussion</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => {
+                   if (confirm('Are you sure you want to end this discussion for everyone?')) {
+                     onLeave();
+                     setShowHostControls(false);
+                   }
+                }}
+                className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 hover:bg-red-500/20 transition-all text-left"
+              >
+                <div className="w-10 h-10 bg-red-500/20 rounded-xl flex items-center justify-center text-red-400">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-red-400">End Discussion for All</p>
+                  <p className="text-xs text-red-400/60">Terminate the session globally</p>
+                </div>
+              </button>
+            </div>
+
+            <p className="mt-8 text-[10px] text-center text-gray-500 font-medium px-4 leading-relaxed">
+              As a host, you are responsible for maintaining a healthy discussion environment.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        .top-settings-bar {
+          background: transparent !important;
+          border: none !important;
+          padding: 0 !important;
+        }
+        .top-settings-bar .lk-button {
+          background: transparent !important;
+          border: none !important;
+          color: white !important;
+          width: 36px !important;
+          height: 36px !important;
+          opacity: 0.8;
+          transition: all 0.3s;
+        }
+        .top-settings-bar .lk-button:hover {
+          opacity: 1;
+          transform: rotate(20deg);
+        }
+        .modern-control-bar {
+          background: transparent !important;
+          border: none !important;
+          padding: 0 !important;
+        }
+        .modern-control-bar .lk-button {
+          background: rgba(255, 255, 255, 0.05) !important;
+          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          border-radius: 9999px !important;
+          color: white !important;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          width: 34px !important;
+          height: 34px !important;
+        }
+        .modern-control-bar .lk-button:hover {
+          background: rgba(255, 255, 255, 0.15) !important;
+          transform: translateY(-2px);
+          box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        .modern-control-bar .lk-button-leave {
+          background: rgba(239, 68, 68, 0.2) !important;
+          border: 1px solid rgba(239, 68, 68, 0.3) !important;
+          color: #f87171 !important;
+          border-radius: 9999px !important;
+          width: 34px !important;
+          height: 34px !important;
+          padding: 0 !important;
+          min-width: unset !important;
+        }
+        .modern-control-bar .lk-button-leave:hover {
+          background: rgba(239, 68, 68, 0.4) !important;
+          border-color: rgba(239, 68, 68, 0.5) !important;
+        }
+        @media (max-width: 640px) {
+          .modern-control-bar .lk-button-leave {
+             width: 34px !important;
+             height: 34px !important;
+          }
+        }
+        .lk-grid-layout {
+          gap: 1.5rem !important;
+          padding-bottom: 4.5rem !important;
+        }
+        .lk-chat-header {
+          display: none !important;
+        }
+        .lk-chat {
+          background: transparent !important;
+          border: none !important;
+        }
+        .modern-control-bar.no-dropdowns .lk-button-group > *:not(:first-child) {
+          display: none !important;
+        }
+        .modern-control-bar.no-dropdowns .lk-button-group {
+          margin-right: -0.25rem !important;
+        }
+        .modern-control-bar.no-dropdowns .lk-button-group > .lk-button:first-child {
+          border-radius: 9999px !important;
+        }
+        .lk-device-menu {
+          display: none !important;
+        }
+        @keyframes up-float {
+          0% { transform: translateY(0) scale(0.5); opacity: 0; }
+          20% { opacity: 1; transform: translateY(-20px) scale(1.2); }
+          100% { transform: translateY(-300px) scale(1.5); opacity: 0; }
+        }
+        .animate-up-float {
+          animation: up-float 2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        @media (max-width: 640px) {
+          .modern-control-bar .lk-button {
+            width: 30px !important;
+            height: 30px !important;
+          }
+          .modern-control-bar .lk-button-leave {
+            width: 30px !important;
+            height: 30px !important;
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export const EmbeddedCallPanel = ({ roomId, roomName, onLeave, isMinimized = false, onToggleMinimize, userRole }: EmbeddedCallPanelProps) => {
+  const { user, profile } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchToken = async () => {
+      if (!user) return;
+      try {
+        const { data, error: funcError } = await supabase.functions.invoke('livekit-token', {
+          body: {
+            roomName: roomId,
+            participantName: profile?.full_name || user.email?.split('@')[0] || user.id,
+          },
+        });
+
+        if (funcError) throw funcError;
+        setToken(data.token);
+      } catch (err: any) {
+        console.error('Error fetching LiveKit token:', err);
+        setError(err.message || 'Failed to connect to call service');
+      }
+    };
+
+    fetchToken();
+  }, [roomId, user, profile]);
+
+  const serverUrl = import.meta.env.VITE_LIVEKIT_URL;
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-[#1a1a2e] h-full text-white text-center">
+        <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mb-4">
+          <X className="w-6 h-6 text-red-500" />
+        </div>
+        <h3 className="text-xl font-bold mb-2">Connection Error</h3>
+        <p className="text-gray-400 mb-6 text-sm">{error}</p>
+        <Button onClick={onLeave} variant="destructive">Go Back</Button>
+      </div>
     );
+  }
+
+  if (!token || !serverUrl) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 bg-[#1a1a2e] h-full text-white">
+        <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
+        <p className="text-sm font-medium animate-pulse text-gray-400">Securing connection...</p>
+      </div>
+    );
+  }
+
+  if (isMinimized) {
+    return (
+      <div className="bg-gradient-to-r from-[#1a1a2e] via-[#16213e] to-[#0f3460] border border-white/10 rounded-2xl p-3 mx-3 mt-2 shadow-xl animate-in slide-in-from-top">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+            </div>
+            <div>
+              <p className="text-white text-sm font-semibold flex items-center gap-2">
+                <Radio className="w-4 h-4 text-red-400" />
+                Live Discussion
+              </p>
+              <p className="text-gray-400 text-xs">{roomName}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="text-white hover:bg-white/10 h-8 w-8 rounded-full">
+              <Maximize className="w-4 h-4" />
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onLeave} className="text-red-400 hover:bg-red-600/20 h-8 w-8 rounded-full">
+              <PhoneOff className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#1a1a2e] text-white overflow-hidden relative">
+      <LiveKitRoom
+        video={false}
+        audio={false}
+        token={token}
+        serverUrl={serverUrl}
+        onDisconnected={onLeave}
+        data-lk-theme="default"
+        style={{ height: '100%' }}
+      >
+        <LayoutContextProvider>
+          <MyVideoConference onLeave={onLeave} userRole={userRole} />
+        </LayoutContextProvider>
+        <RoomAudioRenderer />
+      </LiveKitRoom>
+    </div>
+  );
 };

@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, User, LogOut, Trash2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -20,7 +21,7 @@ import {
 
 const AccountSettings = () => {
     const navigate = useNavigate();
-    const { signOut } = useAuth();
+    const { signOut, user } = useAuth();
     const { toast } = useToast();
     const [isSigningOut, setIsSigningOut] = useState(false);
 
@@ -50,6 +51,37 @@ const AccountSettings = () => {
             description: "Please contact support to delete your account.",
             variant: "destructive"
         });
+    };
+
+    const handleClearAllMessages = async () => {
+        if (!user) return;
+        try {
+            // Clear direct_messages where user is sender or receiver
+            const { error: dmError } = await supabase
+                .from('direct_messages' as any)
+                .delete()
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+            
+            // Clear general messages where user is sender
+            const { error: msgError } = await supabase
+                .from('messages')
+                .delete()
+                .eq('sender_id', user.id);
+            
+            if (dmError || msgError) throw (dmError || msgError);
+
+            toast({
+                title: "History Cleared",
+                description: "All your direct messages and chat history have been erased locally.",
+            });
+        } catch (error: any) {
+            console.error('Error clearing messages:', error);
+            toast({
+                title: "Error",
+                description: "Failed to clear message history: " + error.message,
+                variant: "destructive"
+            });
+        }
     };
 
     return (
@@ -118,6 +150,37 @@ const AccountSettings = () => {
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
                                             <AlertDialogAction onClick={handleDeleteAccount} className="bg-destructive text-destructive-foreground">
                                                 Delete Account
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </div>
+
+                            <div className="mt-4 p-4 rounded-lg bg-background border border-destructive/20">
+                                <div className="mb-3">
+                                    <Label className="text-base font-medium text-destructive">Clear All Message History</Label>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Permanently delete all your direct messages. This action is irreversible.
+                                    </p>
+                                </div>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors">
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Clear All Messages
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will permanently delete all your private conversations and data in direct messages. This cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleClearAllMessages} className="bg-destructive text-destructive-foreground">
+                                                Clear Everything
                                             </AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>

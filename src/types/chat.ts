@@ -19,4 +19,6 @@ export interface Message {
     receiver_id: string;
     content: string;
     created_at: string;
+    reply_to_id?: string | null;
+    is_deleted?: boolean | null;
 }

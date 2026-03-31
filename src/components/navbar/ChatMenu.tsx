@@ -58,7 +58,7 @@ const ChatMenu = () => {
 
   const getLink = (type: string, id: string) => {
     switch (type) {
-      case 'project': return `/projects/${id}`;
+      case 'project': return `/projects/${id}/space`;
       case 'discussion': return `/discussion-rooms/${id}`;
       default: return `/dm/${id}`;
     }
