@@ -6,6 +6,7 @@ import { getDisplayMessage } from '@/lib/chat-utils';
 
 interface ChatListItemProps {
     conversation: Conversation;
+    isOnline?: boolean;
 }
 
 const formatTimestamp = (timestamp: string) => {
@@ -27,16 +28,26 @@ const getDisplayContent = (content: string) => {
     return getDisplayMessage(content);
 };
 
-export const ChatListItem = ({ conversation: convo }: ChatListItemProps) => (
+export const ChatListItem = ({ conversation: convo, isOnline }: ChatListItemProps) => (
     <Link to={`/messages/${convo.partner.id}`} className="block">
         <div className="flex items-center p-4 rounded-2xl hover:bg-muted/50 transition-colors duration-200 border-b border-border/50 last:border-0">
-            <Avatar className="h-14 w-14 mr-4 border border-border">
-                <AvatarImage src={convo.partner.avatar_url} alt={convo.partner.full_name} />
-                <AvatarFallback className="bg-muted">{convo.partner.full_name?.charAt(0)?.toUpperCase() || 'U'}</AvatarFallback>
-            </Avatar>
+            <div className="relative mr-4">
+                <Avatar className="h-14 w-14 border border-border">
+                    <AvatarImage src={convo.partner.avatar_url} alt={convo.partner.full_name} />
+                    <AvatarFallback className="bg-muted">{convo.partner.full_name?.charAt(0)?.toUpperCase() || 'U'}</AvatarFallback>
+                </Avatar>
+                {isOnline && (
+                    <div className="absolute bottom-0 right-0 h-4 w-4 bg-green-500 border-4 border-background rounded-full shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" />
+                )}
+            </div>
             <div className="flex-1 overflow-hidden">
                 <div className="flex justify-between items-center mb-1">
-                    <h3 className="font-semibold text-lg truncate text-foreground">{convo.partner.full_name}</h3>
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <h3 className="font-semibold text-lg truncate text-foreground">{convo.partner.full_name}</h3>
+                        {isOnline && (
+                             <span className="text-[10px] text-green-500 font-bold uppercase tracking-widest hidden sm:inline opacity-70">Online</span>
+                        )}
+                    </div>
                     <p className="text-xs text-muted-foreground flex-shrink-0">
                         {formatTimestamp(convo.last_message.created_at)}
                     </p>

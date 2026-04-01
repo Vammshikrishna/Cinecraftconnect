@@ -52,7 +52,7 @@ const UniversalCreateButton = () => {
     ];
 
     return (
-        <div className="fixed bottom-24 right-6 z-50 flex flex-col items-end gap-4">
+        <div className="fixed bottom-24 lg:bottom-8 right-6 z-50 flex flex-col items-end gap-4">
             <AnimatePresence>
                 {isOpen && (
                     <div className="flex flex-col gap-3 items-end mb-2">

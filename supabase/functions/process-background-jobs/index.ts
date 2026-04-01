@@ -90,7 +90,7 @@ Deno.serve(async (req: Request) => {
       const attempts = typeof job.attempts === "number" ? job.attempts : 0;
       const maxAttempts = job.max_attempts ?? 3;
 
-      console.log(`Processing job ${jobId} type=${jobType} attempts=${attempts}`);
+
 
       try {
         switch (jobType) {

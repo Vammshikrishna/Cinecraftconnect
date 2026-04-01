@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -627,7 +627,7 @@ export const NativeCallContainer = ({ roomId, onLeave, roomName = 'Team Discussi
     };
 
     const handleDeviceChange = async (deviceId: string, kind: MediaDeviceKind) => {
-        console.log(`Switching ${kind} to ${deviceId}`);
+
         // Basic replacement logic
         try {
             const newStream = await navigator.mediaDevices.getUserMedia({

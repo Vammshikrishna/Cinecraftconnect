@@ -90,11 +90,11 @@ export function withCache<T extends (...args: any[]) => Promise<any>>(
     const cached = cacheManager.get(key);
     
     if (cached !== null) {
-      console.log(`Cache hit for ${key}`);
+
       return cached;
     }
 
-    console.log(`Cache miss for ${key}`);
+
     const result = await fn(...args);
     cacheManager.set(key, result, ttlSeconds);
     return result;

@@ -12,7 +12,7 @@ export const useRealtimeData = <T extends { id: any }>(
 
   const fetchData = useCallback(async () => {
     const { data, error } = await supabase
-      .from(tableName)
+      .from(tableName as any)
       .select('*')
       .eq(filterColumn, filterValue);
 
@@ -20,7 +20,7 @@ export const useRealtimeData = <T extends { id: any }>(
       console.error(`Error fetching ${tableName}:`, error);
       setError(error);
     } else {
-      setData(data as T[]);
+      setData(data as unknown as T[]);
     }
   }, [tableName, filterColumn, filterValue]);
 
@@ -32,8 +32,8 @@ export const useRealtimeData = <T extends { id: any }>(
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: tableName, filter: `${filterColumn}=eq.${filterValue}` },
-        (payload) => {
-            console.log('Change received!', payload);
+        () => {
+
             fetchData(); // Refetch data on any change
         }
       )

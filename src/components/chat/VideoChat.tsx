@@ -7,14 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 // A placeholder for a real WebRTC/video service client
 const videoServiceClient = {
-  join: async (roomId: string, userId: string) => {
-    console.log(`${userId} joining room ${roomId}`);
+  join: async (_roomId: string, _userId: string) => {
+
     return { success: true };
   },
-  leave: (roomId: string, userId: string) => {
-    console.log(`${userId} leaving room ${roomId}`);
+  leave: (_roomId: string, _userId: string) => {
+
   },
-  getParticipants: (roomId: string, callback: (participants: any[]) => void) => {
+  getParticipants: (_roomId: string, callback: (participants: any[]) => void) => {
     // Simulate participants joining and leaving
     const interval = setInterval(() => {
       callback([

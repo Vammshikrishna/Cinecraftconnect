@@ -10,7 +10,7 @@ interface TypingUser {
 export const useTypingIndicator = (roomId: string) => {
   const { user } = useAuth();
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
 
   useEffect(() => {
@@ -37,11 +37,11 @@ export const useTypingIndicator = (roomId: string) => {
 
         setTypingUsers(typing);
       })
-      .on('presence', { event: 'join' }, ({ newPresences }) => {
-        console.log('User started typing:', newPresences);
+      .on('presence', { event: 'join' }, () => {
+
       })
-      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-        console.log('User stopped typing:', leftPresences);
+      .on('presence', { event: 'leave' }, () => {
+
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {

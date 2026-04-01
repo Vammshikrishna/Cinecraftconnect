@@ -200,7 +200,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   if (activeRoom) {
     return (
-      <div className="fixed inset-x-0 top-16 bottom-0 bg-background text-foreground flex flex-col z-40 pb-16 lg:pb-0">
+      <div className="fixed inset-x-0 top-14 md:top-16 bottom-0 bg-background text-foreground flex flex-col z-40 lg:pb-0">
         <DiscussionChatInterface
           roomId={activeRoom.id}
           userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
@@ -219,8 +219,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground pt-12">
-      <div className="w-full md:container mx-auto px-1 sm:px-4 pt-4 md:pt-8 pb-24">
+    <div className="min-h-screen bg-background text-foreground pt-16 md:pt-20">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24">
         {/* Header and Controls */}
         <div className="flex flex-row justify-between items-center mb-8 gap-4">
           <h1 className="text-2xl md:text-4xl font-bold text-foreground">Discussion Rooms</h1>

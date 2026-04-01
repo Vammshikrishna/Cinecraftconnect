@@ -70,7 +70,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
                 .maybeSingle();
 
             if (existingCall) {
-                console.log("Found existing active call, joining instead of creating.");
+
                 setActiveCall(existingCall as unknown as Call);
                 return existingCall;
             }
@@ -89,7 +89,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
             // We use the same name for URL as LiveKit URLs are handled by the server URL + token
             const roomUrl = roomName;
 
-            console.log("Starting LiveKit call for room:", roomId);
+
 
             // Create new call
             const { data, error } = await supabase
@@ -158,7 +158,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
 
     const endCall = async () => {
         try {
-            console.log("Ending all active calls for room:", roomId);
+
             const { error } = await supabase
                 .from('calls' as any)
                 .update({ status: 'ended', ended_at: new Date().toISOString() })
@@ -181,7 +181,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
         if (!activeCall || !user) return;
 
         try {
-            console.log("Leaving call for user:", user.id);
+
             const { error } = await supabase
                 .from('call_participants' as any)
                 .update({ status: 'left', left_at: new Date().toISOString() })

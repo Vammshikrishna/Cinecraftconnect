@@ -145,7 +145,7 @@ const MyVideoConference = ({ onLeave, userRole }: { onLeave: () => void, userRol
       {/* Top Right Controls - Removed as requested */}
 
       {/* Modern Floating Control Bar */}
-      <div className="absolute bottom-2 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 px-1 py-1 sm:px-3 sm:py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-0.5 sm:gap-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500 max-w-[98vw]">
+      <div className="absolute bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 px-1 py-1 sm:px-3 sm:py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-0.5 sm:gap-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500 max-w-[98vw]">
         <div className="flex-shrink-0 flex items-center pr-1 sm:pr-2 border-r border-white/10">
           <ControlBar 
             variation="minimal" 
@@ -208,7 +208,7 @@ const MyVideoConference = ({ onLeave, userRole }: { onLeave: () => void, userRol
 
       {/* Globally Centered Reaction Picker Popover */}
       {showReactions && (
-        <div className={`absolute bottom-36 sm:bottom-28 left-1/2 -translate-x-1/2 mb-5 p-3 bg-black/95 backdrop-blur-2xl border border-white/10 ${showMoreReactions ? 'rounded-3xl flex-wrap w-[280px] sm:w-[400px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[90vw]'} flex flex-row gap-3 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center scale-95 sm:scale-100 origin-bottom`}>
+        <div className={`absolute bottom-[135px] sm:bottom-28 left-1/2 -translate-x-1/2 mb-5 p-3 bg-black/95 backdrop-blur-2xl border border-white/10 ${showMoreReactions ? 'rounded-3xl flex-wrap w-[280px] sm:w-[400px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[90vw]'} flex flex-row gap-3 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center scale-95 sm:scale-100 origin-bottom`}>
           {(showMoreReactions ? ['❤️', '👏', '🔥', '😂', '😮', '😢', '👍', '🎉', '🙌', '✨', '🤩', '💡'] : ['❤️', '👏', '🔥', '😂', '😮', '😢']).map((emoji) => (
             <button 
               key={emoji}
@@ -426,7 +426,7 @@ const MyVideoConference = ({ onLeave, userRole }: { onLeave: () => void, userRol
         }
         .lk-grid-layout {
           gap: 1.5rem !important;
-          padding-bottom: 4.5rem !important;
+          padding-bottom: 7rem !important;
         }
         .lk-chat-header {
           display: none !important;

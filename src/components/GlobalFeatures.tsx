@@ -1,4 +1,5 @@
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 
 /**
@@ -11,6 +12,9 @@ import { BackToTop } from '@/components/ui/back-to-top';
 const GlobalFeatures = () => {
     // Activate global keyboard shortcuts
     useKeyboardShortcuts();
+    
+    // Activate global presence tracking - this marks the user as online everywhere
+    usePresence();
 
     return (
         <>

@@ -4,7 +4,11 @@ import { motion } from "framer-motion";
 import { 
   ArrowLeft, MapPin, Briefcase, CheckCircle, 
   Share2, Bookmark, DollarSign, ExternalLink,
-  Info, Users, Globe, Trash2
+  Info, 
+  Users, 
+  Globe, 
+  Trash2,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -28,6 +32,7 @@ const JobDetail = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const isOwner = user?.id === job?.posted_by;
 
   const fetchJobDetail = async () => {
     if (!jobId) return;
@@ -257,7 +262,11 @@ const JobDetail = () => {
 
                 {/* Desktop-only Action Row: LinkedIn Style */}
                 <div className="hidden md:flex flex-row items-center gap-3 pt-6 border-t border-border/20 mt-6">
-                  {isApplied ? (
+                  {isOwner ? (
+                    <Button onClick={() => navigate('/jobs/manage')} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-lg">
+                      <Settings className="mr-2 h-5 w-5" /> Manage Job
+                    </Button>
+                  ) : isApplied ? (
                     <div className="flex items-center gap-2">
                         <Button disabled className="h-14 px-10 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 font-black">
                         <CheckCircle className="mr-2 h-5 w-5" />
@@ -473,9 +482,13 @@ const JobDetail = () => {
       </main>
 
       {/* Sticky Bottom Apply Bar for Mobile */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-transform duration-500">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-500">
         <div className="flex items-center gap-3">
-          {isApplied ? (
+          {isOwner ? (
+            <Button onClick={() => navigate('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
+              <Settings className="mr-1.5 h-3.5 w-3.5" /> Manage Job
+            </Button>
+          ) : isApplied ? (
             <div className="flex flex-1 items-center gap-2">
                 <Button disabled className="h-12 flex-[2] rounded-2xl bg-green-500/10 text-green-500 border border-green-500/20 font-black text-xs">
                 <CheckCircle className="mr-1.5 h-3.5 w-3.5" />

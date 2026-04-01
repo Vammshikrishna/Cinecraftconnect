@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
 import { useToast } from "@/hooks/use-toast";
@@ -10,6 +11,7 @@ import { togglePostLike } from "@/services/postService";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePostBookmarks } from "@/hooks/usePostBookmarks";
+import { useRealtimePostStats } from "@/hooks/useRealtimePostStats";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -120,6 +122,9 @@ const PostCard = ({
   const [editContent, setEditContent] = useState(content);
   const [editMediaItems, setEditMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
 
+  // Real-time metrics
+  const { likeCount: displayLikeCount, commentCount: displayCommentCount } = useRealtimePostStats(id, like_count, comment_count);
+
   // Initialize edit state when dialog opens
   useEffect(() => {
     if (isEditOpen) {
@@ -153,9 +158,7 @@ const PostCard = ({
     setViewIndex((prev) => (prev - 1 + max) % max);
   };
 
-  // Use props as source of truth
   const isLiked = currentUserLiked || false;
-  const displayLikeCount = like_count;
 
   const handleLike = async () => {
     if (isLiking) return;
@@ -569,9 +572,9 @@ const PostCard = ({
             <span>{displayLikeCount}</span>
           </Button>
 
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center gap-1.5 transition-all duration-300" onClick={handleComment}>
-            <MessageCircle size={18} className="group-hover:scale-110 transition-transform duration-300" />
-            <span>{comment_count}</span>
+          <Button variant="ghost" size="sm" className={`text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center gap-1.5 transition-all duration-300 ${showComments ? 'text-primary' : ''}`} onClick={handleComment}>
+            <MessageCircle size={18} className={`transition-transform duration-300 ${showComments ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
+            <span>{displayCommentCount}</span>
           </Button>
 
           <ShareButton postId={id} shareCount={share_count} />
@@ -596,7 +599,21 @@ const PostCard = ({
           </Button>
         </div>
       </div>
-      {showComments && <CommentSection postId={id} />}
+      <AnimatePresence>
+        {showComments && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            className="overflow-hidden border-t border-white/5 bg-black/5"
+          >
+            <div className="p-3 sm:p-6 pt-2">
+              <CommentSection postId={id} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Full-screen Media Viewer with Interaction Panel */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>

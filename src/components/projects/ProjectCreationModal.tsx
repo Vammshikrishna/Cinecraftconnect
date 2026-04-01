@@ -126,9 +126,6 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage.from('project-images').getPublicUrl(fileName);
-        // imageUrl = urlData.publicUrl; // Prepared for future use
-        console.log('Project image uploaded:', urlData.publicUrl);
       }
 
       const payload = {

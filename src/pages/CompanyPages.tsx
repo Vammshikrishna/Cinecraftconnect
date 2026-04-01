@@ -16,20 +16,21 @@ const CompanyPages = () => {
     <div className="min-h-screen bg-background">
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-bold mb-1 flex items-center gap-2">
-              <Building2 className="h-8 w-8 text-primary" />
+        <div className="flex flex-col gap-1 mb-8">
+          <div className="flex flex-row justify-between items-center gap-4">
+            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
+              <Building2 className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
               Pages
             </h1>
-            <p className="text-muted-foreground">
-              Discover production houses, studios, agencies, and organizations
-            </p>
+            <Button onClick={() => setShowCreateModal(true)} className="gap-2 shadow-lg shadow-primary/20 shrink-0 h-9 md:h-11 px-3 md:px-5 text-xs md:text-sm">
+              <Plus size={18} />
+              <span className="hidden xs:inline">Create a Page</span>
+              <span className="xs:hidden">Create</span>
+            </Button>
           </div>
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2 shadow-lg shadow-primary/20">
-            <Plus size={18} />
-            Create a Page
-          </Button>
+          <p className="text-xs md:text-sm text-muted-foreground opacity-90">
+            Discover production houses, studios, agencies, and organizations
+          </p>
         </div>
 
         {/* Search */}

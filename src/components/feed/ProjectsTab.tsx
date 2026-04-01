@@ -49,7 +49,7 @@ const ProjectsTab = () => {
         .limit(5);
 
       if (error) throw error;
-      console.log('ProjectsTab - Fetched projects:', data);
+
       setProjects(data as any || []);
     } catch (error) {
       console.error('Error fetching projects:', error);

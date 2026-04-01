@@ -1,58 +1,58 @@
 
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
 import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/toaster";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import Navbar from "@/components/navbar/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ui/error-boundary";
-
 import GlobalFeatures from "@/components/GlobalFeatures";
 
 // Page Imports
-const Index = lazy(() => import("./pages/Index"));
-const Auth = lazy(() => import("./pages/Auth"));
-const Feed = lazy(() => import("./pages/Feed"));
-const Profile = lazy(() => import("./pages/Profile"));
-const PublicProfile = lazy(() => import("./pages/PublicProfile"));
-const Projects = lazy(() => import("./pages/Projects"));
-const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage"));
-const Jobs = lazy(() => import("./pages/Jobs"));
-const Network = lazy(() => import("./pages/Network"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const Analytics = lazy(() => import("./pages/Analytics"));
-const LearningPortal = lazy(() => import("./pages/LearningPortal"));
-const CraftPage = lazy(() => import("./pages/CraftPage"));
-const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
-const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
-const ChatsList = lazy(() => import("./pages/ChatsList"));
-const ChatPage = lazy(() => import("./pages/ChatPage"));
-const Settings = lazy(() => import("./pages/Settings"));
-const AppearanceSettings = lazy(() => import("./pages/settings/AppearanceSettings"));
-const NotificationsSettings = lazy(() => import("./pages/settings/NotificationsSettings"));
-const PrivacySettings = lazy(() => import("./pages/settings/PrivacySettings"));
-const SecuritySettings = lazy(() => import("./pages/settings/SecuritySettings"));
-const AccessibilitySettings = lazy(() => import("./pages/settings/AccessibilitySettings"));
-const SoundSettings = lazy(() => import("./pages/settings/SoundSettings"));
-const DataSettings = lazy(() => import("./pages/settings/DataSettings"));
-const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
-const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
-const Marketplace = lazy(() => import("./pages/Marketplace"));
-const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
-const Vendors = lazy(() => import("./pages/Vendors"));
-const VendorDetail = lazy(() => import("./pages/VendorDetail"));
-const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
-const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
-const SearchPage = lazy(() => import("./pages/SearchPage"));
-const ContentDetailPage = lazy(() => import("./pages/ContentDetailPage"));
-const RatingsPage = lazy(() => import("./pages/RatingsPage"));
-const AnnouncementsPage = lazy(() => import("./pages/AnnouncementsPage"));
-const CompanyPages = lazy(() => import("./pages/CompanyPages"));
-const CompanyPageDetail = lazy(() => import("./pages/CompanyPageDetail"));
-const Notifications = lazy(() => import("./pages/Notifications"));
-const JobDetail = lazy(() => import("@/pages/JobDetail"));
-const PostDetailPage = lazy(() => import("@/pages/PostDetailPage"));
+import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import Feed from "./pages/Feed";
+import Profile from "./pages/Profile";
+import PublicProfile from "./pages/PublicProfile";
+import Projects from "./pages/Projects";
+import ProjectSpacePage from "./pages/ProjectSpacePage";
+import Jobs from "./pages/Jobs";
+import Network from "./pages/Network";
+import NotFound from "./pages/NotFound";
+import Analytics from "./pages/Analytics";
+import LearningPortal from "./pages/LearningPortal";
+import CraftPage from "./pages/CraftPage";
+import AllCraftsPage from "./pages/AllCraftsPage";
+import DiscussionRooms from "./pages/DiscussionRooms";
+import ChatsList from "./pages/ChatsList";
+import ChatPage from "./pages/ChatPage";
+import Settings from "./pages/Settings";
+import AppearanceSettings from "./pages/settings/AppearanceSettings";
+import NotificationsSettings from "./pages/settings/NotificationsSettings";
+import PrivacySettings from "./pages/settings/PrivacySettings";
+import SecuritySettings from "./pages/settings/SecuritySettings";
+import AccessibilitySettings from "./pages/settings/AccessibilitySettings";
+import SoundSettings from "./pages/settings/SoundSettings";
+import DataSettings from "./pages/settings/DataSettings";
+import AccountSettings from "./pages/settings/AccountSettings";
+import CompleteProfile from "./pages/CompleteProfile";
+import Marketplace from "./pages/Marketplace";
+import MarketplaceListingDetail from "./pages/MarketplaceListingDetail";
+import Vendors from "./pages/Vendors";
+import VendorDetail from "./pages/VendorDetail";
+import MyApplications from "./pages/jobs/MyApplications";
+import ManageJobs from "./pages/jobs/ManageJobs";
+import SearchPage from "./pages/SearchPage";
+import ContentDetailPage from "./pages/ContentDetailPage";
+import RatingsPage from "./pages/RatingsPage";
+import AnnouncementsPage from "./pages/AnnouncementsPage";
+import CompanyPages from "./pages/CompanyPages";
+import CompanyPageDetail from "./pages/CompanyPageDetail";
+import Notifications from "./pages/Notifications";
+import JobDetail from "@/pages/JobDetail";
+import PostDetailPage from "@/pages/PostDetailPage";
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -66,9 +66,10 @@ const App = () => {
   const { user, profile } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <ScrollToTop />
-      <Toaster />
-      <GlobalFeatures />
+      <PresenceProvider>
+        <ScrollToTop />
+        <Toaster />
+        <GlobalFeatures />
       {user && profile?.onboarding_completed && <Navbar />}
       <ErrorBoundary>
         <Suspense
@@ -128,6 +129,7 @@ const App = () => {
           </Routes>
         </Suspense>
       </ErrorBoundary>
+      </PresenceProvider>
     </Router>
   );
 };

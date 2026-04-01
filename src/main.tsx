@@ -4,8 +4,37 @@ import App from './App.tsx';
 import { AuthProvider } from "./contexts/AuthContext.tsx";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Suppress specific verbose library logs
+const originalLog = console.log;
+const originalInfo = console.info;
+const originalWarn = console.warn;
+
+const suppressionFilter = (args: any[]) => {
+  if (typeof args[0] !== 'string') return false;
+  const msg = args[0];
+  return (
+    msg.includes('disconnect from room') || 
+    msg.includes('websocket closed') || 
+    msg.includes('Starting LiveKit call')
+  );
+};
+
+console.log = (...args: any[]) => {
+  if (suppressionFilter(args)) return;
+  originalLog.apply(console, args);
+};
+
+console.info = (...args: any[]) => {
+  if (suppressionFilter(args)) return;
+  originalInfo.apply(console, args);
+};
+
+console.warn = (...args: any[]) => {
+  if (suppressionFilter(args)) return;
+  originalWarn.apply(console, args);
+};
 
 const queryClient = new QueryClient({
   defaultOptions: {
