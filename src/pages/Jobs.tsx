@@ -12,13 +12,29 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedJob, setSelectedJob] = useState<{ id: string, title: string } | null>(null);
+  const [currentSelectedJob, setCurrentSelectedJob] = useState<{ id: string, title: string } | null>(null);
+  const [sortBy, setSortBy] = useState<'newest' | 'salary_high' | 'salary_low'>('newest');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterExperience, setFilterExperience] = useState<string>('all');
   const { toast } = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -42,8 +58,24 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
             slug
           )
         `)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+        .eq('is_active', true);
+
+      // Apply Filters
+      if (filterType !== 'all') {
+        query = query.eq('type', filterType as any);
+      }
+      if (filterExperience !== 'all') {
+        query = query.eq('experience_level', filterExperience as any);
+      }
+
+      // Apply Sorting
+      if (sortBy === 'salary_high') {
+        query = query.order('salary_max', { ascending: false });
+      } else if (sortBy === 'salary_low') {
+        query = query.order('salary_min', { ascending: true });
+      } else {
+        query = query.order('created_at', { ascending: false });
+      }
 
       if (searchQuery) {
         query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,company.ilike.%${searchQuery}%`);
@@ -81,7 +113,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   useEffect(() => {
     fetchJobs();
-  }, [searchQuery]);
+  }, [searchQuery, sortBy, filterType, filterExperience]);
 
   useEffect(() => {
     fetchUserApplications();
@@ -96,7 +128,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
       });
       return;
     }
-    setSelectedJob({ id: job.id, title: job.title });
+    setCurrentSelectedJob({ id: job.id, title: job.title });
   };
 
   return (
@@ -106,7 +138,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-24 pb-24 relative z-10">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
           <motion.div 
             initial={{ opacity: 0, x: -20 }}
@@ -148,12 +180,86 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               />
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" className="h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs">
-                <Filter size={16} /> Filters
-              </Button>
-              <Button variant="ghost" className="h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs">
-                <ArrowUpDown size={16} /> Sort
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" className={`h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs transition-colors ${(filterType !== 'all' || filterExperience !== 'all') ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
+                    <Filter size={16} /> Filters
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-80 p-6 glass-card border-border/40 rounded-[2rem] shadow-2xl mr-4" align="end">
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Job Type</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {['all', 'full-time', 'part-time', 'contract', 'project-based'].map((type) => (
+                          <Button 
+                            key={type}
+                            variant={filterType === type ? 'default' : 'outline'}
+                            onClick={() => setFilterType(type)}
+                            className="h-9 px-4 rounded-xl text-xs font-bold"
+                          >
+                            {type === 'all' ? 'Any' : type.replace('-', ' ')}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <DropdownMenuSeparator className="bg-border/20" />
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Experience</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {['all', 'Entry', 'Mid', 'Senior', 'Lead'].map((level) => (
+                          <Button 
+                            key={level}
+                            variant={filterExperience === level ? 'default' : 'outline'}
+                            onClick={() => setFilterExperience(level)}
+                            className="h-9 px-4 rounded-xl text-xs font-bold"
+                          >
+                            {level === 'all' ? 'Any' : level}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(filterType !== 'all' || filterExperience !== 'all') && (
+                      <>
+                        <DropdownMenuSeparator className="bg-border/20" />
+                        <Button 
+                          variant="ghost" 
+                          className="w-full h-10 rounded-xl text-xs font-black text-primary uppercase"
+                          onClick={() => {
+                            setFilterType('all');
+                            setFilterExperience('all');
+                          }}
+                        >
+                          Clear All Filters
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className={`h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs transition-colors ${sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
+                    <ArrowUpDown size={16} /> Sort
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56 p-2 glass-card border-border/40 rounded-2xl shadow-2xl" align="end">
+                  <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground/50 px-3 py-2">Sort By</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => setSortBy('newest')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'newest' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                    Newest First
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('salary_high')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_high' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                    Highest Salary
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setSortBy('salary_low')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_low' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                    Lowest Salary
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </motion.div>
@@ -290,13 +396,13 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           )}
         </div>
 
-        {selectedJob && (
+        {currentSelectedJob && (
           <JobApplicationModal
-            jobId={selectedJob.id}
-            jobTitle={selectedJob.title}
-            isOpen={!!selectedJob}
+            jobId={currentSelectedJob.id}
+            jobTitle={currentSelectedJob.title}
+            isOpen={!!currentSelectedJob}
             onOpenChange={(open) => {
-              if (!open) setSelectedJob(null);
+              if (!open) setCurrentSelectedJob(null);
               if (!open) fetchUserApplications();
             }}
           />

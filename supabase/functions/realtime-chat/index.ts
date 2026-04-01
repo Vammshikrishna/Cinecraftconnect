@@ -29,7 +29,7 @@ Deno.serve(async (req: Request) => {
     return new Response("Unauthorized", { status: 401, headers: corsHeaders });
   }
 
-  console.log('Authenticated user:', user.id);
+
 
   const { headers } = req;
   const upgradeHeader = headers.get("upgrade") || "";
@@ -50,7 +50,7 @@ Deno.serve(async (req: Request) => {
   let sessionCreated = false;
 
   socket.onopen = () => {
-    console.log('Client connected to chat relay');
+
     
     // Connect to OpenAI Realtime API
     openAISocket = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17", [
@@ -60,13 +60,13 @@ Deno.serve(async (req: Request) => {
     ]);
 
     openAISocket.onopen = () => {
-      console.log('Connected to OpenAI Realtime API');
+
     };
 
     openAISocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('OpenAI message:', data.type);
+
 
         if (data.type === 'session.created' && !sessionCreated) {
           sessionCreated = true;
@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
           };
           
           openAISocket?.send(JSON.stringify(sessionUpdate));
-          console.log('Session update sent');
+
         }
 
         // Forward all messages to client
@@ -139,7 +139,7 @@ Deno.serve(async (req: Request) => {
     };
 
     openAISocket.onclose = () => {
-      console.log('OpenAI socket closed');
+
       socket.close();
     };
   };
@@ -147,10 +147,10 @@ Deno.serve(async (req: Request) => {
   socket.onmessage = (event) => {
     try {
       const message = JSON.parse(event.data);
-      console.log('Client message:', message.type);
+
       
       if (message.type === 'conversation.item.create') {
-        console.log('Forwarding message to OpenAI');
+
       }
       
       openAISocket?.send(event.data);
@@ -160,7 +160,7 @@ Deno.serve(async (req: Request) => {
   };
 
   socket.onclose = () => {
-    console.log('Client disconnected');
+
     openAISocket?.close();
   };
 

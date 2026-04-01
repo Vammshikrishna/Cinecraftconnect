@@ -80,7 +80,7 @@ const ProjectSpacePage = () => {
   }
 
   return (
-    <div className="h-screen w-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col p-0 pb-10 pt-14 lg:p-4 lg:pt-20 lg:pb-4">
+    <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col pt-14 lg:p-4 lg:pt-20 pb-0 overflow-hidden">
       <ProjectSpace
         projectId={project.id}
         projectTitle={project.title}

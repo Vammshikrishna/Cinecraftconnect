@@ -131,8 +131,8 @@ export const useHomeFeed = () => {
                     table: 'post_likes',
                     filter: `user_id=eq.${user.id}`
                 },
-                (payload) => {
-                    console.log('User post like changed:', payload);
+                () => {
+
                     // Invalidate to refetch liked post IDs
                     queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
                 }
@@ -149,8 +149,8 @@ export const useHomeFeed = () => {
                     schema: 'public',
                     table: 'posts'
                 },
-                (payload) => {
-                    console.log('Post updated:', payload);
+                (payload: any) => {
+
                     // Update the specific post in the cache without full refetch
                     queryClient.setQueryData(['home-feed-data', user.id], (old: any) => {
                         if (!old) return old;

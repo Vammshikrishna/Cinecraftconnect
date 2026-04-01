@@ -82,11 +82,11 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       if (data) {
         setSpaceId((data as any).id);
       } else {
-        console.log('No project space found. checking ownership to auto-create...');
+
         // We already fetched projectData above
 
         if (projectData && user && projectData.creator_id === user.id) {
-          console.log('User is creator. Creating default space...');
+
           const { data: newSpace, error: createError } = await supabase
             .from('project_spaces' as any)
             .insert({
@@ -304,6 +304,56 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     );
   }
 
+  const renderMessageContent = (content: string) => {
+    if (content.startsWith('POST_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('POST_SHARE::', ''));
+        return <PostShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('MARKETPLACE_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('MARKETPLACE_SHARE::', ''));
+        return <MarketplaceShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('ANNOUNCEMENT_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('ANNOUNCEMENT_SHARE::', ''));
+        return <AnnouncementShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('VENDOR_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('VENDOR_SHARE::', ''));
+        return <VendorShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('PROJECT_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('PROJECT_SHARE::', ''));
+        return <ProjectShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) {
+      try {
+        const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+        const shareData = JSON.parse(content.replace(prefix, ''));
+        return <DiscussionShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>;
+  };
+
+  const isShareContent = (content: string) =>
+    content.startsWith('POST_SHARE::') ||
+    content.startsWith('MARKETPLACE_SHARE::') ||
+    content.startsWith('ANNOUNCEMENT_SHARE::') ||
+    content.startsWith('VENDOR_SHARE::') ||
+    content.startsWith('PROJECT_SHARE::') ||
+    content.startsWith('DISCUSSION_SHARE::') ||
+    content.startsWith('ROOM_SHARE::');
+
   // Otherwise show chat interface
   return (
     <div className="flex flex-col h-full">
@@ -337,16 +387,17 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         ) : (
           messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
             const isOwn = message.user_id === user?.id;
+            const isShare = isShareContent(message.content);
             return (
-              <div key={message.id} className={`flex gap-3 mb-4 group ${isOwn ? 'flex-row-reverse' : ''}`}>
-                <Avatar className="h-8 w-8 flex-shrink-0">
+              <div key={message.id} className={`flex gap-3 mb-4 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isOwn ? 'flex-row-reverse' : ''}`}>
+                <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
                   <AvatarImage src={message.profiles?.avatar_url || undefined} />
-                  <AvatarFallback>
+                  <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">
                     {message.profiles?.full_name?.[0] || 'U'}
                   </AvatarFallback>
                 </Avatar>
-                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[70%] relative`}>
-                  <div className={`${(message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::')) ? 'p-0 bg-transparent' : `rounded-lg p-3 ${message.is_deleted ? 'bg-muted/50 border border-border' : isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
+                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
+                  <div className={`${(isShare && !message.is_deleted) ? 'p-0 bg-transparent' : `rounded-2xl p-3 ${message.is_deleted ? 'bg-muted/50 border border-border' : isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
                     {!isOwn && (
                       <p className="text-xs font-semibold mb-1 opacity-80">
                         {message.profiles?.full_name || 'Unknown User'}
@@ -369,6 +420,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                               repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
                               repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
                               repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                              repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
                               repliedMsg.content
                             )}
                           </div>
@@ -380,62 +432,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                       <p className="text-sm italic text-muted-foreground flex items-center gap-1">
                         <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
                       </p>
-                    ) : message.content.startsWith('POST_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
-                          return <PostShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
-                          return <MarketplaceShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
-                          return <AnnouncementShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('VENDOR_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
-                          return <VendorShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('PROJECT_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
-                          return <ProjectShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
-                    ) : message.content.startsWith('DISCUSSION_SHARE::') ? (
-                      (() => {
-                        try {
-                          const shareData = JSON.parse(message.content.replace('DISCUSSION_SHARE::', ''));
-                          return <DiscussionShareCard {...shareData} />;
-                        } catch (e) {
-                          return <p className="text-sm break-words">{message.content}</p>;
-                        }
-                      })()
                     ) : (
-                      <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+                      renderMessageContent(message.content)
                     )}
                   </div>
                   
@@ -498,7 +496,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             </button>
           </div>
         )}
-        <div className="p-4">
+        <div className="pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-4">
           <MessageComposer
             onSend={handleSendMessage}
             onAttach={handleAttach}

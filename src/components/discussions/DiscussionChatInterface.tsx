@@ -369,9 +369,10 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         return <ProjectShareCard {...shareData} />;
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
-    if (content.startsWith('DISCUSSION_SHARE::')) {
+    if (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) {
       try {
-        const shareData = JSON.parse(content.replace('DISCUSSION_SHARE::', ''));
+        const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+        const shareData = JSON.parse(content.replace(prefix, ''));
         return <DiscussionShareCard {...shareData} />;
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
@@ -384,7 +385,8 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     content.startsWith('ANNOUNCEMENT_SHARE::') ||
     content.startsWith('VENDOR_SHARE::') ||
     content.startsWith('PROJECT_SHARE::') ||
-    content.startsWith('DISCUSSION_SHARE::');
+    content.startsWith('DISCUSSION_SHARE::') ||
+    content.startsWith('ROOM_SHARE::');
 
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
@@ -534,9 +536,9 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Link to={`/profile/${message.profiles.id}`}>
-                            <Avatar className="h-7 w-7 cursor-pointer hover:opacity-80 transition-opacity shrink-0">
+                            <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity shrink-0 shadow-sm border border-border/10">
                               <AvatarImage src={message.profiles.avatar_url || undefined} />
-                              <AvatarFallback className="text-xs">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
+                              <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
                             </Avatar>
                           </Link>
                         </TooltipTrigger>
@@ -563,6 +565,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                                   repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
                                   repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
                                   repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                  repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
                                   repliedMsg.content
                                 )}
                               </div>
@@ -619,7 +622,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
             </div>
           )}
 
-          <div className="p-3 border-t border-border/50 bg-background flex flex-col">
+          <div className="lg:pb-4 pb-[calc(56px+env(safe-area-inset-bottom))] border-t border-border bg-background flex flex-col">
             {replyingTo && (
               <div className="bg-muted px-3 py-1.5 mb-2 rounded-md flex items-center justify-between border border-border text-xs">
                 <div className="flex-1 overflow-hidden pr-2">
@@ -703,7 +706,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         >
           {/* Discussion View (when in call) - Keep mounted using CSS transition/visibility */}
           {isInCall && activeCall && (
-            <div className={`absolute inset-x-0 top-0 bottom-16 sm:bottom-0 flex flex-col overflow-hidden transition-all duration-300 ${mobileTab === 'discussion' ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none'}`}>
+            <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col overflow-hidden transition-all duration-300 ${mobileTab === 'discussion' ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none'}`}>
               <EmbeddedCallPanel
                 roomId={roomId}
                 roomName={roomTitle}
@@ -716,11 +719,11 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           )}
 
           {/* Chat View - Always shown when tab=chat during call or when no call */}
-          <div className={`absolute inset-x-0 top-0 bottom-16 sm:bottom-0 flex flex-col transition-all duration-300 ${(!isInCall || !activeCall || mobileTab === 'chat') ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}`}>
+          <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col transition-all duration-300 ${(!isInCall || !activeCall || mobileTab === 'chat') ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}`}>
             <div
               ref={!isInCall || mobileTab === 'chat' ? scrollContainerRef : undefined}
               onScroll={handleScroll}
-              className="flex-1 flex flex-col overflow-y-auto p-3 pt-6 custom-scrollbar"
+              className="flex-1 flex flex-col overflow-y-auto p-3 pt-2 custom-scrollbar"
             >
               {messages.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center">
@@ -737,12 +740,12 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                   return (
                     <div key={message.id} className={`flex items-end gap-2 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSender ? 'flex-row-reverse' : ''}`}>
                       <Link to={`/profile/${message.profiles.id}`}>
-                        <Avatar className="h-6 w-6 cursor-pointer hover:scale-110 active:scale-95 transition-all shrink-0 shadow-sm">
+                        <Avatar className="h-9 w-9 cursor-pointer hover:scale-110 active:scale-95 transition-all shrink-0 shadow-sm border border-border/10">
                           <AvatarImage src={message.profiles.avatar_url || undefined} />
-                          <AvatarFallback className="text-[10px] bg-secondary text-secondary-foreground">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
+                          <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
                         </Avatar>
                       </Link>
-                      <div className="flex items-end gap-2 relative max-w-[80%]">
+                      <div className="flex items-end gap-2 relative max-w-[85%]">
                         <div className={`${isShare && !message.is_deleted ? 'p-0 bg-transparent' : `p-2.5 rounded-2xl text-sm shadow-sm ${message.is_deleted ? 'bg-muted/50 border border-border/50 text-muted-foreground' : isSender ? 'bg-primary text-primary-foreground rounded-tr-none' : 'bg-muted rounded-tl-none'}`} relative cursor-default transition-all hover:shadow-md`}>
                           {message.reply_to_id && !message.is_deleted && (() => {
                             const repliedMsg = messages.find(m => m.id === message.reply_to_id);
@@ -813,7 +816,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
               </div>
             )}
 
-            <div className="p-3 border-t border-border/10 bg-background/80 backdrop-blur-xl sm:pb-2 sticky bottom-0 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.03)] flex flex-col">
+            <div className="border-t border-border flex flex-col bg-background pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-2 sticky bottom-0 z-30">
               {replyingTo && (
                 <div className="bg-muted px-3 py-1.5 mb-2 rounded-md flex items-center justify-between border border-border text-xs">
                   <div className="flex-1 overflow-hidden pr-2">

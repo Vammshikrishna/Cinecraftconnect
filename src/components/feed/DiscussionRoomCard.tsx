@@ -120,8 +120,8 @@ const DiscussionRoomCard = ({
     }
   };
 
-  const handleRoomUpdated = (roomId: string, newTitle: string, newDescription: string) => {
-    console.log('Room updated:', roomId, newTitle, newDescription);
+  const handleRoomUpdated = (_roomId: string, _newTitle: string, _newDescription: string) => {
+
   };
 
   return (

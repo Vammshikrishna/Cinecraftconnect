@@ -21,7 +21,7 @@ export const useRealtimePosts = ({ onInsert, onUpdate, onDelete }: UseRealtimePo
           table: 'posts'
         },
         (payload) => {
-          console.log('New post inserted:', payload.new);
+
           if (onInsert) {
             onInsert(payload.new as Post);
           }
@@ -35,7 +35,7 @@ export const useRealtimePosts = ({ onInsert, onUpdate, onDelete }: UseRealtimePo
           table: 'posts'
         },
         (payload) => {
-          console.log('Post updated:', payload.new);
+
           if (onUpdate) {
             onUpdate(payload.new as Post);
           }
@@ -49,7 +49,7 @@ export const useRealtimePosts = ({ onInsert, onUpdate, onDelete }: UseRealtimePo
           table: 'posts'
         },
         (payload) => {
-          console.log('Post deleted:', payload.old);
+
           if (onDelete) {
             onDelete((payload.old as Post).id);
           }

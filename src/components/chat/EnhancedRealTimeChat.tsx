@@ -78,7 +78,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { activeCall, startCall, joinCall, leaveCall, endCall } = useCall('direct', roomId || '');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const { onlineUserIds } = usePresence(`chat-presence-${roomId}`);
+  const { onlineUserIds } = usePresence(); // Uses global presence by default
   const isPartnerOnline = onlineUserIds.includes(partnerId);
   
   const scrollToBottom = () => {
@@ -402,7 +402,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`relative group ${message.is_deleted ? 'bg-muted/50 border border-border' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`)} max-w-xs lg:max-w-md rounded-2xl ${message.is_deleted ? 'p-3' : ''}`}>
+                  <div className={`relative group ${message.is_deleted ? 'bg-muted/50 border border-border' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`)} max-w-[85%] rounded-2xl ${message.is_deleted ? 'p-3' : ''}`}>
                     {!message.is_deleted && (
                       <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
                         <DropdownMenu>

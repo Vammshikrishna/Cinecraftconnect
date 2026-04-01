@@ -28,7 +28,7 @@ export const useRealtimeComments = ({ postId, onInsert, onUpdate, onDelete }: Us
           filter: postId ? `post_id=eq.${postId}` : undefined
         },
         (payload) => {
-          console.log('New comment inserted:', payload.new);
+
           if (onInsert) {
             onInsert(payload.new as Comment);
           }
@@ -43,7 +43,7 @@ export const useRealtimeComments = ({ postId, onInsert, onUpdate, onDelete }: Us
           filter: postId ? `post_id=eq.${postId}` : undefined
         },
         (payload) => {
-          console.log('Comment updated:', payload.new);
+
           if (onUpdate) {
             onUpdate(payload.new as Comment);
           }
@@ -58,7 +58,7 @@ export const useRealtimeComments = ({ postId, onInsert, onUpdate, onDelete }: Us
           filter: postId ? `post_id=eq.${postId}` : undefined
         },
         (payload) => {
-          console.log('Comment deleted:', payload.old);
+
           if (onDelete) {
             onDelete((payload.old as Comment).id);
           }

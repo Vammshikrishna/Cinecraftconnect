@@ -160,7 +160,7 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
     };
 
     return (
-        <Card className="glass-card p-2 sm:p-6 mb-6" id="create-post-widget">
+        <Card className="glass-card p-2 mb-6" id="create-post-widget">
             {!showCreatePost ? (
                 <Button
                     id="create-post-trigger"

@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { AccessToken } from "https://esm.sh/livekit-server-sdk@2.1.2?target=deno";
 import { corsHeaders } from "../_shared/cors.ts";
 
-console.log("LiveKit Token function started");
+
 
 serve(async (req) => {
   // Handle CORS preflight

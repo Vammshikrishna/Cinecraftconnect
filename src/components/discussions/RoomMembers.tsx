@@ -41,13 +41,13 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
       }
 
       if (!membersData || membersData.length === 0) {
-        console.log('No members found for room:', roomId);
+
         setMembers([]);
         return;
       }
 
       const userIds = membersData.map((m: any) => m.user_id);
-      console.log('User IDs in room:', userIds);
+
 
       // 2. Fetch profiles for these user_ids
       const { data: profilesData, error: profilesError } = await supabase
@@ -60,7 +60,7 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
         throw profilesError;
       }
 
-      console.log('Fetched profiles:', profilesData);
+
       setMembers((profilesData || []) as Member[]);
     } catch (err: any) {
       const errorMsg = err?.message || 'Failed to fetch room members.';

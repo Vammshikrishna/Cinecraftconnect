@@ -8,6 +8,7 @@ import { ChatList } from '@/components/chat/ChatList';
 import { ChatListSkeleton } from '@/components/chat/ChatListSkeleton';
 import { EmptyState } from '@/components/chat/EmptyState';
 import { Conversation } from '@/types/chat';
+import { usePresence } from '@/hooks/usePresence';
 import { MessageSquare, Search, Plus, Users } from 'lucide-react';
 import {
   Dialog,
@@ -29,6 +30,7 @@ const ChatsList = () => {
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [searchedUsers, setSearchedUsers] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
+  const { onlineUserIds } = usePresence();
 
   useEffect(() => {
     const fetchConversations = async () => {
@@ -235,7 +237,10 @@ const ChatsList = () => {
               )}
             </div>
           ) : (
-            <ChatList conversations={filteredConversations} />
+            <ChatList 
+              conversations={filteredConversations} 
+              onlineUserIds={onlineUserIds} 
+            />
           )}
         </div>
       </div>
