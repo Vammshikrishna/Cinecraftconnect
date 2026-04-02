@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import FeedRatingCard from "./FeedRatingCard";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/services/tmdb";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { searchContent } from "@/services/tmdb";
 
 interface RatingItem extends TMDBContent {
@@ -22,7 +22,7 @@ interface RatingItem extends TMDBContent {
 }
 
 // ------------------------------------------------------------------------------------------------
-// Smart Category Row Component (Cinematic Progressive Loading)
+// Smart Category Row Component — resilient loading with retry on failure
 // ------------------------------------------------------------------------------------------------
 interface SmartCategoryRowProps {
   title: string;
@@ -35,10 +35,12 @@ interface SmartCategoryRowProps {
 const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false }: SmartCategoryRowProps) => {
   const [items, setItems] = useState<RatingItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [isInView, setIsInView] = useState(priority);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const fetchFnRef = useRef(fetchFn);
+  fetchFnRef.current = fetchFn;
 
   useEffect(() => {
     if (priority) {
@@ -53,7 +55,7 @@ const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false
           observer.disconnect();
         }
       },
-      { rootMargin: "600px" } // Start loading 600px before coming into view
+      { rootMargin: "800px" }
     );
 
     if (rowRef.current) {
@@ -63,18 +65,21 @@ const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false
     return () => observer.disconnect();
   }, [priority]);
 
-  useEffect(() => {
-    if (!isInView || isLoaded) return;
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const data = await fetchFnRef.current();
+      if (data.length === 0) {
+        setItems([]);
+        setLoading(false);
+        return;
+      }
 
-    const loadData = async () => {
+      // Enrich with user/app ratings — skip if no user to avoid unnecessary calls
+      let enrichedData: RatingItem[] = data.map(item => ({ ...item, user_rating: null, app_rating: null }));
+
       try {
-        const data = await fetchFn();
-        if (data.length === 0) {
-          setLoading(false);
-          setIsLoaded(true);
-          return;
-        }
-
         const ids = data.map(item => item.id);
         const [userRatingsRes, aggregatedRes] = await Promise.all([
           user ? supabase.from('user_film_ratings').select('tmdb_id, rating').eq('user_id', user.id).in('tmdb_id', ids) : Promise.resolve({ data: [], error: null }),
@@ -83,24 +88,32 @@ const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false
 
         let userMap: Record<number, number> = {};
         let appMap: Record<number, number> = {};
-        if (userRatingsRes.data) userRatingsRes.data.forEach((r: any) => userMap[r.tmdb_id] = Number(r.rating));
-        if (aggregatedRes.data) aggregatedRes.data.forEach((r: any) => appMap[r.tmdb_id] = Number(r.average_rating));
+        if (userRatingsRes.data) (userRatingsRes.data as any[]).forEach((r: any) => userMap[r.tmdb_id] = Number(r.rating));
+        if (aggregatedRes.data) (aggregatedRes.data as any[]).forEach((r: any) => appMap[r.tmdb_id] = Number(r.average_rating));
 
-        setItems(data.map(item => ({
+        enrichedData = data.map(item => ({
           ...item,
           user_rating: userMap[item.id] || null,
           app_rating: appMap[item.id] || null
-        })));
-      } catch (error) {
-        console.error(`Error loading ${title}:`, error);
-      } finally {
-        setLoading(false);
-        setIsLoaded(true);
+        }));
+      } catch (ratingErr) {
+        // Supabase ratings failed — still show TMDB data without ratings
+        console.warn(`Ratings enrichment failed for ${title}:`, ratingErr);
       }
-    };
 
+      setItems(enrichedData);
+    } catch (fetchError) {
+      console.error(`Failed to load ${title}:`, fetchError);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, title]);
+
+  useEffect(() => {
+    if (!isInView) return;
     loadData();
-  }, [isInView, isLoaded, fetchFn, user, title]);
+  }, [isInView, loadData]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
@@ -109,33 +122,43 @@ const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false
     }
   };
 
-  if (!loading && items.length === 0) return null;
+  // Don't hide rows that errored — show retry button instead
+  if (!loading && !error && items.length === 0) return null;
 
   return (
-    <div ref={rowRef} className="space-y-4 py-8 relative -mx-4 md:mx-0 px-4 md:px-0">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl md:text-3xl font-black text-foreground tracking-tighter uppercase italic bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-          {title}
-        </h3>
+    <div ref={rowRef} className="space-y-4 py-6 relative">
+      <div className="flex items-center justify-between px-4 md:px-0">
+        <h3 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">{title}</h3>
         <div className="hidden md:flex gap-2">
-          <button onClick={() => scroll('left')} className="p-2.5 rounded-full bg-secondary/30 backdrop-blur-md hover:bg-secondary border border-white/5 transition-all shadow-xl active:scale-95"><ChevronLeft className="h-6 w-6" /></button>
-          <button onClick={() => scroll('right')} className="p-2.5 rounded-full bg-secondary/30 backdrop-blur-md hover:bg-secondary border border-white/5 transition-all shadow-xl active:scale-95"><ChevronRight className="h-6 w-6" /></button>
+          <button onClick={() => scroll('left')} className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"><ChevronLeft className="h-5 w-5" /></button>
+          <button onClick={() => scroll('right')} className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"><ChevronRight className="h-5 w-5" /></button>
         </div>
       </div>
 
       <div className="group relative">
         <div
           ref={scrollRef}
-          className="flex gap-4 md:gap-6 overflow-x-auto pb-4 scrollbar-hide snap-x"
+          className="flex gap-4 overflow-x-auto pb-4 px-4 md:px-0 scrollbar-hide snap-x"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {loading ? (
-            [1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="w-[160px] md:w-[260px] shrink-0 aspect-[2/3] bg-muted/30 animate-pulse rounded-[32px] border border-white/5" />
+            [1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="w-[160px] md:w-[220px] shrink-0 aspect-[2/3] bg-muted animate-pulse rounded-xl" />
             ))
+          ) : error ? (
+            <div className="w-full flex flex-col items-center justify-center py-8 gap-3">
+              <p className="text-sm text-muted-foreground">Failed to load — slow connection?</p>
+              <button
+                onClick={loadData}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors active:scale-95"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Tap to Retry
+              </button>
+            </div>
           ) : (
             items.map((item) => (
-              <div key={item.id} className="w-[160px] md:w-[260px] flex-none snap-start transform transition-transform duration-500 hover:scale-105">
+              <div key={item.id} className="w-[160px] md:w-[220px] flex-none snap-start">
                 <FeedRatingCard
                   rating={{
                     id: item.id.toString(),

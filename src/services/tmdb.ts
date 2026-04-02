@@ -1,6 +1,6 @@
-export const TMDB_API_KEY = '6f333da40e57ee8319f5f977a458ef98'; // Replace with your actual API key
+export const TMDB_API_KEY = '6f333da40e57ee8319f5f977a458ef98';
 export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342'; // Optimized from w500 for faster 4G loading
+export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342';
 
 export interface TMDBContent {
     id: number;
@@ -16,26 +16,92 @@ export interface TMDBContent {
     genre_ids?: number[];
 }
 
+// ---------------------------------------------------------------------------
+// LocalStorage Cache — data persists so users NEVER see blank on slow networks
+// ---------------------------------------------------------------------------
+const CACHE_VERSION = 'tmdb_v2';
+const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 hours
+
+const getCached = (key: string): TMDBContent[] | null => {
+    try {
+        const raw = localStorage.getItem(`${CACHE_VERSION}_${key}`);
+        if (!raw) return null;
+        const { ts, data } = JSON.parse(raw);
+        if (Date.now() - ts > CACHE_TTL) {
+            localStorage.removeItem(`${CACHE_VERSION}_${key}`);
+            return null;
+        }
+        return data;
+    } catch {
+        return null;
+    }
+};
+
+const setCache = (key: string, data: TMDBContent[]) => {
+    try {
+        localStorage.setItem(`${CACHE_VERSION}_${key}`, JSON.stringify({ ts: Date.now(), data }));
+    } catch {
+        // Storage full — silently ignore
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Fetch with retry + exponential backoff — survives 3G/4G flaky connections
+// ---------------------------------------------------------------------------
+const fetchWithRetry = async (url: string, retries = 3, baseDelay = 1500): Promise<Response> => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const controller = new AbortController();
+        // Progressive timeout: 15s, 25s, 35s — generous for mobile data
+        const timeout = 15000 + attempt * 10000;
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            const response = await fetch(url, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (response.ok) return response;
+            // Server error (5xx) — retry; client error (4xx) — don't
+            if (response.status >= 500 && attempt < retries) {
+                await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+                continue;
+            }
+            throw new Error(`HTTP ${response.status}`);
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            if (attempt < retries) {
+                // Wait before retrying — exponential backoff
+                await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw new Error('Max retries exhausted');
+};
+
+// ---------------------------------------------------------------------------
+// Core fetch — uses cache-first then network to guarantee data shows up
+// ---------------------------------------------------------------------------
 export const fetchByPath = async (path: string, params: string = ''): Promise<TMDBContent[]> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for better 4G resilience
+    const cacheKey = `${path}${params}`;
+    const cached = getCached(cacheKey);
 
     try {
         const url = `${TMDB_BASE_URL}${path}?api_key=${TMDB_API_KEY}&language=en-US${params}`;
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`Failed to fetch ${path}`);
+        const response = await fetchWithRetry(url);
         const data = await response.json();
-        return data.results;
+        const results = data.results || [];
+        if (results.length > 0) {
+            setCache(cacheKey, results);
+        }
+        return results;
     } catch (error) {
-        clearTimeout(timeoutId);
-        console.error(`Error fetching ${path}:`, error);
-        return [];
+        console.warn(`TMDB fetch failed for ${path}, using cache:`, error);
+        // Return cached data if available — user sees something instead of blank
+        return cached || [];
     }
 };
 
 export const fetchContent = async (type: 'movie' | 'tv' | 'short', language?: string): Promise<TMDBContent[]> => {
-    // Re-implement using fetchByPath or keep custom logic for specific filters
     const langParam = language && language !== 'all' ? `&with_original_language=${language}` : '';
 
     if (type === 'tv') {
@@ -91,8 +157,7 @@ export const fetchContentDetails = async (id: number, type: 'movie' | 'tv' = 'mo
     try {
         const endpoint = type === 'movie' ? `/movie/${id}` : `/tv/${id}`;
         const url = `${TMDB_BASE_URL}${endpoint}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits,videos,similar,reviews`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed to fetch ${type} details`);
+        const response = await fetchWithRetry(url);
         return await response.json();
     } catch (error) {
         console.error(`Error fetching ${type} details:`, error);

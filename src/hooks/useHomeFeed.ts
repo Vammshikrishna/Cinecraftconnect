@@ -104,16 +104,16 @@ export const useHomeFeed = () => {
         staleTime: 1000 * 60 * 5,
     });
 
-    // 2. Non-Critical External Data (TMDB)
+    // 2. Non-Critical External Data (TMDB) — with retry for mobile resilience
     const ratingsQuery = useQuery({
         queryKey: ['home-feed-ratings'],
         queryFn: async () => {
-            return await fetchLatestRatings().catch(err => {
-                console.warn("Failed to fetch ratings", err);
-                return [];
-            });
+            const data = await fetchLatestRatings();
+            return data;
         },
         staleTime: 1000 * 60 * 60, // 1 hour cache
+        retry: 3,
+        retryDelay: (attemptIndex) => Math.min(2000 * Math.pow(2, attemptIndex), 15000),
     });
 
     // 3. Real-time subscription for post likes and updates
