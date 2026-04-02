@@ -49,9 +49,37 @@ export const fetchContent = async (type: 'movie' | 'tv' | 'short', language?: st
 export const fetchTrending = (type: 'movie' | 'tv' = 'movie') => fetchByPath(`/trending/${type}/week`);
 export const fetchTopRated = (type: 'movie' | 'tv' = 'movie') => fetchByPath(`/${type}/top_rated`, '&page=1');
 export const fetchUpcoming = () => fetchByPath('/movie/upcoming', '&page=1&region=IN');
+export const fetchNowPlaying = () => fetchByPath('/movie/now_playing', '&page=1&region=IN');
+export const fetchUpcomingTv = () => fetchByPath('/tv/on_the_air', '&page=1');
 export const fetchActionMovies = () => fetchByPath('/discover/movie', '&with_genres=28&sort_by=popularity.desc');
 export const fetchComedyMovies = () => fetchByPath('/discover/movie', '&with_genres=35&sort_by=popularity.desc');
 export const fetchIndianMovies = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&sort_by=popularity.desc&region=IN');
+export const fetchIndianAction = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=28&sort_by=popularity.desc&region=IN');
+export const fetchIndianComedy = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=35,18&sort_by=popularity.desc&region=IN');
+export const fetchIndianHorror = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=27,53&sort_by=popularity.desc&region=IN');
+export const fetchIndianTv = () => fetchByPath('/discover/tv', '&with_original_language=hi|te|ta|ml|kn&sort_by=popularity.desc&region=IN');
+export const fetchTeluguMovies = () => fetchByPath('/discover/movie', '&with_original_language=te&sort_by=popularity.desc&region=IN');
+export const fetchHindiMovies = () => fetchByPath('/discover/movie', '&with_original_language=hi&sort_by=popularity.desc&region=IN');
+export const fetchTamilMovies = () => fetchByPath('/discover/movie', '&with_original_language=ta&sort_by=popularity.desc&region=IN');
+export const fetchMalayalamMovies = () => fetchByPath('/discover/movie', '&with_original_language=ml&sort_by=popularity.desc&region=IN');
+export const fetchKannadaMovies = () => fetchByPath('/discover/movie', '&with_original_language=kn&sort_by=popularity.desc&region=IN');
+export const fetchHorrorMovies = () => fetchByPath('/discover/movie', '&with_genres=27&sort_by=popularity.desc');
+export const fetchSciFiMovies = () => fetchByPath('/discover/movie', '&with_genres=878&sort_by=popularity.desc');
+export const fetchRomanceMovies = () => fetchByPath('/discover/movie', '&with_genres=10749&sort_by=popularity.desc');
+export const fetchTvSeries = (genreId?: number) => fetchByPath('/discover/tv', `&sort_by=popularity.desc&page=1${genreId ? `&with_genres=${genreId}` : ''}`);
+export const fetchMoviesByGenre = (genreId: number) => fetchByPath('/discover/movie', `&with_genres=${genreId}&sort_by=popularity.desc&page=1`);
+export const fetchAnime = () => fetchByPath('/discover/tv', '&with_genres=16&sort_by=popularity.desc');
+export const fetchDocumentaries = () => fetchByPath('/discover/movie', '&with_genres=99&sort_by=popularity.desc');
+export const fetchMystery = () => fetchByPath('/discover/movie', '&with_genres=9648&sort_by=popularity.desc');
+export const fetchSciFiFantasy = () => fetchByPath('/discover/movie', '&with_genres=878,14&sort_by=popularity.desc');
+export const fetchFamilyMovies = () => fetchByPath('/discover/movie', '&with_genres=10751&sort_by=popularity.desc');
+export const fetchAnimation = () => fetchByPath('/discover/movie', '&with_genres=16&sort_by=popularity.desc');
+export const fetchAdventure = () => fetchByPath('/discover/movie', '&with_genres=12&sort_by=popularity.desc');
+export const fetchCrimeMovies = () => fetchByPath('/discover/movie', '&with_genres=80&sort_by=popularity.desc');
+export const fetchWarMovies = () => fetchByPath('/discover/movie', '&with_genres=10752&sort_by=popularity.desc');
+export const fetchMusicals = () => fetchByPath('/discover/movie', '&with_genres=10402&sort_by=popularity.desc');
+export const fetchIndianFamily = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=10751&sort_by=popularity.desc');
+export const searchContent = (query: string) => fetchByPath('/search/multi', `&query=${encodeURIComponent(query)}&page=1&include_adult=false`);
 
 // Fetch detailed information for a specific movie or TV show
 export const fetchContentDetails = async (id: number, type: 'movie' | 'tv' = 'movie') => {

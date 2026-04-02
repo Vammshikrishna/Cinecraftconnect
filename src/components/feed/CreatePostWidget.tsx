@@ -19,7 +19,9 @@ import {
     SelectValue 
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Building2, Loader2 } from 'lucide-react';
+import { User, Building2, Loader2, Smile } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useQueryClient } from '@tanstack/react-query';
 
 const postSchema = z.object({
@@ -207,14 +209,45 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
                         </div>
                     </div>
 
-                    <MentionTextarea
-                        placeholder="What's happening in your creative world?"
-                        value={newPostContent}
-                        onChange={(e) => setNewPostContent(e.target.value)}
-                        onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
-                        className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
-                        autoFocus
-                    />
+                    <div className="relative group/caption">
+                        <MentionTextarea
+                            placeholder="What's happening in your creative world?"
+                            value={newPostContent}
+                            onChange={(e) => setNewPostContent(e.target.value)}
+                            onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
+                            className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[120px] pb-10"
+                            autoFocus
+                        />
+                        
+                        {/* Integrated Emoji Portal */}
+                        <div className="absolute bottom-3 right-3 z-20">
+                            <Popover>
+                                <PopoverTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all">
+                                        <Smile className="h-5 w-5" />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent 
+                                  className="p-0 border-none bg-transparent shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative z-[999] animate-in zoom-in-95 duration-200 w-[85vw] max-w-[280px]" 
+                                  align="end"
+                                  sideOffset={10}
+                                >
+                                    <EmojiPicker
+                                        theme={Theme.DARK}
+                                        onEmojiClick={(emojiData) => {
+                                            setNewPostContent(prev => prev + emojiData.emoji);
+                                        }}
+                                        width="100%"
+                                        height={320}
+                                        lazyLoadEmojis={true}
+                                        skinTonesDisabled={true}
+                                        searchDisabled={false}
+                                        previewConfig={{ showPreview: false }}
+                                    />
+                                </PopoverContent>
+                            </Popover>
+                        </div>
+                    </div>
 
                     <MediaUpload
                         onMediaUpload={handleMediaUpload}
