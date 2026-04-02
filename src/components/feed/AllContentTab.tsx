@@ -84,7 +84,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
   useEffect(() => {
     const fetchAllContent = async () => {
       try {
-        const [postsRes, projectsRes, discussionsRes, announcementsRes, tmdbMovies] = await Promise.all([
+        const [postsRes, projectsRes, discussionsRes, announcementsRes] = await Promise.all([
           supabase
             .from('posts')
             .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
@@ -105,11 +105,13 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
             .select('*')
             .order('posted_at', { ascending: false })
             .limit(5),
-          fetchLatestRatings().catch(err => {
+        ]);
+
+        // Non-blocking TMDB fetch
+        const tmdbMovies = await fetchLatestRatings().catch(err => {
             console.error("Failed to fetch TMDB ratings", err);
             return [];
-          })
-        ]);
+        });
 
         if (postsRes.error) console.error('Posts fetch error:', postsRes.error);
         if (projectsRes.error) console.error('Projects fetch error:', projectsRes.error);

@@ -17,13 +17,18 @@ export interface TMDBContent {
 }
 
 export const fetchByPath = async (path: string, params: string = ''): Promise<TMDBContent[]> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for better 4G resilience
+
     try {
         const url = `${TMDB_BASE_URL}${path}?api_key=${TMDB_API_KEY}&language=en-US${params}`;
-        const response = await fetch(url);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`Failed to fetch ${path}`);
         const data = await response.json();
         return data.results;
     } catch (error) {
+        clearTimeout(timeoutId);
         console.error(`Error fetching ${path}:`, error);
         return [];
     }
