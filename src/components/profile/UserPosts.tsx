@@ -57,7 +57,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
   const [showShareSheet, setShowShareSheet] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
-  
+
   // State for editing and deleting
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -347,7 +347,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         const parts = post.content.split('JOB_SHARE::');
                         const jsonStr = parts[parts.length - 1].trim();
                         const shareData = JSON.parse(jsonStr);
-                        
+
                         return (
                           <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
                             <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-background overflow-hidden shrink-0 mt-2">
@@ -369,24 +369,24 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                           </div>
                         );
                       } catch (e) {
-                         return (
+                        return (
                           <div className="w-full h-full p-3 md:p-4 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 text-center">
                             <p className="text-xs md:text-sm text-foreground line-clamp-6 font-medium">
                               {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
                             </p>
                           </div>
-                         );
+                        );
                       }
                     })()
                   ) : (
                     <div className="w-full h-full p-4 md:p-6 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-muted/10 group-hover:brightness-125 transition-all duration-700">
                       {/* Subtle Internal Lighting */}
                       <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent)] pointer-events-none" />
-                      
+
                       <p className="text-sm md:text-base font-black tracking-tight text-foreground leading-[1.2] text-center line-clamp-5 drop-shadow-sm uppercase">
                         {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
                       </p>
-                      
+
                       {/* Quote Marker Decor */}
                       <div className="absolute bottom-2 right-3 opacity-10 font-black text-4xl leading-none">"</div>
                     </div>
@@ -438,7 +438,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
           {(() => {
             if (!selectedPost) return null;
-            const items = selectedPost?.media_items || (selectedPost?.media_url ? [{ url: selectedPost.media_url, type: selectedPost.media_type as 'image'|'video' }] : []);
+            const items = selectedPost?.media_items || (selectedPost?.media_url ? [{ url: selectedPost.media_url, type: selectedPost.media_type as 'image' | 'video' }] : []);
             const hasMedia = items.length > 0;
             const hasMultiple = items.length > 1;
 
@@ -467,10 +467,10 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                 {/* Immersive Blurred Background Stage */}
                 {hasMedia && (
                   <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                    <img 
+                    <img
                       key={`bg-${currentMediaIndex}`}
-                      src={items[currentMediaIndex]?.url} 
-                      alt="" 
+                      src={items[currentMediaIndex]?.url}
+                      alt=""
                       className="w-full h-full object-cover blur-3xl opacity-40 scale-110 transition-all duration-1000 animate-in fade-in"
                     />
                     <div className="absolute inset-0 bg-black/20" />
@@ -524,9 +524,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setSelectedPost(null)}
                       className="h-8 w-8 text-black hover:bg-black/5 rounded-full"
                     >
@@ -557,13 +557,13 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         >
                           <ChevronRight className="h-6 w-6" />
                         </Button>
-                        
+
                         {/* Dots */}
                         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-1.5">
                           {items.map((_, i) => (
-                            <div 
-                              key={i} 
-                              className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentMediaIndex ? 'bg-white scale-110' : 'bg-white/40'}`} 
+                            <div
+                              key={i}
+                              className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentMediaIndex ? 'bg-white scale-110' : 'bg-white/40'}`}
                             />
                           ))}
                         </div>
@@ -571,7 +571,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                     )}
 
                     {/* Horizontal Scroll-Snap Gallery */}
-                    <div 
+                    <div
                       id="modal-gallery-scroll"
                       className={`w-full h-full flex overflow-x-auto snap-x snap-mandatory scroll-smooth custom-scrollbar-none relative z-10 ${hasMultiple ? 'cursor-grab active:cursor-grabbing' : ''}`}
                       onScroll={(e) => {
@@ -605,54 +605,53 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
                 {/* Job Hero Container (If no media but has job) */}
                 {!hasMedia && selectedPost.content.includes('JOB_SHARE::') && (
-                   <div className="w-full aspect-square md:aspect-auto md:flex-1 bg-black flex flex-col items-center justify-center p-3 md:p-12 order-1 lg:order-none overflow-hidden relative group/hero">
-                      {(() => {
-                        try {
-                          const parts = selectedPost.content.split('JOB_SHARE::');
-                          const jsonStr = parts[parts.length - 1].trim();
-                          const shareData = JSON.parse(jsonStr);
-                          
-                          return (
-                            <>
-                              {/* Rich Atmospheric Branding */}
-                              <div className="absolute inset-0 z-0">
-                                <img 
-                                  src={shareData.logoUrl || undefined} 
-                                  alt="" 
-                                  className="w-full h-full object-cover blur-3xl opacity-30 scale-125"
-                                />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40" />
-                                {/* Soft Stage Light Effect */}
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,transparent_60%)] pointer-events-none" />
+                  <div className="w-full aspect-square md:aspect-auto md:flex-1 bg-black flex flex-col items-center justify-center p-3 md:p-12 order-1 lg:order-none overflow-hidden relative group/hero">
+                    {(() => {
+                      try {
+                        const parts = selectedPost.content.split('JOB_SHARE::');
+                        const jsonStr = parts[parts.length - 1].trim();
+                        const shareData = JSON.parse(jsonStr);
+
+                        return (
+                          <>
+                            {/* Rich Atmospheric Branding */}
+                            <div className="absolute inset-0 z-0">
+                              <img
+                                src={shareData.logoUrl || undefined}
+                                alt=""
+                                className="w-full h-full object-cover blur-3xl opacity-30 scale-125"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40" />
+                              {/* Soft Stage Light Effect */}
+                              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,transparent_60%)] pointer-events-none" />
+                            </div>
+
+                            <div className="relative z-10 w-full flex flex-col items-center gap-4 md:gap-8">
+                              {/* Career Label */}
+                              <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-1000 scale-75 md:scale-100">
+                                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">Official Opportunity</span>
                               </div>
 
-                              <div className="relative z-10 w-full flex flex-col items-center gap-4 md:gap-8">
-                                {/* Career Label */}
-                                <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-1000 scale-75 md:scale-100">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">Official Opportunity</span>
-                                </div>
-
-                                <div className="w-full max-w-md lg:max-max-w-lg transition-all duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)] scale-85 md:scale-100">
-                                   <JobShareCard {...shareData} />
-                                </div>
-
-                                {/* Subtle Footer Text */}
-                                <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest scale-75 md:scale-100">CineCraft Career Brief</p>
+                              <div className="w-full max-w-md lg:max-max-w-lg transition-all duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)] scale-85 md:scale-100">
+                                <JobShareCard {...shareData} />
                               </div>
-                            </>
-                          );
-                        } catch (e) { return null; }
-                      })()}
-                   </div>
+
+                              {/* Subtle Footer Text */}
+                              <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest scale-75 md:scale-100">CineCraft Career Brief</p>
+                            </div>
+                          </>
+                        );
+                      } catch (e) { return null; }
+                    })()}
+                  </div>
                 )}
 
                 {/* Info Container: Right panel OR Centered Card */}
-                <div className={`flex flex-col bg-card shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden order-2 lg:order-none z-10 ${
-                  (hasMedia || selectedPost.content.includes('JOB_SHARE::'))
-                    ? 'w-full lg:w-[420px] border-l border-border/10 shadow-[-20px_0_60px_rgba(0,0,0,0.5)]' 
-                    : 'w-[95vw] lg:w-[500px] lg:rounded-[2.5rem] border border-border/10 shadow-2xl m-4 md:m-8'
-                }`}>
+                <div className={`flex flex-col bg-card shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden order-2 lg:order-none z-10 ${(hasMedia || selectedPost.content.includes('JOB_SHARE::'))
+                  ? 'w-full lg:w-[420px] border-l border-border/10 shadow-[-20px_0_60px_rgba(0,0,0,0.5)]'
+                  : 'w-[95vw] lg:w-[500px] lg:rounded-[2.5rem] border border-border/10 shadow-2xl m-4 md:m-8'
+                  }`}>
                   {/* Desktop Only Header */}
                   <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-white/95 backdrop-blur-3xl">
                     <div className="flex items-center gap-3 font-outfit">
@@ -667,7 +666,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         <p className="text-[10px] text-black/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
                       </div>
                     </div>
-                    
+
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-black hover:bg-black/5 rounded-full">
@@ -700,9 +699,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setSelectedPost(null)}
                       className="h-8 w-8 text-black hover:bg-black/5 rounded-full ml-1"
                     >
@@ -717,7 +716,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         <Button variant="ghost" size="icon" onClick={handleLike} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
                           <Heart className={`h-7 w-7 transition-all duration-300 ${isLiked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => {/* Focus */}} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                        <Button variant="ghost" size="icon" onClick={() => {/* Focus */ }} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
                           <MessageCircle className="h-7 w-7 hover:text-primary transition-colors duration-300" />
                         </Button>
                         <Button variant="ghost" size="icon" onClick={handleShare} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
@@ -742,22 +741,22 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         </Avatar>
                         <div className="flex-1">
                           <div className="text-[14px] leading-relaxed">
-                             <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
-                               {(selectedPost.profiles.username || selectedPost.profiles.full_name || "").toLowerCase().replace(/\s/g, '')}
-                             </span>
-                             {selectedPost.content.includes('JOB_SHARE::') ? (
-                                (() => {
-                                  try {
-                                    const parts = selectedPost.content.split('JOB_SHARE::');
-                                    const caption = parts[0].trim();
-                                    return caption ? <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" /> : null;
-                                  } catch (e) {
-                                    return <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />;
-                                  }
-                                })()
-                              ) : (
-                                <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />
-                              )}
+                            <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
+                              {(selectedPost.profiles.username || selectedPost.profiles.full_name || "").toLowerCase().replace(/\s/g, '')}
+                            </span>
+                            {selectedPost.content.includes('JOB_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const parts = selectedPost.content.split('JOB_SHARE::');
+                                  const caption = parts[0].trim();
+                                  return caption ? <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" /> : null;
+                                } catch (e) {
+                                  return <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />;
+                                }
+                              })()
+                            ) : (
+                              <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />
+                            )}
                           </div>
                           <p className="text-[10px] text-muted-foreground/60 mt-2.5 flex items-center gap-1.5 uppercase tracking-widest font-medium">
                             {formatDistanceToNow(new Date(selectedPost.created_at), { addSuffix: false }).replace('about ', '')}
@@ -846,8 +845,8 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="rounded-full hover:bg-white/5 font-semibold">Cancel</Button>
-              <Button 
-                onClick={handleUpdate} 
+              <Button
+                onClick={handleUpdate}
                 disabled={isSaving}
                 className="rounded-full bg-primary hover:bg-primary-hover px-10 font-bold shadow-lg shadow-primary/20"
               >
@@ -869,7 +868,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-0 mt-4">
             <AlertDialogCancel className="bg-transparent hover:bg-white/5 border-white/10 rounded-full font-bold">Stay</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDelete}
               className="bg-red-500 hover:bg-red-600 text-white rounded-full font-black px-6"
             >
