@@ -2,40 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import FeedRatingCard from "./FeedRatingCard";
 import { useToast } from "@/hooks/use-toast";
 import {
-  fetchTrending,
-  fetchTopRated,
-  fetchActionMovies,
-  fetchComedyMovies,
-  fetchIndianMovies,
-  fetchIndianAction,
-  fetchIndianComedy,
-  fetchIndianHorror,
-  fetchIndianTv,
-  fetchTeluguMovies,
-  fetchHindiMovies,
-  fetchTamilMovies,
-  fetchMalayalamMovies,
-  fetchKannadaMovies,
-  fetchAnime,
-  fetchDocumentaries,
-  fetchMystery,
-  fetchSciFiFantasy,
-  fetchFamilyMovies,
-  fetchAnimation,
-  fetchAdventure,
-  fetchCrimeMovies,
-  fetchWarMovies,
-  fetchMusicals,
-  fetchIndianFamily,
-  fetchHorrorMovies,
-  fetchSciFiMovies,
-  fetchRomanceMovies,
-  fetchTvSeries,
-  fetchNowPlaying,
-  fetchUpcoming,
-  fetchUpcomingTv,
-  TMDB_IMAGE_BASE_URL,
-  TMDBContent
+  fetchTrending, fetchTopRated, fetchActionMovies, fetchComedyMovies,
+  fetchIndianMovies, fetchIndianAction, fetchIndianComedy, fetchIndianHorror,
+  fetchIndianTv, fetchTeluguMovies, fetchHindiMovies, fetchTamilMovies,
+  fetchMalayalamMovies, fetchKannadaMovies, fetchAnime, fetchDocumentaries,
+  fetchMystery, fetchSciFiFantasy, fetchFamilyMovies, fetchAnimation,
+  fetchAdventure, fetchCrimeMovies, fetchWarMovies, fetchMusicals,
+  fetchIndianFamily, fetchHorrorMovies, fetchSciFiMovies, fetchRomanceMovies,
+  fetchTvSeries, fetchNowPlaying, fetchUpcoming, fetchUpcomingTv,
+  TMDBContent, getSafeImageUrl
 } from "@/services/tmdb";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -105,7 +80,7 @@ const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
                   user_rating: item.user_rating,
                   app_rating: item.app_rating,
                   created_at: item.release_date || item.first_air_date || '',
-                  poster_url: item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : null,
+                  poster_url: getSafeImageUrl(item.poster_path),
                   overview: item.overview,
                   original_language: item.original_language
                 }}

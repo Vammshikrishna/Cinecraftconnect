@@ -14,7 +14,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Post } from '@/types';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
-import { fetchLatestRatings, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
+import { fetchLatestRatings, getSafeImageUrl } from '@/services/tmdb';
 
 interface Project {
   id: string;
@@ -159,7 +159,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
           user_rating: null,
           created_at: movie.release_date || movie.first_air_date || '',
           itemType: 'rating',
-          poster_url: movie.poster_path ? `${TMDB_IMAGE_BASE_URL}${movie.poster_path}` : null,
+          poster_url: getSafeImageUrl(movie.poster_path),
           overview: movie.overview,
           media_type: movie.title ? 'movie' : 'tv'
         }));
