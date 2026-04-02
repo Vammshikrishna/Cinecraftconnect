@@ -20,7 +20,7 @@ import FeedVendorCard from './FeedVendorCard';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 
 // Services
-import { TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
+import { getSafeImageUrl } from '@/services/tmdb';
 
 interface HomeTabProps {
     postRatings: { [postId: string]: number };
@@ -251,7 +251,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     user_rating: item.user_rating,
                                     app_rating: item.app_rating,
                                     created_at: item.release_date || item.first_air_date || '',
-                                    poster_url: item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : null,
+                                    poster_url: getSafeImageUrl(item.poster_path),
                                     overview: item.overview,
                                     original_language: item.original_language
                                 }}

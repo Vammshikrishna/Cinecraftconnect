@@ -1,6 +1,30 @@
 export const TMDB_API_KEY = '6f333da40e57ee8319f5f977a458ef98';
-export const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+export const TMDB_BASE_URL = 'https://api.tmdb.org/3'; // Using api.tmdb.org to bypass common Jio/Airtel blocks
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342';
+
+/**
+ * Proxy Bridge for ISP-blocked networks (Jio/Airtel) 
+ * We use a public CORS proxy as a fallback if the direct connection is throttled or blocked.
+ */
+const HELPERS = {
+    CORS_PROXIES: [
+        '', // Direct connection first
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url='
+    ]
+};
+
+/**
+ * Image Proxy Bridge for ISP-blocked poster assets (Jio/Airtel) 
+ * We use weserv.nl as it handles large volumes and bypasses most ISP-level image blocks.
+ */
+export const getSafeImageUrl = (path: string | null): string | null => {
+    if (!path) return null;
+    const isFullUrl = path.startsWith('http');
+    const originalUrl = isFullUrl ? path : `${TMDB_IMAGE_BASE_URL}${path}`;
+    // Stealth fallback: Wrap in weserv.nl to bypass mobile ISP blocks (South Asia)
+    return `https://images.weserv.nl/?url=${encodeURIComponent(originalUrl)}&w=342&q=80`;
+};
 
 export interface TMDBContent {
     id: number;
@@ -19,8 +43,8 @@ export interface TMDBContent {
 // ---------------------------------------------------------------------------
 // LocalStorage Cache — data persists so users NEVER see blank on slow networks
 // ---------------------------------------------------------------------------
-const CACHE_VERSION = 'tmdb_v2';
-const CACHE_TTL = 1000 * 60 * 60 * 6; // 6 hours
+const CACHE_VERSION = 'tmdb_v3';
+const CACHE_TTL = 1000 * 60 * 60 * 12; // Increased to 12 hours for mobile resilience
 
 const getCached = (key: string): TMDBContent[] | null => {
     try {
@@ -46,36 +70,47 @@ const setCache = (key: string, data: TMDBContent[]) => {
 };
 
 // ---------------------------------------------------------------------------
-// Fetch with retry + exponential backoff — survives 3G/4G flaky connections
+// Fetch with ISP-Safe Bridge — survivors Jio/Airtel DNS blocks
 // ---------------------------------------------------------------------------
-const fetchWithRetry = async (url: string, retries = 3, baseDelay = 1500): Promise<Response> => {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        const controller = new AbortController();
-        // Progressive timeout: 15s, 25s, 35s — generous for mobile data
-        const timeout = 15000 + attempt * 10000;
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+const fetchWithRetry = async (url: string, retries = 2, baseDelay = 1000): Promise<Response> => {
+    // We try multiple entry points: direct, then various proxies
+    for (let proxyIdx = 0; proxyIdx < HELPERS.CORS_PROXIES.length; proxyIdx++) {
+        const proxy = HELPERS.CORS_PROXIES[proxyIdx];
+        const finalUrl = proxy ? `${proxy}${encodeURIComponent(url)}` : url;
 
-        try {
-            const response = await fetch(url, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (response.ok) return response;
-            // Server error (5xx) — retry; client error (4xx) — don't
-            if (response.status >= 500 && attempt < retries) {
-                await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
-                continue;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            const controller = new AbortController();
+            // Faster initial timeout to trigger proxy fallback quickly if blocked
+            const timeout = proxyIdx === 0 ? 8000 : 15000 + attempt * 10000;
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+            try {
+                const response = await fetch(finalUrl, { signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (response.ok) return response;
+                
+                if (response.status >= 500 && attempt < retries) {
+                    await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+                    continue;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            } catch (error: any) {
+                clearTimeout(timeoutId);
+                // If it's a network error (likely ISP block) and we are on direct connection, 
+                // skip retries and go straight to proxy
+                if (proxyIdx === 0 && (error.name === 'AbortError' || error.message.includes('Failed to fetch'))) {
+                    console.warn("Direct connection to TMDB blocked by ISP. Switching to proxy bridge...");
+                    break; // break out of inner loop to try next proxy
+                }
+
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+                    continue;
+                }
             }
-            throw new Error(`HTTP ${response.status}`);
-        } catch (error: any) {
-            clearTimeout(timeoutId);
-            if (attempt < retries) {
-                // Wait before retrying — exponential backoff
-                await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
-                continue;
-            }
-            throw error;
         }
     }
-    throw new Error('Max retries exhausted');
+    throw new Error('All entry points for TMDB are unreachable on this network.');
 };
 
 // ---------------------------------------------------------------------------
@@ -96,7 +131,6 @@ export const fetchByPath = async (path: string, params: string = ''): Promise<TM
         return results;
     } catch (error) {
         console.warn(`TMDB fetch failed for ${path}, using cache:`, error);
-        // Return cached data if available — user sees something instead of blank
         return cached || [];
     }
 };
