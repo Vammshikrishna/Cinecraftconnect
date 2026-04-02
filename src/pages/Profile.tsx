@@ -16,6 +16,7 @@ import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
 import { SavedPosts } from '@/components/profile/SavedPosts';
 import EditProfileForm from '@/components/profile/EditProfileForm';
+import { formatURL } from '@/lib/utils';
 import {
   Briefcase,
   MapPin,
@@ -210,7 +211,7 @@ const ProfilePage = () => {
                   </div>
                 )}
                 {profile.website && (
-                  <a href={profile.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20">
+                  <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20">
                     <Globe size={14} />
                     <span>{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
                   </a>
@@ -219,7 +220,7 @@ const ProfilePage = () => {
 
               <div className="flex items-center justify-center gap-3 mt-4">
                 {(profile.social_links?.instagram || profile.instagram_url) && (
-                  <a href={profile.social_links?.instagram || profile.instagram_url || '#'} target="_blank" rel="noopener noreferrer">
+                  <a href={formatURL(profile.social_links?.instagram || profile.instagram_url)} target="_blank" rel="noopener noreferrer">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-all hover:scale-110">
                       <Instagram size={18} />
                     </Button>
@@ -227,7 +228,7 @@ const ProfilePage = () => {
                 )}
 
                 {profile.social_links?.linkedin && (
-                  <a href={profile.social_links.linkedin} target="_blank" rel="noopener noreferrer">
+                  <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-all hover:scale-110">
                       <Linkedin size={18} />
                     </Button>
@@ -235,7 +236,7 @@ const ProfilePage = () => {
                 )}
 
                 {profile.social_links?.twitter && (
-                  <a href={profile.social_links.twitter} target="_blank" rel="noopener noreferrer">
+                  <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-all hover:scale-110">
                       <Twitter size={18} />
                     </Button>
@@ -243,7 +244,7 @@ const ProfilePage = () => {
                 )}
 
                 {profile.social_links?.facebook && (
-                  <a href={profile.social_links.facebook} target="_blank" rel="noopener noreferrer">
+                  <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-all hover:scale-110">
                       <Facebook size={18} />
                     </Button>
@@ -251,7 +252,7 @@ const ProfilePage = () => {
                 )}
 
                 {profile.youtube_url && (
-                  <a href={profile.youtube_url} target="_blank" rel="noopener noreferrer">
+                  <a href={formatURL(profile.youtube_url)} target="_blank" rel="noopener noreferrer">
                     <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-500 hover:bg-red-500/10 transition-all hover:scale-110">
                       <div className="flex items-center justify-center w-4 h-4 bg-current rounded-full">
                         <div className="w-0 h-0 border-t-[2px] border-t-transparent border-l-[4px] border-l-background border-b-[2px] border-b-transparent ml-0.5"></div>
