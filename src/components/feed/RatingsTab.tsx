@@ -1,19 +1,45 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import FeedRatingCard from "./FeedRatingCard";
 import { useToast } from "@/hooks/use-toast";
 import {
-  fetchTrending, fetchIndianAction, fetchIndianComedy, 
-  fetchIndianTv, fetchTeluguMovies, fetchHindiMovies, fetchTamilMovies,
-  fetchMalayalamMovies, fetchKannadaMovies, fetchAnime, fetchDocumentaries,
-  fetchSciFiFantasy, fetchAnimation,
-  fetchAdventure, fetchCrimeMovies, fetchWarMovies, fetchMusicals,
-  fetchHorrorMovies, fetchRomanceMovies,
-  fetchTvSeries, fetchNowPlaying, fetchUpcoming, fetchUpcomingTv,
-  TMDB_IMAGE_BASE_URL, TMDBContent
+  fetchTrending,
+  fetchTopRated,
+  fetchActionMovies,
+  fetchComedyMovies,
+  fetchIndianMovies,
+  fetchIndianAction,
+  fetchIndianComedy,
+  fetchIndianHorror,
+  fetchIndianTv,
+  fetchTeluguMovies,
+  fetchHindiMovies,
+  fetchTamilMovies,
+  fetchMalayalamMovies,
+  fetchKannadaMovies,
+  fetchAnime,
+  fetchDocumentaries,
+  fetchMystery,
+  fetchSciFiFantasy,
+  fetchFamilyMovies,
+  fetchAnimation,
+  fetchAdventure,
+  fetchCrimeMovies,
+  fetchWarMovies,
+  fetchMusicals,
+  fetchIndianFamily,
+  fetchHorrorMovies,
+  fetchSciFiMovies,
+  fetchRomanceMovies,
+  fetchTvSeries,
+  fetchNowPlaying,
+  fetchUpcoming,
+  fetchUpcomingTv,
+  TMDB_IMAGE_BASE_URL,
+  TMDBContent
 } from "@/services/tmdb";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Search, Loader2, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { Search, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { searchContent } from "@/services/tmdb";
 
 interface RatingItem extends TMDBContent {
@@ -21,117 +47,45 @@ interface RatingItem extends TMDBContent {
   app_rating?: number | null;
 }
 
-// ------------------------------------------------------------------------------------------------
-// Smart Category Row Component — resilient loading with retry on failure
-// ------------------------------------------------------------------------------------------------
-interface SmartCategoryRowProps {
+// ---------------------------------------------------------------
+// CategoryRow — renders a single horizontally-scrollable row
+// ---------------------------------------------------------------
+interface CategoryRowProps {
   title: string;
-  fetchFn: () => Promise<TMDBContent[]>;
-  user: any;
-  onRateUpdate: (tmdbId: string, rating: number) => void;
-  priority?: boolean;
+  items: RatingItem[];
+  onRate: (id: string, rating: number) => void;
 }
 
-const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false }: SmartCategoryRowProps) => {
-  const [items, setItems] = useState<RatingItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const [isInView, setIsInView] = useState(priority);
-  const fetchFnRef = useRef(fetchFn);
-  fetchFnRef.current = fetchFn;
-
-  useEffect(() => {
-    if (priority) {
-      setIsInView(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsInView(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: "800px" }
-    );
-
-    if (rowRef.current) {
-      observer.observe(rowRef.current);
-    }
-
-    return () => observer.disconnect();
-  }, [priority]);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const data = await fetchFnRef.current();
-      if (data.length === 0) {
-        setItems([]);
-        setLoading(false);
-        return;
-      }
-
-      // Enrich with user/app ratings — skip if no user to avoid unnecessary calls
-      let enrichedData: RatingItem[] = data.map(item => ({ ...item, user_rating: null, app_rating: null }));
-
-      try {
-        const ids = data.map(item => item.id);
-        const [userRatingsRes, aggregatedRes] = await Promise.all([
-          user ? supabase.from('user_film_ratings').select('tmdb_id, rating').eq('user_id', user.id).in('tmdb_id', ids) : Promise.resolve({ data: [], error: null }),
-          (supabase as any).rpc('get_aggregated_film_ratings', { tmdb_ids: ids })
-        ]);
-
-        let userMap: Record<number, number> = {};
-        let appMap: Record<number, number> = {};
-        if (userRatingsRes.data) (userRatingsRes.data as any[]).forEach((r: any) => userMap[r.tmdb_id] = Number(r.rating));
-        if (aggregatedRes.data) (aggregatedRes.data as any[]).forEach((r: any) => appMap[r.tmdb_id] = Number(r.average_rating));
-
-        enrichedData = data.map(item => ({
-          ...item,
-          user_rating: userMap[item.id] || null,
-          app_rating: appMap[item.id] || null
-        }));
-      } catch (ratingErr) {
-        // Supabase ratings failed — still show TMDB data without ratings
-        console.warn(`Ratings enrichment failed for ${title}:`, ratingErr);
-      }
-
-      setItems(enrichedData);
-    } catch (fetchError) {
-      console.error(`Failed to load ${title}:`, fetchError);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [user, title]);
-
-  useEffect(() => {
-    if (!isInView) return;
-    loadData();
-  }, [isInView, loadData]);
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollRef.current) {
-      const scrollAmount = direction === 'left' ? -scrollRef.current.offsetWidth : scrollRef.current.offsetWidth;
-      scrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      const { current } = scrollRef;
+      const scrollAmount = direction === 'left' ? -current.offsetWidth : current.offsetWidth;
+      current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
   };
 
-  // Don't hide rows that errored — show retry button instead
-  if (!loading && !error && items.length === 0) return null;
+  if (items.length === 0) return null;
 
   return (
-    <div ref={rowRef} className="space-y-4 py-6 relative">
+    <div className="space-y-4 py-6">
       <div className="flex items-center justify-between px-4 md:px-0">
         <h3 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">{title}</h3>
         <div className="hidden md:flex gap-2">
-          <button onClick={() => scroll('left')} className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"><ChevronLeft className="h-5 w-5" /></button>
-          <button onClick={() => scroll('right')} className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"><ChevronRight className="h-5 w-5" /></button>
+          <button
+            onClick={() => scroll('left')}
+            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <button
+            onClick={() => scroll('right')}
+            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
         </div>
       </div>
 
@@ -141,167 +95,375 @@ const SmartCategoryRow = ({ title, fetchFn, user, onRateUpdate, priority = false
           className="flex gap-4 overflow-x-auto pb-4 px-4 md:px-0 scrollbar-hide snap-x"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {loading ? (
-            [1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="w-[160px] md:w-[220px] shrink-0 aspect-[2/3] bg-muted animate-pulse rounded-xl" />
-            ))
-          ) : error ? (
-            <div className="w-full flex flex-col items-center justify-center py-8 gap-3">
-              <p className="text-sm text-muted-foreground">Failed to load — slow connection?</p>
-              <button
-                onClick={loadData}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors active:scale-95"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Tap to Retry
-              </button>
+          {items.map((item) => (
+            <div key={item.id} className="w-[180px] md:w-[240px] flex-none snap-start">
+              <FeedRatingCard
+                rating={{
+                  id: item.id.toString(),
+                  title: item.title || item.name || 'Untitled',
+                  tmdb_rating: item.vote_average,
+                  user_rating: item.user_rating,
+                  app_rating: item.app_rating,
+                  created_at: item.release_date || item.first_air_date || '',
+                  poster_url: item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : null,
+                  overview: item.overview,
+                  original_language: item.original_language
+                }}
+                onRate={(rating) => onRate(item.id.toString(), rating)}
+                variant="vertical"
+              />
             </div>
-          ) : (
-            items.map((item) => (
-              <div key={item.id} className="w-[160px] md:w-[220px] flex-none snap-start">
-                <FeedRatingCard
-                  rating={{
-                    id: item.id.toString(),
-                    title: item.title || item.name || 'Untitled',
-                    tmdb_rating: item.vote_average,
-                    user_rating: item.user_rating,
-                    app_rating: item.app_rating,
-                    created_at: item.release_date || item.first_air_date || '',
-                    poster_url: item.poster_path ? `${TMDB_IMAGE_BASE_URL}${item.poster_path}` : null,
-                    overview: item.overview,
-                    original_language: item.original_language
-                  }}
-                  onRate={(rating) => {
-                    setItems(prev => prev.map(p => p.id === item.id ? { ...p, user_rating: rating } : p));
-                    onRateUpdate(item.id.toString(), rating);
-                  }}
-                  variant="vertical"
-                />
-              </div>
-            ))
-          )}
+          ))}
         </div>
       </div>
     </div>
   );
 };
 
-// ------------------------------------------------------------------------------------------------
-// Main RatingsTab Component
-// ------------------------------------------------------------------------------------------------
-const RatingsTab = () => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<RatingItem[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const { user } = useAuth();
-  const { toast } = useToast();
+// ---------------------------------------------------------------
+// Skeleton placeholder while a row is loading
+// ---------------------------------------------------------------
+const CategorySkeleton = () => (
+  <div className="space-y-4 py-6 px-4 md:px-0">
+    <div className="h-8 w-48 bg-muted animate-pulse rounded-lg" />
+    <div className="flex gap-4 overflow-hidden">
+      {[1, 2, 3, 4, 5].map(i => (
+        <div key={i} className="w-[180px] md:w-[240px] aspect-[2/3] bg-muted animate-pulse rounded-xl shrink-0" />
+      ))}
+    </div>
+  </div>
+);
 
-  const handleRate = async (tmdbId: string, rating: number) => {
-    if (!user) {
-      toast({ title: "Auth Required", description: "Please sign in to rate classics.", variant: "destructive" });
-      return;
-    }
+// ---------------------------------------------------------------
+// Main RatingsTab — sequential one-at-a-time loading (proven on mobile data)
+// ---------------------------------------------------------------
+const RatingsTab = () => {
+  // State for every category
+  const [trending, setTrending] = useState<RatingItem[]>([]);
+  const [topRated, setTopRated] = useState<RatingItem[]>([]);
+  const [action, setAction] = useState<RatingItem[]>([]);
+  const [comedy, setComedy] = useState<RatingItem[]>([]);
+  const [nowPlaying, setNowPlaying] = useState<RatingItem[]>([]);
+  const [upcoming, setUpcoming] = useState<RatingItem[]>([]);
+  const [indian, setIndian] = useState<RatingItem[]>([]);
+  const [indianAction, setIndianAction] = useState<RatingItem[]>([]);
+  const [indianComedy, setIndianComedy] = useState<RatingItem[]>([]);
+  const [indianHorror, setIndianHorror] = useState<RatingItem[]>([]);
+  const [indianTv, setIndianTv] = useState<RatingItem[]>([]);
+  const [telugu, setTelugu] = useState<RatingItem[]>([]);
+  const [hindi, setHindi] = useState<RatingItem[]>([]);
+  const [tamil, setTamil] = useState<RatingItem[]>([]);
+  const [malayalam, setMalayalam] = useState<RatingItem[]>([]);
+  const [kannada, setKannada] = useState<RatingItem[]>([]);
+  const [horror, setHorror] = useState<RatingItem[]>([]);
+  const [anime, setAnime] = useState<RatingItem[]>([]);
+  const [documentaries, setDocumentaries] = useState<RatingItem[]>([]);
+  const [mystery, setMystery] = useState<RatingItem[]>([]);
+  const [scifiFantasy, setSciFiFantasy] = useState<RatingItem[]>([]);
+  const [family, setFamily] = useState<RatingItem[]>([]);
+  const [animation, setAnimation] = useState<RatingItem[]>([]);
+  const [adventure, setAdventure] = useState<RatingItem[]>([]);
+  const [crime, setCrime] = useState<RatingItem[]>([]);
+  const [war, setWar] = useState<RatingItem[]>([]);
+  const [musicals, setMusicals] = useState<RatingItem[]>([]);
+  const [indianFamily, setIndianFamily] = useState<RatingItem[]>([]);
+  const [scifi, setSciFi] = useState<RatingItem[]>([]);
+  const [romance, setRomance] = useState<RatingItem[]>([]);
+  const [tvSeries, setTvSeries] = useState<RatingItem[]>([]);
+  const [searchResults, setSearchResults] = useState<RatingItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [loadingStates, setLoadingStates] = useState({
+    trending: true,
+    nowPlaying: true,
+    upcoming: true,
+    indian: true,
+    indianAction: true,
+    indianComedy: true,
+    indianHorror: true,
+    indianTv: true,
+    telugu: true,
+    hindi: true,
+    tamil: true,
+    malayalam: true,
+    kannada: true,
+    topRated: true,
+    action: true,
+    comedy: true,
+    horror: true,
+    scifi: true,
+    romance: true,
+    tv: true,
+    anime: true,
+    documentaries: true,
+    mystery: true,
+    scifiFantasy: true,
+    family: true,
+    animation: true,
+    adventure: true,
+    crime: true,
+    war: true,
+    musicals: true,
+    indianFamily: true,
+    search: false
+  });
+
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  // ---------------------------------------------------------------
+  // fetchCategoryData — fetches TMDB data + enriches with user/app ratings
+  // The retry + cache logic is handled inside tmdb.ts fetchByPath
+  // ---------------------------------------------------------------
+  const fetchCategoryData = async (
+    fetchFn: () => Promise<TMDBContent[]>,
+    setter: (items: RatingItem[]) => void,
+    key: keyof typeof loadingStates
+  ) => {
     try {
-      const { error } = await supabase.from('user_film_ratings').upsert({
-        user_id: user.id, tmdb_id: parseInt(tmdbId), rating: rating
-      }, { onConflict: 'user_id, tmdb_id' });
-      if (error) throw error;
-      toast({ title: "Rating Synced", description: "Successfully updated cinematic record." });
-    } catch (e) {
-      console.error(e);
-      toast({ title: "Sync Failed", description: "Unable to update rating.", variant: "destructive" });
+      const data = await fetchFn();
+      if (data.length === 0) {
+        setLoadingStates(prev => ({ ...prev, [key]: false }));
+        return;
+      }
+
+      // Show TMDB data immediately, then enrich with ratings
+      setter(data.map(item => ({ ...item, user_rating: null, app_rating: null })));
+      setLoadingStates(prev => ({ ...prev, [key]: false }));
+
+      // Background: try to enrich with user/app ratings (non-blocking)
+      try {
+        const ids = data.map(item => item.id);
+        const [userRatingsRes, aggregatedRes] = await Promise.all([
+          user ? supabase
+            .from('user_film_ratings')
+            .select('tmdb_id, rating')
+            .eq('user_id', user.id)
+            .in('tmdb_id', ids)
+            : Promise.resolve({ data: [], error: null }),
+          (supabase as any)
+            .rpc('get_aggregated_film_ratings', { tmdb_ids: ids })
+        ]);
+
+        let userRatingsMap: Record<number, number> = {};
+        let appRatingsMap: Record<number, number> = {};
+
+        if (userRatingsRes.data) {
+          (userRatingsRes.data as any[]).forEach(r => userRatingsMap[r.tmdb_id] = Number(r.rating));
+        }
+        if (aggregatedRes.data) {
+          (aggregatedRes.data as any[]).forEach(r => {
+            appRatingsMap[r.tmdb_id] = Number(r.average_rating);
+          });
+        }
+
+        // Update with enriched data
+        setter(data.map(item => ({
+          ...item,
+          user_rating: userRatingsMap[item.id] || null,
+          app_rating: appRatingsMap[item.id] || null
+        })));
+      } catch (ratingErr) {
+        // Ratings enrichment failed — data is already displayed without ratings
+        console.warn(`Ratings enrichment failed for ${key}:`, ratingErr);
+      }
+    } catch (error) {
+      console.error(`Error loading ${key}:`, error);
+      setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
   };
 
-  const categories = [
-    { title: "Trending Now", fetch: fetchTrending, priority: true },
-    { title: "Streaming Now", fetch: fetchNowPlaying, priority: true },
-    { title: "Upcoming Gems", fetch: async () => {
-      const [m, t] = await Promise.all([fetchUpcoming(), fetchUpcomingTv()]);
-      return [...m, ...t].sort(() => Math.random() - 0.5);
-    }, priority: true },
-    { title: "Indian TV Originals", fetch: fetchIndianTv },
-    { title: "Action Hits", fetch: fetchIndianAction },
-    { title: "Desi Drama & Comedy", fetch: fetchIndianComedy },
-    { title: "Telugu Blockbusters", fetch: fetchTeluguMovies },
-    { title: "Hindi Originals", fetch: fetchHindiMovies },
-    { title: "Tamil Gems", fetch: fetchTamilMovies },
-    { title: "Malayalam Art", fetch: fetchMalayalamMovies },
-    { title: "Kannada Hits", fetch: fetchKannadaMovies },
-    { title: "Anime Epic", fetch: fetchAnime },
-    { title: "Global TV Series", fetch: fetchTvSeries },
-    { title: "Sci-Fi & Fantasy", fetch: fetchSciFiFantasy },
-    { title: "Horror Nights", fetch: fetchHorrorMovies },
-    { title: "Documentary World", fetch: fetchDocumentaries },
-    { title: "Adventure Epics", fetch: fetchAdventure },
-    { title: "Animation Favourites", fetch: fetchAnimation },
-    { title: "Crime Thrillers", fetch: fetchCrimeMovies },
-    { title: "Cinematic War", fetch: fetchWarMovies },
-    { title: "Romance Classics", fetch: fetchRomanceMovies },
-    { title: "Musical Masterpieces", fetch: fetchMusicals },
-  ];
+  // ---------------------------------------------------------------
+  // Sequential loading — ONE category at a time
+  // This is the proven approach that works on slow 3G/4G connections
+  // because each request gets the full available bandwidth
+  // ---------------------------------------------------------------
+  const loadAllDataSequentially = async () => {
+    // Phase 1: High Priority (what user sees first)
+    await fetchCategoryData(fetchTrending, setTrending, 'trending');
+    await fetchCategoryData(fetchNowPlaying, setNowPlaying, 'nowPlaying');
 
+    // Phase 2: Discovery
+    await fetchCategoryData(async () => {
+      const [movies, tv] = await Promise.all([fetchUpcoming(), fetchUpcomingTv()]);
+      return [...movies, ...tv].sort(() => Math.random() - 0.5);
+    }, setUpcoming, 'upcoming');
+
+    await fetchCategoryData(fetchIndianTv, setIndianTv, 'indianTv');
+    await fetchCategoryData(fetchIndianAction, setIndianAction, 'indianAction');
+    await fetchCategoryData(fetchIndianComedy, setIndianComedy, 'indianComedy');
+    await fetchCategoryData(fetchIndianHorror, setIndianHorror, 'indianHorror');
+    await fetchCategoryData(fetchIndianMovies, setIndian, 'indian');
+
+    // Phase 3: Language rows
+    await fetchCategoryData(fetchTeluguMovies, setTelugu, 'telugu');
+    await fetchCategoryData(fetchHindiMovies, setHindi, 'hindi');
+    await fetchCategoryData(fetchTamilMovies, setTamil, 'tamil');
+    await fetchCategoryData(fetchMalayalamMovies, setMalayalam, 'malayalam');
+    await fetchCategoryData(fetchKannadaMovies, setKannada, 'kannada');
+
+    // Phase 4: Global genres
+    await fetchCategoryData(fetchTopRated, setTopRated, 'topRated');
+    await fetchCategoryData(fetchActionMovies, setAction, 'action');
+    await fetchCategoryData(fetchComedyMovies, setComedy, 'comedy');
+    await fetchCategoryData(fetchHorrorMovies, setHorror, 'horror');
+    await fetchCategoryData(fetchSciFiMovies, setSciFi, 'scifi');
+    await fetchCategoryData(fetchRomanceMovies, setRomance, 'romance');
+    await fetchCategoryData(() => fetchTvSeries(), setTvSeries, 'tv');
+
+    // Phase 5: Extended genres
+    await fetchCategoryData(fetchAnime, setAnime, 'anime');
+    await fetchCategoryData(fetchDocumentaries, setDocumentaries, 'documentaries');
+    await fetchCategoryData(fetchMystery, setMystery, 'mystery');
+    await fetchCategoryData(fetchSciFiFantasy, setSciFiFantasy, 'scifiFantasy');
+    await fetchCategoryData(fetchFamilyMovies, setFamily, 'family');
+    await fetchCategoryData(fetchAnimation, setAnimation, 'animation');
+    await fetchCategoryData(fetchAdventure, setAdventure, 'adventure');
+    await fetchCategoryData(fetchCrimeMovies, setCrime, 'crime');
+    await fetchCategoryData(fetchWarMovies, setWar, 'war');
+    await fetchCategoryData(fetchMusicals, setMusicals, 'musicals');
+    await fetchCategoryData(fetchIndianFamily, setIndianFamily, 'indianFamily');
+  };
+
+  useEffect(() => {
+    loadAllDataSequentially();
+  }, [user?.id]);
+
+  // ---------------------------------------------------------------
+  // Search handler
+  // ---------------------------------------------------------------
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults([]);
-      setIsSearching(false);
+      setLoadingStates(prev => ({ ...prev, search: false }));
       return;
     }
-    setIsSearching(true);
+    setLoadingStates(prev => ({ ...prev, search: true }));
+    await fetchCategoryData(() => searchContent(query), setSearchResults, 'search');
+  };
+
+  // ---------------------------------------------------------------
+  // Rating handler
+  // ---------------------------------------------------------------
+  const handleRate = async (tmdbId: string, rating: number) => {
+    if (!user) {
+      toast({ title: "Authentication required", description: "Please sign in to rate.", variant: "destructive" });
+      return;
+    }
+
+    const updateState = (prev: RatingItem[]) =>
+      prev.map(item => item.id.toString() === tmdbId ? { ...item, user_rating: rating } : item);
+
+    // Optimistic update across all loaded categories
+    setTrending(updateState);
+    setTopRated(updateState);
+    setAction(updateState);
+    setComedy(updateState);
+    setIndian(updateState);
+    setNowPlaying(updateState);
+    setUpcoming(updateState);
+    setIndianAction(updateState);
+    setIndianComedy(updateState);
+    setIndianHorror(updateState);
+    setIndianTv(updateState);
+    setTelugu(updateState);
+    setHindi(updateState);
+    setTamil(updateState);
+    setMalayalam(updateState);
+    setKannada(updateState);
+    setHorror(updateState);
+    setAnime(updateState);
+    setSciFi(updateState);
+    setRomance(updateState);
+    setTvSeries(updateState);
+
     try {
-      const data = await searchContent(query);
-      setSearchResults(data);
-    } finally {
-      setIsSearching(false);
+      const { error } = await supabase
+        .from('user_film_ratings')
+        .upsert({
+          user_id: user.id,
+          tmdb_id: parseInt(tmdbId),
+          rating: rating
+        }, { onConflict: 'user_id, tmdb_id' });
+
+      if (error) throw error;
+      toast({ title: "Rating saved", description: "Your rating has been updated." });
+    } catch (error) {
+      console.error("Error saving rating:", error);
+      toast({ title: "Error", description: "Failed to save rating.", variant: "destructive" });
     }
   };
 
+  // ---------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------
   return (
-    <div className="space-y-12 pb-24 relative">
-      {/* Cinematic Blur Background */}
-      <div className="fixed inset-0 pointer-events-none opacity-20 -z-10">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/30 blur-[120px] rounded-full animate-pulse" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-purple-500/20 blur-[120px] rounded-full" />
-      </div>
-
-      {/* Global Search Interface */}
-      <div className="relative group max-w-2xl">
-        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-6 w-6 text-muted-foreground group-focus-within:text-primary transition-colors" />
-        <input 
-          type="text" 
-          placeholder="Explore cinematic masterpieces..."
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          className="w-full h-16 pl-14 pr-6 bg-secondary/20 backdrop-blur-2xl border-2 border-white/5 focus:border-primary/40 rounded-3xl text-lg font-medium transition-all shadow-2xl focus:shadow-primary/10 outline-none"
-        />
-        {isSearching && <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 h-6 w-6 animate-spin text-primary" />}
-      </div>
-
-      <div className="space-y-4">
-        {searchQuery.trim() !== "" ? (
-          <SmartCategoryRow 
-            title={`Search Results for "${searchQuery}"`} 
-            fetchFn={() => Promise.resolve(searchResults)} 
-            user={user} 
-            onRateUpdate={handleRate}
-            priority={true}
+    <div className="space-y-6 pb-20">
+      {/* Search */}
+      <div className="space-y-6">
+        <div className="relative group max-w-2xl mx-auto md:mx-0">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <input
+            type="text"
+            placeholder="Search movies, TV shows, or creatives..."
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="w-full h-14 pl-12 pr-6 bg-secondary/30 border-2 border-transparent focus:border-primary/50 focus:bg-secondary/50 rounded-2xl text-[16px] font-medium transition-all shadow-xl backdrop-blur-xl outline-none"
           />
-        ) : (
-          categories.map((cat) => (
-            <SmartCategoryRow 
-              key={cat.title} 
-              title={cat.title} 
-              fetchFn={cat.fetch} 
-              user={user} 
-              onRateUpdate={handleRate}
-              priority={cat.priority}
-            />
-          ))
+          {loadingStates.search && (
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-4 relative z-10 min-h-screen">
+        {/* Search Results */}
+        {searchQuery.trim() !== "" && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {loadingStates.search ? <CategorySkeleton /> : <CategoryRow title={`Search results for "${searchQuery}"`} items={searchResults} onRate={handleRate} />}
+          </div>
         )}
+
+        {/* Discovery Grid — each row appears as soon as it loads */}
+        <div className={`${searchQuery.trim() !== "" ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'} transition-all duration-700 space-y-2`}>
+          {loadingStates.trending ? <CategorySkeleton /> : <CategoryRow title="Trending Now" items={trending} onRate={handleRate} />}
+          {loadingStates.nowPlaying ? <CategorySkeleton /> : <CategoryRow title="In Cinemas & Streaming Now" items={nowPlaying} onRate={handleRate} />}
+          {loadingStates.upcoming ? <CategorySkeleton /> : <CategoryRow title="Upcoming Masterpieces" items={upcoming} onRate={handleRate} />}
+          {loadingStates.tv ? <CategorySkeleton /> : <CategoryRow title="Popular TV Series (Global)" items={tvSeries} onRate={handleRate} />}
+          {loadingStates.indianTv ? <CategorySkeleton /> : <CategoryRow title="Indian TV Originals" items={indianTv} onRate={handleRate} />}
+          {loadingStates.indianAction ? <CategorySkeleton /> : <CategoryRow title="Indian Action Thrillers" items={indianAction} onRate={handleRate} />}
+          {loadingStates.indianComedy ? <CategorySkeleton /> : <CategoryRow title="Indian Comedy & Drama" items={indianComedy} onRate={handleRate} />}
+          {loadingStates.indianHorror ? <CategorySkeleton /> : <CategoryRow title="Indian Horror & Mystery" items={indianHorror} onRate={handleRate} />}
+          {loadingStates.indianFamily ? <CategorySkeleton /> : <CategoryRow title="Indian Family Cinema" items={indianFamily} onRate={handleRate} />}
+          {loadingStates.indian ? <CategorySkeleton /> : <CategoryRow title="Top Rated Indian Cinema" items={indian} onRate={handleRate} />}
+          {loadingStates.telugu ? <CategorySkeleton /> : <CategoryRow title="Telugu Blockbusters" items={telugu} onRate={handleRate} />}
+          {loadingStates.hindi ? <CategorySkeleton /> : <CategoryRow title="Hindi Cinematic Excellence" items={hindi} onRate={handleRate} />}
+          {loadingStates.tamil ? <CategorySkeleton /> : <CategoryRow title="Tamil Masterpieces" items={tamil} onRate={handleRate} />}
+          {loadingStates.malayalam ? <CategorySkeleton /> : <CategoryRow title="Malayalam Art & Cinema" items={malayalam} onRate={handleRate} />}
+          {loadingStates.kannada ? <CategorySkeleton /> : <CategoryRow title="Kannada Creative Success" items={kannada} onRate={handleRate} />}
+          {loadingStates.anime ? <CategorySkeleton /> : <CategoryRow title="Anime Collection" items={anime} onRate={handleRate} />}
+          {loadingStates.scifi ? <CategorySkeleton /> : <CategoryRow title="Sci-Fi Masterpieces" items={scifi} onRate={handleRate} />}
+          {loadingStates.scifiFantasy ? <CategorySkeleton /> : <CategoryRow title="Sci-Fi & Fantasy (Global)" items={scifiFantasy} onRate={handleRate} />}
+          {loadingStates.action ? <CategorySkeleton /> : <CategoryRow title="Action Thrillers (Global)" items={action} onRate={handleRate} />}
+          {loadingStates.horror ? <CategorySkeleton /> : <CategoryRow title="Horror Hits (Global)" items={horror} onRate={handleRate} />}
+          {loadingStates.mystery ? <CategorySkeleton /> : <CategoryRow title="Mystery Masterpieces" items={mystery} onRate={handleRate} />}
+          {loadingStates.adventure ? <CategorySkeleton /> : <CategoryRow title="Adventure Epics" items={adventure} onRate={handleRate} />}
+          {loadingStates.animation ? <CategorySkeleton /> : <CategoryRow title="Animation Classics" items={animation} onRate={handleRate} />}
+          {loadingStates.crime ? <CategorySkeleton /> : <CategoryRow title="Crime Thrillers" items={crime} onRate={handleRate} />}
+          {loadingStates.war ? <CategorySkeleton /> : <CategoryRow title="War Epics" items={war} onRate={handleRate} />}
+          {loadingStates.comedy ? <CategorySkeleton /> : <CategoryRow title="Comedy Hits (Global)" items={comedy} onRate={handleRate} />}
+          {loadingStates.romance ? <CategorySkeleton /> : <CategoryRow title="Romance Classics" items={romance} onRate={handleRate} />}
+          {loadingStates.musicals ? <CategorySkeleton /> : <CategoryRow title="Musicals & Music" items={musicals} onRate={handleRate} />}
+          {loadingStates.family ? <CategorySkeleton /> : <CategoryRow title="Family Favorites (Global)" items={family} onRate={handleRate} />}
+          {loadingStates.documentaries ? <CategorySkeleton /> : <CategoryRow title="Documentary Masterpieces" items={documentaries} onRate={handleRate} />}
+          {loadingStates.topRated ? <CategorySkeleton /> : <CategoryRow title="Top Rated Global" items={topRated} onRate={handleRate} />}
+        </div>
       </div>
     </div>
   );
 };
 
-export default RatingsTab;
+export default RatingsTab;
