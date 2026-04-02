@@ -17,7 +17,10 @@ const suppressionFilter = (args: any[]) => {
   return (
     msg.includes('disconnect from room') || 
     msg.includes('websocket closed') || 
-    msg.includes('Starting LiveKit call')
+    msg.includes('Starting LiveKit call') ||
+    msg.toLowerCase().includes('tracking prevention') ||
+    msg.toLowerCase().includes('loaded lazily') ||
+    msg.includes('[Intervention]')
   );
 };
 

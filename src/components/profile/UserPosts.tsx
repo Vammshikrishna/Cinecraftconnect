@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import CommentSection from '@/components/feed/CommentSection';
 import { InstagramShareSheet } from '@/components/feed/InstagramShareSheet';
 import { formatDistanceToNow } from 'date-fns';
+import { FormattedText } from '@/components/ui/formatted-text';
+import { JobShareCard } from '@/components/chat/JobShareCard';
 import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import {
   DropdownMenu,
@@ -79,6 +81,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
         .from('posts')
         .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
         .eq('author_id', targetUserId)
+        .is('page_id', null)
         .order('created_at', { ascending: false });
 
       if (!error && data) {
@@ -283,13 +286,6 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
     }
   };
 
-  const nextMedia = (max: number) => {
-    setCurrentMediaIndex((prev) => (prev + 1) % max);
-  };
-
-  const prevMedia = (max: number) => {
-    setCurrentMediaIndex((prev) => (prev - 1 + max) % max);
-  };
 
   if (loading) {
     return (
@@ -344,10 +340,59 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   />
                 )
               ) : (
-                <div className="w-full h-full p-3 md:p-4 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 text-center">
-                  <p className="text-xs md:text-sm text-foreground line-clamp-6 font-medium">
-                    {post.content}
-                  </p>
+                <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-card to-muted/5 group-hover:brightness-110 transition-all duration-500">
+                  {post.content.includes('JOB_SHARE::') ? (
+                    (() => {
+                      try {
+                        const parts = post.content.split('JOB_SHARE::');
+                        const jsonStr = parts[parts.length - 1].trim();
+                        const shareData = JSON.parse(jsonStr);
+                        
+                        return (
+                          <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
+                            <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-background overflow-hidden shrink-0 mt-2">
+                              <Avatar className="h-full w-full rounded-none">
+                                <AvatarImage src={shareData.logoUrl || undefined} className="object-cover" />
+                                <AvatarFallback className="bg-primary/20 text-primary font-black text-xl">
+                                  {shareData.company?.[0]?.toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                            </div>
+                            <div className="flex-1 w-full flex flex-col justify-center items-center gap-1.5 px-1 pb-2">
+                              <h4 className="text-[10px] md:text-xs font-black text-foreground leading-tight tracking-tighter uppercase truncate w-full max-w-[100px]">
+                                {shareData.title || 'Opening'}
+                              </h4>
+                              <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[6px] md:text-[8px] font-black text-primary uppercase tracking-widest shrink-0">
+                                Hiring
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      } catch (e) {
+                         return (
+                          <div className="w-full h-full p-3 md:p-4 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 text-center">
+                            <p className="text-xs md:text-sm text-foreground line-clamp-6 font-medium">
+                              {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
+                            </p>
+                          </div>
+                         );
+                      }
+                    })()
+                  ) : (
+                    <div className="w-full h-full p-4 md:p-6 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-muted/10 group-hover:brightness-125 transition-all duration-700">
+                      {/* Subtle Internal Lighting */}
+                      <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent)] pointer-events-none" />
+                      
+                      <p className="text-sm md:text-base font-black tracking-tight text-foreground leading-[1.2] text-center line-clamp-5 drop-shadow-sm uppercase">
+                        {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
+                      </p>
+                      
+                      {/* Quote Marker Decor */}
+                      <div className="absolute bottom-2 right-3 opacity-10 font-black text-4xl leading-none">"</div>
+                    </div>
+                  )}
+                  {/* Subtle Card Border Effect */}
+                  <div className="absolute inset-0 border border-white/5 pointer-events-none rounded-none md:rounded-sm" />
                 </div>
               )}
 
@@ -394,128 +439,279 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
           {(() => {
             if (!selectedPost) return null;
             const items = selectedPost?.media_items || (selectedPost?.media_url ? [{ url: selectedPost.media_url, type: selectedPost.media_type as 'image'|'video' }] : []);
-            const currentItem = items[currentMediaIndex];
+            const hasMedia = items.length > 0;
             const hasMultiple = items.length > 1;
 
+            const scrollMedia = (index: number) => {
+              const gallery = document.getElementById('modal-gallery-scroll');
+              if (gallery) {
+                gallery.scrollTo({
+                  left: index * gallery.clientWidth,
+                  behavior: 'smooth'
+                });
+              }
+            };
+
+            const nextMedia = (max: number) => {
+              const nextIdx = (currentMediaIndex + 1) % max;
+              scrollMedia(nextIdx);
+            };
+
+            const prevMedia = (max: number) => {
+              const prevIdx = (currentMediaIndex - 1 + max) % max;
+              scrollMedia(prevIdx);
+            };
+
             return (
-              <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
+              <div className={`flex flex-col lg:flex-row h-full w-full overflow-hidden ${!hasMedia ? 'bg-black/40' : ''}`}>
+                {/* Immersive Blurred Background Stage */}
+                {hasMedia && (
+                  <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+                    <img 
+                      key={`bg-${currentMediaIndex}`}
+                      src={items[currentMediaIndex]?.url} 
+                      alt="" 
+                      className="w-full h-full object-cover blur-3xl opacity-40 scale-110 transition-all duration-1000 animate-in fade-in"
+                    />
+                    <div className="absolute inset-0 bg-black/20" />
+                  </div>
+                )}
+
                 {/* Mobile Author Header (Hidden on Desktop) */}
-                <div className="lg:hidden p-4 border-b border-border/10 bg-background flex items-center justify-between z-50 shrink-0">
+                <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-white/95 backdrop-blur-2xl flex items-center justify-between z-[60] shrink-0">
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9 ring-1 ring-primary/20">
+                    <Avatar className="h-10 w-10 ring-2 ring-black/5 shadow-xl">
                       <AvatarImage src={selectedPost.profiles.avatar_url} />
-                      <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                      <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
                         {selectedPost.profiles.full_name?.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <p className="font-bold text-sm tracking-tight">{selectedPost.profiles.full_name}</p>
-                      <p className="text-[10px] text-muted-foreground italic -mt-0.5 opacity-80">{selectedPost.profiles.craft || 'Artist'}</p>
+                    <div className="flex flex-col">
+                      <p className="font-black text-sm md:text-base tracking-tight text-black">{selectedPost.profiles.full_name}</p>
+                      <p className="text-[10px] text-black/40 font-bold uppercase tracking-widest -mt-0.5">{selectedPost.profiles.craft || 'Artist'}</p>
                     </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-black hover:bg-black/5 rounded-full">
+                          <MoreVertical className="h-5 w-5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
+                        {user?.id === selectedPost.author_id ? (
+                          <>
+                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                              <Edit2 className="mr-2 h-4 w-4" />
+                              <span>Edit Post</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Post</span>
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <>
+                            <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                              <Share2 className="mr-2 h-4 w-4" />
+                              <span>Share Link</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                              <X fontSize="12" className="mr-2 h-4 w-4" />
+                              <span>Report Post</span>
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setSelectedPost(null)}
+                      className="h-8 w-8 text-black hover:bg-black/5 rounded-full"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
                   </div>
                 </div>
 
                 {/* Media Container (Shared for Mobile/Desktop) */}
-                <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/gallery order-1 lg:order-none overflow-hidden">
+                {hasMedia && (
+                  <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/gallery order-1 lg:order-none overflow-hidden">
+                    {/* Multimedia Controls */}
+                    {hasMultiple && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute left-4 z-30 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
+                          onClick={(e) => { e.stopPropagation(); prevMedia(items.length); }}
+                        >
+                          <ChevronLeft className="h-6 w-6" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-4 z-30 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
+                          onClick={(e) => { e.stopPropagation(); nextMedia(items.length); }}
+                        >
+                          <ChevronRight className="h-6 w-6" />
+                        </Button>
+                        
+                        {/* Dots */}
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-1.5">
+                          {items.map((_, i) => (
+                            <div 
+                              key={i} 
+                              className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentMediaIndex ? 'bg-white scale-110' : 'bg-white/40'}`} 
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
 
-                  {/* Multimedia Controls */}
-                  {hasMultiple && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute left-4 z-30 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); prevMedia(items.length); }}
-                      >
-                        <ChevronLeft className="h-6 w-6" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-4 z-30 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); nextMedia(items.length); }}
-                      >
-                        <ChevronRight className="h-6 w-6" />
-                      </Button>
-                      
-                      {/* Dots */}
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex gap-1.5">
-                        {items.map((_, i) => (
-                          <div 
-                            key={i} 
-                            className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentMediaIndex ? 'bg-white scale-110' : 'bg-white/40'}`} 
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Content Display */}
-                  {currentItem ? (
-                    currentItem.type === 'video' ? (
-                      <video
-                        key={currentItem.url}
-                        src={currentItem.url}
-                        controls
-                        className="w-full h-full object-contain p-2 md:p-4"
-                        autoPlay
-                        playsInline
-                      />
-                    ) : (
-                      <img
-                        key={currentItem.url}
-                        src={currentItem.url}
-                        alt="Post"
-                        className="w-full h-full object-contain p-2 md:p-4"
-                      />
-                    )
-                  ) : (
-                    <div className="p-12 text-center max-w-2xl">
-                      <p className="text-white text-xl leading-relaxed">{selectedPost?.content}</p>
+                    {/* Horizontal Scroll-Snap Gallery */}
+                    <div 
+                      id="modal-gallery-scroll"
+                      className={`w-full h-full flex overflow-x-auto snap-x snap-mandatory scroll-smooth custom-scrollbar-none relative z-10 ${hasMultiple ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                      onScroll={(e) => {
+                        const container = e.currentTarget;
+                        const idx = Math.round(container.scrollLeft / container.clientWidth);
+                        if (idx !== currentMediaIndex) setCurrentMediaIndex(idx);
+                      }}
+                    >
+                      {items.map((item, i) => (
+                        <div key={i} className="w-full h-full shrink-0 snap-center relative flex items-center justify-center">
+                          {item.type === 'video' ? (
+                            <video
+                              src={item.url}
+                              controls
+                              className="w-full h-full object-contain transition-all duration-700 animate-in fade-in"
+                              autoPlay={i === currentMediaIndex}
+                              playsInline
+                            />
+                          ) : (
+                            <img
+                              src={item.url}
+                              alt={`Work ${i + 1}`}
+                              className="w-full h-full object-contain transition-all duration-700 animate-in fade-in shadow-[0_0_80px_rgba(0,0,0,0.8)]"
+                            />
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
-                {/* Info Container: Right panel */}
-                <div className="w-full lg:w-[420px] flex flex-col bg-card border-l border-border/10 shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden shadow-[-20px_0_60px_rgba(0,0,0,0.5)] order-2 lg:order-none z-10">
+                {/* Job Hero Container (If no media but has job) */}
+                {!hasMedia && selectedPost.content.includes('JOB_SHARE::') && (
+                   <div className="w-full aspect-square md:aspect-auto md:flex-1 bg-black flex flex-col items-center justify-center p-3 md:p-12 order-1 lg:order-none overflow-hidden relative group/hero">
+                      {(() => {
+                        try {
+                          const parts = selectedPost.content.split('JOB_SHARE::');
+                          const jsonStr = parts[parts.length - 1].trim();
+                          const shareData = JSON.parse(jsonStr);
+                          
+                          return (
+                            <>
+                              {/* Rich Atmospheric Branding */}
+                              <div className="absolute inset-0 z-0">
+                                <img 
+                                  src={shareData.logoUrl || undefined} 
+                                  alt="" 
+                                  className="w-full h-full object-cover blur-3xl opacity-30 scale-125"
+                                />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/40" />
+                                {/* Soft Stage Light Effect */}
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150%] h-[150%] bg-[radial-gradient(circle,rgba(255,255,255,0.05)_0%,transparent_60%)] pointer-events-none" />
+                              </div>
+
+                              <div className="relative z-10 w-full flex flex-col items-center gap-4 md:gap-8">
+                                {/* Career Label */}
+                                <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-1000 scale-75 md:scale-100">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/70">Official Opportunity</span>
+                                </div>
+
+                                <div className="w-full max-w-md lg:max-max-w-lg transition-all duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)] scale-85 md:scale-100">
+                                   <JobShareCard {...shareData} />
+                                </div>
+
+                                {/* Subtle Footer Text */}
+                                <p className="text-[9px] font-bold text-white/20 uppercase tracking-widest scale-75 md:scale-100">CineCraft Career Brief</p>
+                              </div>
+                            </>
+                          );
+                        } catch (e) { return null; }
+                      })()}
+                   </div>
+                )}
+
+                {/* Info Container: Right panel OR Centered Card */}
+                <div className={`flex flex-col bg-card shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden order-2 lg:order-none z-10 ${
+                  (hasMedia || selectedPost.content.includes('JOB_SHARE::'))
+                    ? 'w-full lg:w-[420px] border-l border-border/10 shadow-[-20px_0_60px_rgba(0,0,0,0.5)]' 
+                    : 'w-[95vw] lg:w-[500px] lg:rounded-[2.5rem] border border-border/10 shadow-2xl m-4 md:m-8'
+                }`}>
                   {/* Desktop Only Header */}
-                  <div className="hidden lg:flex p-5 border-b border-border/10 items-center justify-between shrink-0 bg-background/50 backdrop-blur-xl">
+                  <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-white/95 backdrop-blur-3xl">
                     <div className="flex items-center gap-3 font-outfit">
-                      <Avatar className="h-11 w-11 ring-2 ring-primary/20 shadow-md">
+                      <Avatar className="h-11 w-11 ring-2 ring-black/5 shadow-2xl">
                         <AvatarImage src={selectedPost?.profiles.avatar_url} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                        <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
                           {selectedPost?.profiles.full_name?.charAt(0) || 'U'}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0">
-                        <p className="font-bold text-sm tracking-tight">{selectedPost?.profiles.full_name}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{selectedPost?.profiles.craft || 'Artist'}</p>
+                      <div className="min-w-0 flex flex-col">
+                        <p className="font-black text-[15px] tracking-tight text-black leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
+                        <p className="text-[10px] text-black/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
                       </div>
                     </div>
                     
-                    {user?.id === selectedPost.author_id && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10 rounded-full">
-                            <MoreVertical className="h-5 w-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
-                          <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
-                            <Edit2 className="mr-2 h-4 w-4" />
-                            <span>Edit Post</span>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            <span>Delete Post</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-black hover:bg-black/5 rounded-full">
+                          <MoreVertical className="h-5 w-5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
+                        {user?.id === selectedPost.author_id ? (
+                          <>
+                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                              <Edit2 className="mr-2 h-4 w-4" />
+                              <span>Edit Post</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Post</span>
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <>
+                            <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                              <Share2 className="mr-2 h-4 w-4" />
+                              <span>Share Link</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                              <X size={16} className="mr-2 h-4 w-4" />
+                              <span>Report Post</span>
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => setSelectedPost(null)}
+                      className="h-8 w-8 text-black hover:bg-black/5 rounded-full ml-1"
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
                   </div>
 
                   {/* Actions Header (Mirroring Feed) */}
-                  <div className="p-4 lg:p-5 border-b border-border/10 bg-background/50 backdrop-blur-2xl shrink-0 space-y-4">
+                  <div className="py-5 px-3 border-b border-border/10 bg-background/50 backdrop-blur-2xl shrink-0 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-6">
                         <Button variant="ghost" size="icon" onClick={handleLike} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
@@ -535,22 +731,37 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   </div>
 
                   {/* Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
+                  <div className="flex-1 overflow-y-auto py-6 px-3 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
                     {selectedPost?.content && (
                       <div className="flex gap-3.5 items-start">
-                        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10">
+                        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10 ring-1 ring-primary/10">
                           <AvatarImage src={selectedPost.profiles.avatar_url} />
-                          <AvatarFallback className="bg-primary/5 text-primary text-[10px]">{selectedPost.profiles.username?.charAt(0) || 'U'}</AvatarFallback>
+                          <AvatarFallback className="bg-primary/10 text-primary font-bold text-[10px]">
+                            {(selectedPost.profiles.username || "U").charAt(0).toUpperCase()}
+                          </AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
-                          <div className="bg-primary/5 rounded-3xl rounded-tl-none p-4 border border-primary/5 shadow-sm">
-                            <p className="text-[14px] leading-relaxed">
-                              <span className="font-black text-primary mr-1.5 tracking-tight">{selectedPost.profiles.username}</span>
-                              {selectedPost.content}
-                            </p>
+                          <div className="text-[14px] leading-relaxed">
+                             <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
+                               {(selectedPost.profiles.username || selectedPost.profiles.full_name || "").toLowerCase().replace(/\s/g, '')}
+                             </span>
+                             {selectedPost.content.includes('JOB_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const parts = selectedPost.content.split('JOB_SHARE::');
+                                    const caption = parts[0].trim();
+                                    return caption ? <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" /> : null;
+                                  } catch (e) {
+                                    return <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />;
+                                  }
+                                })()
+                              ) : (
+                                <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />
+                              )}
                           </div>
-                          <p className="text-[9px] text-muted-foreground/60 mt-2.5 ml-1 flex items-center gap-1.5 uppercase tracking-widest font-black opacity-60">
-                            • {formatDistanceToNow(new Date(selectedPost.created_at), { addSuffix: true })}
+                          <p className="text-[10px] text-muted-foreground/60 mt-2.5 flex items-center gap-1.5 uppercase tracking-widest font-medium">
+                            {formatDistanceToNow(new Date(selectedPost.created_at), { addSuffix: false }).replace('about ', '')}
+                            <span className="opacity-40 ml-1.5 cursor-pointer hover:text-foreground transition-colors font-bold tracking-widest text-[9px]">See translation</span>
                           </p>
                         </div>
                       </div>

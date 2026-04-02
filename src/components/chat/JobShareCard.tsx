@@ -15,11 +15,11 @@ interface JobShareCardProps {
 export const JobShareCard = ({ jobId, title, company, location, logoUrl, description, imageUrl }: JobShareCardProps) => {
     return (
         <div className="w-full max-w-[440px] bg-card/60 backdrop-blur-xl border border-white/10 rounded-[28px] overflow-hidden transition-all hover:border-primary/50 hover:shadow-[0_20px_50px_-15px_rgba(var(--primary),0.15)] group relative bg-gradient-to-br from-card to-muted/5">
-            <div className="flex flex-col sm:flex-row h-full">
-                {/* Header Image - Slimmer / Vertical on Mobile */}
+            <div className="flex flex-row h-full">
+                {/* Header Image - Fixed Horizontal Professional Width */}
                 <Link
                     to={`/jobs/${jobId}`}
-                    className="relative w-full sm:w-[130px] aspect-[16/9] sm:aspect-square overflow-hidden bg-muted group-hover:brightness-110 transition-all duration-500 shrink-0"
+                    className="relative w-[80px] md:w-[130px] aspect-square overflow-hidden bg-muted group-hover:brightness-110 transition-all duration-500 shrink-0 border-r border-white/5"
                 >
                     {imageUrl ? (
                         <img src={imageUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -30,11 +30,11 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                         </div>
                     )}
 
-                    {/* Badge for mobile / desktop top left */}
-                    <div className="absolute top-2 left-2 flex items-center gap-1.5 p-1 bg-background/80 backdrop-blur-md rounded-lg border border-white/10 shadow-sm sm:hidden">
+                    {/* Badge - Always Visible High-Fidelity */}
+                    <div className="absolute top-2 left-2 flex items-center gap-1.5 p-1 bg-background/80 backdrop-blur-md rounded-lg border border-white/10 shadow-sm">
                         <Avatar className="h-3.5 w-3.5 rounded-sm">
                             <AvatarImage src={logoUrl || undefined} />
-                            <AvatarFallback className="text-[6px] bg-primary/10 text-primary font-black">
+                            <AvatarFallback className="text-[6px] bg-primary/10 text-primary font-black uppercase">
                                 {company?.[0]?.toUpperCase()}
                             </AvatarFallback>
                         </Avatar>

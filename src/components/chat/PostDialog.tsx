@@ -177,8 +177,10 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                                     <AvatarFallback>{initials}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-sm">
-                                        <p className="font-bold text-primary mb-1">{authorName}</p>
+                                    <div className="text-[14px] leading-relaxed">
+                                        <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
+                                            {author?.username || authorName.toLowerCase().replace(/\s/g, '')}
+                                        </span>
                                         {post.content.includes('JOB_SHARE::') ? (
                                             (() => {
                                                 try {
@@ -187,24 +189,29 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                                                     const jsonStr = parts[parts.length - 1].trim();
                                                     const shareData = JSON.parse(jsonStr);
                                                     return (
-                                                        <div className="space-y-3">
-                                                            {caption && <FormattedText text={caption} className="text-foreground/90 leading-relaxed" />}
-                                                            <div className="scale-90 origin-top-left">
+                                                        <div className="inline space-y-3">
+                                                            {caption && <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" />}
+                                                            <div className="mt-3 block scale-90 origin-top-left">
                                                                 <JobShareCard {...shareData} />
                                                             </div>
                                                         </div>
                                                     );
                                                 } catch (e) {
-                                                    return <FormattedText text={post.content} className="text-foreground/90 leading-relaxed" />;
+                                                    return <FormattedText text={post.content} className="inline text-foreground/90 leading-relaxed" />;
                                                 }
                                             })()
                                         ) : (
-                                            <FormattedText text={post.content} className="text-foreground/90 leading-relaxed" />
+                                            <FormattedText text={post.content} className="inline text-foreground/90 leading-relaxed" />
                                         )}
                                     </div>
-                                    <p className="text-[10px] text-muted-foreground mt-2 uppercase tracking-widest">
-                                        {formatDistanceToNow(new Date(post.created_at || new Date()), { addSuffix: true })}
-                                    </p>
+                                    <div className="flex items-center gap-3 mt-2.5">
+                                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-medium">
+                                            {formatDistanceToNow(new Date(post.created_at || new Date()), { addSuffix: false }).replace('about ', '')}
+                                        </p>
+                                        <button className="text-[10px] font-bold text-foreground/40 hover:text-foreground transition-colors uppercase tracking-widest">
+                                            See translation
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

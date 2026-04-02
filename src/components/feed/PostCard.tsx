@@ -149,6 +149,7 @@ const PostCard = ({
   // View States
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewIndex, setViewIndex] = useState(0);
+  const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
 
   const nextMedia = (max: number) => {
     setViewIndex((prev) => (prev + 1) % max);
@@ -316,64 +317,82 @@ const PostCard = ({
       );
     }
 
-    // Layout classes based on item count
-    const gridCols = 'grid-cols-2';
-    const gridRows = items.length === 2 ? 'grid-rows-1' : 'grid-rows-2';
-    const containerHeight = items.length === 2 ? 'aspect-[16/10]' : 'aspect-square sm:aspect-auto sm:min-h-[400px]';
-
-    const displayItems = items.slice(0, 4);
-    const hasMore = items.length > 4;
-
+    // Carousel for multiple items
     return (
-      <div className={`-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] grid ${gridCols} ${gridRows} ${containerHeight} gap-0.5 bg-black/10 relative overflow-hidden ring-1 ring-white/10`}>
-        {displayItems.map((item, idx) => {
-          // If exactly 3 items, the first one should take the full height on the left
-          const isFeatured = items.length === 3 && idx === 0;
-          return (
+      <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/10 relative overflow-hidden group/carousel ring-1 ring-white/10">
+        <div 
+          className="relative aspect-square sm:aspect-video flex transition-transform duration-500 ease-out h-full"
+          style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
+        >
+          {items.map((item, idx) => (
             <div 
-              key={`${id}-media-${idx}`} 
-              onClick={(e) => { e.stopPropagation(); setViewIndex(idx); setIsViewOpen(true); }}
-              className={`relative overflow-hidden group/media cursor-pointer border-[0.5px] border-white/5
-                ${isFeatured ? 'row-span-2 h-full' : 'aspect-square h-full'}`}
+              key={`${id}-carousel-${idx}`} 
+              className="w-full h-full flex-shrink-0"
             >
               {item.type === 'image' ? (
                 <img
                   src={item.url}
                   alt={`Media ${idx + 1}`}
-                  className="w-full h-full object-cover group-hover/media:scale-110 transition-transform duration-1000"
+                  className="w-full h-full object-cover sm:object-contain bg-black/20"
                 />
               ) : (
-                <div className="relative w-full h-full bg-black/40">
+                <div className="relative w-full h-full bg-black">
                   <video
                     src={item.url}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                     muted
                     loop
                     onMouseOver={e => e.currentTarget.play()}
                     onMouseOut={e => e.currentTarget.pause()}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none transition-transform group-hover/media:scale-110 duration-500">
-                    <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30 shadow-2xl">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30">
                       <Play className="w-5 h-5 text-white fill-white ml-0.5" />
                     </div>
                   </div>
                 </div>
               )}
-              
-              {idx === 3 && hasMore && (
-                <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex flex-col items-center justify-center cursor-pointer hover:bg-black/60 transition-colors z-20">
-                  <span className="text-3xl font-bold text-white tracking-tighter">+{items.length - 4}</span>
-                  <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-1">More</span>
-                </div>
-              )}
-              
-              {/* Overlay for hover state */}
-              <div className="absolute inset-0 bg-primary/0 group-hover/media:bg-primary/5 transition-colors duration-500 pointer-events-none" />
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Navigation Buttons */}
+        <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity pointer-events-none">
+          {currentMediaIndex > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 pointer-events-auto shadow-lg"
+              onClick={(e) => { e.stopPropagation(); setCurrentMediaIndex(prev => prev - 1); }}
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+          )}
+          <div className="flex-1" />
+          {currentMediaIndex < items.length - 1 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60 pointer-events-auto shadow-lg"
+              onClick={(e) => { e.stopPropagation(); setCurrentMediaIndex(prev => prev + 1); }}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          )}
+        </div>
+
+        {/* Dots Indicator */}
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm z-10">
+          {items.map((_, i) => (
+            <div 
+              key={i} 
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentMediaIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`} 
+            />
+          ))}
+        </div>
+
         {isAIGenerated && (
-          <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-full z-30 shadow-lg">
+          <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-full z-20 shadow-lg">
             AI Generated
           </div>
         )}
@@ -526,26 +545,32 @@ const PostCard = ({
           </div>
         </div>
 
-        {content.includes('JOB_SHARE::') ? (
-          (() => {
-            try {
-              const parts = content.split('JOB_SHARE::');
-              const caption = parts[0].trim();
-              const jsonStr = parts[parts.length - 1].trim();
-              const shareData = JSON.parse(jsonStr);
-              return (
-                <div className="mb-4 space-y-3">
-                  {caption && <FormattedText text={caption} className="text-foreground/90 leading-relaxed" />}
-                  <JobShareCard {...shareData} />
-                </div>
-              );
-            } catch (e) {
-              return <FormattedText text={content} className="mb-4 text-foreground/90 leading-relaxed" />;
-            }
-          })()
-        ) : (
-          <FormattedText text={content} className="mb-4 text-foreground/90 leading-relaxed" />
-        )}
+        <div className="mb-4 space-y-3">
+          <div className="text-[14px] leading-relaxed">
+             {content.includes('JOB_SHARE::') ? (
+                (() => {
+                  try {
+                    const parts = content.split('JOB_SHARE::');
+                    const caption = parts[0].trim();
+                    const jsonStr = parts[parts.length - 1].trim();
+                    const shareData = JSON.parse(jsonStr);
+                    return (
+                      <div className="space-y-3">
+                        {caption && <FormattedText text={caption} className="text-foreground/90 leading-relaxed" />}
+                        <div className="mt-3 block scale-90 origin-top-left">
+                          <JobShareCard {...shareData} />
+                        </div>
+                      </div>
+                    );
+                  } catch (e) {
+                    return <FormattedText text={content} className="text-foreground/90 leading-relaxed" />;
+                  }
+                })()
+              ) : (
+                <FormattedText text={content} className="text-foreground/90 leading-relaxed" />
+              )}
+          </div>
+        </div>
 
         {renderMediaGallery()}
 
@@ -742,40 +767,38 @@ const PostCard = ({
                   <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
                     {content && (
                       <div className="flex gap-3.5 items-start">
-                        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10">
+                        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10 ring-1 ring-primary/10">
                           <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                          <AvatarFallback className="bg-primary/5 text-primary text-[10px]">{author.initials}</AvatarFallback>
+                          <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">{author.initials}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1">
-                          <div className="bg-primary/5 rounded-3xl rounded-tl-none p-4 border border-primary/5 shadow-sm">
-                            <div className="text-[14px] leading-relaxed">
-                               <p className="font-black text-primary mb-1 tracking-tight">{author.name}</p>
-                               {content.includes('JOB_SHARE::') ? (
-                                  (() => {
-                                    try {
-                                      const parts = content.split('JOB_SHARE::');
-                                      const caption = parts[0].trim();
-                                      const jsonStr = parts[parts.length - 1].trim();
-                                      const shareData = JSON.parse(jsonStr);
-                                      return (
-                                        <div className="space-y-3">
-                                          {caption && <FormattedText text={caption} className="text-foreground/90 leading-relaxed" />}
-                                          <div className="scale-90 origin-top-left">
-                                            <JobShareCard {...shareData} />
-                                          </div>
+                          <div className="text-[14px] leading-relaxed">
+                             <span className="font-bold text-foreground mr-2 tracking-tight">{author.name}</span>
+                             {content.includes('JOB_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const parts = content.split('JOB_SHARE::');
+                                    const caption = parts[0].trim();
+                                    const jsonStr = parts[parts.length - 1].trim();
+                                    const shareData = JSON.parse(jsonStr);
+                                    return (
+                                      <div className="inline space-y-3">
+                                        {caption && <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" />}
+                                        <div className="mt-3 block scale-90 origin-top-left">
+                                          <JobShareCard {...shareData} />
                                         </div>
-                                      );
-                                    } catch (e) {
-                                      return <FormattedText text={content} className="text-foreground/90 leading-relaxed" />;
-                                    }
-                                  })()
-                                ) : (
-                                  <FormattedText text={content} className="text-foreground/90 leading-relaxed" />
-                                )}
-                            </div>
+                                      </div>
+                                    );
+                                  } catch (e) {
+                                    return <FormattedText text={content} className="inline text-foreground/90 leading-relaxed" />;
+                                  }
+                                })()
+                              ) : (
+                                <FormattedText text={content} className="inline text-foreground/90 leading-relaxed" />
+                              )}
                           </div>
-                          <p className="text-[9px] text-muted-foreground/60 mt-2.5 ml-1 flex items-center gap-1.5 uppercase tracking-widest font-black opacity-60">
-                             • {timeAgo}
+                          <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1.5 uppercase tracking-widest font-medium">
+                             {timeAgo}
                           </p>
                         </div>
                       </div>

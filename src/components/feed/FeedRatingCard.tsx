@@ -1,4 +1,4 @@
-import { Star, Globe, Users } from 'lucide-react';
+import { Star, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -65,10 +65,6 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                     )}
 
                     <div className="absolute top-2 left-2 flex flex-col gap-1.5">
-                        <div className="bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-1 rounded flex items-center gap-1 w-fit font-semibold shadow-lg">
-                            <Globe className="h-3.5 w-3.5 text-yellow-400" />
-                            <span>{rating.tmdb_rating?.toFixed(1) || 'N/A'}</span>
-                        </div>
                         {rating.app_rating && rating.app_rating > 0 && (
                             <div className="bg-primary/90 backdrop-blur-sm text-primary-foreground text-xs px-2 py-1 rounded flex items-center gap-1 w-fit font-semibold shadow-lg">
                                 <Users className="h-3.5 w-3.5" />
@@ -149,10 +145,6 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                         </div>
                     )}
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
-                        <div className="bg-black/60 backdrop-blur-sm text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
-                            <Globe className="h-3 w-3 text-yellow-500" />
-                            <span>TMDB {(rating.tmdb_rating || 0).toFixed(1)}</span>
-                        </div>
                         {rating.app_rating && rating.app_rating > 0 && (
                             <div className="bg-primary/90 backdrop-blur-sm text-primary-foreground text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
                                 <Users className="h-3 w-3" />
