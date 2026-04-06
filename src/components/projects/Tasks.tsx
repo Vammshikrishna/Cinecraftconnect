@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw, Layers, Search, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Task {
     id: string;
-    title: string;
-    status: string;
+    name: string;
+    description?: string | null;
+    due_date?: string | null;
+    is_completed: boolean;
 }
 
 interface TasksProps {
@@ -18,113 +19,202 @@ interface TasksProps {
 }
 
 const Tasks = ({ project_id }: TasksProps) => {
-    const { data: rawTasks, error: realtimeError } = useRealtimeData<Task>('tasks', 'project_space_id', project_id);
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [newTask, setNewTask] = useState('');
     const [loading, setLoading] = useState(false);
-
-    const [error, setError] = useState<Error | null>(null);
+    const [fetching, setFetching] = useState(true);
+    const [newTask, setNewTask] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
 
-    // Decrypt tasks when raw data or key changes
-    useEffect(() => {
-        setTasks(rawTasks || []);
-    }, [rawTasks]);
-
-    const handleAddTask = async () => {
-        if (newTask.trim() === '') return;
-        setLoading(true);
+    const fetchTasks = async () => {
+        setFetching(true);
         setError(null);
         try {
-            const contentToSave = newTask.trim();
+            let { data, error: fetchError } = await supabase
+                .from('tasks' as any)
+                .select('*')
+                .eq('project_space_id', project_id);
+
+            if (fetchError) {
+                throw fetchError;
+            }
+
+            const mapped = (data || []).map((item: any) => ({
+                id: item.id,
+                name: item.name,
+                description: item.description ?? null,
+                due_date: item.due_date ?? null,
+                is_completed: item.is_completed ?? false,
+            }));
+            setTasks(mapped);
+        } catch (err: any) {
+            console.error('Error fetching tasks:', err);
+            setError(err.message || "Connection error");
+        } finally {
+            setFetching(false);
+        }
+    };
+
+    const handleToggleTask = async (id: string, currentStatus: boolean) => {
+        try {
+            const { error } = await supabase
+                .from('tasks' as any)
+                .update({ is_completed: !currentStatus })
+                .eq('id', id);
+            if (error) throw error;
+            fetchTasks();
+        } catch (err: any) {
+            toast({ title: "Error", description: "Could not update task", variant: "destructive" });
+        }
+    };
+
+    useEffect(() => {
+        fetchTasks();
+
+        const channel = supabase
+            .channel(`tasks:${project_id}`)
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'tasks', 
+                filter: `project_space_id=eq.${project_id}` 
+            }, () => {
+                fetchTasks();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [project_id]);
+
+    const handleAddTask = async () => {
+        const title = newTask.trim();
+        if (!title) return;
+        
+        setLoading(true);
+        try {
+            const taskData: any = { 
+                name: title,
+                description: null,
+                due_date: null,
+                is_completed: false,
+                project_space_id: project_id 
+            };
 
             const { error: insertError } = await supabase
-                .from('tasks')
-                // @ts-ignore
-                .insert([{ title: contentToSave, status: 'pending', project_space_id: project_id }])
-                .select();
+                .from('tasks' as any)
+                .insert([taskData]);
 
             if (insertError) throw insertError;
+
             setNewTask('');
+            toast({ title: "Task added", description: "Your production task was saved." });
+            fetchTasks();
         } catch (err: any) {
-            setError(err);
-            toast({ title: "Error", description: "Failed to add task: " + err.message, variant: "destructive" });
+            console.error('Task insert error:', err);
+            toast({ 
+                title: "Schema Mismatch", 
+                description: err.message, 
+                variant: "destructive" 
+            });
         } finally {
             setLoading(false);
         }
     };
 
-    const handleToggleTask = async (id: string, currentStatus: string) => {
-        const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
-
-        // Optimistic UI update
-        const originalTasks = [...tasks];
-        setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
-
-        const { error } = await supabase
-            .from('tasks')
-            .update({ status: newStatus })
-            .eq('id', id);
-
-        if (error) {
-            // Revert
-            setTasks(originalTasks);
-            toast({ title: "Error", description: "Failed to update task", variant: "destructive" });
-        }
-    };
-
-    if (realtimeError) {
-        return <div className="text-destructive">Error loading tasks: {realtimeError.message}</div>;
-    }
+    const filteredTasks = tasks.filter(t => t.name?.toLowerCase().includes(searchQuery.toLowerCase()));
 
     return (
-        <div className="p-4 sm:p-6 max-w-3xl mx-auto w-full h-full overflow-y-auto">
-            <div className="flex justify-between items-center mb-4 sm:mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold">Tasks</h1>
-                <div className="text-xs text-muted-foreground">Standard Security</div>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Workspace</h1>
+                    <p className="text-3xl font-extrabold text-foreground">Production Tasks</p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                    <div className="relative flex-grow min-w-[200px] sm:min-w-[300px]">
+                        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            placeholder="Find a task or asset..." 
+                            className="pl-11 pr-4 h-12 bg-card border-border rounded-xl placeholder:text-muted-foreground focus:border-primary/50 transition-all"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 mb-6 sm:mb-8">
-                <Input
-                    type="text"
-                    value={newTask}
-                    onChange={(e) => setNewTask(e.target.value)}
-                    placeholder="Add a new task..."
-                    className="flex-1"
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                />
-                <Button
-                    onClick={handleAddTask}
-                    disabled={loading || !newTask.trim()}
-                    className="w-full sm:w-auto"
-                >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-                    {loading ? 'Adding...' : 'Add Task'}
-                </Button>
+            {error && (
+                <div className="mb-8 p-4 bg-destructive/10 border border-destructive/20 rounded-2xl flex items-center justify-between gap-3 text-destructive">
+                    <div className="flex items-center gap-3">
+                        <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
+                        <div>
+                            <p className="text-sm font-bold">Connection Issue</p>
+                            <p className="text-xs opacity-70">{error}</p>
+                        </div>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => fetchTasks()} className="h-8 hover:bg-destructive/20 text-destructive font-bold">
+                        <RefreshCw className="h-4 w-4 mr-2" /> Retry
+                    </Button>
+                </div>
+            )}
+
+            <div className="bg-card border border-border p-4 sm:p-6 rounded-2xl mb-8 shadow-sm">
+                <div className="flex flex-col sm:flex-row items-end gap-4">
+                    <div className="flex-1 space-y-2 w-full">
+                        <label className="text-[10px] font-bold text-primary uppercase tracking-widest ml-1">New Production Step</label>
+                        <Input 
+                            value={newTask} 
+                            onChange={(e) => setNewTask(e.target.value)} 
+                            placeholder="Enter task name..." 
+                            className="h-14 bg-background border-border rounded-2xl placeholder:text-muted-foreground px-6 focus:border-primary/50 text-lg transition-all"
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                        />
+                    </div>
+                    <Button 
+                        onClick={handleAddTask} 
+                        disabled={loading || !newTask.trim()}
+                        className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/80 text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 transition-all w-full sm:w-auto"
+                    >
+                        {loading ? <Loader2 className="animate-spin h-6 w-6" /> : "Deploy Task"}
+                    </Button>
+                </div>
             </div>
 
-            {error && <div className="text-destructive mb-4">{error.message}</div>}
-
-            <div className="space-y-3">
-                {tasks && tasks.length > 0 ? (
-                    tasks.map(task => (
-                        <div key={task.id} className="flex items-center gap-3 p-3 bg-card rounded-lg border border-border hover:bg-accent/50 transition-colors">
+            <div className="space-y-3 pb-24">
+                {fetching && tasks.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 opacity-30">
+                        <Loader2 className="h-10 w-10 animate-spin mb-4" />
+                        <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground">Fetching backlog...</p>
+                    </div>
+                ) : filteredTasks.length > 0 ? (
+                        filteredTasks.map(task => (
+                        <div key={task.id} className="group flex items-center gap-4 p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm">
                             <Checkbox
                                 id={`task-${task.id}`}
-                                checked={task.status === 'completed'}
-                                onCheckedChange={() => handleToggleTask(task.id, task.status)}
+                                checked={task.is_completed}
+                                onCheckedChange={() => handleToggleTask(task.id, task.is_completed)}
+                                className="h-6 w-6 border-2 border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                             />
                             <label
                                 htmlFor={`task-${task.id}`}
-                                className={`flex-1 cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${task.status === 'completed' ? 'line-through text-muted-foreground' : ''}`}
+                                className={`flex-1 cursor-pointer text-lg font-bold leading-tight transition-all ${task.is_completed ? 'line-through opacity-30 italic' : 'text-foreground'}`}
                             >
-                                {task.title}
+                                {task.name}
                             </label>
+                            <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
+                                <p className="text-[9px] font-black uppercase text-primary tracking-tighter bg-primary/10 px-2 py-1 rounded-lg">Production Log</p>
+                            </div>
                         </div>
                     ))
                 ) : (
-                    <div className="text-center text-muted-foreground py-8">
-                        No tasks yet. Add one above!
+                    <div className="flex flex-col items-center justify-center py-24 text-center opacity-50">
+                        <Layers className="h-16 w-16 mb-4 text-muted-foreground" />
+                        <p className="text-lg font-bold text-foreground uppercase tracking-widest">No Active Tasks</p>
+                        <p className="text-sm text-muted-foreground">Keep the production moving by adding items above.</p>
                     </div>
                 )}
             </div>

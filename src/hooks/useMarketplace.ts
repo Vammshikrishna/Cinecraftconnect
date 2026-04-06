@@ -28,7 +28,7 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
 
             // Apply filters manually since we aren't using the RPC
             if (activeTab !== 'all') {
-                query = query.eq('type', activeTab);
+                query = query.eq('listing_type', activeTab);
             }
             if (filters.category) {
                 query = query.eq('category', filters.category);
@@ -37,10 +37,10 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
                 query = query.ilike('location', `%${filters.location}%`);
             }
             if (filters.minPrice) {
-                query = query.gte('price', filters.minPrice);
+                query = query.gte('price_per_day', filters.minPrice);
             }
             if (filters.maxPrice) {
-                query = query.lte('price', filters.maxPrice);
+                query = query.lte('price_per_day', filters.maxPrice);
             }
             if (searchQuery) {
                 query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);

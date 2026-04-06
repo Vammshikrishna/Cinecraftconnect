@@ -292,18 +292,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // If in call, show call interface
-  if (inCall && activeCall) {
-    return (
-      <LiveKitCallContainer
-        roomId={spaceId || projectId}
-        onLeave={handleLeaveCall}
-        roomName={projectName || 'Project Call'}
-        projectId={projectId}
-      />
-    );
-  }
-
   const renderMessageContent = (content: string) => {
     if (content.startsWith('POST_SHARE::')) {
       try {
@@ -356,8 +344,19 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
   // Otherwise show chat interface
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex flex-wrap justify-between items-center p-4 border-b border-border gap-2">
+    <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
+      
+      {/* PIP Call Overlay using Portal */}
+      {inCall && activeCall && (
+        <LiveKitCallContainer
+          roomId={spaceId || projectId}
+          onLeave={handleLeaveCall}
+          roomName={projectName || 'Project Call'}
+          projectId={projectId}
+        />
+      )}
+
+      <div className="flex flex-wrap justify-between items-center p-4 border-b border-border gap-2 shrink-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <h2 className="text-lg font-semibold">Project Chat</h2>
         <div className="flex gap-2 items-center">
           {activeCall ? (
@@ -385,7 +384,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             <p>No messages yet. Start the conversation!</p>
           </div>
         ) : (
-          messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
+              messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
             const isOwn = message.user_id === user?.id;
             const isShare = isShareContent(message.content);
             return (

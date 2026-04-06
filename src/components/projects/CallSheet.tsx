@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, FileText, Download, Trash2, Upload, Calendar } from 'lucide-react';
+import { Plus, FileText, Download, Trash2, Upload, MapPin, User, Phone, Loader2, Info, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface CallSheet {
@@ -35,7 +35,6 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     const [creating, setCreating] = useState(false);
     const [uploading, setUploading] = useState(false);
 
-
     // Form state
     const [date, setDate] = useState('');
     const [callTime, setCallTime] = useState('');
@@ -62,8 +61,6 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     useEffect(() => {
         setCallSheets(rawCallSheets || []);
     }, [rawCallSheets]);
-
-
 
     const handleCreate = async () => {
         if (!date) {
@@ -116,19 +113,18 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
         setUploading(true);
 
         try {
-            // Upload file to storage
-            const fileExt = selectedFile.name.split('.').pop();
-            const fileName = `${project_id}/${Date.now()}.${fileExt}`;
+            const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
+            const filePath = `call-sheets/${project_id}/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
-                .from('call-sheets')
-                .upload(fileName, selectedFile);
+                .from('project-files')
+                .upload(filePath, selectedFile);
 
             if (uploadError) throw uploadError;
 
             const { data: { publicUrl } } = supabase.storage
-                .from('call-sheets')
-                .getPublicUrl(fileName);
+                .from('project-files')
+                .getPublicUrl(filePath);
 
             const notesContent = `Uploaded file: ${publicUrl}`;
 
@@ -171,70 +167,80 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     };
 
     const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString();
+        return new Date(dateString).toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
     };
 
     if (error) {
-        return <div className="p-8 text-destructive">Error loading call sheets: {error.message}</div>;
+        return <div className="p-8 text-destructive bg-red-500/10 rounded-2xl border border-red-500/20 m-4">Error loading call sheets: {error.message}</div>;
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto w-full">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-xl sm:text-2xl font-bold">Call Sheet</h1>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto w-full no-scrollbar bg-transparent">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-6">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Production</h1>
+                    <p className="text-2xl font-bold text-foreground text-gradient">Call Sheets</p>
                 </div>
-                <div className="flex gap-2 w-full sm:w-auto">
+                
+                <div className="flex gap-3 w-full sm:w-auto">
                     <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
-                            <Button className="flex-1 sm:flex-none"><Plus className="h-4 w-4 mr-2" />Create Call Sheet</Button>
+                            <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                <Plus className="h-5 w-5 mr-2" /> 
+                                Create New
+                            </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-w-2xl w-[95vw] rounded-lg">
-                            <DialogHeader>
-                                <DialogTitle>Create Call Sheet</DialogTitle>
-                                <DialogDescription>Fill in the details below.</DialogDescription>
+                        <DialogContent className="max-w-2xl w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                            <DialogHeader className="p-6 border-b border-border">
+                                <DialogTitle className="text-xl font-bold text-foreground">Sheet Details</DialogTitle>
+                                <DialogDescription className="text-muted-foreground mt-1">Populate production requirements for the upcoming day.</DialogDescription>
                             </DialogHeader>
-                            <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <Label>Date *</Label>
-                                        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Production Date</Label>
+                                        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                                     </div>
-                                    <div>
-                                        <Label>Call Time</Label>
-                                        <Input type="time" value={callTime} onChange={(e) => setCallTime(e.target.value)} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <Label>Location</Label>
-                                    <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio A, 123 Main St" />
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <Label>Director</Label>
-                                        <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Director name" />
-                                    </div>
-                                    <div>
-                                        <Label>Director Phone</Label>
-                                        <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="Phone number" />
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">General Call Time</Label>
+                                        <Input type="time" value={callTime} onChange={(e) => setCallTime(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div>
-                                        <Label>Producer</Label>
-                                        <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Producer name" />
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Location Details</Label>
+                                    <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio 42, Los Angeles" className="bg-background border-border rounded-xl h-12" />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director</Label>
+                                        <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
                                     </div>
-                                    <div>
-                                        <Label>Producer Phone</Label>
-                                        <Input value={producerPhone} onChange={(e) => setProducerPhone(e.target.value)} placeholder="Phone number" />
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director Mobile</Label>
+                                        <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
                                     </div>
                                 </div>
-                                <div>
-                                    <Label>Notes</Label>
-                                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Additional notes..." rows={4} />
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer</Label>
+                                        <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer Mobile</Label>
+                                        <Input value={producerPhone} onChange={(e) => setProducerPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
+                                    </div>
                                 </div>
-                                <Button onClick={handleCreate} disabled={creating} className="w-full">
-                                    {creating ? 'Saving...' : 'Create Call Sheet'}
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Safety & Talent Notes</Label>
+                                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions for cast and crew..." className="bg-background border-border rounded-xl min-h-[120px] resize-none" />
+                                </div>
+                                <Button onClick={handleCreate} disabled={creating} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                    {creating ? <Loader2 className="animate-spin" /> : 'Create Call Sheet'}
                                 </Button>
                             </div>
                         </DialogContent>
@@ -242,25 +248,29 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
 
                     <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetForm(); }}>
                         <DialogTrigger asChild>
-                            <Button variant="outline" className="flex-1 sm:flex-none"><Upload className="h-4 w-4 mr-2" />Upload PDF</Button>
+                            <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent/50 text-foreground rounded-2xl px-6 h-12 font-bold backdrop-blur-xl transition-all">
+                                <Upload className="h-5 w-5 mr-2" /> Upload PDF
+                            </Button>
                         </DialogTrigger>
-                        <DialogContent className="w-[95vw] rounded-lg">
-                            <DialogHeader>
-                                <DialogTitle>Upload Call Sheet</DialogTitle>
-                                <DialogDescription>Upload an existing call sheet file.</DialogDescription>
+                        <DialogContent className="w-[95vw] sm:max-w-md bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                            <DialogHeader className="p-6 border-b border-border">
+                                <DialogTitle className="text-xl font-bold text-foreground">Upload Metadata</DialogTitle>
+                                <DialogDescription className="text-muted-foreground mt-1">Link an existing PDF document to a production date.</DialogDescription>
                             </DialogHeader>
-                            <div className="space-y-4">
-                                <div>
-                                    <Label>Date *</Label>
-                                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                            <div className="p-6 space-y-6">
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Shoot Date</Label>
+                                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                                 </div>
-                                <div>
-                                    <Label>Call Sheet File *</Label>
-                                    <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
-                                    {selectedFile && <span className="text-sm text-muted-foreground mt-2 block">{selectedFile.name}</span>}
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document File</Label>
+                                    <div className="group relative">
+                                        <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="bg-background border-border rounded-xl h-12 py-3 cursor-pointer file:bg-transparent file:text-primary file:font-bold file:border-0" />
+                                    </div>
+                                    {selectedFile && <span className="text-xs text-primary font-medium mt-2 flex items-center gap-2"><Info className="w-3 h-3" /> {selectedFile.name}</span>}
                                 </div>
-                                <Button onClick={handleUpload} disabled={uploading} className="w-full">
-                                    {uploading ? 'Uploading...' : <><Upload className="h-4 w-4 mr-2" />Upload Call Sheet</>}
+                                <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                    {uploading ? <Loader2 className="animate-spin" /> : <><Upload className="h-5 w-5 mr-2" /> Confirm Upload</>}
                                 </Button>
                             </div>
                         </DialogContent>
@@ -269,78 +279,139 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             </div>
 
             {callSheets && callSheets.length > 0 ? (
-                <div className="space-y-4">
-                    {callSheets.map(sheet => (
-                        <div key={sheet.id} className="bg-slate-800/50 p-6 rounded-lg shadow-md border border-white/5">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-2">
-                                    <Calendar className="h-5 w-5 text-primary" />
-                                    <h2 className="text-xl font-semibold">{formatDate(sheet.date)}</h2>
+                <div className="flex flex-col gap-16 max-w-4xl mx-auto pb-64 snap-y snap-proximity">
+                    {callSheets.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((sheet, index) => (
+                        <div key={sheet.id} className="relative pl-8 sm:pl-16 border-l-[3px] border-primary/20 last:border-l-0 pb-16 snap-start">
+                            {/* Timeline Node */}
+                            <div className="absolute top-0 left-[-12px] w-[21px] h-[21px] bg-primary rounded-full border-4 border-background shadow-lg shadow-primary/40 z-20" />
+                            
+                            {/* Date Header - Natural Scroll */}
+                            <div className="relative mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4 z-10 p-2 rounded-2xl -ml-2">
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-[10px] font-black tracking-[0.3em] text-primary uppercase ml-1">Production Day {callSheets.length - index}</p>
+                                        <span className="h-px w-8 bg-primary/30" />
+                                    </div>
+                                    <h2 className="text-3xl sm:text-5xl font-black text-foreground tracking-tighter">{formatDate(sheet.date)}</h2>
                                 </div>
-                                <Button size="sm" variant="ghost" onClick={() => handleDelete(sheet.id)}>
-                                    <Trash2 className="h-4 w-4" />
+                                <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    onClick={() => handleDelete(sheet.id)}
+                                    className="bg-destructive/10 hover:bg-destructive text-destructive hover:text-white rounded-full p-2 h-10 w-10 transition-all opacity-40 hover:opacity-100 self-start sm:self-auto"
+                                >
+                                    <Trash2 className="h-5 w-5" />
                                 </Button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                {sheet.call_time && (
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Call Time</p>
-                                        <p className="font-medium">{sheet.call_time}</p>
+                            <div className="group bg-card/60 border border-border shadow-2xl rounded-[40px] p-6 sm:p-12 hover:bg-accent/40 active:scale-[0.99] transition-all duration-700 relative overflow-hidden backdrop-blur-xl">
+                                {/* Cinematic Gradient Overlays */}
+                                <div className="absolute -top-24 -right-24 w-96 h-96 bg-primary/10 blur-[120px] rounded-full group-hover:bg-primary/20 transition-all pointer-events-none" />
+                                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-primary/5 blur-[80px] rounded-full pointer-events-none" />
+                                
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
+                                    {/* Left Content - Core Specs */}
+                                    <div className="lg:col-span-12 xl:col-span-7 space-y-10">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                                            {sheet.call_time && (
+                                                <div className="bg-card border border-border/50 rounded-3xl p-8 shadow-sm hover:shadow-lg transition-all group/stat">
+                                                    <div className="flex items-center gap-3 mb-4">
+                                                        <div className="p-2 bg-primary/10 rounded-xl group-hover/stat:bg-primary/20 transition-colors">
+                                                            <Clock className="w-4 h-4 text-primary" />
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">General Call</p>
+                                                    </div>
+                                                    <p className="text-4xl sm:text-5xl font-black text-foreground font-mono tracking-tighter">{sheet.call_time}</p>
+                                                </div>
+                                            )}
+                                            {sheet.location && (
+                                                <div className="bg-card border border-border/50 rounded-3xl p-8 shadow-sm hover:shadow-lg transition-all group/stat">
+                                                    <div className="flex items-center gap-3 mb-4">
+                                                        <div className="p-2 bg-primary/10 rounded-xl group-hover/stat:bg-primary/20 transition-colors">
+                                                            <MapPin className="w-4 h-4 text-primary" />
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Live Location</p>
+                                                    </div>
+                                                    <p className="text-base sm:text-lg font-bold text-foreground/90 leading-snug tracking-tight">
+                                                        {sheet.location}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {(sheet.director || sheet.producer) && (
+                                            <div className="flex flex-wrap gap-12 py-8 border-y border-border/40">
+                                                {sheet.director && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2 opacity-50 mb-1">
+                                                            <User className="w-3.5 h-3.5" />
+                                                            <p className="text-[10px] font-black uppercase tracking-[0.2em]">Director</p>
+                                                        </div>
+                                                        <p className="text-xl font-black text-foreground tracking-tight">{sheet.director}</p>
+                                                        {sheet.director_phone && (
+                                                            <a href={`tel:${sheet.director_phone}`} className="text-xs text-primary font-bold hover:underline flex items-center gap-2 group/phone">
+                                                                <Phone className="w-3 h-3 group-hover/phone:rotate-12 transition-transform" /> 
+                                                                {sheet.director_phone}
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                                {sheet.producer && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2 opacity-50 mb-1">
+                                                            <User className="w-3.5 h-3.5" />
+                                                            <p className="text-[10px] font-black uppercase tracking-[0.2em]">Producer</p>
+                                                        </div>
+                                                        <p className="text-xl font-black text-foreground tracking-tight">{sheet.producer}</p>
+                                                        {sheet.producer_phone && (
+                                                            <a href={`tel:${sheet.producer_phone}`} className="text-xs text-primary font-bold hover:underline flex items-center gap-2 group/phone">
+                                                                <Phone className="w-3 h-3 group-hover/phone:rotate-12 transition-transform" /> 
+                                                                {sheet.producer_phone}
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                                {sheet.location && (
-                                    <div>
-                                        <p className="text-sm text-muted-foreground">Location</p>
-                                        <p className="font-medium">{sheet.location}</p>
+
+                                    {/* Right Content - Full Width Notes or Call to Action */}
+                                    <div className="lg:col-span-12 xl:col-span-5 flex flex-col justify-center">
+                                        {sheet.notes && (
+                                            <div className="space-y-6">
+                                                <div className="flex items-center gap-3">
+                                                    <FileText className="w-4 h-4 text-primary" />
+                                                    <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Production Log</p>
+                                                </div>
+                                                {sheet.notes.startsWith('Uploaded file:') ? (
+                                                    <Button className="w-full bg-primary hover:bg-primary/90 text-white rounded-[24px] h-24 font-black transition-all flex flex-col items-center justify-center gap-1 shadow-2xl shadow-primary/30 active:scale-95 group/btn" asChild>
+                                                        <a href={sheet.notes.replace('Uploaded file: ', '')} target="_blank" rel="noopener noreferrer">
+                                                            <Download className="h-8 w-8 mb-1 group-hover/btn:translate-y-1 transition-transform" />
+                                                            <span className="text-[10px] uppercase tracking-widest opacity-80">Download Digital Pack</span>
+                                                        </a>
+                                                    </Button>
+                                                ) : (
+                                                    <div className="bg-background/40 rounded-3xl p-8 border border-border/50 italic text-sm text-foreground/90 leading-relaxed shadow-inner max-h-[300px] overflow-y-auto no-scrollbar scroll-smooth">
+                                                        <span className="text-primary text-2xl font-serif mr-1">"</span>
+                                                        {sheet.notes}
+                                                        <span className="text-primary text-2xl font-serif ml-1">"</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                </div>
                             </div>
-
-                            {(sheet.director || sheet.producer) && (
-                                <div className="border-t border-slate-700/50 pt-4 mt-4">
-                                    <h3 className="font-semibold mb-3">Contacts</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {sheet.director && (
-                                            <div>
-                                                <p className="text-sm text-muted-foreground">Director</p>
-                                                <p className="font-medium">{sheet.director}</p>
-                                                {sheet.director_phone && <p className="text-sm text-muted-foreground">{sheet.director_phone}</p>}
-                                            </div>
-                                        )}
-                                        {sheet.producer && (
-                                            <div>
-                                                <p className="text-sm text-muted-foreground">Producer</p>
-                                                <p className="font-medium">{sheet.producer}</p>
-                                                {sheet.producer_phone && <p className="text-sm text-muted-foreground">{sheet.producer_phone}</p>}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {sheet.notes && (
-                                <div className="border-t border-slate-700/50 pt-4 mt-4">
-                                    <h3 className="font-semibold mb-2">Notes</h3>
-                                    {sheet.notes.startsWith('Uploaded file:') ? (
-                                        <Button size="sm" variant="outline" asChild>
-                                            <a href={sheet.notes.replace('Uploaded file: ', '')} target="_blank" rel="noopener noreferrer">
-                                                <Download className="h-4 w-4 mr-2" />Download Call Sheet
-                                            </a>
-                                        </Button>
-                                    ) : (
-                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{sheet.notes}</p>
-                                    )}
-                                </div>
-                            )}
                         </div>
                     ))}
                 </div>
             ) : (
-                <div className="text-center py-12">
-                    <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No call sheets have been created for this project yet.</p>
-                    <p className="text-sm text-muted-foreground mt-2">Click "Create Call Sheet" or "Upload PDF" to get started.</p>
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <div className="w-20 h-20 bg-card border border-border shadow-sm rounded-full flex items-center justify-center mb-6 border border-border">
+                        <FileText className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground mb-2">No Call Sheets</h3>
+                    <p className="text-muted-foreground max-w-xs mb-8">Maintain production momentum by creating specialized daily schedules.</p>
                 </div>
             )}
         </div>

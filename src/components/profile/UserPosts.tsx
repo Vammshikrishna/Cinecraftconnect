@@ -428,7 +428,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
       {/* Instagram-style Post Modal */}
       <Dialog open={!!selectedPost} onOpenChange={() => setSelectedPost(null)}>
-        <DialogContent className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black border-none">
+        <DialogContent aria-describedby={undefined} className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black border-none">
           <VisuallyHidden>
             <DialogTitle>Post by {selectedPost?.profiles.full_name}</DialogTitle>
             <DialogDescription>
@@ -793,12 +793,15 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
         />
       )}
 
-      {/* Edit Dialog */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-2xl w-[95vw] bg-black/95 backdrop-blur-xl border-white/10 text-white p-0 overflow-hidden rounded-2xl">
+        <DialogContent aria-describedby={undefined} className="max-w-2xl w-[95vw] bg-black/95 backdrop-blur-xl border-white/10 text-white p-0 overflow-hidden rounded-2xl">
+          <VisuallyHidden>
+            <DialogDescription>Edit your portfolio post content and media assets.</DialogDescription>
+          </VisuallyHidden>
+          
           <div className="p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold tracking-tight">Edit Portfolio Post</h3>
+              <DialogTitle className="text-xl font-bold tracking-tight">Edit Portfolio Post</DialogTitle>
               <Button variant="ghost" size="icon" onClick={() => setIsEditOpen(false)} className="rounded-full hover:bg-white/10">
                 <X className="h-5 w-5" />
               </Button>

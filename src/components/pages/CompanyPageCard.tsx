@@ -20,7 +20,7 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
   return (
     <div className="group bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-0.5">
       {/* Cover Image / Gradient */}
-      <div className="h-24 relative overflow-hidden">
+      <div className="h-24 relative">
         {page.cover_image_url ? (
           <img src={page.cover_image_url} alt="" className="w-full h-full object-cover" />
         ) : (

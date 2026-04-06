@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Film, Loader2, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface Shot {
@@ -21,15 +23,15 @@ interface ShotListProps {
 
 const ShotList = ({ project_id }: ShotListProps) => {
     const { toast } = useToast();
+    const { data: rawShots, error: fetchError } = useRealtimeData<Shot>('shot_list', 'project_id', project_id);
     const [shots, setShots] = useState<Shot[]>([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<Error | null>(null);
 
-
-    // New shot state - defaults as strings
+    // New shot state
     const [newScene, setNewScene] = useState("1");
     const [newShot, setNewShot] = useState("1");
     const [newDescription, setNewDescription] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Editing state
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,75 +41,49 @@ const ShotList = ({ project_id }: ShotListProps) => {
     const [editStatus, setEditStatus] = useState('pending');
 
     useEffect(() => {
-        fetchShots();
-
-        const channel = supabase
-            .channel('shot-list-changes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'shot_list',
-                    filter: `project_id=eq.${project_id}`
-                },
-                () => {
-                    fetchShots();
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [project_id]);
-
-    const fetchShots = async () => {
-        try {
-            const { data, error } = await supabase
-                .from('shot_list')
-                .select('*')
-                .eq('project_id', project_id)
-                .order('scene', { ascending: true })
-                .order('shot', { ascending: true });
-
-            if (error) throw error;
-
-            setShots(data as Shot[]);
-
-        } catch (err) {
-            setError(err as Error);
-            console.error('Error fetching shots:', err);
-        } finally {
+        if (rawShots) {
+            const sorted = [...rawShots].sort((a, b) => {
+                const scA = parseFloat(a.scene) || 0;
+                const scB = parseFloat(b.scene) || 0;
+                if (scA !== scB) return scA - scB;
+                const shA = parseFloat(a.shot) || 0;
+                const shB = parseFloat(b.shot) || 0;
+                return shA - shB;
+            });
+            setShots(sorted);
             setLoading(false);
         }
-    };
-
-
+    }, [rawShots]);
 
     const handleAddShot = async () => {
         if (newDescription.trim() === '') {
-            toast({ title: "Error", description: "Description is required", variant: "destructive" });
+            toast({ title: "Error", description: "Shot description is required", variant: "destructive" });
             return;
         }
 
-        const { error: insertError } = await supabase
-            .from('shot_list')
-            .insert([{
-                scene: newScene,
-                shot: newShot,
-                description: newDescription,
-                project_id: project_id,
-                status: 'pending'
-            }]);
+        setIsSubmitting(true);
+        try {
+            const { error: insertError } = await supabase
+                .from('shot_list' as any)
+                .insert([{
+                    scene: newScene,
+                    shot: newShot,
+                    description: newDescription,
+                    project_id: project_id,
+                    status: 'pending'
+                }]);
 
-        if (insertError) {
-            console.error('Error adding shot:', insertError);
-            toast({ title: "Error", description: "Failed to add shot", variant: "destructive" });
-        } else {
-            toast({ title: "Success", description: "Shot added successfully" });
+            if (insertError) throw insertError;
+
+            toast({ title: "Success", description: "Shot added to the sequence" });
             setNewDescription('');
-            // Optional: increment logic could be complex for strings (e.g. 1A -> 1B), keeping simple for now
+            // Optional: Increment shot number
+            const nextShot = parseInt(newShot);
+            if (!isNaN(nextShot)) setNewShot((nextShot + 1).toString());
+        } catch (err) {
+            toast({ title: "Error", description: "Failed to allocate shot", variant: "destructive" });
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -120,283 +96,240 @@ const ShotList = ({ project_id }: ShotListProps) => {
     };
 
     const handleSaveEdit = async (id: string) => {
-        const { error: updateError } = await supabase
-            .from('shot_list')
-            .update({
-                scene: editScene,
-                shot: editShot,
-                description: editDescription,
-                status: editStatus
-            })
-            .eq('id', id);
+        try {
+            const { error: updateError } = await supabase
+                .from('shot_list' as any)
+                .update({
+                    scene: editScene,
+                    shot: editShot,
+                    description: editDescription,
+                    status: editStatus
+                })
+                .eq('id', id);
 
-        if (updateError) {
-            toast({ title: "Error", description: "Failed to update shot", variant: "destructive" });
-        } else {
-            toast({ title: "Success", description: "Shot updated successfully" });
+            if (updateError) throw updateError;
+            toast({ title: "Success", description: "Shot details updated" });
             setEditingId(null);
+        } catch (err) {
+            toast({ title: "Error", description: "Failed to sync updates", variant: "destructive" });
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this shot?')) return;
+        if (!confirm('Permanently remove this shot from the production?')) return;
 
-        const { error: deleteError } = await supabase
-            .from('shot_list')
-            .delete()
-            .eq('id', id);
+        try {
+            const { error: deleteError } = await supabase
+                .from('shot_list' as any)
+                .delete()
+                .eq('id', id);
 
-        if (deleteError) {
+            if (deleteError) throw deleteError;
+            toast({ title: "Removed", description: "Shot deleted successfully" });
+        } catch (err) {
             toast({ title: "Error", description: "Failed to delete shot", variant: "destructive" });
-        } else {
-            toast({ title: "Success", description: "Shot deleted successfully" });
         }
     };
 
     const handleStatusChange = async (id: string, newStatus: string) => {
-        const { error: updateError } = await supabase
-            .from('shot_list')
-            .update({ status: newStatus })
-            .eq('id', id);
+        try {
+            const { error: updateError } = await supabase
+                .from('shot_list' as any)
+                .update({ status: newStatus })
+                .eq('id', id);
 
-        if (updateError) {
-            toast({ title: "Error", description: "Failed to update status", variant: "destructive" });
+            if (updateError) throw updateError;
+        } catch (err) {
+            toast({ title: "Error", description: "Status sync failed", variant: "destructive" });
         }
     };
 
-    if (loading) return <div>Loading shots...</div>;
-    if (error) return <div className="p-8 text-destructive">Error loading shot list: {error.message}</div>;
+    if (fetchError) return <div className="p-8 text-destructive bg-red-500/10 rounded-2xl border border-red-500/20 m-4">Error loading shot sequence.</div>;
 
     return (
-        <div className="p-4 sm:p-8 flex flex-col h-full w-full">
-            <div className="flex items-center gap-3 mb-4 sm:mb-6">
-                <h1 className="text-xl sm:text-2xl font-bold">Shot List</h1>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden w-full bg-transparent p-4 sm:p-8 custom-scrollbar pb-64 snap-y snap-proximity">
+            {/* Header section */}
+            <div className="flex flex-col gap-1 mb-8 snap-start">
+                <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Directing</h1>
+                <p className="text-2xl font-bold text-foreground text-gradient">Shot List</p>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-4 mb-6 items-start sm:items-center bg-card/50 p-4 rounded-lg">
-                <div className="flex gap-2 w-full sm:w-auto">
-                    <Input
-                        type="text"
-                        value={newScene}
-                        onChange={(e) => setNewScene(e.target.value)}
-                        placeholder="Scene"
-                        className="w-20 sm:w-24"
-                    />
-                    <Input
-                        type="text"
-                        value={newShot}
-                        onChange={(e) => setNewShot(e.target.value)}
-                        placeholder="Shot"
-                        className="w-20 sm:w-24"
-                    />
-                </div>
-                <Input
-                    type="text"
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="Description of the shot..."
-                    className="flex-grow w-full"
-                />
-                <Button onClick={handleAddShot} className="w-full sm:w-auto">Add Shot</Button>
-            </div>
-
-            <div className="flex-grow overflow-y-auto">
-                <>
-                    {/* Desktop Table View */}
-                    <table className="w-full border-collapse table-fixed hidden md:table">
-                        <thead className="sticky top-0 bg-background z-10">
-                            <tr className="border-b border-border">
-                                <th className="p-3 text-left w-20 font-semibold">Scene</th>
-                                <th className="p-3 text-left w-20 font-semibold">Shot</th>
-                                <th className="p-3 text-left font-semibold">Description</th>
-                                <th className="p-3 text-left w-32 font-semibold">Status</th>
-                                <th className="p-3 text-left w-24 font-semibold">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {shots && shots.length > 0 ? (
-                                shots.map(shot => (
-                                    <tr key={shot.id} className="border-b border-border/50 hover:bg-muted/50">
-                                        {editingId === shot.id ? (
-                                            <>
-                                                <td className="p-3">
-                                                    <Input
-                                                        type="text"
-                                                        value={editScene}
-                                                        onChange={(e) => setEditScene(e.target.value)}
-                                                        className="w-16"
-                                                    />
-                                                </td>
-                                                <td className="p-3">
-                                                    <Input
-                                                        type="text"
-                                                        value={editShot}
-                                                        onChange={(e) => setEditShot(e.target.value)}
-                                                        className="w-16"
-                                                    />
-                                                </td>
-                                                <td className="p-3">
-                                                    <Input
-                                                        value={editDescription}
-                                                        onChange={(e) => setEditDescription(e.target.value)}
-                                                    />
-                                                </td>
-                                                <td className="p-3">
-                                                    <Select value={editStatus} onValueChange={setEditStatus}>
-                                                        <SelectTrigger className="w-full">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="pending">Pending</SelectItem>
-                                                            <SelectItem value="in-progress">In Progress</SelectItem>
-                                                            <SelectItem value="completed">Completed</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </td>
-                                                <td className="p-3">
-                                                    <div className="flex gap-2">
-                                                        <Button size="sm" onClick={() => handleSaveEdit(shot.id)}>Save</Button>
-                                                        <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>Cancel</Button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <td className="p-3">{shot.scene}</td>
-                                                <td className="p-3">{shot.shot}</td>
-                                                <td className="p-3 break-words">{shot.description}</td>
-                                                <td className="p-3">
-                                                    <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)}>
-                                                        <SelectTrigger className="w-full">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="pending">Pending</SelectItem>
-                                                            <SelectItem value="in-progress">In Progress</SelectItem>
-                                                            <SelectItem value="completed">Completed</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </td>
-                                                <td className="p-3">
-                                                    <div className="flex gap-2">
-                                                        <Button size="sm" variant="ghost" onClick={() => handleEdit(shot)}>
-                                                            <Pencil className="h-4 w-4" />
-                                                        </Button>
-                                                        <Button size="sm" variant="ghost" onClick={() => handleDelete(shot.id)}>
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </Button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        )}
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                        No shots have been added yet.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-
-                    {/* Mobile Card View */}
-                    <div className="md:hidden space-y-4">
-                        {shots && shots.length > 0 ? (
-                            shots.map(shot => (
-                                <div key={shot.id} className="bg-card border border-border/50 rounded-lg p-4 space-y-3">
-                                    {editingId === shot.id ? (
-                                        <div className="space-y-3">
-                                            <div className="flex gap-2">
-                                                <div className="w-1/2">
-                                                    <label className="text-xs text-muted-foreground">Scene</label>
-                                                    <Input
-                                                        type="text"
-                                                        value={editScene}
-                                                        onChange={(e) => setEditScene(e.target.value)}
-                                                    />
-                                                </div>
-                                                <div className="w-1/2">
-                                                    <label className="text-xs text-muted-foreground">Shot</label>
-                                                    <Input
-                                                        type="text"
-                                                        value={editShot}
-                                                        onChange={(e) => setEditShot(e.target.value)}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs text-muted-foreground">Description</label>
-                                                <Input
-                                                    value={editDescription}
-                                                    onChange={(e) => setEditDescription(e.target.value)}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs text-muted-foreground">Status</label>
-                                                <Select value={editStatus} onValueChange={setEditStatus}>
-                                                    <SelectTrigger className="w-full">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="pending">Pending</SelectItem>
-                                                        <SelectItem value="in-progress">In Progress</SelectItem>
-                                                        <SelectItem value="completed">Completed</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                            <div className="flex gap-2 pt-2">
-                                                <Button size="sm" onClick={() => handleSaveEdit(shot.id)} className="flex-1">Save</Button>
-                                                <Button size="sm" variant="outline" onClick={() => setEditingId(null)} className="flex-1">Cancel</Button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex gap-3">
-                                                    <div className="bg-primary/10 text-primary px-2 py-1 rounded text-sm font-medium">
-                                                        Sc {shot.scene}
-                                                    </div>
-                                                    <div className="bg-secondary text-secondary-foreground px-2 py-1 rounded text-sm font-medium">
-                                                        Sh {shot.shot}
-                                                    </div>
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(shot)}>
-                                                        <Pencil className="h-4 w-4" />
-                                                    </Button>
-                                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => handleDelete(shot.id)}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                            <p className="text-sm">{shot.description}</p>
-                                            <div className="pt-2 border-t border-border/50">
-                                                <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)}>
-                                                    <SelectTrigger className="w-full h-8 text-xs">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="pending">Pending</SelectItem>
-                                                        <SelectItem value="in-progress">In Progress</SelectItem>
-                                                        <SelectItem value="completed">Completed</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-                            ))
-                        ) : (
-                            <div className="p-8 text-center text-muted-foreground bg-card/30 rounded-lg border border-dashed border-border">
-                                No shots have been added yet.
-                            </div>
-                        )}
+            {/* Premium Input Bar */}
+            <div className="bg-card border border-border shadow-2xl p-4 sm:p-6 rounded-[28px] sm:rounded-[32px] mb-8 relative group snap-start">
+                <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-[32px]" />
+                
+                <div className="grid grid-cols-2 md:flex md:flex-row gap-4 relative z-10">
+                    <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
+                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Scene</p>
+                        <Input
+                            type="text"
+                            value={newScene}
+                            onChange={(e) => setNewScene(e.target.value)}
+                            placeholder="1"
+                            className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
+                        />
                     </div>
-                </>
-
+                    <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
+                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Shot</p>
+                        <Input
+                            type="text"
+                            value={newShot}
+                            onChange={(e) => setNewShot(e.target.value)}
+                            placeholder="1"
+                            className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
+                        />
+                    </div>
+                    
+                    <div className="col-span-2 md:flex-grow space-y-1.5">
+                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Composition Description</p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <Input
+                                type="text"
+                                value={newDescription}
+                                onChange={(e) => setNewDescription(e.target.value)}
+                                placeholder="e.g., Close-up shot with shallow focus..."
+                                className="bg-background/50 border-border rounded-xl h-11 sm:h-12 flex-grow focus:border-primary/50"
+                                onKeyPress={(e) => e.key === 'Enter' && handleAddShot()}
+                            />
+                            <Button 
+                                onClick={handleAddShot} 
+                                disabled={isSubmitting} 
+                                className="w-full sm:w-auto bg-primary hover:bg-primary/80 h-11 sm:h-12 rounded-xl font-bold px-8 shadow-lg shadow-primary/20 whitespace-nowrap active:scale-95 transition-all"
+                            >
+                                {isSubmitting ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4 mr-2" /> Add Shot</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            {/* Shots List Container - Unified scroll */}
+            {loading ? (
+                <div className="flex flex-col items-center justify-center py-20 opacity-30">
+                    <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                    <p className="text-sm font-bold tracking-widest uppercase">Initializing Sequence...</p>
+                </div>
+            ) : shots && shots.length > 0 ? (
+                <div className="flex flex-col gap-12 max-w-4xl mx-auto">
+                    {/* Grouping by Scene ... */}
+                    {Array.from(new Set(shots.map(s => s.scene))).map((sceneNumber) => (
+                        <div key={`scene-${sceneNumber}`} className="relative pl-8 sm:pl-16 border-l-[3px] border-primary/20 last:border-l-0 pb-8 snap-start">
+                            {/* ... Content ... */}
+                            <div className="absolute top-0 left-[-12px] w-[21px] h-[21px] bg-primary rounded-full border-4 border-background shadow-lg shadow-primary/40 z-20" />
+                            
+                            {/* Scene Header - Natural Scroll */}
+                            <div className="relative mb-6 flex items-end gap-4 z-10 p-3 rounded-2xl -ml-3">
+                                <div className="space-y-0.5">
+                                    <p className="text-[10px] font-black tracking-[0.4em] text-primary uppercase ml-1 opacity-60">Production Block</p>
+                                    <h2 className="text-3xl sm:text-5xl font-black text-foreground tracking-tighter">SCENE {sceneNumber}</h2>
+                                </div>
+                                <div className="h-px flex-grow bg-primary/10 mb-4 ml-2" />
+                            </div>
+
+                            <div className="space-y-6">
+                                {shots.filter(s => s.scene === sceneNumber).map(shot => (
+                                    <div key={shot.id} className="group relative bg-card/60 border border-border rounded-[32px] p-6 sm:p-8 hover:bg-accent/40 active:scale-[0.99] transition-all duration-500 shadow-2xl backdrop-blur-xl overflow-hidden">
+                                        <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-all pointer-events-none" />
+
+                                        {editingId === shot.id ? (
+                                            <div className="space-y-6 relative z-10">
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Scene</Label>
+                                                        <Input value={editScene} onChange={(e) => setEditScene(e.target.value)} className="bg-background border-border h-12 text-center font-bold rounded-xl" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Shot</Label>
+                                                        <Input value={editShot} onChange={(e) => setEditShot(e.target.value)} className="bg-background border-border h-12 text-center font-bold rounded-xl" />
+                                                    </div>
+                                                    <div className="col-span-2 space-y-1">
+                                                        <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Status</Label>
+                                                        <Select value={editStatus} onValueChange={setEditStatus}>
+                                                            <SelectTrigger className="bg-background border-border h-12 rounded-xl">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent className="bg-popover border-border">
+                                                                <SelectItem value="pending">Pending</SelectItem>
+                                                                <SelectItem value="in-progress">In Progress</SelectItem>
+                                                                <SelectItem value="completed">Completed</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Composition Description</Label>
+                                                    <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="bg-background border-border h-12 rounded-xl" />
+                                                </div>
+                                                <div className="flex gap-3 pt-2">
+                                                    <Button onClick={() => handleSaveEdit(shot.id)} className="flex-1 bg-primary font-bold h-12 rounded-xl">Apply Changes</Button>
+                                                    <Button variant="ghost" onClick={() => setEditingId(null)} className="h-12 px-6 rounded-xl text-muted-foreground">Cancel</Button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-8 relative z-10">
+                                                <div className="flex-shrink-0 flex sm:flex-col items-center justify-center bg-primary/10 rounded-2xl p-4 min-w-[100px] border border-primary/5 group-hover:bg-primary/20 transition-all shadow-inner">
+                                                    <p className="text-[9px] font-black text-primary/60 uppercase tracking-tighter mb-0.5 sm:mb-1">Shot</p>
+                                                    <p className="text-3xl font-black text-foreground tracking-tighter">{shot.shot}</p>
+                                                </div>
+                                                
+                                                <div className="flex-grow min-w-0 space-y-4">
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className={`text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border transition-colors ${
+                                                                shot.status === 'completed' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                                                                shot.status === 'in-progress' ? 'bg-primary/10 text-primary border-primary/20' :
+                                                                'bg-muted/30 text-muted-foreground border-border'
+                                                            }`}>
+                                                                {shot.status.replace('-', ' ')}
+                                                            </span>
+                                                            <div className="w-1 h-1 rounded-full bg-border" />
+                                                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Composition {parseInt(shot.shot)}</p>
+                                                        </div>
+                                                        <div className="flex opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                                                            <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
+                                                                <Pencil className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    <div className="relative">
+                                                        <Film className="absolute -left-2 -top-2 w-12 h-12 text-primary/5 -rotate-12 pointer-events-none" />
+                                                        <p className="text-lg font-bold text-foreground/90 leading-relaxed italic border-l-3 border-primary/30 pl-6 py-1">
+                                                            "{shot.description}"
+                                                        </p>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-6 pt-2">
+                                                        <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)}>
+                                                            <SelectTrigger className="w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl opacity-60 hover:opacity-100 transition-all hover:border-primary/30">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent className="bg-popover border-border rounded-2xl">
+                                                                <SelectItem value="pending">Pending</SelectItem>
+                                                                <SelectItem value="in-progress">In Progress</SelectItem>
+                                                                <SelectItem value="completed">Completed</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="flex flex-col items-center justify-center py-24 text-center opacity-40">
+                    <Film className="w-16 h-16 mb-4" />
+                    <h3 className="text-lg font-bold">No Sequences Planned</h3>
+                    <p className="max-w-xs text-sm">Every masterpiece starts with a single shot. Begin defining your production roadmap above.</p>
+                </div>
+            )}
         </div>
     );
 };

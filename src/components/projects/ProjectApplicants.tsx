@@ -4,7 +4,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { User, Check, X } from 'lucide-react';
+import { Check, X, UserPlus } from 'lucide-react';
 
 interface Applicant {
   id: string;
@@ -27,9 +27,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   const { toast } = useToast();
-  // const { user } = useAuth(); // Not currently used
 
-  // Resolve space ID if different from projectId
   const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(projectId);
 
   useEffect(() => {
@@ -56,7 +54,6 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
 
   const fetchApplicants = useCallback(async () => {
     setLoading(true);
-    // Fetch join requests for this Space
     const { data: requests, error } = await supabase
       .from('project_space_join_requests' as any)
       .select(`
@@ -69,21 +66,25 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
           craft
         )
       `)
-      .eq('project_space_id', resolvedSpaceId); // Use resolvedSpaceId!
+      .eq('project_space_id', resolvedSpaceId)
+      .eq('status', 'pending');
 
     if (error) {
       console.error("Error fetching applicants:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load applicants.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to load applicants.", variant: "destructive" });
     } else {
-      // Map to expected format if needed, but the Select matches the interface roughly
-      setApplicants(requests as any);
+      const { data: members } = await supabase
+        .from('project_space_members')
+        .select('user_id')
+        .eq('project_space_id', resolvedSpaceId);
+      
+      const memberIds = new Set(members?.map(m => m.user_id) || []);
+      const pendingRequests = (requests || []).filter((req: any) => !memberIds.has(req.user_id));
+      
+      setApplicants(pendingRequests as any);
     }
     setLoading(false);
-  }, [resolvedSpaceId, toast]); // resolvedSpaceId dependency
+  }, [resolvedSpaceId, toast]);
 
   useEffect(() => {
     if (resolvedSpaceId) {
@@ -95,23 +96,29 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
     setProcessingId(requestId);
 
     try {
-      let error;
       if (newStatus === 'approved') {
         const { error: rpcError } = await supabase.rpc('approve_join_request' as any, { _request_id: requestId });
-        error = rpcError;
+        if (rpcError) throw rpcError;
+        
+        await supabase
+          .from('project_space_join_requests' as any)
+          .update({ status: 'approved' })
+          .eq('id', requestId);
       } else {
         const { error: rpcError } = await supabase.rpc('reject_join_request' as any, { _request_id: requestId });
-        error = rpcError;
+        if (rpcError) throw rpcError;
+        
+        await supabase
+          .from('project_space_join_requests' as any)
+          .update({ status: 'rejected' })
+          .eq('id', requestId);
       }
-
-      if (error) throw error;
 
       toast({
         title: "Success",
         description: newStatus === 'approved' ? "User approved and added to team." : "Request rejected.",
       });
 
-      // Optimistic update or refetch
       fetchApplicants();
 
     } catch (err) {
@@ -130,59 +137,68 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
     return <div className="flex justify-center items-center py-8"><LoadingSpinner /></div>;
   }
 
-  return (
-    <div className="space-y-4 h-full overflow-y-auto p-4 sm:p-8">
+    return (
+        <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar pb-24">
+            <div className="flex flex-col gap-1 mb-8">
+                <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Requests</h1>
+                <p className="text-3xl font-extrabold text-foreground">Applicants</p>
+            </div>
+
       {applicants.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <User className="mx-auto h-12 w-12 mb-4" />
-          <h3 className="text-lg font-semibold">No Applicants Yet</h3>
-          <p className="text-sm">Check back later to see who has applied to your project.</p>
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6 border border-primary/20">
+            <UserPlus className="w-10 h-10 text-primary" />
+          </div>
+          <h3 className="text-xl font-bold text-foreground mb-2">No Pending Applicants</h3>
+          <p className="text-muted-foreground max-w-xs">Check back later to see who has applied to your project.</p>
         </div>
       ) : (
-        applicants.map(applicant => (
-          <div key={applicant.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-lg bg-card border gap-4">
-            <div className="flex items-center gap-4">
-              <Avatar>
-                <AvatarImage src={applicant.profiles?.avatar_url} />
-                <AvatarFallback>{applicant.profiles?.full_name?.charAt(0) || 'U'}</AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-semibold">{applicant.profiles?.full_name}</p>
-                <p className="text-sm text-muted-foreground">{applicant.profiles?.craft || 'No craft specified'}</p>
+        <div className="space-y-3">
+          {applicants.map(applicant => (
+            <div key={applicant.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-5 rounded-2xl bg-card border border-border gap-4 shadow-sm hover:bg-accent/50 hover:border-primary/20 transition-all duration-300">
+              <div className="flex items-center gap-4">
+                <Avatar className="h-12 w-12 border-2 border-primary/20">
+                  <AvatarImage src={applicant.profiles?.avatar_url} />
+                  <AvatarFallback className="bg-primary/15 text-primary font-bold">{applicant.profiles?.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-bold text-foreground text-lg">{applicant.profiles?.full_name}</p>
+                  <p className="text-sm text-primary font-medium">{applicant.profiles?.craft || 'No craft specified'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {applicant.status === 'pending' ? (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
+                      disabled={processingId === applicant.id}
+                      className="flex-1 sm:flex-none border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl h-11 font-bold transition-all"
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
+                      disabled={processingId === applicant.id}
+                      className="flex-1 sm:flex-none rounded-xl h-11 font-bold"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Reject
+                    </Button>
+                  </>
+                ) : (
+                  <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
+                    {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
+                  </p>
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              {applicant.status === 'pending' ? (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
-                    disabled={processingId === applicant.id}
-                    className="flex-1 sm:flex-none"
-                  >
-                    <Check className="h-4 w-4 mr-2" />
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
-                    disabled={processingId === applicant.id}
-                    className="flex-1 sm:flex-none"
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Reject
-                  </Button>
-                </>
-              ) : (
-                <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
-                  {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
-                </p>
-              )}
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </div>
   );
