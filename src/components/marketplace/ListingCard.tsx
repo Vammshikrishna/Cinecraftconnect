@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { MarketplaceListing } from '@/types/marketplace';
-import { Badge } from '@/components/ui/badge';
 import { MapPin, Star, User } from 'lucide-react';
 
 interface ListingCardProps {
@@ -10,79 +9,97 @@ interface ListingCardProps {
 export const ListingCard = ({ listing }: ListingCardProps) => {
     const primaryImage = listing.images && listing.images.length > 0
         ? listing.images[0]
-        : '/placeholder-image.jpg';
+        : undefined;
 
     const averageRating = listing.average_rating || 0;
     const reviewCount = listing.review_count || 0;
 
     return (
-        <Link to={`/marketplace/${listing.id}`}>
-            <div className="glass-card rounded-xl overflow-hidden hover:shadow-xl transition-all duration-300 group">
-                {/* Image */}
-                <div className="relative aspect-video overflow-hidden bg-gray-800">
-                    <img
-                        src={primaryImage}
-                        alt={listing.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src = '/placeholder-image.jpg';
-                        }}
-                    />
-                    <div className="absolute top-3 right-3">
-                        <Badge variant="secondary" className="bg-black/50 backdrop-blur-sm">
+        <Link to={`/marketplace/${listing.id}`} className="no-underline block group">
+            <div className="relative h-full bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] overflow-hidden transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_50px_-15px_rgba(var(--primary),0.15)] hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-br from-zinc-100/50 to-zinc-50/50 dark:from-card dark:to-muted/5 shadow-sm dark:shadow-none flex flex-col">
+                {/* Image Section */}
+                <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
+                    {primaryImage ? (
+                        <img
+                            src={primaryImage}
+                            alt={listing.title}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                            onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                            }}
+                        />
+                    ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-primary/10 via-background to-primary/5 flex items-center justify-center">
+                            <div className="text-muted-foreground/30 font-black uppercase tracking-widest text-[10px]">No Image</div>
+                        </div>
+                    )}
+                    
+                    {/* Category Badge overlaying image */}
+                    <div className="absolute top-3 right-3 shadow-lg">
+                        <div className="px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md border border-white/20 text-[9px] font-black text-foreground uppercase tracking-[0.1em]">
                             {listing.category}
-                        </Badge>
+                        </div>
                     </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-4">
-                    <h3 className="font-semibold text-lg mb-2 line-clamp-1 group-hover:text-primary transition-colors">
-                        {listing.title}
-                    </h3>
+                {/* Content Section */}
+                <div className="p-5 md:p-6 flex flex-col flex-1 gap-4">
+                    <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-3">
+                            <h3 className="font-black text-lg md:text-xl tracking-tight text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-2 leading-tight">
+                                {listing.title}
+                            </h3>
+                            {reviewCount > 0 && (
+                                <div className="px-2 py-0.5 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex flex-col items-center justify-center shrink-0 mt-0.5">
+                                    <div className="flex items-center gap-0.5">
+                                        <Star size={10} className="text-yellow-500 fill-yellow-500" />
+                                        <span className="text-[10px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
+                                    </div>
+                                    <span className="text-[7px] font-bold text-yellow-600/60 dark:text-yellow-400/60 uppercase tracking-widest">{reviewCount}</span>
+                                </div>
+                            )}
+                        </div>
 
-                    <p className="text-sm text-gray-400 mb-3 line-clamp-2">
-                        {listing.description}
-                    </p>
-
-                    {/* Location */}
-                    <div className="flex items-center text-sm text-gray-300 mb-3">
-                        <MapPin size={14} className="mr-1 text-gray-400" />
-                        {listing.location}
+                        <p className="text-[11px] md:text-xs text-muted-foreground/80 leading-relaxed line-clamp-2 font-medium">
+                            {listing.description}
+                        </p>
                     </div>
 
-                    {/* Rating */}
-                    {reviewCount > 0 && (
-                        <div className="flex items-center text-sm mb-3">
-                            <Star size={14} className="mr-1 text-yellow-500 fill-yellow-500" />
-                            <span className="font-medium">{averageRating.toFixed(1)}</span>
-                            <span className="text-gray-400 ml-1">({reviewCount} reviews)</span>
-                        </div>
-                    )}
-
-                    {/* Owner */}
-                    {listing.profiles && (
-                        <div className="flex items-center text-sm text-gray-400 mb-3">
-                            <User size={14} className="mr-1" />
-                            {listing.profiles.username || listing.profiles.full_name || 'Anonymous'}
-                        </div>
-                    )}
-
-                    {/* Price */}
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-700">
-                        <div className="flex items-center text-primary font-semibold">
-                            <span className="mr-0.5">₹</span>
-                            <span>{listing.price_per_day}</span>
-                            <span className="text-sm text-gray-400 ml-1">/day</span>
-                        </div>
-                        {listing.price_per_week && (
-                            <div className="text-sm text-gray-400">
-                                ₹{listing.price_per_week}/week
+                    <div className="space-y-2.5 mt-auto pt-2">
+                        {/* Meta Rows */}
+                        <div className="flex flex-wrap items-center gap-2 mt-auto">
+                            <div className="flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-black/5 dark:bg-white/5 py-1 px-2.5 rounded-lg border border-black/5 dark:border-white/5 max-w-full">
+                                <MapPin size={10} className="text-primary/60 shrink-0" />
+                                <span className="truncate">{listing.location}</span>
                             </div>
-                        )}
+                            
+                            {listing.profiles && (
+                                <div className="flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-black/5 dark:bg-white/5 py-1 px-2.5 rounded-lg border border-black/5 dark:border-white/5 max-w-full">
+                                    <User size={10} className="text-primary/60 shrink-0" />
+                                    <span className="truncate">{listing.profiles.username || listing.profiles.full_name || 'Anonymous'}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Price footer */}
+                        <div className="flex items-end justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-2">
+                            <div className="flex items-baseline text-primary font-black">
+                                <span className="text-sm mr-0.5 opacity-60">₹</span>
+                                <span className="text-2xl tracking-tighter">{listing.price_per_day}</span>
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground ml-1.5 opacity-60">/ Day</span>
+                            </div>
+                            {listing.price_per_week && (
+                                <div className="text-[10px] font-bold text-muted-foreground uppercase bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
+                                    ₹{listing.price_per_week} / Wk
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
+
+                {/* Subtle outer glow border */}
+                <div className="absolute inset-0 border border-black/5 dark:border-white/5 rounded-[28px] pointer-events-none group-hover:border-primary/20 transition-colors" />
             </div>
         </Link>
     );

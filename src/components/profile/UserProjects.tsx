@@ -55,16 +55,60 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
 
     const fetchProjects = async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('creator_id', targetUserId)
-        .order('created_at', { ascending: false });
+      try {
+        // 1. Fetch projects where user is the creator
+        const { data: createdProjects, error: createdError } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('creator_id', targetUserId);
 
-      if (!error && data) {
-        setProjects(data as Project[]);
+        if (createdError) throw createdError;
+
+        // 2. Fetch projects where user is a member via project_space_members
+        // First get the space IDs
+        const { data: memberships, error: memberError } = await supabase
+          .from('project_space_members' as any)
+          .select(`
+            project_spaces (
+              project_id
+            )
+          `)
+          .eq('user_id', targetUserId);
+
+        if (memberError) throw memberError;
+
+        const projectIdsFromSpaces = memberships?.map((m: any) => m.project_spaces?.project_id).filter(Boolean) || [];
+        
+        let allProjects = [...(createdProjects || [])];
+
+        // 3. If there are memberships, fetch those projects too if they're not already in the list
+        if (projectIdsFromSpaces.length > 0) {
+          const existingIds = new Set(allProjects.map(p => p.id));
+          const newIds = projectIdsFromSpaces.filter(id => !existingIds.has(id));
+
+          if (newIds.length > 0) {
+            const { data: joinedProjects, error: joinedError } = await supabase
+              .from('projects')
+              .select('*')
+              .in('id', newIds);
+            
+            if (joinedError) throw joinedError;
+            
+            if (joinedProjects) {
+              allProjects = [...allProjects, ...joinedProjects];
+            }
+          }
+        }
+
+        // Sort by created_at descending
+        allProjects.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        
+        setProjects(allProjects as Project[]);
+      } catch (err) {
+        console.error('Error fetching user projects:', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchProjects();

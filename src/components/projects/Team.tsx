@@ -3,9 +3,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check } from 'lucide-react';
+import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface TeamMember {
@@ -131,7 +131,7 @@ const Team = ({ project_id }: TeamProps) => {
                     project_id: resolvedSpaceId,
                     invite_code: code,
                     created_by: user?.id,
-                    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days
+                    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
                 }]);
 
             if (error) throw error;
@@ -187,7 +187,6 @@ const Team = ({ project_id }: TeamProps) => {
 
     const addMember = async (targetUser: SearchResult) => {
         try {
-            // 1. Add to project
             const { error } = await supabase
                 .from('project_space_members' as any)
                 .insert([{
@@ -231,40 +230,44 @@ const Team = ({ project_id }: TeamProps) => {
     };
 
     if (loading) {
-        return <div className="p-8">Loading team members...</div>;
+        return <div className="p-8 text-muted-foreground">Loading team members...</div>;
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="flex items-center gap-2">
-                    <h1 className="text-xl sm:text-2xl font-bold">Team Management</h1>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar pb-24">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Crew</h1>
+                    <p className="text-3xl font-extrabold text-foreground">Team Management</p>
                 </div>
-                <div className="flex gap-2 w-full sm:w-auto">
+                <div className="flex gap-3 w-full sm:w-auto">
                     <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button variant="outline" className="flex-1 sm:flex-none"><LinkIcon className="h-4 w-4 mr-2" />Invite Link</Button>
+                            <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent rounded-2xl px-6 h-12 font-bold transition-all">
+                                <LinkIcon className="h-4 w-4 mr-2" />Invite Link
+                            </Button>
                         </DialogTrigger>
-                        <DialogContent>
+                        <DialogContent className="sm:max-w-md bg-card border-border rounded-2xl">
                             <DialogHeader>
-                                <DialogTitle>Generate Invite Link</DialogTitle>
+                                <DialogTitle className="text-foreground">Generate Invite Link</DialogTitle>
+                                <DialogDescription className="text-muted-foreground">Share this link to invite collaborators.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4">
                                 {!inviteCode ? (
-                                    <Button onClick={generateInviteLink} className="w-full">
+                                    <Button onClick={generateInviteLink} className="w-full bg-primary text-primary-foreground rounded-xl h-12 font-bold">
                                         Generate Invite Link
                                     </Button>
                                 ) : (
                                     <>
                                         <div>
-                                            <Label>Invite Link</Label>
+                                            <Label className="text-foreground">Invite Link</Label>
                                             <div className="flex gap-2 mt-2">
                                                 <Input
                                                     value={`${window.location.origin}/projects/join/${inviteCode}`}
                                                     readOnly
-                                                    className="flex-1"
+                                                    className="flex-1 bg-background border-border"
                                                 />
-                                                <Button onClick={copyInviteLink} variant="outline">
+                                                <Button onClick={copyInviteLink} variant="outline" className="border-border">
                                                     {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                                                 </Button>
                                             </div>
@@ -280,11 +283,14 @@ const Team = ({ project_id }: TeamProps) => {
 
                     <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
                         <DialogTrigger asChild>
-                            <Button className="flex-1 sm:flex-none"><UserPlus className="h-4 w-4 mr-2" />Add Member</Button>
+                            <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-primary-foreground rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                <UserPlus className="h-4 w-4 mr-2" />Add Member
+                            </Button>
                         </DialogTrigger>
-                        <DialogContent>
+                        <DialogContent className="sm:max-w-md bg-card border-border rounded-2xl">
                             <DialogHeader>
-                                <DialogTitle>Search Users</DialogTitle>
+                                <DialogTitle className="text-foreground">Search Users</DialogTitle>
+                                <DialogDescription className="text-muted-foreground">Find and add team members by name.</DialogDescription>
                             </DialogHeader>
                             <div className="space-y-4">
                                 <div className="flex gap-2">
@@ -292,9 +298,10 @@ const Team = ({ project_id }: TeamProps) => {
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         placeholder="Search by name..."
+                                        className="bg-background border-border"
                                         onKeyPress={(e) => e.key === 'Enter' && searchUsers()}
                                     />
-                                    <Button onClick={searchUsers} disabled={searching}>
+                                    <Button onClick={searchUsers} disabled={searching} className="bg-primary text-primary-foreground">
                                         <Search className="h-4 w-4" />
                                     </Button>
                                 </div>
@@ -302,21 +309,21 @@ const Team = ({ project_id }: TeamProps) => {
                                 {searchResults.length > 0 && (
                                     <div className="space-y-2 max-h-96 overflow-y-auto">
                                         {searchResults.map(user => (
-                                            <div key={user.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded">
+                                            <div key={user.id} className="flex items-center justify-between p-3 bg-accent/50 border border-border rounded-xl">
                                                 <div className="flex items-center gap-3">
                                                     {user.avatar_url ? (
-                                                        <img src={user.avatar_url} alt={user.full_name || 'User'} className="h-10 w-10 rounded-full" />
+                                                        <img src={user.avatar_url} alt={user.full_name || 'User'} className="h-10 w-10 rounded-full object-cover" />
                                                     ) : (
-                                                        <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center">
+                                                        <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
                                                             {(user.full_name || 'U')[0].toUpperCase()}
                                                         </div>
                                                     )}
                                                     <div>
-                                                        <p className="font-medium">{user.full_name || 'Unknown User'}</p>
+                                                        <p className="font-medium text-foreground">{user.full_name || 'Unknown User'}</p>
                                                         {user.bio && <p className="text-sm text-muted-foreground line-clamp-1">{user.bio}</p>}
                                                     </div>
                                                 </div>
-                                                <Button size="sm" onClick={() => addMember(user)}>
+                                                <Button size="sm" onClick={() => addMember(user)} className="bg-primary text-primary-foreground rounded-xl">
                                                     Add
                                                 </Button>
                                             </div>
@@ -335,23 +342,23 @@ const Team = ({ project_id }: TeamProps) => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {members.map(member => (
-                    <div key={member.user_id} className="p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800/70 transition-colors">
+                    <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 {member.profiles.avatar_url ? (
-                                    <img src={member.profiles.avatar_url} alt={member.profiles.full_name || 'Member'} className="h-12 w-12 rounded-full" />
+                                    <img src={member.profiles.avatar_url} alt={member.profiles.full_name || 'Member'} className="h-12 w-12 rounded-full object-cover border-2 border-primary/20" />
                                 ) : (
-                                    <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center text-lg font-semibold">
+                                    <div className="h-12 w-12 rounded-full bg-primary/15 flex items-center justify-center text-lg font-bold text-primary">
                                         {(member.profiles.full_name || 'U')[0].toUpperCase()}
                                     </div>
                                 )}
                                 <div>
-                                    <p className="font-medium">{member.profiles.full_name || 'Unknown User'}</p>
-                                    <p className="text-sm text-muted-foreground capitalize">{member.role}</p>
+                                    <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
+                                    <p className="text-xs text-primary font-medium capitalize">{member.role}</p>
                                 </div>
                             </div>
                             {member.user_id !== user?.id && (
-                                <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)}>
+                                <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
                             )}
@@ -361,10 +368,12 @@ const Team = ({ project_id }: TeamProps) => {
             </div>
 
             {members.length === 0 && (
-                <div className="text-center py-12">
-                    <UserPlus className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No team members yet.</p>
-                    <p className="text-sm text-muted-foreground mt-2">Click "Add Member" or "Invite Link" to get started.</p>
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6 border border-primary/20">
+                        <Users className="w-10 h-10 text-primary" />
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground mb-2">No Team Members</h3>
+                    <p className="text-muted-foreground max-w-xs">Click "Add Member" or "Invite Link" to get started building your crew.</p>
                 </div>
             )}
         </div>

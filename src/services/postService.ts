@@ -19,10 +19,16 @@ export const togglePostLike = async (postId: string, isLiked: boolean): Promise<
       throw new Error(error.message);
     }
 
-    return true; // Assume success if no error
+    // Try to force a refresh of the post row so realtime fires triggers/broadcasts
+    try {
+      await (supabase as any)
+        .from('posts')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', postId);
+    } catch (e) {}
+
+    return true; 
   } else {
-    // Currently not liked, so like it.
-    // Use upsert to handle cases where the like already exists, making the operation idempotent.
     const { error } = await supabase
       .from("post_likes")
       .upsert({ post_id: postId, user_id: user.id }, { onConflict: "post_id, user_id" });
@@ -31,6 +37,15 @@ export const togglePostLike = async (postId: string, isLiked: boolean): Promise<
       console.error("Error liking post:", error);
       throw new Error(error.message);
     }
+
+    // Try to force a refresh of the post row so realtime fires
+    try {
+      await (supabase as any)
+        .from('posts')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', postId);
+    } catch (e) {}
+
     return true;
   }
 };

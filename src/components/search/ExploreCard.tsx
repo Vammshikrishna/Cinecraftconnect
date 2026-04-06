@@ -88,22 +88,70 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                         </Link>
                     );
                 }
-                // Text post
+                // Text post or Job Share
+                if (item.content?.includes('JOB_SHARE::')) {
+                    try {
+                        const parts = item.content.split('JOB_SHARE::');
+                        const jsonStr = parts[parts.length - 1].trim();
+                        const shareData = JSON.parse(jsonStr);
+
+                        return (
+                            <Link to={`/feed?highlight=${item.id}`} className="block aspect-square relative group overflow-hidden bg-gradient-to-br from-card to-muted/5 group-hover:brightness-110 transition-all duration-500">
+                                <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
+                                    <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-muted overflow-hidden shrink-0 mt-2 flex items-center justify-center">
+                                        {shareData.logoUrl ? (
+                                            <img src={shareData.logoUrl} className="object-cover w-full h-full" alt="Company Logo" />
+                                        ) : (
+                                            <span className="text-xl font-black text-primary uppercase">{shareData.company?.[0] || 'J'}</span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 w-full flex flex-col justify-center items-center gap-1.5 px-1 pb-2">
+                                        <h4 className="text-[10px] md:text-sm font-black text-foreground leading-tight tracking-tighter uppercase truncate w-full max-w-[120px]">
+                                            {shareData.title || 'Opening'}
+                                        </h4>
+                                        <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[6px] md:text-[8px] font-black text-primary uppercase tracking-widest shrink-0">
+                                            Hiring
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="absolute inset-0 border border-black/5 dark:border-white/5 pointer-events-none rounded-none md:rounded-sm" />
+                                <Overlay likes={item.like_count} comments={item.comment_count} />
+                            </Link>
+                        );
+                    } catch (e) {
+                         // Fallback down to normal text
+                    }
+                }
+
                 return (
                     <Link to={`/feed?highlight=${item.id}`} className={`block aspect-square relative group overflow-hidden ${getGradient(item.id)} p-6 flex items-center justify-center text-center`}>
-                        <p className="text-white font-semibold line-clamp-5 text-sm leading-relaxed">{item.content}</p>
+                        <p className="text-white font-semibold line-clamp-5 text-sm leading-relaxed">
+                            {item.content?.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim() || item.content}
+                        </p>
                         <Overlay likes={item.like_count} comments={item.comment_count} />
                     </Link>
                 );
 
             case 'project':
+                const projectImage = (item as any).image_url || (item as any).thumbnail_url;
                 return (
-                    <Link to={`/projects/${item.id}/space`} className={`block aspect-square relative group overflow-hidden ${getGradient(item.id)} p-4 flex flex-col items-center justify-center text-center`}>
+                    <Link to={`/projects/${item.id}/space`} className={`block aspect-square relative group overflow-hidden ${!projectImage ? getGradient(item.id) : ''} p-4 flex flex-col items-center justify-center text-center`}>
                         <TypeIcon icon={Layers} />
-                        <div className="bg-white/10 backdrop-blur-sm p-3 rounded-xl border border-white/20 w-full h-full flex flex-col items-center justify-center">
-                            <h3 className="text-white font-bold text-lg line-clamp-2 mb-2">{item.title || item.name}</h3>
-                            <p className="text-white/90 text-xs line-clamp-3">{item.description}</p>
-                        </div>
+                        {projectImage ? (
+                            <img src={projectImage} alt={item.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                        ) : (
+                            <div className="bg-white/10 backdrop-blur-sm p-3 rounded-xl border border-white/20 w-full h-full flex flex-col items-center justify-center relative z-10">
+                                <h3 className="text-white font-bold text-lg line-clamp-2 mb-2">{item.title || item.name}</h3>
+                                <p className="text-white/90 text-xs line-clamp-3">{item.description}</p>
+                            </div>
+                        )}
+                        {projectImage && <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent z-10" />}
+                        {projectImage && (
+                            <div className="absolute bottom-3 left-3 right-3 z-20 text-left">
+                                <h3 className="text-white font-bold text-sm line-clamp-1">{item.title || item.name}</h3>
+                                <p className="text-white/70 text-[10px] line-clamp-1">{item.description}</p>
+                            </div>
+                        )}
                     </Link>
                 );
 

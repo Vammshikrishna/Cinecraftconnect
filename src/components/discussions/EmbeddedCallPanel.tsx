@@ -10,9 +10,11 @@ import {
   LayoutContextProvider,
   useMediaDeviceSelect,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, setLogLevel, LogLevel } from 'livekit-client';
 import '@livekit/components-styles';
 import { supabase } from '@/integrations/supabase/client';
+
+setLogLevel(LogLevel.error); // Silence LiveKit debug logs
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Maximize, X, Radio, PhoneOff, Smile, Settings as SettingsIcon, Mic, Camera, Speaker, Shield, ShieldAlert, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';

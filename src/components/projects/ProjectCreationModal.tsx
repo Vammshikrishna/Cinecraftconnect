@@ -116,19 +116,25 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     if (!user) return;
 
     try {
-      // let imageUrl: string | undefined = undefined; // Unused - image upload prepared for future use
+      let imageUrl: string | undefined = undefined;
       if (projectImage) {
         const fileExt = projectImage.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+        const filePath = `projects/${fileName}`;
         const { error: uploadError } = await supabase.storage
-          .from('project-images')
-          .upload(fileName, projectImage);
+          .from('portfolios')
+          .upload(filePath, projectImage);
 
         if (uploadError) throw uploadError;
 
+        const { data: { publicUrl } } = supabase.storage
+          .from('portfolios')
+          .getPublicUrl(filePath);
+        
+        imageUrl = publicUrl;
       }
 
-      const payload = {
+      const payload: any = {
         title: projectData.name,
         description: projectData.description,
         creator_id: user.id,
@@ -142,6 +148,12 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
         budget_min: projectData.budget_min ? parseFloat(projectData.budget_min) : null,
         budget_max: projectData.budget_max ? parseFloat(projectData.budget_max) : null,
       };
+
+      // Store the image URL in the database
+      if (imageUrl) {
+        payload.image_url = imageUrl;
+      }
+
 
       if (projectToEdit) {
         const { error } = await supabase

@@ -299,19 +299,19 @@ export const ProjectSpace = ({
       case 'chat':
         return <ProjectChatInterface projectId={projectId} />;
       case 'tasks':
-        return <Tasks project_id={resolvedSpaceId} />; // Use resolved ID
+        return <Tasks project_id={resolvedSpaceId} />; // Uses project_space_id
       case 'files':
-        return <Files project_id={resolvedSpaceId} />; // Use resolved ID
+        return <Files project_id={resolvedSpaceId} />; // Schema shows it references project_spaces(id)
       case 'call-sheet':
-        return <CallSheet project_id={resolvedSpaceId} />;
+        return <CallSheet project_id={resolvedSpaceId} />; // Schema shows it references project_spaces(id)
       case 'shot-list':
-        return <ShotList project_id={resolvedSpaceId} />;
+        return <ShotList project_id={resolvedSpaceId} />; // Aligned with the project-space pattern
       case 'legal-docs':
-        return <LegalDocs project_id={resolvedSpaceId} />;
+        return <LegalDocs project_id={resolvedSpaceId} />; // Table uses project_id referencing project_spaces
       case 'budget-sched':
-        return <BudgetSched project_id={resolvedSpaceId} />;
+        return <BudgetSched project_id={resolvedSpaceId} />; // Table uses project_id referencing project_spaces
       case 'team':
-        return <Team project_id={projectId} />;
+        return <Team project_id={resolvedSpaceId} />; // Table uses project_id renamed to project_space_id
       case 'applicants':
         return <ProjectApplicants projectId={projectId} />;
       case 'settings':
@@ -396,7 +396,7 @@ export const ProjectSpace = ({
   }
 
   return (
-    <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-white/20 lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
+    <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
       {/* Mobile Header & Navigation */}
       <div className="lg:hidden flex flex-col border-b border-white/10 bg-background z-[60] shrink-0 sticky top-0">
         <div className="flex items-center justify-between p-3">
@@ -418,7 +418,7 @@ export const ProjectSpace = ({
         <div className="relative w-full">
           <div
             ref={scrollContainerRef}
-            className="flex overflow-x-auto gap-2 px-4 pb-3 scrollbar-hide w-full"
+            className="flex overflow-x-auto gap-2 px-4 pb-3 no-scrollbar w-full"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {allNavItems.map((item) => {
@@ -452,10 +452,10 @@ export const ProjectSpace = ({
       <div className="flex flex-1 overflow-hidden relative">
         {/* Desktop Sidebar */}
         <div
-          className="hidden lg:flex flex-col border-r border-white/20 bg-card/95 backdrop-blur-xl relative z-0 h-full"
+            className="hidden lg:flex flex-col border-r border-border bg-card/95 backdrop-blur-xl relative z-0 h-full"
           style={{ width: sidebarWidth }}
         >
-          <div className="p-4 border-b border-white/20 bg-gradient-to-b from-white/5 to-transparent flex items-center gap-3">
+          <div className="p-4 border-b border-border bg-gradient-to-b from-muted/5 to-transparent flex items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -559,7 +559,7 @@ export const ProjectSpace = ({
         </div>
 
         <div
-          className="hidden lg:block w-1 cursor-col-resize hover:bg-primary/50 transition-colors bg-white/10"
+          className="hidden lg:block w-1 cursor-col-resize hover:bg-primary/50 transition-colors bg-border"
           onMouseDown={handleMouseDown}
         />
 

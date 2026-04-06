@@ -18,6 +18,7 @@ export interface Project {
     end_date?: string;
     creator_id: string;
     created_at: string;
+    image_url?: string;
     is_bookmarked?: boolean;
     profiles?: {
         full_name: string | null;

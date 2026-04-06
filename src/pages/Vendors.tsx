@@ -14,6 +14,7 @@ import {
 import { Vendor } from '@/types/marketplace';
 import { VendorRegistrationModal } from '@/components/vendors/VendorRegistrationModal';
 import { VendorCard } from '@/components/vendors/VendorCard';
+import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 
 
 const Vendors = () => {
@@ -70,34 +71,36 @@ const Vendors = () => {
         <div className="min-h-screen bg-background">
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-                    <div>
-                        <h1 className="text-3xl font-bold mb-2">Vendors Directory</h1>
-                        <p className="text-gray-400">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
+                    <div className="max-w-2xl">
+                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-primary leading-none">
+                            Vendors Directory
+                        </h1>
+                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">
                             Connect with verified industry businesses and service providers
                         </p>
                     </div>
-                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2">
-                        <Plus size={18} />
-                        Register Your Business
+                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2.5 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-transform h-12 px-6 shrink-0">
+                        <Plus size={20} strokeWidth={3} />
+                        <span className="font-bold tracking-wide">Register Business</span>
                     </Button>
                 </div>
 
                 {/* Search Bar */}
-                <div className="glass-card rounded-xl p-4 mb-8">
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <div className="relative flex-grow">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <div className="bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] p-2 md:p-3 mb-8 shadow-sm dark:shadow-none">
+                    <div className="flex flex-row gap-2 md:gap-3">
+                        <div className="relative flex-grow h-12 md:h-14">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
                             <Input
                                 placeholder="Search vendors..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10 bg-input border-border"
+                                className="pl-12 h-full bg-background/50 border-white/5 rounded-2xl text-base focus-visible:ring-primary/20 shadow-inner dark:shadow-none"
                             />
                         </div>
-                        <Button variant="outline" className="border-border gap-2">
+                        <Button variant="outline" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border-white/5 bg-background/50 hover:bg-background/80 hover:text-foreground">
                             <Filter size={18} />
-                            Filters
+                            <span className="font-bold tracking-wide">Filters</span>
                         </Button>
                     </div>
                 </div>
@@ -126,11 +129,7 @@ const Vendors = () => {
                     {loading ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {[1, 2, 3, 4, 5, 6].map((i) => (
-                                <div key={i} className="glass-card rounded-xl p-6 animate-pulse">
-                                    <div className="w-20 h-20 bg-gray-700 rounded-lg mb-4"></div>
-                                    <div className="h-6 bg-gray-700 rounded mb-2"></div>
-                                    <div className="h-4 bg-gray-700 rounded w-2/3"></div>
-                                </div>
+                                <EnhancedSkeleton key={i} className="h-[200px] rounded-[24px]" />
                             ))}
                         </div>
                     ) : vendors.length === 0 ? (

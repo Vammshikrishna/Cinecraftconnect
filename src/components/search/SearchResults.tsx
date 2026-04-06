@@ -280,10 +280,59 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
                       />
                     )
                   ) : (
-                    <div className="w-full h-full p-4 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 text-center">
-                      <p className="text-xs md:text-sm text-foreground line-clamp-6 font-medium italic opacity-80">
-                        "{post.content}"
-                      </p>
+                    <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-card to-muted/5 group-hover:brightness-110 transition-all duration-500">
+                      {post.content.includes('JOB_SHARE::') ? (
+                        (() => {
+                          try {
+                            const parts = post.content.split('JOB_SHARE::');
+                            const jsonStr = parts[parts.length - 1].trim();
+                            const shareData = JSON.parse(jsonStr);
+
+                            return (
+                              <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
+                                <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-background overflow-hidden shrink-0 mt-2">
+                                  <Avatar className="h-full w-full rounded-none">
+                                    <AvatarImage src={shareData.logoUrl || undefined} className="object-cover" />
+                                    <AvatarFallback className="bg-primary/20 text-primary font-black text-xl">
+                                      {shareData.company?.[0]?.toUpperCase() || 'J'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                </div>
+                                <div className="flex-1 w-full flex flex-col justify-center items-center gap-1.5 px-1 pb-2">
+                                  <h4 className="text-[10px] md:text-xs font-black text-foreground leading-tight tracking-tighter uppercase truncate w-full max-w-[100px]">
+                                    {shareData.title || 'Opening'}
+                                  </h4>
+                                  <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[6px] md:text-[8px] font-black text-primary uppercase tracking-widest shrink-0">
+                                    Hiring
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          } catch (e) {
+                            return (
+                              <div className="w-full h-full p-3 md:p-4 flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5 text-center">
+                                <p className="text-xs md:text-sm text-foreground line-clamp-6 font-medium">
+                                  {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
+                                </p>
+                              </div>
+                            );
+                          }
+                        })()
+                      ) : (
+                        <div className="w-full h-full p-4 md:p-6 flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-primary/20 via-background to-muted/10 group-hover:brightness-125 transition-all duration-700">
+                          {/* Subtle Internal Lighting */}
+                          <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent)] pointer-events-none" />
+
+                          <p className="text-sm md:text-base font-black tracking-tight text-foreground leading-[1.2] text-center line-clamp-5 drop-shadow-sm uppercase">
+                            {post.content.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim()}
+                          </p>
+
+                          {/* Quote Marker Decor */}
+                          <div className="absolute bottom-2 right-3 opacity-10 font-black text-4xl leading-none">"</div>
+                        </div>
+                      )}
+                      {/* Subtle Card Border Effect */}
+                      <div className="absolute inset-0 border border-white/5 pointer-events-none rounded-none md:rounded-sm" />
                     </div>
                   )}
 

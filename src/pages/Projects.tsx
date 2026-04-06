@@ -107,12 +107,20 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
       >
         {/* Image Section */}
         <div
-          className="relative w-full h-48 overflow-hidden"
-          style={{ background: getGradientForString(project.title) }}
+          className={`relative w-full h-48 overflow-hidden ${!project.image_url ? '' : 'bg-muted'}`}
+          style={{ background: !project.image_url ? getGradientForString(project.title) : undefined }}
         >
-          <div className="absolute inset-0 flex items-center justify-center bg-black/10">
-            <Film className="w-16 h-16 text-white/30" />
-          </div>
+          {project.image_url ? (
+            <img 
+              src={project.image_url} 
+              alt={project.title} 
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/10">
+              <Film className="w-16 h-16 text-white/30" />
+            </div>
+          )}
 
           {/* Bookmark Button */}
           <button
@@ -248,7 +256,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="bg-card border border-border w-full flex overflow-x-auto justify-start no-scrollbar">
+            <TabsList className="bg-card border border-border w-full flex overflow-x-auto overflow-y-hidden justify-start no-scrollbar">
               <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All Projects</TabsTrigger>
               {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
               {user && <TabsTrigger value="bookmarked" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}

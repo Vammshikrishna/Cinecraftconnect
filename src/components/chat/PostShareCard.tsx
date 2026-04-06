@@ -51,10 +51,42 @@ export const PostShareCard = ({ postId, previewUrl, caption, author }: PostShare
                             className="w-full h-full object-cover"
                         />
                     ) : caption?.includes('JOB_SHARE::') ? (
-                        <div className="w-full h-full bg-gradient-to-br from-emerald-500/20 via-primary/10 to-blue-600/5 flex items-center justify-center relative overflow-hidden">
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-50" />
-                            <Briefcase className="w-12 h-12 text-primary/40 animate-pulse" />
-                            <span className="absolute bottom-4 text-[10px] font-black uppercase tracking-[0.3em] text-primary/60">Professional Opportunity</span>
+                        <div className="w-full h-full bg-[#0a0a0a] flex flex-col items-center justify-center p-3 relative overflow-hidden group/hero">
+                            {(() => {
+                                try {
+                                    const parts = caption.split('JOB_SHARE::');
+                                    const jsonStr = parts[parts.length - 1].trim();
+                                    const shareData = JSON.parse(jsonStr);
+
+                                    return (
+                                        <>
+                                            {/* Rich Atmospheric Branding */}
+                                            <div className="absolute inset-0 z-0">
+                                                <img
+                                                    src={shareData.logoUrl || undefined}
+                                                    alt=""
+                                                    className="w-full h-full object-cover blur-2xl opacity-20 scale-150"
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/60" />
+                                            </div>
+
+                                            <div className="relative z-10 w-full flex flex-col items-center gap-3">
+                                                {/* Career Label */}
+                                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 backdrop-blur-md scale-90">
+                                                    <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                                                    <span className="text-[8px] font-black uppercase tracking-[0.2em] text-primary">Official Opportunity</span>
+                                                </div>
+
+                                                <div className="w-full scale-[0.85] origin-center transition-transform duration-500 group-hover/hero:scale-[0.88]">
+                                                    <JobShareCard {...shareData} />
+                                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                } catch (e) {
+                                    return <Briefcase className="w-10 h-10 text-primary/40" />;
+                                }
+                            })()}
                         </div>
                     ) : (
                         <div className="flex flex-col items-center gap-2 text-zinc-500">
@@ -72,16 +104,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author }: PostShare
                                 try {
                                     const parts = caption.split('JOB_SHARE::');
                                     const text = parts[0].trim();
-                                    const jsonStr = parts[parts.length - 1].trim();
-                                    const shareData = JSON.parse(jsonStr);
-                                    return (
-                                        <div className="space-y-3">
-                                            {text && <p className="text-[13px] leading-snug text-white line-clamp-1">{text}</p>}
-                                            <div className="scale-75 origin-top-left -mb-10">
-                                                <JobShareCard {...shareData} />
-                                            </div>
-                                        </div>
-                                    );
+                                    return text ? <p className="text-[13px] leading-snug text-white line-clamp-2">{text}</p> : null;
                                 } catch (e) {
                                     return <p className="text-[13px] leading-snug text-white line-clamp-2">{caption}</p>;
                                 }

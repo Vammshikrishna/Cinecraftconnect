@@ -1,27 +1,66 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 
 interface ProjectFile {
-    id: number;
+    id: string;
     name: string;
     size: number;
     url: string;
+    file_type: string | null;
+    signedUrl?: string; // Temporary access link
 }
 
-// CORRECTED: Props interface now expects project_id
 interface FilesProps {
     project_id: string;
 }
 
-// CORRECTED: Component now accepts project_id
 const Files = ({ project_id }: FilesProps) => {
-    // CORRECTED: useRealtimeData is now called with project_id
-    const { data: files, error } = useRealtimeData<ProjectFile>('files', 'project_id', project_id);
+    const { data: rawFiles, error } = useRealtimeData<ProjectFile>('files', 'project_id', project_id);
+    const [files, setFiles] = useState<ProjectFile[]>([]);
     const [uploading, setUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
+    const { toast } = useToast();
+
+    // Effect to generate signed URLs for all files
+    useEffect(() => {
+        const generateSignedUrls = async () => {
+            if (!rawFiles || rawFiles.length === 0) {
+                setFiles([]);
+                return;
+            }
+
+            const filesWithSignedUrls = await Promise.all(rawFiles.map(async (file) => {
+                try {
+                    // Extract path from URL: [project_id]/[filename]
+                    // The URL looks like: https://.../project-files/[project_id]/[filename]
+                    const parts = file.url.split('project-files/');
+                    const path = parts.length > 1 ? parts[1] : `${project_id}/${file.name}`;
+                    
+                    const { data } = await supabase.storage
+                        .from('project-files')
+                        .createSignedUrl(decodeURIComponent(path), 3600); // 1 hour access
+
+                    return {
+                        ...file,
+                        signedUrl: data?.signedUrl || file.url
+                    };
+                } catch (e) {
+                    return file;
+                }
+            }));
+
+            setFiles(filesWithSignedUrls);
+        };
+
+        generateSignedUrls();
+    }, [rawFiles, project_id]);
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         if (event.target.files && event.target.files[0]) {
@@ -29,42 +68,79 @@ const Files = ({ project_id }: FilesProps) => {
         }
     };
 
+    const getFileIcon = (name: string) => {
+        const ext = name.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return <ImageIcon className="w-5 h-5 text-purple-400" />;
+        if (['pdf', 'doc', 'docx', 'txt'].includes(ext || '')) return <FileText className="w-5 h-5 text-blue-400" />;
+        return <File className="w-5 h-5 text-gray-400" />;
+    };
+
+    const isImage = (name: string) => {
+        const ext = name.split('.').pop()?.toLowerCase();
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
+    };
+
     const handleUpload = async () => {
         if (!selectedFile) return;
-
         setUploading(true);
 
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        // CORRECTED: The file path now uses the project_id
-        const filePath = `${project_id}/${fileName}`;
+        try {
+            const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
+            const filePath = `${project_id}/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-            .from('project-files')
-            .upload(filePath, selectedFile);
+            const { error: uploadError } = await supabase.storage
+                .from('project-files')
+                .upload(filePath, selectedFile);
 
-        if (uploadError) {
-            console.error('Error uploading file:', uploadError);
+            if (uploadError) throw uploadError;
+
+            const { data: publicUrlData } = supabase.storage
+                .from('project-files')
+                .getPublicUrl(filePath);
+
+            const { error: insertError } = await supabase.from('files' as any).insert([
+                {
+                    name: selectedFile.name,
+                    size: selectedFile.size,
+                    url: publicUrlData.publicUrl,
+                    project_id: project_id,
+                    file_type: selectedFile.type
+                },
+            ]);
+
+            if (insertError) throw insertError;
+
+            toast({ title: "Success", description: "File uploaded successfully" });
+            setSelectedFile(null);
+        } catch (err: any) {
+            console.error('Upload error:', err);
+            toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
+        } finally {
             setUploading(false);
-            return;
         }
+    };
 
-        const { data: publicUrlData } = supabase.storage
-            .from('project-files')
-            .getPublicUrl(filePath);
+    const handleDelete = async (id: string, url: string) => {
+        if (!confirm('Are you sure you want to delete this file?')) return;
 
-        // CORRECTED: The insert query now uses the correct project_id column
-        await supabase.from('files' as any).insert([
-            {
-                name: selectedFile.name,
-                size: selectedFile.size,
-                url: publicUrlData.publicUrl,
-                project_id: project_id,
-            },
-        ]);
+        try {
+            // Extract path from URL: everything after 'project-files/'
+            const parts = url.split('project-files/');
+            if (parts.length < 2) throw new Error("Invalid file path");
+            
+            const filePath = decodeURIComponent(parts[1]);
+            
+            const { error: storageError } = await supabase.storage.from('project-files').remove([filePath]);
+            if (storageError) throw storageError;
 
-        setUploading(false);
-        setSelectedFile(null);
+            const { error: deleteError } = await supabase.from('files' as any).delete().eq('id', id);
+            if (deleteError) throw deleteError;
+
+            toast({ title: "Deleted", description: "File removed successfully" });
+        } catch (err: any) {
+            console.error('Delete error:', err);
+            toast({ title: "Error", description: "Failed to delete: " + err.message, variant: "destructive" });
+        }
     };
 
     const formatBytes = (bytes: number, decimals = 2) => {
@@ -74,31 +150,150 @@ const Files = ({ project_id }: FilesProps) => {
         const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-    }
+    };
 
     if (error) {
-        return <div>Error loading files: {error.message}</div>;
+        return (
+            <div className="flex flex-col items-center justify-center p-12 text-center bg-red-500/10 rounded-3xl border border-red-500/20 m-4">
+                <ShieldAlert className="w-12 h-12 text-red-500 mb-4" />
+                <h3 className="text-xl font-bold text-foreground mb-2">Error loading files</h3>
+                <p className="text-red-400/80 max-w-xs">{error.message}</p>
+            </div>
+        );
     }
 
     return (
-        <div className="p-4 sm:p-8 h-full overflow-y-auto">
-            <h1 className="text-xl sm:text-2xl font-bold mb-4">Files</h1>
-            <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                <Input type="file" onChange={handleFileChange} className="w-full" />
-                <Button onClick={handleUpload} disabled={uploading || !selectedFile} className="w-full sm:w-auto">
-                    {uploading ? 'Uploading...' : 'Upload'}
-                </Button>
+        <div className="p-4 sm:p-8 h-full overflow-y-auto no-scrollbar bg-transparent">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+                <div className="flex flex-col gap-1">
+                    <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Storage</h1>
+                    <p className="text-2xl font-bold text-foreground text-gradient">Project Files</p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                    <div className="relative group overflow-hidden bg-card border border-border rounded-2xl p-1 flex-grow">
+                        <Input 
+                            type="file" 
+                            onChange={handleFileChange} 
+                            className="bg-transparent border-0 focus-visible:ring-0 cursor-pointer h-10 py-1" 
+                        />
+                    </div>
+                    <Button 
+                        onClick={handleUpload} 
+                        disabled={uploading || !selectedFile}
+                        className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-8 h-12 shadow-lg shadow-primary/20 transition-all font-bold"
+                    >
+                        {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload File'}
+                    </Button>
+                </div>
             </div>
-            <ul className="space-y-2">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-24">
                 {files && files.map(file => (
-                    <li key={file.id} className="flex justify-between items-center p-3 border-b bg-card/50 rounded-lg">
-                        <a href={file.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline truncate mr-4 max-w-[200px] sm:max-w-none">
-                            {file.name}
-                        </a>
-                        <span className="text-gray-500 text-sm whitespace-nowrap">{formatBytes(file.size)}</span>
-                    </li>
+                    <div 
+                        key={file.id} 
+                        className="group bg-card border border-border rounded-[28px] overflow-hidden transition-all duration-300 hover:bg-accent/50 hover:border-primary/20 hover:translate-y-[-4px] shadow-sm hover:shadow-xl"
+                    >
+                        {/* Thumbnail Area */}
+                        <div className="aspect-video relative overflow-hidden bg-background/40 flex items-center justify-center border-b border-border">
+                            {isImage(file.name) ? (
+                                <img 
+                                    src={file.signedUrl || file.url} 
+                                    alt={file.name} 
+                                    className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                                />
+                            ) : (
+                                <div className="p-6 bg-card rounded-full">
+                                    {getFileIcon(file.name)}
+                                </div>
+                            )}
+                            
+                            <div className="absolute inset-0 bg-background/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-sm">
+                                <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    onClick={() => setPreviewFile(file)}
+                                    className="bg-card/60 hover:bg-card border-border"
+                                    title="Quick Look"
+                                >
+                                    <Eye className="w-5 h-5" />
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    asChild
+                                    className="bg-card border border-border shadow-sm rounded-full p-2 h-10 w-10"
+                                    title="Download"
+                                >
+                                    <a href={file.signedUrl || file.url} download={file.name} target="_blank" rel="noopener noreferrer">
+                                        <Download className="w-5 h-5" />
+                                    </a>
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Details Area */}
+                        <div className="p-5 flex flex-col gap-1">
+                            <h3 className="text-sm font-semibold text-foreground truncate max-w-full" title={file.name}>
+                                {file.name}
+                            </h3>
+                            <div className="flex items-center justify-between mt-1">
+                                <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">{formatBytes(file.size)}</span>
+                                <Button 
+                                    size="sm" 
+                                    variant="ghost" 
+                                    onClick={() => handleDelete(file.id, file.url)}
+                                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0 h-8 w-8 rounded-full"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 ))}
-            </ul>
+            </div>
+
+            {files?.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                    <div className="w-20 h-20 bg-card rounded-full flex items-center justify-center mb-6 border border-border">
+                        <File className="w-10 h-10 text-muted-foreground" />
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground mb-2">No files yet</h3>
+                    <p className="text-muted-foreground max-w-xs">Upload important assets, scripts, or images to share with your team.</p>
+                </div>
+            )}
+
+            {/* Quick Look Dialog */}
+            <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-[32px] overflow-hidden flex flex-col shadow-3xl">
+                    <DialogHeader className="p-6 border-b border-border flex flex-row items-center justify-between shrink-0">
+                        <DialogTitle className="text-lg font-bold text-foreground truncate flex items-center gap-3">
+                            {previewFile && getFileIcon(previewFile.name)}
+                            {previewFile?.name}
+                        </DialogTitle>
+                        <DialogDescription className="sr-only">
+                            Preview of {previewFile?.name}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex-grow relative bg-black/20 flex items-center justify-center p-4 sm:p-12 overflow-hidden">
+                        {previewFile && isImage(previewFile.name) ? (
+                            <img 
+                                src={previewFile.signedUrl || previewFile.url} 
+                                alt={previewFile.name} 
+                                className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
+                            />
+                        ) : (
+                            <div className="flex flex-col items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <FileText className="w-32 h-32 text-muted-foreground opacity-20" />
+                                <p className="text-foreground text-lg font-medium">Preview not available for this file type</p>
+                                <Button asChild className="bg-primary text-white rounded-2xl px-8 py-6 h-auto font-bold text-lg hover:scale-105 transition-transform">
+                                    <a href={previewFile?.signedUrl || previewFile?.url} target="_blank" rel="noopener noreferrer">Download to View</a>
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
