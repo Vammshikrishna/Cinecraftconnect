@@ -3,7 +3,7 @@ import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert } from 'lucide-react';
+import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert, Video } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
@@ -38,14 +38,24 @@ const Files = ({ project_id }: FilesProps) => {
 
             const filesWithSignedUrls = await Promise.all(rawFiles.map(async (file) => {
                 try {
-                    // Extract path from URL: [project_id]/[filename]
-                    // The URL looks like: https://.../project-files/[project_id]/[filename]
-                    const parts = file.url.split('project-files/');
-                    const path = parts.length > 1 ? parts[1] : `${project_id}/${file.name}`;
+                    let path = "";
+                    if (file.url.includes('project-files/')) {
+                        path = file.url.split('project-files/').pop()?.split('?')[0] || "";
+                    } else if (!file.url.startsWith('http')) {
+                        path = file.url.split('?')[0];
+                    } else {
+                        const parts = file.url.split('/');
+                        const bucketIdx = parts.indexOf('project-files');
+                        if (bucketIdx !== -1) {
+                            path = parts.slice(bucketIdx + 1).join('/').split('?')[0];
+                        }
+                    }
+                    
+                    if (!path) path = `${project_id}/${file.name}`;
                     
                     const { data } = await supabase.storage
                         .from('project-files')
-                        .createSignedUrl(decodeURIComponent(path), 3600); // 1 hour access
+                        .createSignedUrl(decodeURIComponent(path), 3600);
 
                     return {
                         ...file,
@@ -72,12 +82,18 @@ const Files = ({ project_id }: FilesProps) => {
         const ext = name.split('.').pop()?.toLowerCase();
         if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return <ImageIcon className="w-5 h-5 text-purple-400" />;
         if (['pdf', 'doc', 'docx', 'txt'].includes(ext || '')) return <FileText className="w-5 h-5 text-blue-400" />;
+        if (['mp4', 'webm', 'ogg', 'mov'].includes(ext || '')) return <Video className="w-5 h-5 text-red-400" />;
         return <File className="w-5 h-5 text-gray-400" />;
     };
 
     const isImage = (name: string) => {
         const ext = name.split('.').pop()?.toLowerCase();
         return ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '');
+    };
+
+    const isVideo = (name: string) => {
+        const ext = name.split('.').pop()?.toLowerCase();
+        return ['mp4', 'webm', 'ogg', 'mov'].includes(ext || '');
     };
 
     const handleUpload = async () => {
@@ -113,10 +129,70 @@ const Files = ({ project_id }: FilesProps) => {
             toast({ title: "Success", description: "File uploaded successfully" });
             setSelectedFile(null);
         } catch (err: any) {
-            console.error('Upload error:', err);
             toast({ title: "Upload Failed", description: err.message, variant: "destructive" });
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleDownload = async (file: ProjectFile, e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        try {
+            // 1. Get path
+            let path = "";
+            if (file.url.includes('project-files/')) {
+                path = file.url.split('project-files/').pop()?.split('?')[0] || "";
+            } else if (file.url.startsWith('http')) {
+                try {
+                    const urlObj = new URL(file.url);
+                    const pathParts = urlObj.pathname.split('/');
+                    const objectIdx = pathParts.indexOf('object');
+                    if (objectIdx !== -1 && pathParts.length > objectIdx + 3) {
+                        path = pathParts.slice(objectIdx + 3).join('/');
+                    } else {
+                        const bucketIdx = pathParts.indexOf('project-files');
+                        if (bucketIdx !== -1) {
+                            path = pathParts.slice(bucketIdx + 1).join('/');
+                        }
+                    }
+                } catch (e) {
+                    path = file.url.split('/').pop() || "";
+                }
+            } else {
+                path = file.url;
+            }
+            path = decodeURIComponent(path.split('?')[0]);
+            if (!path) throw new Error("Could not determine file path");
+
+            // 2. Generate a fresh signed URL to bypass any bucket policy issues
+            const { data: signedData, error: signedError } = await supabase.storage
+                .from('project-files')
+                .createSignedUrl(path, 60);
+
+            if (signedError) throw signedError;
+            if (!signedData?.signedUrl) throw new Error("Could not generate secure download link");
+
+            // 3. Fetch the file as a blob to force a browser download dialog
+            const response = await fetch(signedData.signedUrl);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = file.name;
+            link.target = '_self';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(blobUrl);
+
+            toast({ title: "Started", description: "Download initiated" });
+        } catch (err: any) {
+            toast({ title: "Download Failed", description: err.message, variant: "destructive" });
         }
     };
 
@@ -138,7 +214,6 @@ const Files = ({ project_id }: FilesProps) => {
 
             toast({ title: "Deleted", description: "File removed successfully" });
         } catch (err: any) {
-            console.error('Delete error:', err);
             toast({ title: "Error", description: "Failed to delete: " + err.message, variant: "destructive" });
         }
     };
@@ -202,6 +277,13 @@ const Files = ({ project_id }: FilesProps) => {
                                     alt={file.name} 
                                     className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
                                 />
+                            ) : isVideo(file.name) ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-card/60 gap-3 group-hover:bg-card/40 transition-colors">
+                                    <div className="p-4 bg-red-400/10 rounded-2xl">
+                                        <Video className="w-8 h-8 text-red-400" />
+                                    </div>
+                                    <span className="text-[10px] font-bold text-red-400 tracking-widest uppercase bg-red-400/10 px-3 py-1 rounded-full">Cinema Preview</span>
+                                </div>
                             ) : (
                                 <div className="p-6 bg-card rounded-full">
                                     {getFileIcon(file.name)}
@@ -221,13 +303,11 @@ const Files = ({ project_id }: FilesProps) => {
                                 <Button 
                                     size="sm" 
                                     variant="ghost" 
-                                    asChild
-                                    className="bg-card border border-border shadow-sm rounded-full p-2 h-10 w-10"
+                                    onClick={(e) => handleDownload(file, e)}
+                                    className="bg-card border border-border shadow-sm rounded-full p-2 h-10 w-10 text-primary hover:text-primary/80 transition-colors"
                                     title="Download"
                                 >
-                                    <a href={file.signedUrl || file.url} download={file.name} target="_blank" rel="noopener noreferrer">
-                                        <Download className="w-5 h-5" />
-                                    </a>
+                                    <Download className="w-5 h-5" />
                                 </Button>
                             </div>
                         </div>
@@ -267,10 +347,24 @@ const Files = ({ project_id }: FilesProps) => {
             <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
                 <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-[32px] overflow-hidden flex flex-col shadow-3xl">
                     <DialogHeader className="p-6 border-b border-border flex flex-row items-center justify-between shrink-0">
-                        <DialogTitle className="text-lg font-bold text-foreground truncate flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                             {previewFile && getFileIcon(previewFile.name)}
-                            {previewFile?.name}
-                        </DialogTitle>
+                            <DialogTitle className="text-lg font-bold text-foreground truncate">
+                                {previewFile?.name}
+                            </DialogTitle>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {previewFile && (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    onClick={(e) => handleDownload(previewFile, e)}
+                                    className="rounded-xl border-border hover:bg-accent/50"
+                                >
+                                    <Download className="w-4 h-4 mr-2" /> Download
+                                </Button>
+                            )}
+                        </div>
                         <DialogDescription className="sr-only">
                             Preview of {previewFile?.name}
                         </DialogDescription>
@@ -282,12 +376,21 @@ const Files = ({ project_id }: FilesProps) => {
                                 alt={previewFile.name} 
                                 className="max-w-full max-h-full object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-500" 
                             />
+                        ) : previewFile && isVideo(previewFile.name) ? (
+                            <video 
+                                src={previewFile.signedUrl || previewFile.url} 
+                                controls 
+                                className="max-w-full max-h-full rounded-xl shadow-2xl animate-in fade-in duration-500" 
+                            />
                         ) : (
                             <div className="flex flex-col items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <FileText className="w-32 h-32 text-muted-foreground opacity-20" />
                                 <p className="text-foreground text-lg font-medium">Preview not available for this file type</p>
-                                <Button asChild className="bg-primary text-white rounded-2xl px-8 py-6 h-auto font-bold text-lg hover:scale-105 transition-transform">
-                                    <a href={previewFile?.signedUrl || previewFile?.url} target="_blank" rel="noopener noreferrer">Download to View</a>
+                                <Button 
+                                    onClick={(e) => previewFile && handleDownload(previewFile, e)} 
+                                    className="bg-primary text-white rounded-2xl px-8 py-6 h-auto font-bold text-lg hover:scale-105 transition-transform"
+                                >
+                                    Download to System
                                 </Button>
                             </div>
                         )}

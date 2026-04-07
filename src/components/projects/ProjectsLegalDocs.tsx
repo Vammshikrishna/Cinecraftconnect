@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 interface LegalDoc {
-    id: number;
-    name: string;
+    id: string;
+    title: string;
+    type: string;
     status: 'Signed' | 'Pending';
     url: string;
 }
@@ -17,7 +18,7 @@ interface ProjectsLegalDocsProps {
 }
 
 const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
-    const { data: documents, error } = useRealtimeData<LegalDoc>('legal_docs', roomId);
+    const { data: documents, error } = useRealtimeData<LegalDoc>('legal_docs', 'project_id', roomId);
     const [uploading, setUploading] = useState(false);
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -41,7 +42,6 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
             .upload(filePath, selectedFile);
 
         if (uploadError) {
-            console.error('Error uploading file:', uploadError);
             setUploading(false);
             return;
         }
@@ -52,10 +52,11 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
 
         await supabase.from('legal_docs').insert([
             {
-                name: selectedFile.name,
+                title: selectedFile.name,
+                type: 'Document',
                 status: 'Pending',
                 url: publicUrlData.publicUrl,
-                room_id: roomId,
+                project_id: roomId,
             },
         ]);
 
@@ -63,7 +64,7 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
         setSelectedFile(null);
     };
 
-    const handleStatusChange = async (id: number, currentStatus: 'Signed' | 'Pending') => {
+    const handleStatusChange = async (id: string, currentStatus: 'Signed' | 'Pending') => {
         const newStatus = currentStatus === 'Signed' ? 'Pending' : 'Signed';
         await supabase
             .from('legal_docs')
@@ -85,10 +86,10 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
                 </Button>
             </div>
             <ul>
-                {documents.map(doc => (
+                {(documents || []).map(doc => (
                     <li key={doc.id} className="flex justify-between items-center p-2 border-b">
                         <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
-                            {doc.name}
+                            {doc.title}
                         </a>
                         <button 
                             onClick={() => handleStatusChange(doc.id, doc.status)} 

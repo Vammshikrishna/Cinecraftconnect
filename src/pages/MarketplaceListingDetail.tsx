@@ -201,7 +201,7 @@ const MarketplaceListingDetail = () => {
                                     <h1 className="text-4xl md:text-5xl font-black text-foreground mb-4 tracking-tight leading-tight">
                                         {listing.title}
                                     </h1>
-                                    <div className="flex items-center text-[11px] font-bold text-muted-foreground uppercase tracking-widest gap-2 bg-black/5 dark:bg-white/5 py-2 px-4 rounded-xl border border-black/5 dark:border-white/5 inline-flex w-fit">
+                                    <div className="inline-flex items-center text-[11px] font-bold text-muted-foreground uppercase tracking-widest gap-2 bg-black/5 dark:bg-white/5 py-2 px-4 rounded-xl border border-black/5 dark:border-white/5 w-fit">
                                         <MapPin className="h-4 w-4 text-primary/60 shrink-0" />
                                         {listing.location}
                                     </div>

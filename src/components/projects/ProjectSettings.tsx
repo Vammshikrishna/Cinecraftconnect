@@ -104,7 +104,6 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 setImageUrl((data as any).image_url || null);
             }
         } catch (error: any) {
-            console.error('Error fetching project settings:', error);
             toast({
                 title: "Error",
                 description: "Failed to load project settings",
@@ -148,7 +147,6 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             setImageUrl(publicUrl);
             toast({ title: "Success", description: "Project thumbnail updated!" });
         } catch (error: any) {
-            console.error('Error updating project image:', error);
             toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
         } finally {
             setImageUploading(false);
@@ -184,7 +182,6 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 description: "Project settings updated successfully",
             });
         } catch (error: any) {
-            console.error('Error updating project:', error);
             toast({
                 title: "Error",
                 description: "Failed to update project settings",
@@ -211,7 +208,6 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             });
             navigate('/projects');
         } catch (error: any) {
-            console.error('Error deleting project:', error);
             toast({
                 title: "Error",
                 description: "Failed to delete project",
@@ -245,7 +241,6 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 description: "All project chat history has been cleared",
             });
         } catch (error: any) {
-            console.error('Error clearing chat history:', error);
             toast({
                 title: "Error",
                 description: "Failed to clear chat history",

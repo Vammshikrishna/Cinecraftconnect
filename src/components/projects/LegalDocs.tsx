@@ -6,18 +6,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, FileText, Download, Trash2, Shield, Loader2, Calendar } from 'lucide-react';
+import { Plus, FileText, Download, Trash2, Shield, Loader2, Calendar, Eye, FileCheck, Film } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface LegalDoc {
     id: string;
+    project_id: string;
     title: string;
     description: string | null;
     url: string | null;
     document_type: string | null;
-    date: string | null;
     uploaded_by: string | null;
     created_at: string;
+    updated_at: string;
     signedUrl?: string; // Secure access link
 }
 
@@ -28,6 +29,8 @@ interface LegalDocsProps {
 const LegalDocs = ({ project_id }: LegalDocsProps) => {
     const { data: rawDocs, error } = useRealtimeData<LegalDoc>('legal_docs', 'project_id', project_id);
     const [docs, setDocs] = useState<LegalDoc[]>([]);
+    const [previewId, setPreviewId] = useState<string | null>(null);
+    const previewDoc = docs.find(d => d.id === previewId) || null;
     const { toast } = useToast();
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -35,14 +38,12 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [documentType, setDocumentType] = useState('contract');
-    const [date, setDate] = useState('');
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
     const resetForm = () => {
         setTitle('');
         setDescription('');
         setDocumentType('contract');
-        setDate('');
         setSelectedFile(null);
     };
 
@@ -57,21 +58,43 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             const docsWithSignedUrls = await Promise.all(rawDocs.map(async (doc) => {
                 if (!doc.url) return doc;
                 try {
-                    // Extract path: legal-docs/[id]/[name]
-                    const parts = doc.url.split('project-files/');
-                    const path = parts.length > 1 ? parts[1] : `legal-docs/${project_id}/${doc.id}`;
+                    // Optimized path extraction
+                    const bucketMatch = doc.url.match(/legal-documents\/(.*)$/);
+                    let path = bucketMatch ? bucketMatch[1] : "";
                     
-                    const { data } = await supabase.storage
-                        .from('project-files')
-                        .createSignedUrl(decodeURIComponent(path), 3600);
+                    if (!path && doc.url.includes('object/')) {
+                         const parts = doc.url.split('object/')[1].split('/');
+                         if (parts.length > 2) path = parts.slice(2).join('/');
+                    }
 
-                    return { ...doc, signedUrl: data?.signedUrl || doc.url };
+                    if (!path) path = doc.url.split('/').pop() || "";
+                    
+                    // Clean and decode path
+                    path = decodeURIComponent(path.split('?')[0]).replace(/^\/+/, '');
+                    
+                    if (!path) return { ...doc, signedUrl: doc.url || undefined };
+
+                    // 1. Attempt Signed URL (best for security)
+                    const { data: signedData, error: signError } = await supabase.storage
+                        .from('legal-documents')
+                        .createSignedUrl(path, 3600);
+
+                    if (!signError && signedData?.signedUrl) {
+                        return { ...doc, signedUrl: signedData.signedUrl };
+                    }
+
+                    // 2. Fallback to Public URL (best for reliability)
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('legal-documents')
+                        .getPublicUrl(path);
+
+                    return { ...doc, signedUrl: publicUrl || doc.url || undefined };
                 } catch (e) {
-                    return doc;
+                    return { ...doc, signedUrl: doc.url || undefined };
                 }
             }));
 
-            setDocs(docsWithSignedUrls);
+            setDocs(docsWithSignedUrls as any);
         };
 
         generateSignedUrls();
@@ -93,16 +116,16 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
 
         try {
             const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
-            const filePath = `legal-docs/${project_id}/${fileName}`;
+            const filePath = `${project_id}/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
-                .from('project-files')
+                .from('legal-documents')
                 .upload(filePath, selectedFile);
 
             if (uploadError) throw uploadError;
 
             const { data: { publicUrl } } = supabase.storage
-                .from('project-files')
+                .from('legal-documents')
                 .getPublicUrl(filePath);
 
             const { error: insertError } = await supabase
@@ -113,7 +136,6 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                     description: description || null,
                     url: publicUrl,
                     document_type: documentType,
-                    date: date || null,
                     uploaded_by: (await supabase.auth.getUser()).data.user?.id
                 }]);
 
@@ -123,10 +145,71 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             setDialogOpen(false);
             resetForm();
         } catch (err: any) {
-            console.error('Upload error:', err);
             toast({ title: "Error", description: err.message || "Failed to upload document", variant: "destructive" });
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleDownload = async (doc: LegalDoc) => {
+        if (!doc.url) return;
+        try {
+            let path = "";
+            if (doc.url.includes('legal-documents/')) {
+                path = doc.url.split('legal-documents/').pop()?.split('?')[0] || "";
+            } else if (doc.url.startsWith('http')) {
+                try {
+                    const urlObj = new URL(doc.url);
+                    const pathParts = urlObj.pathname.split('/');
+                    const objectIdx = pathParts.indexOf('object');
+                    if (objectIdx !== -1 && pathParts.length > objectIdx + 3) {
+                        path = pathParts.slice(objectIdx + 3).join('/');
+                    } else {
+                        const bucketIdx = pathParts.indexOf('legal-documents');
+                        if (bucketIdx !== -1) {
+                            path = pathParts.slice(bucketIdx + 1).join('/');
+                        } else {
+                            const legacyIdx = pathParts.indexOf('project-files');
+                            if (legacyIdx !== -1) path = pathParts.slice(legacyIdx + 1).join('/');
+                        }
+                    }
+                } catch (e) {
+                    path = doc.url.split('/').pop() || "";
+                }
+            } else {
+                path = doc.url;
+            }
+            path = decodeURIComponent(path.split('?')[0]).replace(/^\/+/, ''); // Clean leading slashes
+            if (!path) throw new Error("Invalid file path structure");
+            
+            // 2. Generate a fresh signed URL
+            const { data: signedData, error: signedError } = await supabase.storage
+                .from('legal-documents')
+                .createSignedUrl(path, 60);
+
+            if (signedError) throw signedError;
+            if (!signedData?.signedUrl) throw new Error("Could not generate secure download link");
+
+            // 3. Fetch as blob
+            const response = await fetch(signedData.signedUrl);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            
+            const originalFilename = doc.url.split('/').pop()?.split('?')[0] || "";
+            const ext = originalFilename.includes('.') ? originalFilename.split('.').pop() : "pdf";
+            link.download = `${doc.title.replace(/\s+/g, '_')}.${ext}`;
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+
+            toast({ title: "Downloaded", description: doc.title + " is ready." });
+        } catch (err: any) {
+            toast({ title: "Download Failed", description: err.message, variant: "destructive" });
         }
     };
 
@@ -135,20 +218,52 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
 
         try {
             if (doc.url) {
-                const parts = doc.url.split('project-files/');
-                const path = parts.length > 1 ? parts[1] : null;
+                const parts = doc.url.split('legal-documents/');
+                const path = (parts.length > 1 ? parts[1] : null)?.replace(/^\/+/, ''); // Clean leading slashes
                 if (path) {
-                    await supabase.storage.from('project-files').remove([decodeURIComponent(path)]);
+                    await supabase.storage.from('legal-documents').remove([decodeURIComponent(path.split('?')[0])]);
                 }
             }
 
             const { error } = await supabase.from('legal_docs' as any).delete().eq('id', doc.id);
             if (error) throw error;
 
+            // Optimistic UI update: instantly remove the doc from view
+            setDocs(prev => prev.filter(item => item.id !== doc.id));
+
             toast({ title: "Removed", description: "Document deleted from registry" });
         } catch (err: any) {
             toast({ title: "Error", description: "Failed to delete document", variant: "destructive" });
         }
+    };
+
+    const getFileIcon = (type: string | null) => {
+        if (type === 'contract') return <Shield className="w-5 h-5 text-primary" />;
+        if (type === 'nda') return <FileCheck className="w-5 h-5 text-blue-400" />;
+        if (type === 'media') return <Film className="w-5 h-5 text-purple-400" />;
+        return <FileText className="w-5 h-5 text-muted-foreground" />;
+    };
+
+    const isImage = (url: string | null) => {
+        if (!url) return false;
+        const cleanUrl = url.split('?')[0].toLowerCase();
+        return cleanUrl.endsWith('.jpg') || cleanUrl.endsWith('.jpeg') || cleanUrl.endsWith('.png') || 
+               cleanUrl.endsWith('.gif') || cleanUrl.endsWith('.webp') || cleanUrl.includes('.jpg?') || 
+               cleanUrl.includes('.png?') || cleanUrl.includes('.jpeg?');
+    };
+
+    const isPdf = (url: string | null) => {
+        if (!url) return false;
+        const cleanUrl = url.split('?')[0].toLowerCase();
+        return cleanUrl.endsWith('.pdf') || cleanUrl.includes('.pdf?');
+    };
+
+    const isVideo = (url: string | null) => {
+        if (!url) return false;
+        const cleanUrl = url.split('?')[0].toLowerCase();
+        return cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.webm') || cleanUrl.endsWith('.ogg') || 
+               cleanUrl.endsWith('.mov') || cleanUrl.endsWith('.m4v') || cleanUrl.includes('.mp4?') || 
+               cleanUrl.includes('.mov?');
     };
 
     const formatDate = (dateString: string) => {
@@ -169,7 +284,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                 
                 <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
                     <DialogTrigger asChild>
-                        <Button className="bg-primary hover:bg-primary/80 text-primary-foreground shadow-sm rounded-full px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                        <Button className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-full px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
                             <Plus className="h-5 w-5 mr-2" /> 
                             New Document
                         </Button>
@@ -190,24 +305,22 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                     <SelectTrigger className="bg-background border-border rounded-xl h-12">
                                         <SelectValue />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-black/90 border-border backdrop-blur-3xl rounded-2xl">
-                                        <SelectItem value="contract">Contract</SelectItem>
-                                        <SelectItem value="release">Release Form</SelectItem>
-                                        <SelectItem value="nda">NDA</SelectItem>
-                                        <SelectItem value="permit">Permit</SelectItem>
-                                        <SelectItem value="insurance">Insurance</SelectItem>
-                                        <SelectItem value="other">Other</SelectItem>
+                                    <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl backdrop-blur-3xl">
+                                        <SelectItem value="contract" className="cursor-pointer text-foreground py-2.5">Contract</SelectItem>
+                                        <SelectItem value="release" className="cursor-pointer text-foreground py-2.5">Release Form</SelectItem>
+                                        <SelectItem value="nda" className="cursor-pointer text-foreground py-2.5">NDA</SelectItem>
+                                        <SelectItem value="permit" className="cursor-pointer text-foreground py-2.5">Permit</SelectItem>
+                                        <SelectItem value="media" className="cursor-pointer text-foreground py-2.5">Media / Video</SelectItem>
+                                        <SelectItem value="insurance" className="cursor-pointer text-foreground py-2.5">Insurance</SelectItem>
+                                        <SelectItem value="other" className="cursor-pointer text-foreground py-2.5">Other Document</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="space-y-2">
-                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Date</Label>
-                                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
-                            </div>
+
                             <div className="space-y-2">
                                 <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">File Asset</Label>
                                 <div className="relative group">
-                                    <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.txt" className="bg-background border-border rounded-xl h-12 py-3 file:bg-transparent file:text-primary file:font-bold file:border-0" />
+                                    <Input type="file" onChange={handleFileSelect} className="bg-background border-border rounded-xl h-12 py-3 file:bg-transparent file:text-primary file:font-bold file:border-0" />
                                 </div>
                                 {selectedFile && <p className="text-[10px] text-primary/80 font-bold ml-1">{selectedFile.name}</p>}
                             </div>
@@ -222,39 +335,60 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             {docs && docs.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-24">
                     {docs.map(doc => (
-                        <div key={doc.id} className="group bg-card border border-border shadow-sm rounded-[32px] p-6 shadow-sm hover:shadow-2xl hover:bg-accent/50 transition-all duration-300 relative overflow-hidden">
-                            <div className="flex items-start gap-4 mb-6">
-                                <div className="p-3 bg-primary/10 rounded-2xl">
-                                    {doc.document_type === 'contract' ? <Shield className="w-6 h-6 text-primary" /> : <FileText className="w-6 h-6 text-primary" />}
+                        <div key={doc.id} className="group bg-card border border-border rounded-[32px] overflow-hidden shadow-sm hover:shadow-2xl hover:bg-accent/50 transition-all duration-300 relative">
+                            {/* Card Content */}
+                            <div className="p-6">
+                                <div className="flex items-start justify-between mb-4">
+                                    <div className="p-3 bg-primary/10 rounded-2xl group-hover:bg-primary/20 transition-colors">
+                                        {getFileIcon(doc.document_type)}
+                                    </div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                                        <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            onClick={() => setPreviewId(doc.id)}
+                                            className="h-9 w-9 rounded-full bg-background/50 hover:bg-background border border-border"
+                                        >
+                                            <Eye className="h-4 w-4" />
+                                        </Button>
+                                        <Button 
+                                            size="sm" 
+                                            variant="ghost" 
+                                            onClick={() => handleDelete(doc)}
+                                            className="h-9 w-9 rounded-full hover:text-red-400"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <div className="flex items-center gap-2 text-primary">
-                                            <Calendar className="h-4 w-4" />
-                                            <span className="text-[10px] font-bold tracking-[0.2em] uppercase">{doc.date ? formatDate(doc.date) : 'No Date'}</span>
-                                        </div>
+
+                                <div className="space-y-1 mb-4">
+                                    <div className="flex items-center gap-2 text-primary/60">
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        <span className="text-[10px] font-bold tracking-[0.2em] uppercase">{formatDate(doc.created_at)}</span>
                                     </div>
                                     <h3 className="font-bold text-foreground text-lg truncate group-hover:text-primary transition-colors">{doc.title}</h3>
+                                    {doc.document_type && (
+                                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">{doc.document_type}</p>
+                                    )}
                                 </div>
-                            </div>
 
-                            {doc.description && (
-                                <p className="text-sm text-muted-foreground mb-8 line-clamp-2 leading-relaxed">
-                                    {doc.description}
-                                </p>
-                            )}
+                                {doc.description && (
+                                    <p className="text-sm text-muted-foreground mb-6 line-clamp-2 leading-relaxed opacity-70 group-hover:opacity-100 transition-opacity">
+                                        {doc.description}
+                                    </p>
+                                )}
 
-                            <div className="flex gap-2 mt-auto">
-                                {doc.signedUrl || doc.url ? (
-                                    <Button size="sm" variant="outline" asChild className="flex-1 h-12 bg-accent/30 hover:bg-accent/50 border-border rounded-xl text-foreground font-bold transition-all">
-                                        <a href={doc.signedUrl || doc.url || '#'} target="_blank" rel="noopener noreferrer">
-                                            <Download className="h-4 w-4 mr-2 text-primary" /> Access
-                                        </a>
+                                {doc.url && (
+                                    <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleDownload(doc)} 
+                                        className="w-full h-12 bg-accent/30 hover:bg-primary hover:text-primary-foreground border-border rounded-xl font-bold transition-all"
+                                    >
+                                        <Download className="h-4 w-4 mr-2" /> Download Document
                                     </Button>
-                                ) : null}
-                                <Button size="sm" variant="ghost" onClick={() => handleDelete(doc)} className="text-muted-foreground/40 hover:text-red-400 h-12 w-12 rounded-xl transition-colors">
-                                    <Trash2 className="h-5 w-5" />
-                                </Button>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -262,10 +396,76 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
             ) : (
                 <div className="flex flex-col items-center justify-center py-32 text-center opacity-50">
                     <Shield className="w-16 h-16 mb-4" />
-                    <p className="text-lg font-bold">Document vault is empty.</p>
-                    <p className="text-sm">Start safeguarding your project with legal contracts.</p>
+                    <p className="text-lg font-bold uppercase tracking-widest">Registry Empty</p>
+                    <p className="text-sm">Safeguard your project by archiving its legal papers here.</p>
                 </div>
             )}
+
+            {/* Quick Look Dialog */}
+            <Dialog open={!!previewId} onOpenChange={(open) => !open && setPreviewId(null)}>
+                <DialogContent className="max-w-5xl w-[95vw] h-[85vh] bg-card border border-border p-0 rounded-[32px] overflow-hidden flex flex-col shadow-3xl">
+                    <DialogHeader className="p-6 border-b border-border flex flex-row items-center justify-between shrink-0">
+                        <div className="flex items-center gap-3 min-w-0">
+                            {previewDoc && getFileIcon(previewDoc.document_type)}
+                            <DialogTitle className="text-lg font-bold text-foreground truncate">
+                                {previewDoc?.title}
+                            </DialogTitle>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {previewDoc && previewDoc.url && (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    onClick={() => handleDownload(previewDoc)}
+                                    className="rounded-xl border-border hover:bg-accent/50"
+                                >
+                                    <Download className="w-4 h-4 mr-2" /> Download
+                                </Button>
+                            )}
+                        </div>
+                        <DialogDescription className="sr-only">Preview of {previewDoc?.title}</DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="flex-grow relative bg-black/5 flex items-center justify-center overflow-hidden">
+                        {previewDoc && (previewDoc.signedUrl || previewDoc.url) && (
+                            isImage(previewDoc.url) ? (
+                                <img 
+                                    src={previewDoc.signedUrl || previewDoc.url || ''} 
+                                    alt={previewDoc.title} 
+                                    className="max-w-full max-h-full object-contain p-4 shadow-2xl rounded-xl animate-in fade-in zoom-in-95 duration-500"
+                                />
+                            ) : isPdf(previewDoc.url) ? (
+                                <iframe 
+                                    src={`${previewDoc.signedUrl || previewDoc.url}#toolbar=0`} 
+                                    className="w-full h-full border-0 animate-in fade-in duration-500"
+                                    title="PDF Preview"
+                                />
+                            ) : isVideo(previewDoc.url) ? (
+                                <video 
+                                    src={previewDoc.signedUrl || previewDoc.url || ''} 
+                                    controls 
+                                    className="max-w-full max-h-full p-4 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-500"
+                                    autoPlay 
+                                />
+                            ) : (
+                                <div className="flex flex-col items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500 text-center p-12">
+                                    <FileText className="w-32 h-32 text-muted-foreground opacity-20" />
+                                    <div>
+                                        <p className="text-foreground text-xl font-bold mb-2">Detailed Preview Unavailable</p>
+                                        <p className="text-muted-foreground max-w-xs text-sm">You can download this asset to view it on your local machine.</p>
+                                    </div>
+                                    <Button 
+                                        onClick={() => handleDownload(previewDoc)} 
+                                        className="bg-primary text-primary-foreground rounded-2xl px-10 h-14 font-bold text-lg hover:scale-105 transition-transform"
+                                    >
+                                        Download to System
+                                    </Button>
+                                </div>
+                            )
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
