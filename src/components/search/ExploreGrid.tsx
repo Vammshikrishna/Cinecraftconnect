@@ -8,11 +8,9 @@ interface ExploreGridProps {
 export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
     if (loading) {
         return (
-            <div className="columns-1 md:columns-2 lg:columns-3 gap-4 space-y-4">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div key={i} className="break-inside-avoid mb-4">
-                        <div className="glass-card rounded-xl p-4 h-48 animate-pulse bg-accent/5"></div>
-                    </div>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-[2px] pb-20">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <div key={i} className="aspect-[4/5] bg-white/5 animate-pulse" />
                 ))}
             </div>
         );
@@ -27,7 +25,7 @@ export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
     }
 
     return (
-        <div className="grid grid-cols-3 gap-1 md:gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-[2px]">
             {items.map((item) => (
                 <ExploreCard key={`${item.type}-${item.id}`} item={item} />
             ))}

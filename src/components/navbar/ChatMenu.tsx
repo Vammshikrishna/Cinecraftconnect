@@ -44,7 +44,7 @@ const ChatMenu = () => {
         setPreviews(uniqueData);
       }
     } catch (e) {
-      console.error(e);
+      // Silent error for message previews
     } finally {
       setLoading(false);
     }
@@ -97,35 +97,41 @@ const ChatMenu = () => {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[90vw] sm:w-80">
-        <DropdownMenuLabel>Messages</DropdownMenuLabel>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent 
+        align="end" 
+        alignOffset={0}
+        sideOffset={12}
+        collisionPadding={16}
+        className="w-[320px] max-w-[calc(100vw-32px)] p-0 border border-white/10 bg-background/95 backdrop-blur-xl shadow-2xl shadow-black/60 rounded-2xl overflow-hidden animate-in fade-in zoom-in duration-200 z-[60] flex flex-col"
+      >
+        <DropdownMenuLabel className="p-3">Messages</DropdownMenuLabel>
+        <DropdownMenuSeparator className="flex-shrink-0" />
 
         {loading ? (
           <div className="p-4 flex justify-center text-muted-foreground">
             <span className="animate-spin mr-2">⏳</span> Loading...
           </div>
         ) : previews.filter(p => p.c_id).length > 0 ? (
-          <div className="max-h-[300px] overflow-y-auto">
+          <div className="max-h-[300px] overflow-y-auto no-scrollbar scroll-smooth flex-1">
             {previews.filter(p => p.c_id).map((preview) => (
-              <DropdownMenuItem key={`${preview.chat_type}-${preview.c_id}`} asChild className="cursor-pointer p-3">
-                <Link to={getLink(preview.chat_type || 'dm', preview.c_id)} className="flex items-start gap-3 w-full">
-                  <div className="relative">
+              <DropdownMenuItem key={`${preview.chat_type}-${preview.c_id}`} asChild className="p-0 focus:bg-accent/50 focus:outline-none cursor-pointer">
+                <Link to={getLink(preview.chat_type || 'dm', preview.c_id)} className="flex items-start gap-3 w-full p-2.5 sm:p-3 transition-colors">
+                  <div className="relative flex-shrink-0">
                     {getIcon(preview.chat_type || 'dm', preview.avatar, preview.name)}
                     {(preview.unread_count > 1) && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full border-2 border-background">
                         {preview.unread_count}
                       </span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-baseline">
+                    <div className="flex justify-between items-baseline gap-2">
                       <span className="font-semibold text-sm truncate">{preview.name}</span>
-                      <span className="text-[10px] text-muted-foreground ml-2 whitespace-nowrap">
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                         {preview.last_timestamp && formatDistanceToNow(new Date(preview.last_timestamp), { addSuffix: true })}
                       </span>
                     </div>
-                    <p className="text-xs text-muted-foreground truncate font-medium">
+                    <p className="text-xs text-muted-foreground truncate font-medium mt-0.5">
                       {preview.chat_type === 'project' ? `Project: ${getDisplayMessage(preview.last_message)}` : getDisplayMessage(preview.last_message)}
                     </p>
                   </div>
@@ -134,14 +140,15 @@ const ChatMenu = () => {
             ))}
           </div>
         ) : (
-          <div className="p-8 text-center text-muted-foreground">
-            <p>No new messages</p>
+          <div className="p-10 text-center text-muted-foreground">
+            <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-20" />
+            <p className="text-sm font-medium">No new messages</p>
           </div>
         )}
 
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="justify-center p-3 text-primary font-medium cursor-pointer">
-          <Link to="/messages">
+        <DropdownMenuSeparator className="flex-shrink-0" />
+        <DropdownMenuItem asChild className="p-0 focus:bg-transparent mt-auto">
+          <Link to="/messages" className="w-full text-center p-3 text-primary font-bold hover:bg-accent/50 transition-colors block">
             View all messages
           </Link>
         </DropdownMenuItem>

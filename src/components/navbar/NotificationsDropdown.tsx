@@ -14,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu.tsx";
 import { useEffect, useState } from 'react';
@@ -75,7 +76,7 @@ const NotificationsDropdown = () => {
         setNotifications((data || []) as Notification[]);
         setUnreadCount(data?.filter(n => !n.is_read).length || 0);
       } catch (error) {
-        console.error('Error fetching notifications:', error);
+        // Silent error for background fetch
       } finally {
         setLoading(false);
       }
@@ -100,7 +101,7 @@ const NotificationsDropdown = () => {
         setNotifications(notifications.map(n => n.id === notificationId ? { ...n, is_read: true } : n));
         setUnreadCount(prev => Math.max(0, prev - 1));
       } catch (error) {
-        console.error('Error marking as read:', error);
+        // Silent error for mark-as-read
       }
     }
   };
@@ -112,31 +113,33 @@ const NotificationsDropdown = () => {
       setNotifications(notifications.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      // Silent error for mark-all-read
     }
   };
 
   const NotificationItem = ({ notification }: { notification: Notification }) => (
-    <Link
-      to={notification.action_url || '#'}
-      onClick={() => markAsRead(notification.id)}
-      className={`block p-3 hover:bg-accent/50 transition-colors ${!notification.is_read ? 'bg-accent/20' : ''
-        }`}
-    >
-      <div className="flex items-start gap-4">
-        <div className="mt-1 flex-shrink-0">
-          <NotificationIcon type={notification.type} is_read={notification.is_read} />
+    <DropdownMenuItem asChild className="p-0 focus:bg-accent/50 focus:outline-none cursor-pointer">
+      <Link
+        to={notification.action_url || '#'}
+        onClick={() => markAsRead(notification.id)}
+        className={`block w-full p-2.5 sm:p-3 transition-colors ${!notification.is_read ? 'bg-accent/10' : ''
+          }`}
+      >
+        <div className="flex items-start gap-4">
+          <div className="mt-1 flex-shrink-0">
+            <NotificationIcon type={notification.type} is_read={notification.is_read} />
+          </div>
+          <div className="flex-1">
+            <p className={`text-sm font-semibold ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}>{notification.title}</p>
+            <p className="text-xs text-muted-foreground mt-1">{getDisplayMessage(notification.message)}</p>
+            <p className="text-xs text-muted-foreground/80 mt-1.5">
+              {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+            </p>
+          </div>
+          {!notification.is_read && <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
         </div>
-        <div className="flex-1">
-          <p className={`text-sm font-semibold ${!notification.is_read ? 'text-foreground' : 'text-muted-foreground'}`}>{notification.title}</p>
-          <p className="text-xs text-muted-foreground mt-1">{getDisplayMessage(notification.message)}</p>
-          <p className="text-xs text-muted-foreground/80 mt-1.5">
-            {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
-          </p>
-        </div>
-        {!notification.is_read && <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />}
-      </div>
-    </Link>
+      </Link>
+    </DropdownMenuItem>
   );
 
   return (
@@ -151,8 +154,14 @@ const NotificationsDropdown = () => {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[90vw] sm:w-80 md:w-96">
-        <div className="flex items-center justify-between p-3">
+      <DropdownMenuContent 
+        align="end" 
+        alignOffset={0}
+        sideOffset={12}
+        collisionPadding={16}
+        className="w-[320px] max-w-[calc(100vw-32px)] p-0 border border-white/10 bg-background/95 backdrop-blur-xl shadow-2xl shadow-black/60 rounded-2xl overflow-hidden animate-in fade-in zoom-in duration-200 z-[60] flex flex-col"
+      >
+        <div className="flex items-center justify-between p-3 flex-shrink-0">
           <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
           {unreadCount > 0 &&
             <Button variant="ghost" size="sm" onClick={markAllAsRead} className="text-xs h-auto py-1 px-2">
@@ -160,8 +169,8 @@ const NotificationsDropdown = () => {
             </Button>
           }
         </div>
-        <DropdownMenuSeparator />
-        <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
+        <DropdownMenuSeparator className="flex-shrink-0" />
+        <div className="max-h-[300px] sm:max-h-[400px] overflow-y-auto no-scrollbar scroll-smooth flex-1">
           {loading ? (
             <p className="p-4 text-center text-sm text-muted-foreground">Loading...</p>
           ) : notifications.length === 0 ? (
@@ -172,12 +181,14 @@ const NotificationsDropdown = () => {
         </div>
         <DropdownMenuSeparator />
         <div className="p-2 border-t border-border/10 mt-auto">
-          <Link to="/notifications">
-            <Button variant="ghost" className="w-full justify-center group">
-              View All Notifications
-              <Bell className="ml-2 h-4 w-4 group-hover:scale-110 transition-transform" />
-            </Button>
-          </Link>
+          <DropdownMenuItem asChild className="p-0 focus:bg-transparent">
+            <Link to="/notifications" className="w-full">
+              <Button variant="ghost" className="w-full justify-center group">
+                View All Notifications
+                <Bell className="ml-2 h-4 w-4 group-hover:scale-110 transition-transform" />
+              </Button>
+            </Link>
+          </DropdownMenuItem>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -1,183 +1,127 @@
-# Supabase CLI
+# <img src="https://storage.googleapis.com/gpt-engineer-file-uploads/zdztktSz7DguBhd7OcwRyev7unL2/uploads/1762323700588-Playful Collage Logo - CineCraft Network (1).png" width="48" height="48" valign="middle"> CineCraft Connect
 
-[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
-](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
+**A hybrid social and professional platform built for the entire entertainment ecosystem—including Movies, TV Series, YouTube, and Digital Content Creators.**
 
-[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
+---
 
-This repository contains all the functionality for Supabase CLI.
+CineCraft Connect is a high-fidelity, all-in-one ecosystem designed to bridge the gap between social networking, professional collaboration, and industry-specific commerce. From independent filmmakers and YouTube creators to major TV production houses, CineCraft Connect provides the tools needed to discover talent, manage productions, and trade equipment in a premium, glassmorphic digital environment.
 
-- [x] Running Supabase locally
-- [x] Managing database migrations
-- [x] Creating and deploying Supabase Functions
-- [x] Generating types directly from your database schema
-- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
+---
 
-## Getting started
+## ✨ Key Features
 
-### Install the CLI
+### 🎬 Cinematic Social Core
+- **Craft-Specific Profiles**: Tailored profiles for 24+ industry crafts (Directing, Cinematography, Sound Design, etc.).
+- **Interactive Feed**: Share updates, behind-the-scenes content, and industry news.
+- **Rich Connections**: Build a professional network and manage industry relationships.
+- **Enhanced Notifications**: Real-time updates for likes, comments, connections, and system alerts.
 
-Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
+### 💼 Production Workspace & Collaboration
+- **Production Wizard**: A structured environment for managing film projects from pre-pro to post.
+- **Private Discussion Rooms**: Secure, real-time collaboration spaces for departments and production teams.
+- **Budget & Resource Management**: Track project expenses and allocate resources efficiently.
+- **Call Sheets & Legal Docs**: Integrated tools for generating call sheets and managing industry-standard legal documents.
+- **File Management**: Secure cloud storage for scripts, storyboards, and production assets.
 
+### 🛠️ Talent & Opportunity Marketplace
+- **Job Board**: Post and apply for industry-specific opportunities with professional tracking.
+- **Company Pages**: Official presence for studios, agencies, and production houses.
+- **Candidate Discovery**: Search and filter talent by craft, experience level, and location.
+
+### 🛒 Equipment & Service Exchange
+- **Rental Marketplace**: List and rent professional equipment with a built-in booking system.
+- **Vendor Discovery**: Connect with catering, logistics, and specialized service providers.
+- **Booking & Availability**: Interactive calendars to manage equipment rentals and service schedules.
+- **Trusted Reviews**: System-wide ratings and reviews for equipment and professional services.
+
+### 📞 Premium Communication
+- **Real-time Messaging**: Direct messaging with reactions, replies, and presence indicators.
+- **Video & Audio Calls**: High-quality integrated calls powered by LiveKit and Daily.co.
+- **Presence Tracking**: See when your collaborators are online and active.
+
+---
+
+## 🚀 Tech Stack
+
+### Frontend
+- **Framework**: [React 18](https://reactjs.org/) + [Vite](https://vitejs.dev/)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) + [Shadcn UI](https://ui.shadcn.com/)
+- **Animations**: [Framer Motion](https://www.framer.com/motion/)
+- **Data Fetching**: [TanStack Query (React Query)](https://tanstack.com/query/latest)
+
+### Backend & Infrastructure
+- **Database & Auth**: [Supabase](https://supabase.com/) (PostgreSQL + GoTrue)
+- **Real-time**: Supabase Realtime + [LiveKit](https://livekit.io/)
+- **Storage**: Supabase Storage
+- **Functions**: Supabase Edge Functions
+
+### Mobile & Cross-Platform
+- **Bridge**: [Capacitor](https://capacitorjs.com/) for native Android and iOS support.
+
+---
+
+## 🛠️ Getting Started
+
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18.x or higher)
+- [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (for local development)
+
+### Installation
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/Vammshikrishna/Cinecraftconnect.git
+    cd Cinecraftconnect
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
+
+3.  **Set up environment variables**:
+    Create a `.env` file in the root directory and add your Supabase credentials:
+    ```env
+    VITE_SUPABASE_URL=your-project-url
+    VITE_SUPABASE_ANON_KEY=your-anon-key
+    ```
+
+4.  **Run the development server**:
+    ```bash
+    npm run dev
+    ```
+
+---
+
+## 📱 Mobile Support
+CineCraft Connect is built to be mobile-first using Capacitor. To run on mobile:
 ```bash
-npm i supabase --save-dev
+# Add Android or iOS platform
+npx cap add android
+npx cap add ios
+
+# Sync the web bundle
+npm run build
+npx cap copy
+
+# Open in IDE (Android Studio or Xcode)
+npx cap open android
 ```
 
-To install the beta release channel:
+---
 
-```bash
-npm i supabase@beta --save-dev
-```
+## 🎨 Design Philosophy
+The platform utilizes a **Premium Glassmorphic Design System**. This involves:
+- **Depth & Translucency**: High-quality blur effects and subtle borders.
+- **Dynamic Themes**: Carefully curated dark and light modes optimized for cinematic content.
+- **Information Density**: Clean, professional layouts that present complex metadata without clutter.
 
-When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+---
 
-```
-NODE_OPTIONS=--no-experimental-fetch yarn add supabase
-```
+## ⚖️ License
+This project is licensed under the [MIT License](LICENSE).
 
-> **Note**
-For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
+---
 
-<details>
-  <summary><b>macOS</b></summary>
-
-  Available via [Homebrew](https://brew.sh). To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To install the beta release channel:
-  
-  ```sh
-  brew install supabase/tap/supabase-beta
-  brew link --overwrite supabase-beta
-  ```
-  
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Windows</b></summary>
-
-  Available via [Scoop](https://scoop.sh). To install:
-
-  ```powershell
-  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-  scoop install supabase
-  ```
-
-  To upgrade:
-
-  ```powershell
-  scoop update supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Linux</b></summary>
-
-  Available via [Homebrew](https://brew.sh) and Linux packages.
-
-  #### via Homebrew
-
-  To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-
-  #### via Linux packages
-
-  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
-
-  ```sh
-  sudo apk add --allow-untrusted <...>.apk
-  ```
-
-  ```sh
-  sudo dpkg -i <...>.deb
-  ```
-
-  ```sh
-  sudo rpm -i <...>.rpm
-  ```
-
-  ```sh
-  sudo pacman -U <...>.pkg.tar.zst
-  ```
-</details>
-
-<details>
-  <summary><b>Other Platforms</b></summary>
-
-  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
-
-  ```sh
-  go install github.com/supabase/cli@latest
-  ```
-
-  Add a symlink to the binary in `$PATH` for easier access:
-
-  ```sh
-  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
-  ```
-
-  This works on other non-standard Linux distros.
-</details>
-
-<details>
-  <summary><b>Community Maintained Packages</b></summary>
-
-  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
-  To install in your working directory:
-
-  ```bash
-  pkgx install supabase
-  ```
-
-  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
-</details>
-
-### Run the CLI
-
-```bash
-supabase bootstrap
-```
-
-Or using npx:
-
-```bash
-npx supabase bootstrap
-```
-
-The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
-
-## Docs
-
-Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
-
-## Breaking changes
-
-We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
-
-However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
-
-## Developing
-
-To run from source:
-
-```sh
-# Go >= 1.22
-go run . help
-```
+Built with ❤️ for the cinematic community by [CineCraft Connect](https://cinecraftconnect.com).

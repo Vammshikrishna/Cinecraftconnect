@@ -163,9 +163,9 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
 
   if (localLoading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-20">
+      <div className="grid grid-cols-3 md:grid-cols-4 gap-[2px] pb-20">
         {[1, 2, 3, 4, 5, 6, 7, 8].map((i: number) => (
-          <div key={i} className="aspect-square bg-white/5 animate-pulse rounded-xl" />
+          <div key={i} className="aspect-[4/5] md:aspect-[3/4] lg:aspect-[4/5] bg-white/5 animate-pulse" />
         ))}
       </div>
     );
@@ -255,7 +255,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
             <h2 className="text-xl font-black uppercase tracking-widest">Discover Feed</h2>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1 md:gap-4">
+          <div className="grid grid-cols-3 md:grid-cols-4 gap-[2px]">
             {posts.map((post: any) => {
               const items = post.media_items || (post.media_url ? [{ url: post.media_url, type: post.media_type as 'image'|'video' }] : []);
               const currentItem = items[0];
@@ -267,7 +267,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
                 <div
                   key={post.id}
                   onClick={() => { setSelectedPost(post); setCurrentMediaIndex(0); }}
-                  className="group relative aspect-square bg-muted overflow-hidden cursor-pointer rounded-sm md:rounded-xl shadow-xl transition-all hover:scale-[1.02] hover:z-50 active:scale-95"
+                  className="group relative aspect-[4/5] md:aspect-[3/4] lg:aspect-[4/5] bg-muted overflow-hidden cursor-pointer transition-all hover:brightness-110 active:scale-95"
                 >
                   {hasMedia ? (
                     isVideo ? (

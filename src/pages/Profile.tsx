@@ -42,18 +42,22 @@ const ProfilePage = () => {
 
   const fetchCounts = useCallback(async () => {
     if (!user) return;
-    const { count: posts } = await supabase
-      .from('posts')
-      .select('id', { count: 'exact', head: true })
-      .eq('author_id', user.id);
-    setPostCount(posts || 0);
+    
+    // Parallelize counts for better performance
+    const [postsRes, connectionsRes] = await Promise.all([
+      supabase
+        .from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('author_id', user.id),
+      supabase
+        .from('user_connections')
+        .select('id', { count: 'exact', head: true })
+        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
+        .eq('status', 'accepted')
+    ]);
 
-    const { count: connections } = await supabase
-      .from('user_connections')
-      .select('id', { count: 'exact', head: true })
-      .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
-      .eq('status', 'accepted');
-    setConnectionsCount(connections || 0);
+    setPostCount(postsRes.count || 0);
+    setConnectionsCount(connectionsRes.count || 0);
   }, [user]);
 
   useEffect(() => {
@@ -63,19 +67,23 @@ const ProfilePage = () => {
     }
 
     const fetchInitialData = async () => {
-      setLoading(true);
       try {
+        // First get profile - this is top priority
         const { data: profileData, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', user.id)
           .single();
+
         if (error && error.code !== 'PGRST116') throw error;
         if (profileData) setProfile(profileData as any);
-        await fetchCounts();
+        
+        // Hide initial skeleton once layout is ready
+        setLoading(false);
+
+        // Fetch non-blocking counts after header is ready
+        fetchCounts();
       } catch (error) {
-        console.error('Error fetching initial data:', error);
-      } finally {
         setLoading(false);
       }
     };
