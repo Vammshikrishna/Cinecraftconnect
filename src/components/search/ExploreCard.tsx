@@ -177,7 +177,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'discussion':
                 return (
-                    <Link to={`/discussion-rooms/${item.id}`} className={`block aspect-square relative group overflow-hidden bg-card p-4 flex flex-col items-center justify-center text-center border border-border hover:bg-accent/5 transition-colors`}>
+                    <Link to={`/discussion-rooms/${item.id}`} className={`aspect-square relative group overflow-hidden bg-card p-4 flex flex-col items-center justify-center text-center border border-border hover:bg-accent/5 transition-colors`}>
                         <TypeIcon icon={MessageCircle} />
                         <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-3 text-primary">
                             <MessageCircle size={24} />
@@ -189,7 +189,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'announcement':
                 return (
-                    <div className={`block aspect-square relative group overflow-hidden bg-orange-500/10 p-4 flex flex-col items-center justify-center text-center border border-orange-500/20`}>
+                    <div className={`aspect-square relative group overflow-hidden bg-orange-500/10 p-4 flex flex-col items-center justify-center text-center border border-orange-500/20`}>
                         <TypeIcon icon={Megaphone} />
                         <Megaphone size={32} className="text-orange-500 mb-3" />
                         <h3 className="text-foreground font-bold text-base line-clamp-2">{item.title}</h3>

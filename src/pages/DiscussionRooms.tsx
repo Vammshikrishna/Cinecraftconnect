@@ -252,7 +252,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           <h2 className="text-2xl font-semibold mb-4 text-primary">All Rooms</h2>
           {/* Filtering and Sorting UI */}
           <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 sm:gap-4 mb-6 p-2 sm:p-4 bg-card border border-border rounded-lg">
-            <div className="relative w-full sm:w-auto sm:flex-grow sm:w-1/3">
+            <div className="relative w-full sm:flex-grow sm:w-1/3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
               <Input
                 placeholder="Search rooms..."

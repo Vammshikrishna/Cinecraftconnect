@@ -94,7 +94,6 @@ const Team = ({ project_id }: TeamProps) => {
 
             setMembers(formattedMembers);
         } catch (error: any) {
-            console.error('Error fetching members:', error);
             toast({ title: "Error", description: "Failed to load team members", variant: "destructive" });
         } finally {
             setLoading(false);
@@ -139,7 +138,6 @@ const Team = ({ project_id }: TeamProps) => {
             setInviteCode(code);
             toast({ title: "Success", description: "Invite link generated" });
         } catch (error: any) {
-            console.error("Invite link error:", error);
             toast({ title: "Error", description: "Failed to generate invite link", variant: "destructive" });
         }
     };
@@ -178,7 +176,6 @@ const Team = ({ project_id }: TeamProps) => {
 
             setSearchResults(filtered);
         } catch (error: any) {
-            console.error("Search users error:", error);
             toast({ title: "Error", description: "Failed to search users", variant: "destructive" });
         } finally {
             setSearching(false);
@@ -200,7 +197,6 @@ const Team = ({ project_id }: TeamProps) => {
             setSearchResults(searchResults.filter(u => u.id !== targetUser.id));
             fetchMembers();
         } catch (error: any) {
-            console.error("Add member error:", error);
             toast({
                 title: "Error",
                 description: error.message || error.error_description || "Failed to add member",
@@ -224,7 +220,6 @@ const Team = ({ project_id }: TeamProps) => {
             toast({ title: "Success", description: "Member removed" });
             fetchMembers();
         } catch (error: any) {
-            console.error("Remove member error:", error);
             toast({ title: "Error", description: "Failed to remove member", variant: "destructive" });
         }
     };

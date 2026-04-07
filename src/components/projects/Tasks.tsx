@@ -42,14 +42,13 @@ const Tasks = ({ project_id }: TasksProps) => {
 
             const mapped = (data || []).map((item: any) => ({
                 id: item.id,
-                name: item.name,
+                name: item.title || item.name || "Untitled Task",
                 description: item.description ?? null,
                 due_date: item.due_date ?? null,
-                is_completed: item.is_completed ?? false,
+                is_completed: item.status === 'completed' || item.status === 'done' || item.is_completed === true,
             }));
             setTasks(mapped);
         } catch (err: any) {
-            console.error('Error fetching tasks:', err);
             setError(err.message || "Connection error");
         } finally {
             setFetching(false);
@@ -60,7 +59,7 @@ const Tasks = ({ project_id }: TasksProps) => {
         try {
             const { error } = await supabase
                 .from('tasks' as any)
-                .update({ is_completed: !currentStatus })
+                .update({ status: !currentStatus ? 'completed' : 'pending' })
                 .eq('id', id);
             if (error) throw error;
             fetchTasks();
@@ -74,11 +73,11 @@ const Tasks = ({ project_id }: TasksProps) => {
 
         const channel = supabase
             .channel(`tasks:${project_id}`)
-            .on('postgres_changes', { 
-                event: '*', 
-                schema: 'public', 
-                table: 'tasks', 
-                filter: `project_space_id=eq.${project_id}` 
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'tasks',
+                filter: `project_space_id=eq.${project_id}`
             }, () => {
                 fetchTasks();
             })
@@ -92,15 +91,15 @@ const Tasks = ({ project_id }: TasksProps) => {
     const handleAddTask = async () => {
         const title = newTask.trim();
         if (!title) return;
-        
+
         setLoading(true);
         try {
-            const taskData: any = { 
-                name: title,
+            const taskData: any = {
+                title: title,
                 description: null,
                 due_date: null,
-                is_completed: false,
-                project_space_id: project_id 
+                status: 'pending',
+                project_space_id: project_id
             };
 
             const { error: insertError } = await supabase
@@ -113,11 +112,10 @@ const Tasks = ({ project_id }: TasksProps) => {
             toast({ title: "Task added", description: "Your production task was saved." });
             fetchTasks();
         } catch (err: any) {
-            console.error('Task insert error:', err);
-            toast({ 
-                title: "Schema Mismatch", 
-                description: err.message, 
-                variant: "destructive" 
+            toast({
+                title: "Schema Mismatch",
+                description: err.message,
+                variant: "destructive"
             });
         } finally {
             setLoading(false);
@@ -133,12 +131,12 @@ const Tasks = ({ project_id }: TasksProps) => {
                     <h1 className="text-xs font-bold tracking-[0.2em] text-primary uppercase">Workspace</h1>
                     <p className="text-3xl font-extrabold text-foreground">Production Tasks</p>
                 </div>
-                
+
                 <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                     <div className="relative flex-grow min-w-[200px] sm:min-w-[300px]">
                         <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                            placeholder="Find a task or asset..." 
+                        <Input
+                            placeholder="Find a task or asset..."
                             className="pl-11 pr-4 h-12 bg-card border-border rounded-xl placeholder:text-muted-foreground focus:border-primary/50 transition-all"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -166,16 +164,16 @@ const Tasks = ({ project_id }: TasksProps) => {
                 <div className="flex flex-col sm:flex-row items-end gap-4">
                     <div className="flex-1 space-y-2 w-full">
                         <label className="text-[10px] font-bold text-primary uppercase tracking-widest ml-1">New Production Step</label>
-                        <Input 
-                            value={newTask} 
-                            onChange={(e) => setNewTask(e.target.value)} 
-                            placeholder="Enter task name..." 
+                        <Input
+                            value={newTask}
+                            onChange={(e) => setNewTask(e.target.value)}
+                            placeholder="Enter task name..."
                             className="h-14 bg-background border-border rounded-2xl placeholder:text-muted-foreground px-6 focus:border-primary/50 text-lg transition-all"
                             onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
                         />
                     </div>
-                    <Button 
-                        onClick={handleAddTask} 
+                    <Button
+                        onClick={handleAddTask}
                         disabled={loading || !newTask.trim()}
                         className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/80 text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 transition-all w-full sm:w-auto"
                     >
@@ -191,7 +189,7 @@ const Tasks = ({ project_id }: TasksProps) => {
                         <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground">Fetching backlog...</p>
                     </div>
                 ) : filteredTasks.length > 0 ? (
-                        filteredTasks.map(task => (
+                    filteredTasks.map(task => (
                         <div key={task.id} className="group flex items-center gap-4 p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm">
                             <Checkbox
                                 id={`task-${task.id}`}

@@ -19,11 +19,17 @@ interface PostShareCardProps {
 export const PostShareCard = ({ postId, previewUrl, caption, author }: PostShareCardProps) => {
     const [isOpen, setIsOpen] = useState(false);
 
+    const isVideo = (url?: string) => {
+        if (!url) return false;
+        const videoExtensions = ['.mp4', '.webm', '.ogg', '.mov', '.quicktime'];
+        return videoExtensions.some(ext => url.toLowerCase().includes(ext)) || url.includes('video');
+    };
+
     return (
         <>
             <div 
                 onClick={() => setIsOpen(true)} 
-                className="block w-full max-w-[280px] bg-[#262626] rounded-[22px] overflow-hidden transition-all hover:opacity-95 cursor-pointer border border-white/5 active:scale-[0.98]"
+                className="block w-full max-w-[230px] bg-[#262626] rounded-[22px] overflow-hidden transition-all hover:opacity-95 cursor-pointer border border-white/5 active:scale-[0.98]"
             >
                 {/* Header */}
                 <div className="flex items-center gap-2 p-3">
@@ -43,13 +49,34 @@ export const PostShareCard = ({ postId, previewUrl, caption, author }: PostShare
                     </div>
                 </div>
 
-                <div className="relative w-full aspect-[4/5] bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
+                <div className="relative w-full aspect-[4/5] bg-[#1a1a1a] flex items-center justify-center overflow-hidden group">
                     {previewUrl ? (
-                        <img
-                            src={previewUrl}
-                            alt="Post preview"
-                            className="w-full h-full object-cover"
-                        />
+                        isVideo(previewUrl) ? (
+                            <>
+                                <video
+                                    src={previewUrl}
+                                    className="w-full h-full object-cover opacity-80"
+                                    muted
+                                    preload="metadata"
+                                />
+                                {/* Play Icon Overlay (Instagram Style) */}
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors group-hover:bg-black/20">
+                                    <div className="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-2xl transition-transform group-hover:scale-110">
+                                        <div className="w-0 h-0 border-t-[8px] border-t-transparent border-l-[12px] border-l-white border-b-[8px] border-b-transparent ml-1" />
+                                    </div>
+                                </div>
+                                {/* Video Type Badge */}
+                                <div className="absolute top-2 right-2 p-1.5 rounded-md bg-black/40 backdrop-blur-md border border-white/10 opacity-80">
+                                    <Film className="h-3 w-3 text-white" />
+                                </div>
+                            </>
+                        ) : (
+                            <img
+                                src={previewUrl}
+                                alt="Post preview"
+                                className="w-full h-full object-cover"
+                            />
+                        )
                     ) : caption?.includes('JOB_SHARE::') ? (
                         <div className="w-full h-full bg-[#0a0a0a] flex flex-col items-center justify-center p-3 relative overflow-hidden group/hero">
                             {(() => {

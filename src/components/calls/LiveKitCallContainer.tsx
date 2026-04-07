@@ -95,7 +95,7 @@ const CallImplementation = ({
         {/* Small Video Preview logic could go here, for now showing participants count */}
         <div className="flex items-center justify-center py-2">
            <div className="flex -space-x-2">
-             {participants.slice(0, 3).map((p, i) => (
+             {participants.slice(0, 3).map((p) => (
                <div key={p.sid} className="w-6 h-6 rounded-full bg-primary/30 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white shadow-lg backdrop-blur-sm">
                  {p.identity[0].toUpperCase()}
                </div>

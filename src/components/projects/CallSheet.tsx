@@ -91,7 +91,6 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             setDialogOpen(false);
             resetForm();
         } catch (err: any) {
-            console.error('Create error:', err);
             toast({ title: "Error", description: "Failed to create call sheet", variant: "destructive" });
         } finally {
             setCreating(false);
@@ -142,10 +141,63 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
             setUploadDialogOpen(false);
             resetForm();
         } catch (err: any) {
-            console.error('Upload error:', err);
             toast({ title: "Error", description: "Failed to upload call sheet", variant: "destructive" });
         } finally {
             setUploading(false);
+        }
+    };
+
+    const handleDownload = async (url: string, fileName: string) => {
+        try {
+            let path = "";
+            if (url.includes('project-files/')) {
+                path = url.split('project-files/').pop()?.split('?')[0] || "";
+            } else if (url.startsWith('http')) {
+                try {
+                    const urlObj = new URL(url);
+                    const pathParts = urlObj.pathname.split('/');
+                    const objectIdx = pathParts.indexOf('object');
+                    if (objectIdx !== -1 && pathParts.length > objectIdx + 3) {
+                        path = pathParts.slice(objectIdx + 3).join('/');
+                    } else {
+                        const bucketIdx = pathParts.indexOf('project-files');
+                        if (bucketIdx !== -1) {
+                            path = pathParts.slice(bucketIdx + 1).join('/');
+                        }
+                    }
+                } catch (e) {
+                    path = url.split('/').pop() || "";
+                }
+            } else {
+                path = url;
+            }
+            path = decodeURIComponent(path.split('?')[0]);
+            if (!path) throw new Error("Invalid file path structure");
+            
+            // 2. Generate signed URL
+            const { data: signedData, error: signedError } = await supabase.storage
+                .from('project-files')
+                .createSignedUrl(path, 60);
+
+            if (signedError) throw signedError;
+            if (!signedData?.signedUrl) throw new Error("Could not generate secure download link");
+
+            // 3. Fetch as blob
+            const response = await fetch(signedData.signedUrl);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+
+            toast({ title: "Success", description: "Downloading " + fileName });
+        } catch (err: any) {
+            toast({ title: "Error", description: "Download failed: " + err.message, variant: "destructive" });
         }
     };
 
@@ -321,7 +373,9 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                                         </div>
                                                         <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">General Call</p>
                                                     </div>
-                                                    <p className="text-4xl sm:text-5xl font-black text-foreground font-mono tracking-tighter">{sheet.call_time}</p>
+                                                    <p className="text-2xl sm:text-3xl lg:text-4xl font-black text-foreground font-mono tracking-tighter">
+                                                        {sheet.call_time && sheet.call_time.includes(':') ? sheet.call_time.split(':').slice(0, 2).join(':') : sheet.call_time}
+                                                    </p>
                                                 </div>
                                             )}
                                             {sheet.location && (
@@ -384,11 +438,12 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                                     <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Production Log</p>
                                                 </div>
                                                 {sheet.notes.startsWith('Uploaded file:') ? (
-                                                    <Button className="w-full bg-primary hover:bg-primary/90 text-white rounded-[24px] h-24 font-black transition-all flex flex-col items-center justify-center gap-1 shadow-2xl shadow-primary/30 active:scale-95 group/btn" asChild>
-                                                        <a href={sheet.notes.replace('Uploaded file: ', '')} target="_blank" rel="noopener noreferrer">
-                                                            <Download className="h-8 w-8 mb-1 group-hover/btn:translate-y-1 transition-transform" />
-                                                            <span className="text-[10px] uppercase tracking-widest opacity-80">Download Digital Pack</span>
-                                                        </a>
+                                                    <Button 
+                                                        className="w-full bg-primary hover:bg-primary/90 text-white rounded-[24px] h-24 font-black transition-all flex flex-col items-center justify-center gap-1 shadow-2xl shadow-primary/30 active:scale-95 group/btn" 
+                                                        onClick={() => handleDownload(sheet.notes!.replace('Uploaded file: ', ''), `CallSheet_${formatDate(sheet.date)}.pdf`)}
+                                                    >
+                                                        <Download className="h-8 w-8 mb-1 group-hover/btn:translate-y-1 transition-transform" />
+                                                        <span className="text-[10px] uppercase tracking-widest opacity-80">Download Digital Pack</span>
                                                     </Button>
                                                 ) : (
                                                     <div className="bg-background/40 rounded-3xl p-8 border border-border/50 italic text-sm text-foreground/90 leading-relaxed shadow-inner max-h-[300px] overflow-y-auto no-scrollbar scroll-smooth">
@@ -407,7 +462,7 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                 </div>
             ) : (
                 <div className="flex flex-col items-center justify-center py-24 text-center">
-                    <div className="w-20 h-20 bg-card border border-border shadow-sm rounded-full flex items-center justify-center mb-6 border border-border">
+                    <div className="w-20 h-20 bg-card border border-border shadow-sm rounded-full flex items-center justify-center mb-6">
                         <FileText className="w-10 h-10 text-muted-foreground" />
                     </div>
                     <h3 className="text-xl font-bold text-foreground mb-2">No Call Sheets</h3>

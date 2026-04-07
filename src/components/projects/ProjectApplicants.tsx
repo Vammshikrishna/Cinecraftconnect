@@ -70,7 +70,6 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
       .eq('status', 'pending');
 
     if (error) {
-      console.error("Error fetching applicants:", error);
       toast({ title: "Error", description: "Failed to load applicants.", variant: "destructive" });
     } else {
       const { data: members } = await supabase
@@ -122,7 +121,6 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
       fetchApplicants();
 
     } catch (err) {
-      console.error("Error processing request:", err);
       toast({
         title: "Error",
         description: "Failed to process request. Please try again.",

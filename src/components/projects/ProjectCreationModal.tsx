@@ -184,8 +184,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
           });
 
           if (spaceError) {
-            console.error('Error creating project space:', spaceError);
-            // Don't throw - project is created, just log the error
+            // Don't throw - project is created
           }
         }
 
@@ -203,8 +202,6 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
       onProjectCreated?.();
 
     } catch (error) {
-      console.error('Error creating/updating project:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
       toast({
         title: projectToEdit ? "Update Failed" : "Creation Failed",
         description: error instanceof Error ? error.message : "There was an error processing your request.",
