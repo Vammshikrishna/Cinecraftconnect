@@ -26,8 +26,8 @@ const Footer = () => {
             </Link>
             
             <p className="text-zinc-400 text-lg max-w-md mb-10 leading-relaxed">
-              The premier ecosystem for film and television professionals. 
-              Built to simplify production, networking, and creative collaboration.
+              The premier ecosystem for the entire entertainment community. 
+              Built for film, television, and digital creators to simplify production and collaboration.
             </p>
 
             <div className="flex items-center gap-4">

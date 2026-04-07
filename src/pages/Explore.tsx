@@ -95,8 +95,8 @@ const Explore = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-3">
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+          <div className="xl:col-span-4">
             <div className="mb-10 animate-in slide-in-from-bottom duration-700">
               <AdvancedSearch 
                 onSearch={handleSearch}
@@ -110,7 +110,7 @@ const Explore = () => {
             />
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 hidden xl:block">
             <SavedSearches onLoadSearch={handleLoadSearch} />
           </div>
         </div>

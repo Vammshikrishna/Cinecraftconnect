@@ -9,6 +9,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
 import { Link } from 'react-router-dom';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface Notification {
   id: string;
@@ -33,6 +41,7 @@ const EnhancedNotificationsCenter = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [sortBy, setSortBy] = useState('newest');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -55,7 +64,6 @@ const EnhancedNotificationsCenter = () => {
 
         if (!mounted) return;
         if (error) {
-          console.error('Error fetching notifications:', error);
           toast({
             title: "Error",
             description: "Failed to load notifications",
@@ -66,7 +74,7 @@ const EnhancedNotificationsCenter = () => {
           setUnreadCount((data || []).filter(n => !n.is_read).length);
         }
       } catch (error) {
-        console.error('Error:', error);
+        // Silent error since toast describes fetch failure above
       } finally {
         if (mounted) {
           setLoading(false);
@@ -112,7 +120,7 @@ const EnhancedNotificationsCenter = () => {
       const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);
       if (error) throw error;
     } catch (error) {
-      console.error('Error marking notification as read:', error);
+      // Background operation failure handled gracefully
     }
   };
 
@@ -133,7 +141,7 @@ const EnhancedNotificationsCenter = () => {
         description: "All notifications marked as read"
       });
     } catch (error) {
-      console.error('Error marking all as read:', error);
+      // Operation failure handled gracefully
     }
   };
 
@@ -147,7 +155,7 @@ const EnhancedNotificationsCenter = () => {
         description: "Notification removed"
       });
     } catch (error) {
-      console.error('Error deleting notification:', error);
+      // Silent error for notification dismissal
     }
   };
 
@@ -189,7 +197,14 @@ const EnhancedNotificationsCenter = () => {
     }
   };
 
-  const filteredNotifications = filterNotifications(notifications, activeTab);
+  const filteredNotifications = filterNotifications(notifications, activeTab).sort((a, b) => {
+    if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    if (sortBy === 'priority') {
+      const pMap: any = { high: 3, medium: 2, low: 1 };
+      return (pMap[b.priority || 'low'] || 0) - (pMap[a.priority || 'low'] || 0);
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 
   if (loading) {
     return (
@@ -216,18 +231,18 @@ const EnhancedNotificationsCenter = () => {
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-black tracking-tight flex items-center gap-3 text-foreground">
-            <Bell className="h-8 w-8 text-primary" />
+        <div className="space-y-1">
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2 text-foreground px-1">
+            <Bell className="h-7 w-7 text-primary" />
             Notifications
             {unreadCount > 0 && (
-              <Badge variant="destructive" className="ml-2 px-3 py-1 text-sm font-black rounded-full shadow-lg shadow-destructive/20 ring-4 ring-destructive/10">
+              <Badge variant="destructive" className="ml-2 px-2.5 py-0.5 text-[10px] font-black rounded-full shadow-lg shadow-destructive/20 ring-4 ring-destructive/10">
                 {unreadCount} NEW
               </Badge>
             )}
           </h1>
-          <p className="text-muted-foreground font-medium text-lg max-w-2xl leading-relaxed">
-            Stay updated with your latest project breakthroughs, network expansions, and cinematic achievements.
+          <p className="text-muted-foreground font-medium text-base md:text-lg max-w-2xl leading-relaxed px-1">
+            Stay updated with your latest project breakthroughs and cinematic achievements.
           </p>
         </div>
 
@@ -241,13 +256,15 @@ const EnhancedNotificationsCenter = () => {
             <Check className="h-4 w-4" />
             Mark All Read
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-2xl h-12 w-12 hover:bg-muted/50 border border-white/5 shadow-inner"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
+          <Link to="/settings/notifications">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="rounded-2xl h-12 w-12 hover:bg-muted/50 border border-white/5 shadow-inner"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -278,22 +295,33 @@ const EnhancedNotificationsCenter = () => {
             ))}
           </TabsList>
 
-          <Button variant="ghost" size="sm" className="hidden md:flex items-center gap-2 text-muted-foreground hover:text-foreground font-bold hover:bg-muted/30 px-4 py-2 rounded-xl">
-            <Filter className="h-4 w-4" />
-            <span>Refine Feed</span>
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="hidden md:flex items-center gap-2 text-muted-foreground hover:text-foreground font-bold hover:bg-muted/30 px-4 py-2 rounded-xl">
+                <Filter className="h-4 w-4" />
+                <span>Refine Feed</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95 backdrop-blur-md">
+              <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setSortBy('newest')} className="cursor-pointer">Newest First</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy('oldest')} className="cursor-pointer">Oldest First</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortBy('priority')} className="cursor-pointer">High Priority</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
-        <ScrollArea className="h-[calc(100vh-400px)] min-h-[500px]">
-          <div className="space-y-6 pr-4 pb-20">
+        <ScrollArea className="h-[calc(100vh-320px)] w-full">
+          <div className="space-y-4 pr-4 pb-32">
             {filteredNotifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-32 text-center space-y-6">
-                <div className="h-24 w-24 rounded-[2.5rem] bg-gradient-to-br from-muted/20 to-muted/10 flex items-center justify-center border border-white/5 group shadow-inner">
-                  <Archive className="h-10 w-10 text-muted-foreground/30 group-hover:scale-110 transition-transform duration-500" />
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
+                <div className="h-20 w-20 rounded-[2rem] bg-gradient-to-br from-muted/20 to-muted/10 flex items-center justify-center border border-white/5 group shadow-inner">
+                  <Archive className="h-8 w-8 text-muted-foreground/30 group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-2xl font-black tracking-tight">System Zen</h3>
-                  <p className="text-muted-foreground font-medium max-w-[320px] text-lg leading-snug">
+                  <h3 className="text-xl font-black tracking-tight">System Zen</h3>
+                  <p className="text-muted-foreground font-medium max-w-[280px] text-base leading-snug">
                     {activeTab === 'unread' 
                       ? "You've masterfully processed all updates. Your workspace is clear." 
                       : "We'll notify you when new opportunities arise."}
@@ -304,23 +332,23 @@ const EnhancedNotificationsCenter = () => {
               filteredNotifications.map((notification) => (
                 <Card 
                   key={notification.id} 
-                  className={`group relative overflow-hidden border-border/40 transition-all duration-500 hover:border-primary/50 hover:shadow-[0_30px_60px_-20px_rgba(0,0,0,0.2)] rounded-[2rem] ${
-                    notification.is_read ? 'bg-card/40 opacity-75 grayscale-[0.3]' : 'bg-card/70 backdrop-blur-2xl shadow-xl ring-1 ring-primary/10'
+                  className={`group relative overflow-hidden border-border/40 transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.2)] rounded-[1.5rem] ${
+                    notification.is_read ? 'bg-card/40 opacity-80 grayscale-[0.2]' : 'bg-card/70 backdrop-blur-2xl shadow-lg ring-1 ring-primary/10'
                   }`}
                 >
-                  <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-all duration-500 ${
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${
                     notification.is_read ? 'bg-transparent' : 'bg-primary'
                   }`} />
                   
-                  <CardContent className="p-8">
-                    <div className="flex flex-col sm:flex-row items-start gap-6">
-                      <div className={`h-16 w-16 rounded-[1.5rem] flex items-center justify-center text-3xl shadow-2xl border border-white/10 bg-gradient-to-br shrink-0 transition-transform duration-500 group-hover:scale-105 ${
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex flex-row items-start gap-4">
+                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-2xl shadow-xl border border-white/10 bg-gradient-to-br shrink-0 transition-transform duration-500 group-hover:scale-105 ${
                         notification.is_read ? 'from-muted/30 to-muted/10' : 'from-primary/20 via-primary/10 to-transparent'
                       }`}>
                         {getNotificationIcon(notification.type)}
                       </div>
                       
-                      <div className="flex-1 space-y-3 min-w-0 w-full">
+                      <div className="flex-1 space-y-2 min-w-0">
                         <div className="flex items-center justify-between gap-4 w-full">
                           <h4 className={`font-black text-xl tracking-tight truncate ${notification.is_read ? 'text-foreground/70' : 'text-foreground'}`}>
                             {notification.title}

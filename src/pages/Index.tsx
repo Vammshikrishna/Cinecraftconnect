@@ -69,7 +69,7 @@ const FilmStrip = ({ className = '' }: { className?: string }) => (
 /* ─────────────────────────────────────────────
    Typewriter headline
    ───────────────────────────────────────────── */
-const roles = ['Directors', 'Cinematographers', 'Editors', 'Producers', 'Sound Designers', 'Writers', 'Actors', 'VFX Artists'];
+const roles = ['Directors', 'Content Creators', 'YouTubers', 'Cinematographers', 'Editors', 'Producers', 'TV Producers', 'Sound Designers', 'Writers', 'Actors', 'VFX Artists'];
 
 const TypewriterRole = () => {
   const [index, setIndex] = useState(0);
@@ -240,7 +240,7 @@ const Index = () => {
           >
             <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-sm font-medium text-muted-foreground tracking-wide">
-              Now open for filmmakers worldwide
+              Now open for the entertainment community worldwide
             </span>
           </motion.div>
 
@@ -266,9 +266,9 @@ const Index = () => {
             transition={{ duration: 0.7, delay: 0.3 }}
             className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed"
           >
-            CineCraft Connect is the professional network built exclusively for the
-            film &amp; television industry. Manage productions, discover talent, land gigs,
-            and collaborate — all from one platform.
+            CineCraft Connect is the professional network built for the entire
+            entertainment ecosystem. From Movies & TV to YouTube & Social Media,
+            manage productions, discover talent, and collaborate — all in one platform.
           </motion.p>
 
           {/* CTAs */}
@@ -293,13 +293,13 @@ const Index = () => {
           </motion.div>
 
           {/* Trust line */}
-          <motion.p
+            <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7, duration: 0.5 }}
             className="mt-8 text-xs text-muted-foreground/60 tracking-wide"
           >
-            Free to use · No credit card · Built by filmmakers, for filmmakers
+            Free to use · No credit card · Built by creators, for creators
           </motion.p>
         </motion.div>
       </section>
@@ -605,7 +605,7 @@ const Index = () => {
               Ready to find your crew?
             </h2>
             <p className="text-lg text-muted-foreground mb-10 max-w-xl mx-auto leading-relaxed">
-              Join thousands of film & TV professionals already building
+              Join thousands of entertainment professionals already building
               their next project on CineCraft Connect.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
