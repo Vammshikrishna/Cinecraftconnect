@@ -22,6 +22,10 @@ interface Announcement {
         logo_url: string;
         slug: string;
     } | null;
+    profiles?: {
+        full_name: string | null;
+        username: string | null;
+    } | null;
 }
 
 const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
@@ -37,13 +41,33 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
 
     useEffect(() => {
         fetchAnnouncements();
+
+        // Real-time subscription
+        const channel = supabase
+            .channel('public:announcements')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'announcements'
+                },
+                () => {
+                    fetchAnnouncements();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
     }, []);
 
     const fetchAnnouncements = async () => {
         try {
             const { data, error } = await supabase
                 .from('announcements')
-                .select('*, company_pages:publisher_page_id(id, name, logo_url, slug)')
+                .select('*, company_pages:publisher_page_id(id, name, logo_url, slug), profiles:author_id(full_name, username)')
                 .order('posted_at', { ascending: false });
 
             if (error) throw error;
@@ -126,7 +150,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                                     created_at: announcement.posted_at || announcement.created_at,
                                     author_id: announcement.author_id,
                                     publisher_page_id: announcement.publisher_page_id,
-                                    company_pages: announcement.company_pages
+                                    company_pages: announcement.company_pages,
+                                    profiles: announcement.profiles
                                 }}
                             />
                         ))}

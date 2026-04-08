@@ -42,6 +42,10 @@ interface FeedAnnouncementCardProps {
             logo_url: string;
             slug: string;
         } | null;
+        profiles?: {
+            full_name: string | null;
+            username: string | null;
+        } | null;
     };
 }
 
@@ -221,7 +225,7 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
 
                             <div className="flex items-center justify-between pt-4 border-t border-black/5 dark:border-white/5 mt-auto">
                                 <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-1 rounded-md">
-                                    {announcement.company_pages?.name || 'Official Announcement'}
+                                    {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
                                 </span>
 
                                 <Button
@@ -240,24 +244,29 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                 <DialogContent className="sm:max-w-lg overflow-hidden border-none shadow-2xl bg-background/95 backdrop-blur-2xl p-0 gap-0">
                     <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-orange-500/20 to-red-600/20 z-0 pointer-events-none" />
 
-                    <DialogHeader className="p-6 pb-2 z-10 relative">
-                        <div className="flex mb-4">
-                            <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-lg text-white">
-                                <Megaphone className="h-7 w-7 fill-white/20" />
+                    <DialogHeader className="p-8 pb-4 z-10 relative">
+                        <div className="flex items-center gap-6">
+                            <div className="h-16 w-16 shrink-0 rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center shadow-xl text-white transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                <Megaphone className="h-8 w-8 fill-white/20" />
                             </div>
-                        </div>
-                        <DialogTitle className="text-2xl font-bold leading-tight">{announcement.title}</DialogTitle>
-                        <DialogDescription className="sr-only">
-                            Announcement details for {announcement.title}
-                        </DialogDescription>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-2">
-                            <div className="flex items-center gap-1">
-                                <Calendar className="h-3.5 w-3.5" />
-                                <span>{format(new Date(announcement.created_at), "PPP")}</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <Clock className="h-3.5 w-3.5" />
-                                <span>{formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true })}</span>
+                            <div className="flex flex-col gap-1.5 min-w-0">
+                                <DialogTitle className="text-3xl font-extrabold tracking-tight leading-tight text-foreground line-clamp-2">
+                                    {announcement.title}
+                                </DialogTitle>
+                                <DialogDescription className="sr-only">
+                                    Details for {announcement.title}
+                                </DialogDescription>
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm font-medium text-muted-foreground/80">
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="h-4 w-4 text-orange-500" />
+                                        <span>{format(new Date(announcement.created_at), "PPP")}</span>
+                                    </div>
+                                    <div className="hidden sm:block w-1 h-1 rounded-full bg-border" />
+                                    <div className="flex items-center gap-1.5">
+                                        <Clock className="h-4 w-4 text-orange-500" />
+                                        <span>{formatDistanceToNow(new Date(announcement.created_at), { addSuffix: true })}</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </DialogHeader>
@@ -285,7 +294,31 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                         )}
                     </div>
 
-                    <DialogFooter className="p-6 pt-4 bg-muted/30 z-10 relative flex flex-row gap-2 justify-end">
+                    <DialogFooter className="p-6 pt-4 bg-muted/30 z-10 relative flex flex-row flex-wrap gap-2 justify-end">
+                        {isOwner && (
+                            <>
+                                <Button 
+                                    variant="outline" 
+                                    onClick={() => {
+                                        // Need to close the current dialog first or use controlled state
+                                        // But usually opening the edit dialog on top is fine.
+                                        setIsEditOpen(true);
+                                    }} 
+                                    className="gap-2 border-orange-500/20 hover:bg-orange-500/10 hover:text-orange-600"
+                                >
+                                    <Edit className="h-4 w-4" />
+                                    Edit
+                                </Button>
+                                <Button 
+                                    variant="ghost" 
+                                    onClick={() => setIsDeleteOpen(true)} 
+                                    className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-500/10"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                </Button>
+                            </>
+                        )}
                         <Button variant="outline" onClick={handleShare} className="gap-2">
                             <Share2 className="h-4 w-4" />
                             Share

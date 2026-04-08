@@ -25,10 +25,6 @@ export const useHomeFeed = () => {
     const supabaseQuery = useQuery({
         queryKey: ['home-feed-data', user?.id],
         queryFn: async (): Promise<Omit<HomeFeedData, 'ratings'>> => {
-            // Check if RPC exists (optional optimization for future)
-            // const { data: rpcData, error: rpcError } = await supabase.rpc('get_home_feed_data', { user_id_param: user?.id });
-            // if (!rpcError && rpcData) return rpcData;
-
             // Fallback to parallel fetching
             const postsPromise = supabase
                 .from('posts')
@@ -38,7 +34,7 @@ export const useHomeFeed = () => {
 
             const announcementsPromise = supabase
                 .from('announcements')
-                .select('*')
+                .select('*, company_pages:publisher_page_id(id, name, logo_url, slug), profiles:author_id(full_name, username)')
                 .order('posted_at', { ascending: false })
                 .limit(5);
 
@@ -132,7 +128,6 @@ export const useHomeFeed = () => {
                     filter: `user_id=eq.${user.id}`
                 },
                 () => {
-
                     // Invalidate to refetch liked post IDs
                     queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
                 }
@@ -150,7 +145,6 @@ export const useHomeFeed = () => {
                     table: 'posts'
                 },
                 (payload: any) => {
-
                     // Update the specific post in the cache without full refetch
                     queryClient.setQueryData(['home-feed-data', user.id], (old: any) => {
                         if (!old) return old;
@@ -169,9 +163,26 @@ export const useHomeFeed = () => {
             )
             .subscribe();
 
+        // Subscribe to announcements updates
+        const announcementsChannel = supabase
+            .channel('announcements_updates')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'announcements'
+                },
+                () => {
+                    queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
+                }
+            )
+            .subscribe();
+
         return () => {
             supabase.removeChannel(likesChannel);
             supabase.removeChannel(postsChannel);
+            supabase.removeChannel(announcementsChannel);
         };
     }, [user?.id, queryClient]);
 
