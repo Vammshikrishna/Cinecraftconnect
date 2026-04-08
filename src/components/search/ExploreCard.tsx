@@ -96,7 +96,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
             case 'post':
                 if (item.video_url) {
                     return (
-                        <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] relative group overflow-hidden bg-black transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
+                        <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-black transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
                             <video src={item.video_url} className="w-full h-full object-cover" muted loop playsInline />
                             <div className="absolute top-2 right-2 text-white drop-shadow-md z-10 pointer-events-none">
                                 <Play size={16} fill="currentColor" />
@@ -108,7 +108,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                 }
                 if (item.image_url) {
                     return (
-                        <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] relative group overflow-hidden bg-muted transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
+                        <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-muted transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
                             <img src={item.image_url} alt="Post" className="w-full h-full object-cover" />
                             <TypeBadge icon={Layers} label="POST" />
                             <Overlay likes={item.like_count} comments={item.comment_count} author={item.author} />
@@ -123,7 +123,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                         const shareData = JSON.parse(jsonStr);
 
                         return (
-                            <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] relative group overflow-hidden bg-gradient-to-br from-card to-muted/5 transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none border-[0.5px] border-white/5">
+                            <Link to={`/post/${item.id}`} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-card to-muted/5 transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none border-[0.5px] border-white/5">
                                 <TypeBadge icon={Megaphone} label="HIRING" />
                                 <div className="w-full h-full p-3 flex flex-col justify-between items-center text-center">
                                     <div className="w-14 h-14 md:w-20 md:h-20 rounded-2xl border-4 border-background shadow-2xl ring-1 ring-white/10 bg-muted overflow-hidden shrink-0 mt-6 flex items-center justify-center">
@@ -151,7 +151,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                 }
 
                 return (
-                    <Link to={`/post/${item.id}`} className={`block aspect-[3/4.5] relative group overflow-hidden ${getGradient(item.id)} p-8 flex items-center justify-center text-center transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none`}>
+                    <Link to={`/post/${item.id}`} className={`block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden ${getGradient(item.id)} p-8 flex items-center justify-center text-center transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none`}>
                         <TypeBadge icon={MessageCircle} label="INSIGHT" />
                         <p className="text-white font-black text-sm md:text-base leading-relaxed uppercase tracking-tight line-clamp-6 drop-shadow-lg">
                             {item.content?.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim() || item.content}
@@ -163,7 +163,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
             case 'project':
                 const projectImage = (item as any).image_url || (item as any).thumbnail_url;
                 return (
-                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
+                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
                         <TypeBadge icon={Layers} label="PROJECT SPACE" />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/10">
                             {projectImage ? (
@@ -220,7 +220,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'user':
                 return (
-                    <Link to={`/profile/${item.id}`} className="block aspect-[3/4.5] relative group overflow-hidden bg-black transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
+                    <Link to={`/profile/${item.id}`} className="block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-black transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none">
                         <TypeBadge icon={User} label="CREATOR" />
                         <div className="w-full h-full flex flex-col items-center justify-center bg-secondary/30 relative">
                             {item.avatar_url ? (
@@ -244,7 +244,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'discussion':
                 return (
-                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] relative group overflow-hidden bg-card border-white/5 flex flex-col transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none">
+                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 flex flex-col transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none">
                         <TypeBadge icon={MessageSquare} label="DISCUSSION" />
 
                         <div className="flex-1 flex flex-col p-4 pt-8 pb-2 relative overflow-hidden min-h-0 bg-gradient-to-br from-card to-background">
@@ -272,7 +272,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'announcement':
                 return (
-                    <Link to="/announcements" className={`aspect-[3/4.5] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-6 flex flex-col items-center justify-center text-center transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none`}>
+                    <Link to="/announcements" className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-6 flex flex-col items-center justify-center text-center transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none`}>
                         <TypeBadge icon={Megaphone} label="NEWS" />
                         <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center mb-4 text-orange-500 border border-orange-500/20 shadow-2xl ring-1 ring-orange-500/30">
                             <Megaphone size={24} className="group-hover:rotate-12 transition-transform duration-500" />
@@ -287,7 +287,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'vendor':
                 return (
-                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl`}>
+                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl`}>
                         <TypeBadge icon={Building2} label="VENDOR" />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.logo_url ? (
@@ -323,7 +323,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
             case 'marketplace':
                 return (
-                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
+                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
                         <TypeBadge icon={ShoppingBag} label={`${String(item.listing_type || 'EQUIPMENT').toUpperCase()}`} />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.image_url ? (
