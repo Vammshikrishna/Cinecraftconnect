@@ -42,7 +42,7 @@ const ProfilePage = () => {
 
   const fetchCounts = useCallback(async () => {
     if (!user) return;
-    
+
     // Parallelize counts for better performance
     const [postsRes, connectionsRes] = await Promise.all([
       supabase
@@ -77,7 +77,7 @@ const ProfilePage = () => {
 
         if (error && error.code !== 'PGRST116') throw error;
         if (profileData) setProfile(profileData as any);
-        
+
         // Hide initial skeleton once layout is ready
         setLoading(false);
 

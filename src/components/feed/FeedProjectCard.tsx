@@ -1,18 +1,39 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Film, MapPin, Lock, Calendar, ArrowRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { MapPin, Film, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface FeedProjectCardProps {
     project: {
         id: string;
-        name: string;
+        title: string;
         description: string | null;
         status: string | null;
         location: string | null;
         created_at: string;
         project_space_type?: 'public' | 'private' | 'secret';
+        genre?: string[] | null;
+        image_url?: string | null;
+        creator_id?: string;
         creator?: {
             full_name: string | null;
             avatar_url: string | null;
@@ -21,81 +42,143 @@ interface FeedProjectCardProps {
 }
 
 const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
+    const { user } = useAuth();
+    const { toast } = useToast();
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const isOwner = user?.id === project.creator_id;
+    // Default cinematic placeholder image if none exists
+    const displayImage = project.image_url || "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=800&q=80";
+
+    const handleDelete = async () => {
+        setIsDeleting(true);
+        try {
+            const { error } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', project.id);
+
+            if (error) throw error;
+
+            toast({
+                title: "Project Deleted",
+                description: "The project has been permanently removed.",
+            });
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            toast({
+                title: "Error",
+                description: "Failed to delete project. Please try again.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsDeleting(false);
+            setIsDeleteOpen(false);
+        }
+    };
+
     return (
-        <Link to={`/projects/${project.id}/space`} className="block group h-full">
-            <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_-10px_rgba(var(--primary),0.3)] h-full flex flex-col">
-                {/* Decorative gradient background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500" />
+        <div className="group bg-white dark:bg-card border border-border/50 rounded-[20px] overflow-hidden shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+            <Link to={`/projects/${project.id}/space`} className="block relative aspect-[16/10] overflow-hidden">
+                <img 
+                    src={displayImage} 
+                    alt={project.title} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                
+                {/* Status Badge */}
+                <div className="absolute bottom-4 left-4">
+                    <span className="px-3 py-1.5 rounded-xl bg-white/90 dark:bg-black/60 backdrop-blur-md text-xs font-bold text-foreground/80 shadow-lg border border-white/20">
+                        {project.status || 'Active'}
+                    </span>
+                </div>
+            </Link>
 
-                <div className="relative p-6 flex flex-col flex-1">
-                    <div className="flex items-start justify-between gap-4 mb-4">
-                        <div className="flex items-start gap-4 flex-1">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20 group-hover:bg-primary group-hover:text-primary-foreground transition-colors duration-300">
-                                <Film className="h-6 w-6" />
-                            </div>
+            <div className="p-6 space-y-4 text-left">
+                <div className="space-y-2">
+                    <Link to={`/projects/${project.id}/space`}>
+                        <h3 className="text-2xl font-black text-foreground hover:text-primary transition-colors leading-none tracking-tight">
+                            {project.title}
+                        </h3>
+                    </Link>
+                    <p className="text-[15px] text-muted-foreground/90 font-medium leading-relaxed line-clamp-2">
+                        {project.description || 'No description provided.'}
+                    </p>
+                </div>
 
-                            <div className="space-y-1 flex-1">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <h3 className="text-lg font-bold tracking-tight text-foreground group-hover:text-primary transition-colors line-clamp-1">
-                                        {project.name}
-                                    </h3>
-                                    {project.status && (
-                                        <Badge variant="outline" className="capitalize bg-primary/5 border-primary/20 text-primary text-[10px] h-5">
-                                            {project.status}
-                                        </Badge>
-                                    )}
-                                    {project.project_space_type === 'private' && (
-                                        <Badge variant="secondary" className="flex items-center gap-1 text-[10px] h-5">
-                                            <Lock className="h-3 w-3" />
-                                            Private
-                                        </Badge>
-                                    )}
-                                </div>
-
-                                <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">
-                                    {project.description || 'No description provided.'}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-muted-foreground transition-all duration-300 opacity-100 translate-x-0 sm:opacity-0 sm:-translate-x-2 sm:group-hover:opacity-100 sm:group-hover:translate-x-0">
-                            <ArrowRight className="h-4 w-4" />
-                        </div>
+                <div className="flex items-center gap-6 py-1">
+                    <div className="flex items-center gap-2 text-foreground/80 font-medium">
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{project.location || 'Remote'}</span>
                     </div>
-
-                    <div className="mt-auto flex items-center justify-between border-t border-white/5 pt-4">
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            {project.creator && (
-                                <div className="flex items-center gap-2">
-                                    <Avatar className="h-5 w-5 border border-white/10">
-                                        <AvatarImage src={project.creator.avatar_url || undefined} />
-                                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
-                                            {project.creator.full_name?.charAt(0) || 'C'}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <span className="font-medium text-foreground/80 line-clamp-1 max-w-[80px]">
-                                        {project.creator.full_name || 'Creator'}
-                                    </span>
-                                </div>
-                            )}
-
-                            {project.location && (
-                                <div className="flex items-center gap-1 hidden sm:flex">
-                                    <MapPin className="h-3 w-3" />
-                                    <span className="line-clamp-1 max-w-[80px]">{project.location}</span>
-                                </div>
-                            )}
-
-                            <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                <span>{formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
-                            </div>
-                        </div>
+                    <div className="flex items-center gap-2 text-foreground/80 font-medium">
+                        <Film className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">{project.genre?.[0] || 'Uncategorized'}</span>
                     </div>
                 </div>
+
+                <div className="pt-4 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
+                        {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+                    </span>
+                    
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48 rounded-xl border-border/50 bg-background/95 backdrop-blur-xl">
+                            <DropdownMenuItem asChild>
+                                <Link to={`/projects/${project.id}/space`} className="flex items-center gap-2 cursor-pointer">
+                                    <ExternalLink className="h-4 w-4" />
+                                    <span>Enter Workspace</span>
+                                </Link>
+                            </DropdownMenuItem>
+                            
+                            {isOwner && (
+                                <>
+                                    <DropdownMenuItem className="flex items-center gap-2 cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-500/10" onClick={() => setIsDeleteOpen(true)}>
+                                        <Trash2 className="h-4 w-4" />
+                                        <span>Delete Project</span>
+                                    </DropdownMenuItem>
+                                </>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
-        </Link>
+
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <AlertDialogContent className="rounded-[24px] border-none bg-background/95 backdrop-blur-2xl">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-2xl font-black tracking-tight">Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-base font-medium text-muted-foreground">
+                            This action cannot be undone. This will permanently delete your project
+                            and remove all associated data from our servers.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter className="gap-2">
+                        <AlertDialogCancel className="rounded-xl border-border/50">Cancel</AlertDialogCancel>
+                        <AlertDialogAction 
+                            onClick={handleDelete}
+                            className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-500/20"
+                            disabled={isDeleting}
+                        >
+                            {isDeleting ? "Deleting..." : "Permanently Delete"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </div>
     );
 };
 
 export default FeedProjectCard;
+
+
+
+
+
