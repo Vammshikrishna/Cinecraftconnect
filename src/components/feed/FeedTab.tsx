@@ -351,7 +351,14 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     initials: getInitials(authorName),
                     avatar: author?.avatar_url || undefined
                   }}
-                  timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                  timeAgo={(() => {
+                    try {
+                      const d = post.created_at ? new Date(post.created_at) : new Date();
+                      return isNaN(d.getTime()) ? "Just now" : formatDistanceToNow(d, { addSuffix: true });
+                    } catch {
+                      return "Just now";
+                    }
+                  })()}
                   createdAt={post.created_at}
                   content={post.content}
                   hasImage={post.media_type === 'image'}

@@ -13,6 +13,8 @@ import { MarketplaceFilters } from '@/components/marketplace/MarketplaceFilters'
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 
+import { PageHeader } from '@/components/common/PageHeader';
+
 const Marketplace = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -45,20 +47,17 @@ const Marketplace = () => {
         <div className="min-h-screen bg-background">
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
-                    <div className="max-w-2xl">
-                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-primary leading-none">
-                            Marketplace
-                        </h1>
-                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">
-                            Discover and rent professional equipment and cinematic locations from verified community members.
-                        </p>
-                    </div>
+                <PageHeader 
+                  title="Marketplace" 
+                  subtitle="Discover and rent professional equipment and cinematic locations from verified community members." 
+                  Icon={LayoutGrid}
+                  actions={
                     <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-transform h-12 px-6 shrink-0">
                         <Plus size={20} strokeWidth={3} />
                         <span className="font-bold tracking-wide">Create Listing</span>
                     </Button>
-                </div>
+                  }
+                />
 
                 {/* Search & Filter Container */}
                 <div className="bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] p-2 md:p-3 mb-8 shadow-sm dark:shadow-none">

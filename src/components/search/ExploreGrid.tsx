@@ -29,7 +29,7 @@ export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
 
     return (
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1 md:gap-2 auto-rows-fr pb-32">
-            {items.map((item, index) => {
+            {items.map((item) => {
                 return (
                     <div
                         key={`${item.type}-${item.id}`}

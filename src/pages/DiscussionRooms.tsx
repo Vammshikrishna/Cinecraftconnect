@@ -18,6 +18,7 @@ import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PageHeader } from '@/components/common/PageHeader';
 
 // --- DATA INTERFACES ---
 
@@ -63,9 +64,6 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   useEffect(() => {
     if (openCreate) setCreateModalOpen(true);
   }, [openCreate]);
-
-  // ... [fetchData and useEffect remain same, will rely on original file content for brevity if possible, but replace needs context] ...
-  // To avoid breaking the file, I will rewrite the surrounding state and effects cleanly.
 
   const fetchData = useCallback(async () => {
     // Keep silent refresh for background updates
@@ -222,22 +220,26 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     <div className="min-h-screen bg-background text-foreground pt-16 md:pt-20">
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24">
         {/* Header and Controls */}
-        <div className="flex flex-row justify-between items-center mb-8 gap-4">
-          <h1 className="text-2xl md:text-4xl font-bold text-foreground">Discussion Rooms</h1>
-          <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-9 px-3 sm:h-10 sm:px-4 rounded-lg flex items-center gap-1 md:gap-2">
-                <PlusCircle size={16} className="h-5 w-5 sm:mr-2 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">Create Room</span>
-              </Button>
-            </DialogTrigger>
-            <CreateRoomModal
-              categories={categories}
-              closeModal={() => setCreateModalOpen(false)}
-              onRoomCreated={handleRoomCreated}
-            />
-          </Dialog>
-        </div>
+        <PageHeader 
+          title="Discussion Rooms" 
+          subtitle="Connect and chat with film community in dedicated rooms" 
+          Icon={MessageSquare}
+          actions={
+            <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+                  <PlusCircle size={20} />
+                  <span>Create Room</span>
+                </Button>
+              </DialogTrigger>
+              <CreateRoomModal
+                categories={categories}
+                closeModal={() => setCreateModalOpen(false)}
+                onRoomCreated={handleRoomCreated}
+              />
+            </Dialog>
+          }
+        />
 
         {/* Featured Rooms */}
         <section className="mb-12">
@@ -606,7 +608,7 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
               <p className="text-sm text-muted-foreground">
                 {!isPrivate
                   ? 'Visible to everyone. Anyone can view and join.'
-                  : 'Only visible to invited members. Others cannot see this room.'}
+                   : 'Only visible to invited members. Others cannot see this room.'}
               </p>
             </div>
             <Switch

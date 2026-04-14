@@ -259,7 +259,24 @@ const CommentItem = ({
           {/* Metadata Row */}
           <div className="flex items-center gap-4 mt-1.5 overflow-hidden whitespace-nowrap">
             <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
-              {formatDistanceToNow(new Date(comment.created_at), { addSuffix: false }).replace('about ', '').replace(' minutes', 'm').replace(' hours', 'h').replace(' days', 'd').replace(' months', 'mo').replace(' years', 'y').replace(' minute', 'm').replace(' hour', 'h').replace(' day', 'd')}
+              {(() => {
+                try {
+                  const d = comment.created_at ? new Date(comment.created_at) : new Date();
+                  if (isNaN(d.getTime())) return "now";
+                  return formatDistanceToNow(d, { addSuffix: false })
+                    .replace('about ', '')
+                    .replace(' minutes', 'm')
+                    .replace(' hours', 'h')
+                    .replace(' days', 'd')
+                    .replace(' months', 'mo')
+                    .replace(' years', 'y')
+                    .replace(' minute', 'm')
+                    .replace(' hour', 'h')
+                    .replace(' day', 'd');
+                } catch {
+                  return "now";
+                }
+              })()}
             </span>
             
             <button 

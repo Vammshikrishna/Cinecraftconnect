@@ -1,11 +1,14 @@
+
 import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Search, ArrowLeft, Compass } from 'lucide-react';
+import { Search, ArrowLeft, Compass, Filter } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ExploreGrid } from '@/components/search/ExploreGrid';
 import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
+import { PageHeader } from '@/components/common/PageHeader';
+import { motion } from 'framer-motion';
 
 // Basic type definitions for search results
 interface ProjectResult {
@@ -242,34 +245,50 @@ const SearchPage = () => {
     const filteredSearchResults = activeCategory === 'all' ? results : results.filter(result => result.type === CATEGORIES.find(c => c.id === activeCategory)?.type);
 
     return (
-        <div className="min-h-screen bg-background pt-24 pb-24 px-4 md:px-8">
-            <div className="max-w-7xl mx-auto space-y-8">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover:bg-primary/10 transition-colors">
-                            <ArrowLeft className="h-6 w-6" />
-                        </Button>
-                        <div>
-                            <h1 className="text-3xl font-black uppercase tracking-tighter leading-none">Discovery</h1>
-                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mt-1 ml-0.5 opacity-70">Global Content Grid</p>
-                        </div>
+        <div className="min-h-screen bg-background selection:bg-primary/30">
+            {/* Background Orbs */}
+            <div className="fixed inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-5%] left-[-5%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+                <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
+            </div>
+
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
+                <div className="flex items-center gap-4 mb-4">
+                    <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover:bg-muted/50 transition-all rounded-xl h-10 w-10 border border-border/50 shadow-sm">
+                        <ArrowLeft className="h-5 w-5" />
+                    </Button>
+                    <div className="h-1 w-12 bg-primary/20 rounded-full" />
+                </div>
+
+                <PageHeader 
+                    title="Discovery" 
+                    subtitle="Global content grid synchronization engine. Find production partners, projects, and gear." 
+                    Icon={Compass}
+                    actions={
+                        <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
+                    }
+                />
+
+                <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="relative max-w-2xl mx-auto mt-12 mb-12 group"
+                >
+                    <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/5 to-secondary/20 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
+                    <div className="relative">
+                        <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-primary group-focus-within:scale-110 transition-transform duration-500" size={24} />
+                        <Input 
+                            type="search" 
+                            placeholder="SEARCH PROJECTS, PEOPLE, POSTS..." 
+                            className="pl-16 pr-6 py-10 text-2xl w-full bg-card/60 backdrop-blur-3xl border-2 border-white/5 focus:border-primary/50 rounded-[2.5rem] transition-all shadow-2xl font-black uppercase tracking-tighter placeholder:text-muted-foreground/30 focus:ring-4 focus:ring-primary/10" 
+                            value={query} 
+                            onChange={handleSearch} 
+                            autoFocus={!query} 
+                        />
                     </div>
-                    <Compass className="text-primary/20 animate-spin-slow" size={32} />
-                </div>
+                </motion.div>
 
-                <div className="relative max-w-2xl mx-auto mt-8 mb-4">
-                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-primary" size={24} />
-                    <Input 
-                        type="search" 
-                        placeholder="SEARCH PROJECTS, PEOPLE, POSTS..." 
-                        className="pl-16 pr-6 py-8 text-xl w-full bg-card border-2 border-white/5 focus:border-primary/50 rounded-[2rem] transition-all shadow-2xl font-black uppercase tracking-tighter" 
-                        value={query} 
-                        onChange={handleSearch} 
-                        autoFocus={!query} 
-                    />
-                </div>
-
-                <div className="flex gap-3 overflow-x-auto py-4 mb-2 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4">
+                <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4">
                     {CATEGORIES.map(category => (
                         <button 
                             key={category.id} 
@@ -277,7 +296,7 @@ const SearchPage = () => {
                             className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${
                                 activeCategory === category.id 
                                 ? 'bg-primary text-primary-foreground shadow-[0_0_20px_rgba(var(--primary),0.3)] scale-105' 
-                                : 'bg-card border border-white/5 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                                : 'bg-card/40 backdrop-blur-md border border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
                             }`}
                         >
                             {category.label}
@@ -287,18 +306,18 @@ const SearchPage = () => {
 
                 <div className="space-y-4">
                     {loading && (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-w-7xl mx-auto">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-w-7xl mx-auto">
                             {[...Array(18)].map((_, i) => (
-                                <div key={i} className={`aspect-[4/5] bg-white/5 animate-pulse rounded-xl ${i % 10 === 0 ? 'col-span-2 row-span-2' : ''}`} />
+                                <div key={i} className={`aspect-[4/5] bg-card/40 border border-border/50 animate-pulse rounded-2xl ${i % 10 === 0 ? 'col-span-2 row-span-2' : ''}`} />
                             ))}
                         </div>
                     )}
 
                     {!loading && !query && (
                         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center gap-3 mb-8 border-b border-white/5 pb-4">
+                            <div className="flex items-center gap-3 mb-10 border-b border-border/20 pb-6">
                                 <Compass className="text-primary" size={28} />
-                                <h2 className="text-2xl font-black uppercase tracking-tight">Featured Discovery</h2>
+                                <h2 className="text-2xl font-black uppercase tracking-tight">Synchronized Discovery Feed</h2>
                             </div>
                             <ExploreGrid items={filteredExploreItems} />
                         </div>
@@ -306,20 +325,20 @@ const SearchPage = () => {
 
                     {!loading && query.length > 0 && (
                         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center justify-between mb-8 border-b border-white/5 pb-4">
+                            <div className="flex items-center justify-between mb-10 border-b border-border/20 pb-6">
                                 <div className="flex items-center gap-3">
                                     <Search className="text-primary" size={28} />
-                                    <h2 className="text-2xl font-black uppercase tracking-tight">Results for "{query}"</h2>
+                                    <h2 className="text-2xl font-black uppercase tracking-tight">Matches for "{query}"</h2>
                                 </div>
-                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted px-4 py-2 rounded-full">
-                                    {filteredSearchResults.length} Matches
+                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-5 py-2.5 rounded-full border border-border/50 backdrop-blur-md">
+                                    {filteredSearchResults.length} Results Found
                                 </span>
                             </div>
                             <ExploreGrid items={filteredSearchResults} />
                         </div>
                     )}
                 </div>
-            </div>
+            </main>
         </div>
     );
 

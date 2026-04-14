@@ -15,13 +15,12 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   ArrowLeft, Settings, Users, Loader2, ChevronDown,
-  MessageSquare, Radio, Headphones, X, MoreVertical, Reply, Trash2, ShieldBan
+  MessageSquare, Radio, Headphones, X, MoreVertical, Reply, Trash2, ShieldBan, Maximize2
 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
-import { EmbeddedCallPanel } from './EmbeddedCallPanel';
-import { useCall } from '@/hooks/useCall';
+import { useGlobalCall } from '@/contexts/CallContext';
 import { useToast } from '@/hooks/use-toast';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
@@ -55,23 +54,29 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const [isMembersSidebarOpen, setMembersSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
 
-  // Call state
-  const { activeCall, loading: callLoading, startCall, joinCall, endCall, leaveCall } = useCall('discussion', roomId);
-  const [isInCall, setIsInCall] = useState(false);
-  const [isCallMinimized, setIsCallMinimized] = useState(false);
+  // Global Call state
+  const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize } = useGlobalCall();
+  const isInCall = callState.isActive && callState.roomId === roomId;
+  const isCallMinimized = callState.isMinimized;
   const [showJoinBanner, setShowJoinBanner] = useState(false);
+  const [callLoading, setCallLoading] = useState(false);
 
   // Mobile swipeable tab state
   const [mobileTab, setMobileTab] = useState<'discussion' | 'chat'>('discussion');
+
+  // Auto-switch mobile tab to chat when call is minimized
+  useEffect(() => {
+    if (isCallMinimized && mobileTab === 'discussion') {
+      setMobileTab('chat');
+    }
+  }, [isCallMinimized, mobileTab]);
+
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { markAsRead } = useChatReadStatus();
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
-  const isInCallRef = useRef(false);
-  const handleLeaveSpaceRef = useRef<() => void>();
-
-  // JS-based screen size detection (prevents mounting two EmbeddedCallPanels)
+  // JS-based screen size detection
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches);
 
   useEffect(() => {
@@ -85,15 +90,14 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Show join banner when there's an active call and user hasn't joined
+  // Show join banner when there's an active call and user hasn't joined (mocking activeCall check via a separate mechanism if needed, but for now using the fact that we can see active calls in the room list)
+  // Instead of a local activeCall, we can rely on the parent room data or a separate subscription if really needed, 
+  // but let's keep it simple: if the global call is for THIS room, we are in it.
   useEffect(() => {
-    if (activeCall && !isInCall) {
-      setShowJoinBanner(true);
-    } else {
-      setShowJoinBanner(false);
-    }
-    isInCallRef.current = isInCall;
-  }, [activeCall, isInCall]);
+    // If there is a global call for this room but user isn't 'joined' in their local UI state, 
+    // we should show banner. But since we just moved to global, 'isInCall' means they ARE joined.
+    // We'll trust the room isActive badge for "There is a call here".
+  }, [callState, roomId]);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -234,7 +238,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       .delete()
       .eq('id', messageId)
       .eq('user_id', user.id);
-    
+
     if (error) {
       console.error('Error undoing message:', error);
       toast({ title: "Error", description: "Failed to undo message", variant: "destructive" });
@@ -249,7 +253,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       p_table: 'room_messages',
       p_message_id: messageId
     });
-    
+
     if (error) {
       console.error('Error hiding message:', error);
       toast({ title: "Error", description: "Failed to hide message", variant: "destructive" });
@@ -277,10 +281,10 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
   // --- Call Handlers ---
   const handleStartSpace = async () => {
-    const call = await startCall();
-    if (call) {
-      setIsInCall(true);
-      setIsCallMinimized(false);
+    setCallLoading(true);
+    const success = await startGlobalCall('discussion', roomId, roomTitle, userRole);
+    setCallLoading(false);
+    if (success) {
       toast({ title: "🎙️ Discussion Started!", description: "Your discussion room is now active!" });
     } else {
       toast({ title: "Error", description: "Failed to start discussion.", variant: "destructive" });
@@ -288,42 +292,20 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   };
 
   const handleJoinSpace = async () => {
-    const success = await joinCall();
+    setCallLoading(true);
+    const success = await joinGlobalCall('discussion', roomId, roomTitle, userRole);
+    setCallLoading(false);
     if (success) {
-      setIsInCall(true);
-      setIsCallMinimized(false);
-      setShowJoinBanner(false);
       toast({ title: "🎧 Joined Discussion", description: "You're now in the discussion." });
     } else {
       toast({ title: "Error", description: "Failed to join discussion.", variant: "destructive" });
     }
   };
 
-  const handleLeaveSpace = useCallback(async () => {
-    const isHost = activeCall?.started_by === user?.id || userRole === 'creator';
-    
-    if (isHost) {
-      await endCall();
-    } else {
-      await leaveCall();
-    }
-    setIsInCall(false);
-    setIsCallMinimized(false);
-    toast({ title: "Left Discussion", description: "You've left the discussion." });
-  }, [activeCall?.started_by, user?.id, userRole, endCall, leaveCall, toast]);
-
-  // Keep ref updated
+  // Navigation logic to ensure the call PERSISTS instead of dying
   useEffect(() => {
-    handleLeaveSpaceRef.current = handleLeaveSpace;
-  }, [handleLeaveSpace]);
-
-  // Cleanup ONLY on actual component unmount
-  useEffect(() => {
-    return () => {
-      if (isInCallRef.current && handleLeaveSpaceRef.current) {
-        handleLeaveSpaceRef.current();
-      }
-    };
+    // We specifically REMOVED the "leave on unmount" logic here.
+    // The call will continue in the GlobalCallOverlay even if we navigate away.
   }, []);
 
   const formatTimestamp = (timestamp: string) => {
@@ -400,10 +382,10 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           <div className="min-w-0 flex-1 overflow-hidden pr-2">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
-              {activeCall && (
+              {isInCall && (
                 <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                  ACTIVE
+                  YOU ARE LIVE
                 </span>
               )}
             </div>
@@ -411,8 +393,8 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Go Live button (no active call & not in call) */}
-          {!activeCall && !isInCall && (
+          {/* Go Live button (not in call) */}
+          {!isInCall && (
             <Button
               size="sm"
               onClick={handleStartSpace}
@@ -497,17 +479,23 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
       {/* ====== DESKTOP (md+): Side by Side ====== */}
       {isDesktop ? <div className="flex flex-1 overflow-hidden relative flex-row">
-        {/* Left: Call Panel */}
-        {isInCall && activeCall && (
-          <div className="w-[55%] flex flex-col border-r border-border/30 shrink-0 overflow-hidden">
-            <EmbeddedCallPanel
-              roomId={roomId}
-              roomName={roomTitle}
-              onLeave={handleLeaveSpace}
-              isMinimized={isCallMinimized}
-              onToggleMinimize={() => setIsCallMinimized(!isCallMinimized)}
-              userRole={userRole}
-            />
+        {/* Left: Call Panel Placeholder when using Global Overlay */}
+        {isInCall && !isCallMinimized && (
+          <div id="discussion-call-container" className="w-full md:w-[55%] flex flex-col border-r border-border/30 shrink-0 overflow-hidden items-center justify-center relative bg-[#121214]">
+            <div className="text-center p-8">
+              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <Radio className="w-8 h-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">Discussion Active</h3>
+              <p className="text-gray-400 text-sm mb-6">You are connected to the live session.</p>
+              <Button
+                variant="outline"
+                onClick={() => toggleMinimize(true)}
+                className="rounded-full border-white/20 hover:bg-white/10"
+              >
+                Switch to Picture-in-Picture
+              </Button>
+            </div>
           </div>
         )}
 
@@ -560,13 +548,13 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                               <div className="opacity-90 line-clamp-1 text-[11px]">
                                 {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
                                   repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                  repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                  repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                  repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                  repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                  repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                  repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
-                                  repliedMsg.content
+                                    repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                                      repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                                        repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                                          repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                            repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                              repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
+                                                repliedMsg.content
                                 )}
                               </div>
                             </div>
@@ -580,7 +568,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                           renderMessageContent(message.content)
                         )}
                       </div>
-                      
+
                       {!message.is_deleted && (
                         <div className={`absolute ${isSender ? 'right-full mr-1' : 'left-full ml-1'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity`}>
                           <DropdownMenu>
@@ -631,13 +619,13 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                   </div>
                   <div className="text-muted-foreground truncate opacity-80">
                     {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                     replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                     replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                     replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                     replyingTo.content}
+                      replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                        replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                          replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                            replyingTo.content}
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setReplyingTo(null)}
                   className="p-1 rounded hover:bg-background text-muted-foreground transition-colors shrink-0"
                 >
@@ -654,7 +642,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       </div> : <div className="flex flex-col flex-1 overflow-hidden relative">
 
         {/* Mobile Tab Bar (only when in call) */}
-        {isInCall && activeCall && (
+        {isInCall && (
           <div className="flex items-center bg-background border-b border-border shrink-0">
             <button
               onClick={() => setMobileTab('discussion')}
@@ -692,7 +680,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
             touchStartY.current = e.touches[0].clientY;
           }}
           onTouchEnd={(e) => {
-            if (touchStartX.current === null || touchStartY.current === null || !isInCall || !activeCall) return;
+            if (touchStartX.current === null || touchStartY.current === null || !isInCall) return;
             const deltaX = e.changedTouches[0].clientX - touchStartX.current;
             const deltaY = e.changedTouches[0].clientY - touchStartY.current;
             // Only swipe horizontally if it's more horizontal than vertical
@@ -704,22 +692,48 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
             touchStartY.current = null;
           }}
         >
-          {/* Discussion View (when in call) - Keep mounted using CSS transition/visibility */}
-          {isInCall && activeCall && (
+          {/* Discussion View (when in call) */}
+          {isInCall && (
             <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col overflow-hidden transition-all duration-300 ${mobileTab === 'discussion' ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none'}`}>
-              <EmbeddedCallPanel
-                roomId={roomId}
-                roomName={roomTitle}
-                onLeave={handleLeaveSpace}
-                isMinimized={isCallMinimized}
-                onToggleMinimize={() => setIsCallMinimized(!isCallMinimized)}
-                userRole={userRole}
-              />
+              <div id="discussion-call-container" className="flex-1 flex flex-col items-center justify-center space-y-4 p-6 text-center relative bg-[#121214]">
+                 {isCallMinimized ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#121214] z-10 p-6 shadow-inner">
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                        <Radio className="w-8 h-8 text-primary opacity-50" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Call is Minimized</h3>
+                      <p className="text-muted-foreground text-sm max-w-[260px] mb-8">
+                        Your video call is currently active in picture-in-picture mode.
+                      </p>
+                      <div className="flex flex-col gap-3 w-full max-w-[200px]">
+                        <Button onClick={() => toggleMinimize(false)} className="rounded-full w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg">
+                          <Maximize2 className="w-4 h-4 mr-2" /> Maximize
+                        </Button>
+                        <Button variant="outline" onClick={() => setMobileTab('chat')} className="rounded-full w-full border-white/10 hover:bg-white/5 text-white">
+                          <MessageSquare className="w-4 h-4 mr-2" /> Open Chat
+                        </Button>
+                      </div>
+                    </div>
+                 ) : (
+                    <>
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                        <Radio className="w-8 h-8 text-primary" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">Call is Active</h3>
+                      <p className="text-muted-foreground text-sm max-w-[240px] mb-6">
+                        You are connected to the live session in the persistent overlay.
+                      </p>
+                      <Button variant="outline" onClick={() => setMobileTab('chat')} className="rounded-full border-white/20 hover:bg-white/10 text-white shadow-lg">
+                        <MessageSquare className="w-4 h-4 mr-2" /> Open Chat
+                      </Button>
+                    </>
+                 )}
+              </div>
             </div>
           )}
 
           {/* Chat View - Always shown when tab=chat during call or when no call */}
-          <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col transition-all duration-300 ${(!isInCall || !activeCall || mobileTab === 'chat') ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}`}>
+          <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col transition-all duration-300 ${(!isInCall || mobileTab === 'chat') ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}`}>
             <div
               ref={!isInCall || mobileTab === 'chat' ? scrollContainerRef : undefined}
               onScroll={handleScroll}
@@ -758,12 +772,12 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                                 <div className="opacity-90 line-clamp-1 text-[11px]">
                                   {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
                                     repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                    repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                    repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                    repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                    repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                    repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                    repliedMsg.content
+                                      repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                                        repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                                          repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                                            repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                              repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                                repliedMsg.content
                                   )}
                                 </div>
                               </div>
@@ -777,7 +791,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                             renderMessageContent(message.content)
                           )}
                         </div>
-                        
+
                         {!message.is_deleted && (
                           <div className={`absolute ${isSender ? 'right-full mr-1' : 'left-full ml-1'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity`}>
                             <DropdownMenu>
@@ -825,15 +839,15 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                     </div>
                     <div className="text-muted-foreground truncate opacity-80">
                       {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                       replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                       replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                       replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                       replyingTo.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                       replyingTo.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                       replyingTo.content}
+                        replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                          replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                            replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                              replyingTo.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                replyingTo.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                  replyingTo.content}
                     </div>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setReplyingTo(null)}
                     className="p-1 rounded hover:bg-background text-muted-foreground transition-colors shrink-0"
                   >

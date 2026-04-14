@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
 
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { Vendor } from '@/types/marketplace';
 import { VendorRegistrationModal } from '@/components/vendors/VendorRegistrationModal';
 import { VendorCard } from '@/components/vendors/VendorCard';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PageHeader } from '@/components/common/PageHeader';
 
 
 const Vendors = () => {
@@ -68,51 +69,53 @@ const Vendors = () => {
     };
 
     return (
-        <div className="min-h-screen bg-background">
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-10">
-                    <div className="max-w-2xl">
-                        <h1 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 text-primary leading-none">
-                            Vendors Directory
-                        </h1>
-                        <p className="text-lg text-muted-foreground font-medium leading-relaxed">
-                            Connect with verified industry businesses and service providers
-                        </p>
-                    </div>
-                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2.5 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-transform h-12 px-6 shrink-0">
+        <div className="min-h-screen bg-background selection:bg-primary/30">
+            {/* Background Orbs */}
+            <div className="fixed inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+                <div className="absolute bottom-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
+            </div>
+
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
+                <PageHeader 
+                  title="Vendors Directory" 
+                  subtitle="Connect with verified industry businesses and service providers" 
+                  Icon={Building2}
+                  actions={
+                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
                         <Plus size={20} strokeWidth={3} />
-                        <span className="font-bold tracking-wide">Register Business</span>
+                        <span>Register Business</span>
                     </Button>
-                </div>
+                  }
+                />
 
                 {/* Search Bar */}
-                <div className="bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] p-2 md:p-3 mb-8 shadow-sm dark:shadow-none">
+                <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-10 shadow-sm dark:shadow-none">
                     <div className="flex flex-row gap-2 md:gap-3">
                         <div className="relative flex-grow h-12 md:h-14">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
                             <Input
-                                placeholder="Search vendors..."
+                                placeholder="Search for equipment, services, or locations..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-12 h-full bg-background/50 border-white/5 rounded-2xl text-base focus-visible:ring-primary/20 shadow-inner dark:shadow-none"
+                                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-base transition-all font-medium placeholder:text-muted-foreground/50"
                             />
                         </div>
-                        <Button variant="outline" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border-white/5 bg-background/50 hover:bg-background/80 hover:text-foreground">
+                        <Button variant="ghost" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-xs">
                             <Filter size={18} />
-                            <span className="font-bold tracking-wide">Filters</span>
+                            <span>Filters</span>
                         </Button>
                     </div>
                 </div>
 
                 {/* Featured Verified Vendors */}
                 {vendors.filter(v => v.is_verified).length > 0 && (
-                    <div className="mb-8">
-                        <div className="flex items-center gap-2 mb-4">
-                            <CheckCircle2 size={20} className="text-primary" />
-                            <h2 className="text-xl font-semibold">Verified Vendors</h2>
+                    <div className="mb-12">
+                        <div className="flex items-center gap-2 mb-6">
+                            <CheckCircle2 size={24} className="text-primary" />
+                            <h2 className="text-2xl font-black tracking-tight uppercase">Verified Professionals</h2>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                             {vendors
                                 .filter(v => v.is_verified)
                                 .slice(0, 6)
@@ -124,27 +127,32 @@ const Vendors = () => {
                 )}
 
                 {/* All Vendors */}
-                <div>
-                    <h2 className="text-xl font-semibold mb-4">All Vendors</h2>
+                <div className="mt-12">
+                    <div className="flex items-center gap-2 mb-6">
+                        <Building2 size={24} className="text-primary/60" />
+                        <h2 className="text-2xl font-black tracking-tight uppercase">Industry Directory</h2>
+                    </div>
                     {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                             {[1, 2, 3, 4, 5, 6].map((i) => (
-                                <EnhancedSkeleton key={i} className="h-[200px] rounded-[24px]" />
+                                <EnhancedSkeleton key={i} className="h-[250px] rounded-[2.5rem]" />
                             ))}
                         </div>
                     ) : vendors.length === 0 ? (
-                        <div className="text-center py-16">
-                            <Building2 size={48} className="mx-auto text-gray-500 mb-4" />
-                            <h3 className="text-xl font-semibold mb-2">No vendors found</h3>
-                            <p className="text-gray-400 mb-4">
-                                Be the first to register your business!
+                        <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
+                            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                                <Building2 size={32} className="text-primary" />
+                            </div>
+                            <h3 className="text-2xl font-black mb-2">No vendors found</h3>
+                            <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
+                                Be the first to establish a presence in this directory!
                             </p>
-                            <Button onClick={() => setShowRegistrationModal(true)}>
+                            <Button onClick={() => setShowRegistrationModal(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-8 font-bold">
                                 Register Your Business
                             </Button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                             {vendors.map((vendor) => (
                                 <VendorCard key={vendor.id} vendor={vendor} />
                             ))}
@@ -152,8 +160,6 @@ const Vendors = () => {
                     )}
                 </div>
             </main>
-
-
 
             {/* Vendor Registration Modal */}
             <VendorRegistrationModal

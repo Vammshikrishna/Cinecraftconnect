@@ -1,6 +1,7 @@
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
+import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
 
 /**
  * This component handles global features that should be active
@@ -18,6 +19,9 @@ const GlobalFeatures = () => {
 
     return (
         <>
+            {/* Render the Global Call Overlay for PiP functionality */}
+            <GlobalCallOverlay />
+            
             {/* Render the Back to Top button */}
             <BackToTop />
         </>

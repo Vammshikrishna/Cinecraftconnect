@@ -121,7 +121,14 @@ const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
 
                 <div className="pt-4 border-t border-border/50 flex items-center justify-between">
                     <span className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
-                        {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
+                        {(() => {
+                            try {
+                                const d = project.created_at ? new Date(project.created_at) : new Date();
+                                return isNaN(d.getTime()) ? "Just now" : formatDistanceToNow(d, { addSuffix: true });
+                            } catch {
+                                return "Just now";
+                            }
+                        })()}
                     </span>
                     
                     <DropdownMenu>

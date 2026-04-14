@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Search, MapPin, Clock, Briefcase, Filter, ArrowUpDown, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { PageHeader } from '@/components/common/PageHeader';
 
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -139,28 +141,22 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-12">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-2">Jobs</h1>
-            <p className="text-muted-foreground font-medium">Explore unique roles in film and creative production</p>
-          </motion.div>
-          <motion.div 
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-wrap gap-3 w-full md:w-auto"
-          >
-            <Link to="/jobs/applications">
-              <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">My Applications</Button>
-            </Link>
-            <Link to="/jobs/manage">
-              <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">Manage Postings</Button>
-            </Link>
-            <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
-          </motion.div>
-        </div>
+        <PageHeader 
+          title="Jobs" 
+          subtitle="Explore unique roles in film and creative production" 
+          Icon={Briefcase}
+          actions={
+            <div className="flex flex-wrap gap-3">
+              <Link to="/jobs/applications">
+                <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">My Applications</Button>
+              </Link>
+              <Link to="/jobs/manage">
+                <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">Manage Postings</Button>
+              </Link>
+              <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
+            </div>
+          }
+        />
 
         {/* Search & Filter Bar using system glassmorphism */}
         <motion.div 

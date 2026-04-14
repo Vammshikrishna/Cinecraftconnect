@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,7 +10,7 @@ import { ChatListSkeleton } from '@/components/chat/ChatListSkeleton';
 import { EmptyState } from '@/components/chat/EmptyState';
 import { Conversation } from '@/types/chat';
 import { usePresence } from '@/hooks/usePresence';
-import { MessageSquare, Search, Plus, Users } from 'lucide-react';
+import { MessageSquare, Search, Plus, Users, Layout } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { PageHeader } from '@/components/common/PageHeader';
 
 const ChatsList = () => {
   const { user } = useAuth();
@@ -108,144 +110,165 @@ const ChatsList = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 pt-20 pb-24">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent mb-2">
-                Messages
-              </h1>
-              <p className="text-muted-foreground">
-                {conversations.length > 0
-                  ? `${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}`
-                  : 'No conversations yet'}
-              </p>
-            </div>
+    <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
+        {/* Background Orbs */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+        </div>
 
-            {/* New Chat Button */}
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-5xl relative z-10">
+        <PageHeader 
+          title="Messages" 
+          subtitle={conversations.length > 0
+            ? `You have ${conversations.length} active conversation${conversations.length !== 1 ? 's' : ''}`
+            : 'Start connecting with other filmmakers and creatives!'} 
+          Icon={MessageSquare}
+          actions={
             <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
               <DialogTrigger asChild>
-                <Button className="gap-2 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
-                  <Plus className="h-4 w-4" />
-                  <span className="hidden sm:inline">New Chat</span>
+                <Button className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
+                  <Plus size={20} strokeWidth={3} />
+                  <span>New Chat</span>
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
+              <DialogContent className="sm:max-w-md rounded-[2.5rem] border-border/50 bg-card/95 backdrop-blur-2xl">
                 <DialogHeader>
-                  <DialogTitle>Start a New Chat</DialogTitle>
-                  <DialogDescription>
-                    Search for a user to start a conversation
+                  <DialogTitle className="text-2xl font-black tracking-tight">Search Network</DialogTitle>
+                  <DialogDescription className="font-medium">
+                    Start a encrypted direct communication channel
                   </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
+                <div className="space-y-6 pt-4">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/50" />
                     <Input
                       placeholder="Search users..."
                       value={userSearchTerm}
                       onChange={(e) => setUserSearchTerm(e.target.value)}
-                      className="pl-10"
+                      className="pl-12 h-14 bg-background/50 border-white/5 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all"
                     />
                   </div>
 
-                  <div className="max-h-[300px] overflow-y-auto space-y-2">
+                  <div className="max-h-[350px] overflow-y-auto space-y-2 pr-2 scrollbar-none">
                     {searchingUsers ? (
-                      <div className="text-center py-8 text-muted-foreground">Searching...</div>
+                      <div className="text-center py-12">
+                        <LoadingSpinner size="sm" className="mx-auto mb-4 text-primary" />
+                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground animate-pulse">Scanning Grid...</p>
+                      </div>
                     ) : searchedUsers.length > 0 ? (
                       searchedUsers.map((searchedUser) => (
                         <button
                           key={searchedUser.id}
                           onClick={() => handleStartChat(searchedUser.id)}
-                          className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-muted transition-colors"
+                          className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-primary/10 transition-all border border-transparent hover:border-primary/20 group"
                         >
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage src={searchedUser.avatar_url} />
-                            <AvatarFallback className="bg-primary/10 text-primary">
+                          <Avatar className="h-12 w-12 border-2 border-border/50 group-hover:scale-110 transition-transform">
+                            <AvatarImage src={searchedUser.avatar_url} className="object-cover" />
+                            <AvatarFallback className="bg-primary/20 text-primary font-black">
                               {searchedUser.full_name?.[0]?.toUpperCase() || 'U'}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 text-left">
-                            <p className="font-medium">{searchedUser.full_name}</p>
+                            <p className="font-black text-foreground group-hover:text-primary transition-colors">{searchedUser.full_name}</p>
                             {searchedUser.username && (
-                              <p className="text-sm text-muted-foreground">@{searchedUser.username}</p>
+                              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/60">@{searchedUser.username}</p>
                             )}
                           </div>
                         </button>
                       ))
                     ) : userSearchTerm ? (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Users className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>No users found</p>
+                      <div className="text-center py-12 text-muted-foreground">
+                        <div className="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+                            <Users size={24} className="opacity-40" />
+                        </div>
+                        <p className="font-black text-xs uppercase tracking-widest">No signals found</p>
                       </div>
                     ) : (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <Search className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                        <p>Start typing to search for users</p>
+                      <div className="text-center py-12 text-muted-foreground">
+                        <div className="w-16 h-16 rounded-full bg-muted/20 flex items-center justify-center mx-auto mb-4">
+                            <Search size={24} className="opacity-40" />
+                        </div>
+                        <p className="font-black text-xs uppercase tracking-widest">Enter username or craft</p>
                       </div>
                     )}
                   </div>
                 </div>
               </DialogContent>
             </Dialog>
-          </div>
+          }
+        />
 
-          {/* Search Bar */}
-          {conversations.length > 0 && (
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                placeholder="Search conversations..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-12 h-12 bg-card border-border rounded-xl shadow-sm"
-              />
-            </div>
-          )}
-        </div>
+        {/* Search Bar */}
+        {conversations.length > 0 && (
+          <div className="relative mb-10 group">
+             <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-transparent rounded-2xl blur opacity-25 group-focus-within:opacity-50 transition duration-1000" />
+             <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground/50" />
+                <Input
+                    placeholder="Refine search by thread participant..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-12 h-14 bg-card/60 backdrop-blur-xl border-border/50 rounded-2xl shadow-sm focus:ring-4 focus:ring-primary/10 transition-all font-medium"
+                />
+             </div>
+          </div>
+        )}
 
         {/* Content */}
-        <div className="bg-card rounded-2xl border border-border shadow-xl overflow-hidden">
+        <div className="bg-card/40 backdrop-blur-xl rounded-[2.5rem] border border-border/50 shadow-2xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-700">
           {loading ? (
-            <div className="p-6">
+            <div className="p-8">
               <ChatListSkeleton />
             </div>
           ) : filteredConversations.length === 0 ? (
-            <div className="p-12">
+            <div className="p-16">
               {conversations.length === 0 ? (
                 <EmptyState
                   Icon={MessageSquare}
-                  title="No Conversations Yet"
-                  message="Start connecting with other filmmakers and creatives!"
+                  title="Zero Transmissions"
+                  message="Initialize your first direct communication channel with a filmmaker."
                   action={
                     <Button
                       onClick={() => setIsNewChatOpen(true)}
-                      className="mt-4 gap-2"
+                      className="mt-6 gap-2.5 bg-primary hover:bg-primary/90 h-12 px-8 rounded-xl font-bold"
                     >
                       <Plus className="h-4 w-4" />
-                      Start Your First Chat
+                      Open Comm Link
                     </Button>
                   }
                 />
               ) : (
                 <EmptyState
                   Icon={Search}
-                  title="No Results Found"
-                  message={`No conversations match "${searchTerm}"`}
+                  title="No Signal Found"
+                  message={`We couldn't locate any active threads matching "${searchTerm}"`}
                 />
               )}
             </div>
           ) : (
-            <ChatList 
-              conversations={filteredConversations} 
-              onlineUserIds={onlineUserIds} 
-            />
+            <div className="p-2 sm:p-4">
+                <ChatList 
+                    conversations={filteredConversations} 
+                    onlineUserIds={onlineUserIds} 
+                />
+            </div>
           )}
         </div>
       </div>
     </div>
   );
 };
+
+const LoadingSpinner = ({ className, size }: { className?: string, size?: string }) => (
+    <svg 
+        className={`animate-spin ${className} ${size === 'sm' ? 'w-5 h-5' : 'w-8 h-8'}`} 
+        xmlns="http://www.w3.org/2000/svg" 
+        fill="none" 
+        viewBox="0 0 24 24"
+    >
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+);
 
 export default ChatsList;

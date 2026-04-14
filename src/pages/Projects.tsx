@@ -43,6 +43,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { getGradientForString } from '@/utils/colors';
 import { useProjects, Project } from '@/hooks/useProjects';
+import { PageHeader } from '@/components/common/PageHeader';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
@@ -235,16 +236,12 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   return (
     <div className="min-h-screen bg-background pt-16 md:pt-20">
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24 animate-fade-in">
-        <div className="flex flex-row justify-between items-center mb-6 gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-1 flex items-center">
-              <Film className="mr-2 md:mr-3 h-6 w-6 md:h-8 md:w-8 text-primary" />
-              Projects
-            </h1>
-            <p className="text-xs md:text-sm text-muted-foreground hidden sm:block">Discover and collaborate on film projects</p>
-          </div>
-          <ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />
-        </div>
+        <PageHeader 
+          title="Projects" 
+          subtitle="Discover and collaborate on film projects" 
+          Icon={Film}
+          actions={<ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />}
+        />
 
         <div className="mb-6">
           <div className="flex flex-row gap-2 sm:gap-4 mb-4">
