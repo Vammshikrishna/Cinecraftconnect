@@ -1,11 +1,14 @@
+
 import { useState } from 'react';
 import { useCompanyPages } from '@/hooks/useCompanyPages';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Plus, Building2, TrendingUp } from 'lucide-react';
+import { Search, Plus, Building2, TrendingUp, Filter } from 'lucide-react';
 import { CompanyPageCard } from '@/components/pages/CompanyPageCard';
 import { CreatePageModal } from '@/components/pages/CreatePageModal';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PageHeader } from '@/components/common/PageHeader';
+import { motion } from 'framer-motion';
 
 const CompanyPages = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,47 +16,58 @@ const CompanyPages = () => {
   const { data: pages = [], isLoading } = useCompanyPages(searchQuery);
 
   return (
-    <div className="min-h-screen bg-background">
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24">
-        {/* Header */}
-        <div className="flex flex-col gap-1 mb-8">
-          <div className="flex flex-row justify-between items-center gap-4">
-            <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
-              <Building2 className="h-6 w-6 md:h-8 md:w-8 text-primary shrink-0" />
-              Pages
-            </h1>
-            <Button onClick={() => setShowCreateModal(true)} className="gap-2 shadow-lg shadow-primary/20 shrink-0 h-9 md:h-11 px-3 md:px-5 text-xs md:text-sm">
-              <Plus size={18} />
+    <div className="min-h-screen bg-background selection:bg-primary/30">
+      {/* Background Orbs */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
+      </div>
+
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
+        <PageHeader 
+          title="Pages" 
+          subtitle="Discover production houses, studios, agencies, and organizations" 
+          Icon={Building2}
+          actions={
+            <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
+              <Plus size={20} strokeWidth={3} />
               <span className="hidden xs:inline">Create a Page</span>
               <span className="xs:hidden">Create</span>
             </Button>
-          </div>
-          <p className="text-xs md:text-sm text-muted-foreground opacity-90">
-            Discover production houses, studios, agencies, and organizations
-          </p>
-        </div>
+          }
+        />
 
-        {/* Search */}
-        <div className="bg-card border border-border rounded-xl p-4 mb-8">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
-            <Input
-              placeholder="Search pages by name, location, or industry..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-muted/50 border-border"
-            />
+        {/* Search Bar using system glassmorphism */}
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-12 shadow-sm dark:shadow-none"
+        >
+          <div className="flex flex-row gap-2 md:gap-3">
+            <div className="relative flex-grow h-12 md:h-14">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
+              <Input
+                placeholder="Search pages by name, location, or industry..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-base transition-all font-medium placeholder:text-muted-foreground/50"
+              />
+            </div>
+            <Button variant="ghost" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-xs">
+              <Filter size={18} />
+              <span>Filters</span>
+            </Button>
           </div>
-        </div>
+        </motion.div>
 
         {/* Featured Pages (verified ones) */}
         {!searchQuery && pages.filter(p => p.is_verified).length > 0 && (
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="h-5 w-5 text-primary" />
-              <h2 className="text-xl font-semibold">Featured Pages</h2>
+          <div className="mb-12">
+            <div className="flex items-center gap-3 mb-6">
+              <TrendingUp className="h-6 w-6 text-primary" />
+              <h2 className="text-2xl font-black tracking-tight uppercase">Featured Organizations</h2>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {pages
                 .filter(p => p.is_verified)
                 .slice(0, 4)
@@ -65,36 +79,39 @@ const CompanyPages = () => {
         )}
 
         {/* All Pages */}
-        <div>
-          <h2 className="text-xl font-semibold mb-4">
-            {searchQuery ? `Results for "${searchQuery}"` : 'All Pages'}
-          </h2>
+        <div className="mt-12">
+          <div className="flex items-center gap-3 mb-6">
+            <Building2 className="h-6 w-6 text-primary/60" />
+            <h2 className="text-2xl font-black tracking-tight uppercase">
+              {searchQuery ? `Results for "${searchQuery}"` : 'Industry Directory'}
+            </h2>
+          </div>
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                <CardSkeleton key={i} className="h-64" />
+                <CardSkeleton key={i} className="h-64 rounded-[2rem]" />
               ))}
             </div>
           ) : pages.length === 0 ? (
-            <div className="text-center py-20">
-              <Building2 size={56} className="mx-auto text-muted-foreground/30 mb-4" />
-              <h3 className="text-xl font-semibold mb-2">
-                {searchQuery ? 'No pages found' : 'No pages yet'}
+            <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
+              <Building2 size={56} className="mx-auto text-muted-foreground/30 mb-6" />
+              <h3 className="text-2xl font-black mb-2">
+                {searchQuery ? 'The reel is empty...' : 'No pages yet'}
               </h3>
-              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              <p className="text-muted-foreground mb-8 max-w-sm mx-auto font-medium">
                 {searchQuery
-                  ? 'Try a different search term'
-                  : 'Be the first to create a company page and establish your organization\'s presence!'}
+                  ? 'Try a different search term or explore all pages.'
+                  : 'Be the first to establish your organization\'s presence in our production ecosystem!'}
               </p>
               {!searchQuery && (
-                <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-                  <Plus size={18} />
+                <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-8">
+                  <Plus size={20} strokeWidth={3} />
                   Create a Page
                 </Button>
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {pages.map(page => (
                 <CompanyPageCard key={page.id} page={page} />
               ))}

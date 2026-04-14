@@ -62,74 +62,78 @@ const LandingRoute = () => {
 
 import ScrollToTop from "@/components/ScrollToTop";
 
+import { CallProvider } from "@/contexts/CallContext";
+
 const App = () => {
   const { user, profile } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <PresenceProvider>
-        <ScrollToTop />
-        <Toaster />
-        <GlobalFeatures />
-      {user && profile?.onboarding_completed && <Navbar />}
-      <ErrorBoundary>
-        <Suspense
-          fallback={
-            <div className="h-screen w-full flex items-center justify-center bg-background">
-              <LoadingSpinner size="lg" />
-            </div>
-          }
-        >
-          <Routes>
-            <Route path="/" element={<LandingRoute />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/register" element={<Auth />} />
-            <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-            <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
-            <Route path="/profile/:userId" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-            <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
-            <Route path="/projects/:projectId/space" element={<ProtectedRoute><ProjectSpacePage /></ProtectedRoute>} />
-            <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
-            <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
-            <Route path="/craft/:craftName" element={<CraftPage />} />
-            <Route path="/craft/all" element={<AllCraftsPage />} />
-            <Route path="/learn" element={<LearningPortal />} />
-            <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
-            <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
-            <Route path="/messages" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
-            <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-            <Route path="/dm/:userId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
-            <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
-            <Route path="/settings/privacy" element={<ProtectedRoute><PrivacySettings /></ProtectedRoute>} />
-            <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
-            <Route path="/settings/accessibility" element={<ProtectedRoute><AccessibilitySettings /></ProtectedRoute>} />
-            <Route path="/settings/sound" element={<ProtectedRoute><SoundSettings /></ProtectedRoute>} />
-            <Route path="/settings/data" element={<ProtectedRoute><DataSettings /></ProtectedRoute>} />
-            <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
-            <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
-            <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
-            <Route path="/marketplace/:listingId" element={<ProtectedRoute><MarketplaceListingDetail /></ProtectedRoute>} />
-            <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
-            <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
-            <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
-            <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
-            <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
-            <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
-            <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
-            <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
-            <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
-            <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-            <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
-            <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
+      <CallProvider>
+        <PresenceProvider>
+          <ScrollToTop />
+          <Toaster />
+          <GlobalFeatures />
+        {user && profile?.onboarding_completed && <Navbar />}
+        <ErrorBoundary>
+          <Suspense
+            fallback={
+              <div className="h-screen w-full flex items-center justify-center bg-background">
+                <LoadingSpinner size="lg" />
+              </div>
+            }
+          >
+            <Routes>
+              <Route path="/" element={<LandingRoute />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/register" element={<Auth />} />
+              <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+              <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
+              <Route path="/profile/:userId" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+              <Route path="/projects/:projectId/space" element={<ProtectedRoute><ProjectSpacePage /></ProtectedRoute>} />
+              <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
+              <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
+              <Route path="/craft/:craftName" element={<CraftPage />} />
+              <Route path="/craft/all" element={<AllCraftsPage />} />
+              <Route path="/learn" element={<LearningPortal />} />
+              <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
+              <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
+              <Route path="/messages" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
+              <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/dm/:userId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
+              <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
+              <Route path="/settings/privacy" element={<ProtectedRoute><PrivacySettings /></ProtectedRoute>} />
+              <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
+              <Route path="/settings/accessibility" element={<ProtectedRoute><AccessibilitySettings /></ProtectedRoute>} />
+              <Route path="/settings/sound" element={<ProtectedRoute><SoundSettings /></ProtectedRoute>} />
+              <Route path="/settings/data" element={<ProtectedRoute><DataSettings /></ProtectedRoute>} />
+              <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
+              <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
+              <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
+              <Route path="/marketplace/:listingId" element={<ProtectedRoute><MarketplaceListingDetail /></ProtectedRoute>} />
+              <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+              <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
+              <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
+              <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
+              <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+              <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+              <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
+              <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+              <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+              <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
+              <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
 
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </ErrorBoundary>
-      </PresenceProvider>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
+        </PresenceProvider>
+      </CallProvider>
     </Router>
   );
 };

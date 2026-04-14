@@ -18,7 +18,7 @@ import { fetchLatestRatings, getSafeImageUrl } from '@/services/tmdb';
 
 interface Project {
   id: string;
-  name: string;
+  title: string;
   description: string | null;
   status: string | null;
   location: string | null;
@@ -26,6 +26,8 @@ interface Project {
   created_at: string;
   itemType: 'project';
   project_space_type?: 'public' | 'private' | 'secret';
+  genre?: string[];
+  image_url?: string;
   creator?: {
     full_name: string | null;
     avatar_url: string | null;
@@ -137,12 +139,9 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
         })) as unknown as UnifiedPost[];
 
         // Process projects
-        const rawProjects = projectsRes.data || [];
-        const typedProjects: Project[] = rawProjects.map((p: any) => ({
+        const typedProjects: Project[] = (projectsRes.data || []).map((p: any) => ({
           ...p,
-          name: p.title, // Map title to name as used in Project interface
-          itemType: 'project',
-          creator: p.creator || null
+          itemType: 'project'
         })) as unknown as Project[];
 
         const typedDiscussions: DiscussionRoom[] = (discussionsRes.data || []).map(d => ({ ...d, itemType: 'discussion' })) as unknown as DiscussionRoom[];

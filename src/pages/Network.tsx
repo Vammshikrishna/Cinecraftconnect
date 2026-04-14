@@ -1,3 +1,4 @@
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PageHeader } from '@/components/common/PageHeader';
 
 const Network = () => {
   const { user: currentUser } = useAuth();
@@ -61,11 +63,11 @@ const Network = () => {
     <div className="min-h-screen bg-background">
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24">
         
-        {/* Header Structure */}
-        <div className="mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">My Network</h1>
-            <p className="text-muted-foreground">Grow your professional network in the film and television industry.</p>
-        </div>
+        <PageHeader 
+          title="My Network" 
+          subtitle="Grow your professional network in the film and television industry." 
+          Icon={Users}
+        />
 
         <div className="flex flex-col lg:flex-row gap-8">
           

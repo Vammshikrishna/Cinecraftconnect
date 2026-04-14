@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { Bell, Check, X, Archive, Settings, Filter } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +18,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PageHeader } from '@/components/common/PageHeader';
 
 interface Notification {
   id: string;
@@ -230,43 +232,33 @@ const EnhancedNotificationsCenter = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div className="space-y-1">
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-2 text-foreground px-1">
-            <Bell className="h-7 w-7 text-primary" />
-            Notifications
-            {unreadCount > 0 && (
-              <Badge variant="destructive" className="ml-2 px-2.5 py-0.5 text-[10px] font-black rounded-full shadow-lg shadow-destructive/20 ring-4 ring-destructive/10">
-                {unreadCount} NEW
-              </Badge>
-            )}
-          </h1>
-          <p className="text-muted-foreground font-medium text-base md:text-lg max-w-2xl leading-relaxed px-1">
-            Stay updated with your latest project breakthroughs and cinematic achievements.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
-            onClick={markAllAsRead}
-            disabled={unreadCount === 0}
-            className="rounded-2xl border-border/50 bg-background/50 backdrop-blur-md hover:bg-primary/10 hover:border-primary/30 transition-all font-black text-xs uppercase tracking-widest px-6 h-12 gap-2 shadow-sm"
-          >
-            <Check className="h-4 w-4" />
-            Mark All Read
-          </Button>
-          <Link to="/settings/notifications">
+      <PageHeader 
+        title="Notifications" 
+        subtitle="Stay updated with your latest project breakthroughs and cinematic achievements." 
+        Icon={Bell}
+        actions={
+          <div className="flex items-center gap-3">
             <Button 
-              variant="ghost" 
-              size="icon" 
-              className="rounded-2xl h-12 w-12 hover:bg-muted/50 border border-white/5 shadow-inner"
+              variant="outline" 
+              onClick={markAllAsRead}
+              disabled={unreadCount === 0}
+              className="rounded-2xl border-border/50 bg-background/50 backdrop-blur-md hover:bg-primary/10 hover:border-primary/30 transition-all font-black text-xs uppercase tracking-widest px-6 h-12 gap-2 shadow-sm"
             >
-              <Settings className="h-5 w-5" />
+              <Check className="h-4 w-4" />
+              Mark All Read
             </Button>
-          </Link>
-        </div>
-      </div>
+            <Link to="/settings/notifications">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded-2xl h-12 w-12 hover:bg-muted/50 border border-white/5 shadow-inner"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+            </Link>
+          </div>
+        }
+      />
 
       <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div className="flex items-center justify-between mb-8 overflow-x-auto scrollbar-none pb-2 border-b border-border/20">

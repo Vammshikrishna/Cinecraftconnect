@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useGlobalCall } from '@/contexts/CallContext';
+import { useLocation } from 'react-router-dom';
 import {
   LiveKitRoom,
   GridLayout,
@@ -31,21 +33,21 @@ interface LiveKitCallContainerProps {
 }
 
 // Sub-component to safely use LiveKit hooks inside the Room context
-const CallImplementation = ({ 
-  onLeave, 
-  userRole, 
-  isMinimized, 
+const CallImplementation = ({
+  onLeave,
+  userRole,
+  isMinimized,
   onToggleMinimize,
   roomName
-}: { 
-  onLeave: () => void; 
-  userRole?: string; 
-  isMinimized: boolean; 
+}: {
+  onLeave: () => void;
+  userRole?: string;
+  isMinimized: boolean;
   onToggleMinimize: () => void;
   roomName?: string;
 }) => {
   useEffect(() => {
-    const lkLeave = () => {};
+    const lkLeave = () => { };
     return lkLeave;
   }, [onLeave]);
   const [showSettings, setShowSettings] = useState(false);
@@ -56,7 +58,7 @@ const CallImplementation = ({
   const [floatingEmojis, setFloatingEmojis] = useState<{ id: number, emoji: string, x: number }[]>([]);
   const { toast } = useToast();
   const participants = useParticipants();
-  
+
   // Device Selection Hooks
   const { devices: audioDevices, activeDeviceId: activeAudioId, setActiveMediaDevice: setActiveAudio } = useMediaDeviceSelect({ kind: 'audioinput' });
   const { devices: videoDevices, activeDeviceId: activeVideoId, setActiveMediaDevice: setActiveVideo } = useMediaDeviceSelect({ kind: 'videoinput' });
@@ -92,41 +94,55 @@ const CallImplementation = ({
           </div>
         </div>
 
-        {/* Small Video Preview logic could go here, for now showing participants count */}
-        <div className="flex items-center justify-center py-2">
-           <div className="flex -space-x-2">
-             {participants.slice(0, 3).map((p) => (
-               <div key={p.sid} className="w-6 h-6 rounded-full bg-primary/30 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white shadow-lg backdrop-blur-sm">
-                 {p.identity[0].toUpperCase()}
-               </div>
-             ))}
-             {participants.length > 3 && (
-               <div className="w-6 h-6 rounded-full bg-secondary/80 border border-white/20 flex items-center justify-center text-[10px] font-bold text-white shadow-lg backdrop-blur-sm">
-                 +{participants.length - 3}
-               </div>
-             )}
-           </div>
+        {/* Active speaker / Presenter preview */}
+        <div className="flex-1 min-h-0 mt-1 relative rounded-xl overflow-hidden bg-white/5 border border-white/10 group/preview transition-transform group-hover/bubble:scale-[1.01]">
+          {tracks.length > 0 ? (
+            <GridLayout tracks={tracks.slice(0, 1)}>
+              <ParticipantTile className="h-full w-full object-cover" />
+            </GridLayout>
+          ) : (
+            <div className="h-full w-full flex items-center justify-center">
+              <div className="flex -space-x-2">
+                {participants.slice(0, 3).map((p) => (
+                  <div key={p.sid} className="w-8 h-8 rounded-full bg-primary/30 border border-white/20 flex items-center justify-center text-xs font-bold text-white shadow-lg backdrop-blur-sm">
+                    {p.identity[0].toUpperCase()}
+                  </div>
+                ))}
+                {participants.length > 3 && (
+                  <div className="w-8 h-8 rounded-full bg-secondary/80 border border-white/20 flex items-center justify-center text-xs font-bold text-white shadow-lg backdrop-blur-sm">
+                    +{participants.length - 3}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Mini Speaker Badge */}
+          {participants.some(p => p.isSpeaking) && (
+            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-green-500/80 backdrop-blur-sm rounded-md flex items-center gap-1 scale-75 origin-bottom-right">
+              <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              <span className="text-[8px] text-white font-bold uppercase tracking-tighter">Speaking</span>
+            </div>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0f] relative overflow-hidden font-sans w-full">
-      {/* Top Left: Minimize Button */}
-      <div className="absolute top-4 left-4 z-[100]">
-        <Button 
-          variant="ghost" 
-          onClick={onToggleMinimize} 
-          className="bg-black/40 backdrop-blur-md border border-white/10 text-white hover:bg-white/20 rounded-full px-4 h-10 flex items-center gap-2 shadow-lg"
+    <div className="flex flex-col h-full bg-[#121214] relative overflow-hidden font-sans w-full">
+      {/* Subtle Minimize Button - move to top right for better synergy with header */}
+      <div className="absolute top-4 right-4 z-[100]">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onToggleMinimize}
+          className="bg-black/20 hover:bg-black/40 text-white/40 hover:text-white rounded-full h-8 w-8 p-0 transition-colors"
+          title="Minimize to PiP"
         >
-          <Minimize2 className="w-4 h-4" />
-          <span className="text-sm font-medium">Minimize</span>
+          <Minimize2 className="w-3.5 h-3.5" />
         </Button>
       </div>
-
-      {/* Dynamic Background Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#12122b] via-[#0a0a0f] to-[#1e1e3f] opacity-50 pointer-events-none" />
 
       {/* Floating Emojis Overlay */}
       <div className="absolute inset-0 pointer-events-none z-[150] overflow-hidden">
@@ -141,39 +157,38 @@ const CallImplementation = ({
         ))}
       </div>
 
-      <div className="flex-grow flex min-h-0 relative">
-        <div className="flex-grow relative overflow-y-auto p-3 sm:p-4">
-          <GridLayout tracks={tracks}>
-            <ParticipantTile className="rounded-2xl overflow-hidden border border-white/5 shadow-2xl transition-all duration-300 hover:border-primary/30" />
+        <div className="flex-grow relative overflow-y-auto p-6 sm:p-10 flex items-center justify-center">
+          <GridLayout tracks={tracks} className="max-w-5xl mx-auto w-full">
+            <ParticipantTile className="rounded-3xl overflow-hidden border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all duration-300" />
           </GridLayout>
         </div>
-        
+
         {/* Responsive Panels with Glassmorphism */}
         {/* Participant List - Bottom Sheet on Mobile, Sidebar on Desktop */}
         {showParticipants && (
           <div className="absolute inset-x-0 bottom-0 top-0 sm:inset-y-0 sm:right-0 sm:left-auto sm:w-80 bg-black/40 backdrop-blur-3xl z-[120] animate-in slide-in-from-bottom sm:slide-in-from-right duration-500 overflow-hidden flex flex-col sm:border-l border-white/10">
             {/* Overlay for mobile to close on click outside */}
             <div className="absolute inset-0 sm:hidden" onClick={() => setShowParticipants(false)} />
-            
+
             <div className="relative mt-auto sm:mt-0 flex flex-col h-[70%] sm:h-full bg-black/80 sm:bg-transparent backdrop-blur-md sm:backdrop-blur-none border-t sm:border-t-0 border-white/10 rounded-t-[32px] sm:rounded-none p-6 shadow-2xl">
               {/* Mobile handle */}
               <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6 sm:hidden shrink-0" />
-              
+
               <div className="flex justify-between items-center mb-8 shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-1.5 h-6 bg-primary rounded-full" />
                   <h3 className="text-xl font-bold text-white">In the Room ({participants.length})</h3>
                 </div>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={() => setShowParticipants(false)} 
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setShowParticipants(false)}
                   className="hover:bg-red-500/20 text-white rounded-full h-10 w-10 p-0 border border-white/10"
                 >
                   <X className="w-5 h-5" />
                 </Button>
               </div>
-              
+
               <div className="flex-grow space-y-3 overflow-y-auto pr-1 overflow-x-hidden custom-scrollbar">
                 {participants.map((p) => (
                   <div key={p.sid} className="flex items-center gap-4 p-3 rounded-2xl bg-white/5 hover:bg-white/10 transition-all border border-white/5 group">
@@ -190,15 +205,15 @@ const CallImplementation = ({
                       </p>
                     </div>
                     <div className="shrink-0 flex items-center">
-                       {p.isSpeaking ? (
-                         <div className="flex gap-0.5 h-3 items-end">
-                           <div className="w-0.5 h-2 bg-primary animate-bounce-short" />
-                           <div className="w-0.5 h-3 bg-primary animate-bounce-short delay-75" />
-                           <div className="w-0.5 h-2 bg-primary animate-bounce-short delay-150" />
-                         </div>
-                       ) : (
-                         <div className="w-2 h-2 rounded-full bg-green-500/50" />
-                       )}
+                      {p.isSpeaking ? (
+                        <div className="flex gap-0.5 h-3 items-end">
+                          <div className="w-0.5 h-2 bg-primary animate-bounce-short" />
+                          <div className="w-0.5 h-3 bg-primary animate-bounce-short delay-75" />
+                          <div className="w-0.5 h-2 bg-primary animate-bounce-short delay-150" />
+                        </div>
+                      ) : (
+                        <div className="w-2 h-2 rounded-full bg-green-500/50" />
+                      )}
                     </div>
                   </div>
                 ))}
@@ -206,22 +221,21 @@ const CallImplementation = ({
             </div>
           </div>
         )}
-      </div>
 
       {/* Modern Floating Control Bar */}
       <div className="absolute bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 px-1 py-1 sm:px-3 sm:py-1.5 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-0.5 sm:gap-2 shadow-[0_0_50px_rgba(0,0,0,0.5)] animate-in fade-in zoom-in duration-500 max-w-[98vw]">
         <div className="flex-shrink-0 flex items-center pr-1 sm:pr-2 border-r border-white/10">
-          <ControlBar 
-            variation="minimal" 
+          <ControlBar
+            variation="minimal"
             controls={{ leave: true, microphone: true, camera: true, chat: false, settings: false, screenShare: true }}
             className="modern-control-bar no-dropdowns"
           />
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowSettings(true)}
             className="h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full text-gray-400 hover:bg-white/10 transition-all border border-white/5"
             title="Settings"
@@ -230,9 +244,9 @@ const CallImplementation = ({
           </Button>
 
           {(userRole === 'creator' || userRole === 'admin') && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setShowHostControls(!showHostControls)}
               className={`h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full transition-all duration-300 ${showHostControls ? 'bg-orange-500/20 text-orange-400' : 'text-gray-400 hover:bg-white/10'}`}
               title="Host Controls"
@@ -241,13 +255,13 @@ const CallImplementation = ({
             </Button>
           )}
         </div>
-        
+
         <div className="h-6 w-px bg-white/10 mx-1" />
-        
+
         <div className="flex gap-1 sm:gap-2 relative">
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               setShowReactions(!showReactions);
               if (!showReactions) setShowMoreReactions(false);
@@ -257,10 +271,10 @@ const CallImplementation = ({
           >
             <Smile className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-secondary" />
           </Button>
-          
-          <Button 
-            variant="ghost" 
-            size="sm" 
+
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setShowParticipants(!showParticipants)}
             className={`h-[30px] w-[30px] sm:h-[34px] sm:w-[34px] p-0 rounded-full transition-all duration-300 ${showParticipants ? 'bg-primary text-white shadow-[0_0_15px_rgba(var(--primary),0.4)]' : 'text-gray-400 hover:bg-white/10'}`}
             title="Show Participants"
@@ -274,9 +288,9 @@ const CallImplementation = ({
       {showReactions && (
         <div className={`absolute bottom-[135px] sm:bottom-28 left-1/2 -translate-x-1/2 mb-5 p-3 bg-black/95 backdrop-blur-2xl border border-white/10 ${showMoreReactions ? 'rounded-3xl flex-wrap w-[280px] sm:w-[400px]' : 'rounded-full whitespace-nowrap overflow-x-auto max-w-[90vw]'} flex flex-row gap-3 animate-in fade-in zoom-in slide-in-from-bottom-4 duration-300 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[200] justify-center scale-95 sm:scale-100 origin-bottom`}>
           {(showMoreReactions ? ['❤️', '👏', '🔥', '😂', '😮', '😢', '👍', '🎉', '🙌', '✨', '🤩', '💡'] : ['❤️', '👏', '🔥', '😂', '😮', '😢']).map((emoji) => (
-            <button 
+            <button
               key={emoji}
-              className="text-2xl sm:text-3xl hover:scale-150 transition-all duration-300 active:scale-90 px-1.5 py-1 shrink-0" 
+              className="text-2xl sm:text-3xl hover:scale-150 transition-all duration-300 active:scale-90 px-1.5 py-1 shrink-0"
               onClick={() => {
                 const id = Date.now();
                 const x = 30 + Math.random() * 40; // Random position between 30% and 70%
@@ -288,7 +302,7 @@ const CallImplementation = ({
               {emoji}
             </button>
           ))}
-          <button 
+          <button
             className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 rounded-full transition-all shrink-0 ml-1 border border-white/5"
             onClick={(e) => {
               e.stopPropagation();
@@ -296,7 +310,7 @@ const CallImplementation = ({
             }}
             title="More Reactions"
           >
-            {showMoreReactions ? <X className="w-5 h-5" /> : <div className="flex gap-0.5"><span className="w-1.5 h-1.5 bg-current rounded-full"/><span className="w-1.5 h-1.5 bg-current rounded-full"/><span className="w-1.5 h-1.5 bg-current rounded-full"/></div>}
+            {showMoreReactions ? <X className="w-5 h-5" /> : <div className="flex gap-0.5"><span className="w-1.5 h-1.5 bg-current rounded-full" /><span className="w-1.5 h-1.5 bg-current rounded-full" /><span className="w-1.5 h-1.5 bg-current rounded-full" /></div>}
           </button>
         </div>
       )}
@@ -322,8 +336,8 @@ const CallImplementation = ({
                 <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
                   <Camera className="w-3 h-3" /> Video Input
                 </label>
-                <select 
-                  value={activeVideoId} 
+                <select
+                  value={activeVideoId}
                   onChange={(e) => setActiveVideo(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
                 >
@@ -336,8 +350,8 @@ const CallImplementation = ({
                 <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
                   <Mic className="w-3 h-3" /> Audio Input
                 </label>
-                <select 
-                  value={activeAudioId} 
+                <select
+                  value={activeAudioId}
                   onChange={(e) => setActiveAudio(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
                 >
@@ -350,8 +364,8 @@ const CallImplementation = ({
                 <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 px-1 flex items-center gap-2">
                   <Speaker className="w-3 h-3" /> Audio Output
                 </label>
-                <select 
-                  value={activeSpeakerId} 
+                <select
+                  value={activeSpeakerId}
                   onChange={(e) => setActiveSpeaker(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all cursor-pointer hover:bg-white/10"
                 >
@@ -360,9 +374,9 @@ const CallImplementation = ({
               </div>
             </div>
 
-            <Button 
-               className="w-full mt-10 rounded-2xl py-6 bg-primary text-primary-foreground font-bold text-sm tracking-wide shadow-[0_10px_30px_rgba(var(--primary),0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all"
-               onClick={() => setShowSettings(false)}
+            <Button
+              className="w-full mt-10 rounded-2xl py-6 bg-primary text-primary-foreground font-bold text-sm tracking-wide shadow-[0_10px_30px_rgba(var(--primary),0.3)] hover:scale-[1.02] active:scale-[0.98] transition-all"
+              onClick={() => setShowSettings(false)}
             >
               Save & Close
             </Button>
@@ -385,9 +399,9 @@ const CallImplementation = ({
             </div>
 
             <div className="space-y-4">
-              <button 
+              <button
                 onClick={() => {
-                   toast({ title: "Mute All Requested", description: "Requesting participants to mute their microphones." });
+                  toast({ title: "Mute All Requested", description: "Requesting participants to mute their microphones." });
                 }}
                 className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:bg-white/10 transition-all text-left"
               >
@@ -400,12 +414,12 @@ const CallImplementation = ({
                 </div>
               </button>
 
-              <button 
+              <button
                 onClick={() => {
-                   if (confirm('Are you sure you want to end this discussion for everyone?')) {
-                     onLeave();
-                     setShowHostControls(false);
-                   }
+                  if (confirm('Are you sure you want to end this discussion for everyone?')) {
+                    onLeave();
+                    setShowHostControls(false);
+                  }
                 }}
                 className="w-full bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex items-center gap-4 hover:bg-red-500/20 transition-all text-left"
               >
@@ -503,7 +517,81 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const { callState, toggleMinimize: toggleGlobalMinimize } = useGlobalCall();
+  const location = useLocation();
+  const prevPathname = useRef(location.pathname);
+
+  const isMinimized = callState.isMinimized;
+  const setIsMinimized = (val: boolean) => toggleGlobalMinimize(val);
+  const [pipSize, setPipSize] = useState({ width: 220, height: 160 });
+  const isResizing = useRef(false);
+  const [embeddedStyle, setEmbeddedStyle] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [pipPos, setPipPos] = useState({ x: 0, y: 0 });
+
+  // Handle snapping to corners like YouTube PiP
+  const handleDragEnd = (_: any, info: any) => {
+    if (!isMinimized) return;
+    
+    const x = info.offset.x + pipPos.x;
+    const y = info.offset.y + pipPos.y;
+    
+    const windowW = window.innerWidth;
+    const windowH = window.innerHeight;
+    const padding = 24;
+    const bottomOffset = 80; // Account for mobile nav
+    
+    // Limits
+    const leftLimit = -(windowW - pipSize.width - padding * 2);
+    const topLimit = -(windowH - pipSize.height - padding * 2 - bottomOffset);
+    
+    // Simple snap logic (corners)
+    const newX = x < leftLimit / 2 ? leftLimit : 0;
+    const newY = y < topLimit / 2 ? topLimit : 0;
+    
+    setPipPos({ x: newX, y: newY });
+  };
+
+  // Dynamically map exact coordinates of the inline placeholder
+  // This prevents LiveKit components from unmounting (which causes the blank screen)
+  useEffect(() => {
+    if (isMinimized || !(location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/'))) {
+      return;
+    }
+
+    const checkNodeAndUpdate = () => {
+      const el = document.getElementById('discussion-call-container');
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        setEmbeddedStyle({
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+        });
+      }
+    };
+
+    checkNodeAndUpdate();
+    // Use an interval to catch layout shifts early
+    const interval = setInterval(checkNodeAndUpdate, 50);
+    window.addEventListener('resize', checkNodeAndUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('resize', checkNodeAndUpdate);
+    };
+  }, [location.pathname, isMinimized]);
+
+  // Auto-minimize when navigating away from the specific room
+  useEffect(() => {
+    if (prevPathname.current !== location.pathname) {
+      const isRoomPath = location.pathname.includes('/discussion-rooms/') || location.pathname.includes('/projects/');
+      if (!isRoomPath && !isMinimized) {
+        setIsMinimized(true);
+      }
+      prevPathname.current = location.pathname;
+    }
+  }, [location.pathname, isMinimized]);
 
   useEffect(() => {
     setMounted(true);
@@ -566,46 +654,96 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
 
   if (!mounted) return null;
 
+  const isEmbeddedView = location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/');
+
   return createPortal(
     <AnimatePresence>
-      <motion.div 
+      <motion.div
         initial={isMinimized ? { scale: 0.8, opacity: 0 } : { opacity: 0 }}
-        animate={isMinimized ? { 
-          scale: 1, 
+        animate={isMinimized ? {
+          scale: 1,
           opacity: 1,
+          x: pipPos.x,
+          y: pipPos.y
+        } : {
+          opacity: 1,
+          scale: 1,
           x: 0,
           y: 0
-        } : { 
-          opacity: 1,
-          scale: 1
         }}
         exit={{ scale: 0.5, opacity: 0 }}
-        transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        drag={isMinimized}
-        dragConstraints={{ left: -1000, right: 1000, top: -1000, bottom: 1000 }} // Allow free dragging within viewport
-        dragElastic={0.1}
+        transition={{ type: "spring", damping: 30, stiffness: 400 }}
+        drag={isMinimized && !isResizing.current}
+        onDragEnd={handleDragEnd}
+        dragMomentum={false}
+        dragConstraints={{ 
+          left: typeof window !== 'undefined' ? -(window.innerWidth - pipSize.width - 32) : -1000, 
+          right: 0, 
+          top: typeof window !== 'undefined' ? -(window.innerHeight - pipSize.height - 120) : -1000, 
+          bottom: 0 
+        }}
+        dragElastic={0.05}
         className={
           isMinimized
-            ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[99999] w-[180px] sm:w-[220px] bg-black/60 backdrop-blur-2xl border border-white/20 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] cursor-move touch-none" 
-            : "fixed inset-0 z-[99999] bg-black overflow-hidden"
+            ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[99999] bg-[#0a0c14]/90 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] cursor-move touch-none group/bubble"
+            : isEmbeddedView
+              ? "fixed z-[40] bg-[#121214] overflow-hidden border-r border-white/10 rounded-none"
+              : "fixed inset-0 z-[99999] bg-[#121214] overflow-hidden"
         }
+        style={{
+          width: isMinimized ? `${pipSize.width}px` : (isEmbeddedView && embeddedStyle.width) ? `${embeddedStyle.width}px` : '100%',
+          height: isMinimized ? `${pipSize.height}px` : (isEmbeddedView && embeddedStyle.height) ? `${embeddedStyle.height}px` : '100%',
+          top: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.top) ? `${embeddedStyle.top}px` : undefined,
+          left: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.left) ? `${embeddedStyle.left}px` : undefined,
+        }}
       >
+        {isMinimized && (
+          <div
+            className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize z-[100] flex items-center justify-center group/resize"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              isResizing.current = true;
+            }}
+            onPointerUp={() => {
+              isResizing.current = false;
+            }}
+          >
+            <motion.div
+              drag
+              dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+              dragElastic={0}
+              onDrag={(_, info) => {
+                setPipSize(prev => ({
+                  width: Math.max(180, prev.width + info.delta.x),
+                  height: Math.max(140, prev.height + info.delta.y)
+                }));
+              }}
+              onDragEnd={() => {
+                isResizing.current = false;
+              }}
+              className="w-4 h-4 rounded-full bg-white/10 group-hover/resize:bg-primary/40 flex items-center justify-center transition-colors shadow-inner"
+            >
+              <div className="w-1.5 h-1.5 border-r border-b border-white/50" />
+            </motion.div>
+          </div>
+        )}
         <LiveKitRoom
           video={true}
           audio={true}
           token={token}
           serverUrl={serverUrl}
-          onDisconnected={onLeave}
+          connect={true}
           data-lk-theme="default"
-          style={{ height: isMinimized ? 'auto' : '100dvh', width: '100%' }}
+          className="h-full w-full"
+          onDisconnected={onLeave}
           key={token}
         >
           <LayoutContextProvider>
-            <CallImplementation 
-              onLeave={onLeave} 
-              userRole={userRole} 
-              isMinimized={isMinimized} 
-              onToggleMinimize={() => setIsMinimized(!isMinimized)} 
+            <CallImplementation
+              onLeave={onLeave}
+              userRole={userRole}
+              isMinimized={isMinimized}
+              onToggleMinimize={() => setIsMinimized(!isMinimized)}
               roomName={roomName}
             />
           </LayoutContextProvider>

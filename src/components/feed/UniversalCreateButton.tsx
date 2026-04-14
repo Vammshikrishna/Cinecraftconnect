@@ -34,8 +34,8 @@ const UniversalCreateButton = () => {
         {
             icon: MessageSquare,
             label: 'Start Discussion',
-            path: '/discussion-rooms/new',
-            color: 'bg-blue-500'
+            path: '/discussion-rooms',
+            color: 'bg-blue-400'
         },
         {
             icon: Film,

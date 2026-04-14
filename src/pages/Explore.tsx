@@ -6,6 +6,7 @@ import SavedSearches from '@/components/search/SavedSearches';
 import SearchResults from '@/components/search/SearchResults';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { PageHeader } from '@/components/common/PageHeader';
 
 interface SearchFilters {
   query: string;
@@ -85,15 +86,11 @@ const Explore = () => {
   return (
     <div className="min-h-screen bg-background pt-20">
       <div className="container mx-auto px-4 py-8 animate-fade-in">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center">
-              <Compass className="mr-3 h-8 w-8 text-primary" />
-              Explore & Discover
-            </h1>
-            <p className="text-muted-foreground">Find content, projects, people, and opportunities</p>
-          </div>
-        </div>
+        <PageHeader 
+          title="Explore & Discover" 
+          subtitle="Find content, projects, people, and opportunities" 
+          Icon={Compass}
+        />
 
         <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
           <div className="xl:col-span-4">

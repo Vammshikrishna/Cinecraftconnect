@@ -1,3 +1,4 @@
+
 import EnhancedNotificationsCenter from "@/components/notifications/EnhancedNotificationsCenter";
 import { motion } from "framer-motion";
 
@@ -10,7 +11,7 @@ const Notifications = () => {
         <div className="absolute bottom-[-10%] left-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[150px]" />
       </div>
 
-      <main className="max-w-3xl mx-auto px-4 pt-20 md:pt-24 relative z-10 pb-10">
+      <main className="max-w-4xl mx-auto px-4 pt-16 md:pt-20 relative z-10 pb-24">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

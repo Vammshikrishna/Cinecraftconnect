@@ -1,10 +1,11 @@
+
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Megaphone, Film, MessageSquare, Star,
-    ShoppingBag, Building2, Users
+    ShoppingBag, Building2, Users, Layout
 } from 'lucide-react';
 
 // Components
@@ -18,6 +19,7 @@ import FeedAnnouncementCard from './FeedAnnouncementCard';
 import FeedMarketplaceCard from './FeedMarketplaceCard';
 import FeedVendorCard from './FeedVendorCard';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PageHeader } from '@/components/common/PageHeader';
 
 // Services
 import { getSafeImageUrl } from '@/services/tmdb';
@@ -267,8 +269,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
     return (
         <div className="space-y-6 pb-20">
-            {/* Feed Header */}
-
+            <PageHeader 
+              title="Feed" 
+              subtitle="Stay updated with the latest from the film community" 
+              Icon={Layout}
+            />
 
             <div className="px-1 sm:px-4">
                 <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />
@@ -301,7 +306,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         initials: getInitials(authorName),
                                         avatar: post.profiles?.avatar_url || undefined
                                     }}
-                                    timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                                    timeAgo={(() => {
+                                        try {
+                                            const d = post.created_at ? new Date(post.created_at) : new Date();
+                                            return isNaN(d.getTime()) ? "Just now" : formatDistanceToNow(d, { addSuffix: true });
+                                        } catch {
+                                            return "Just now";
+                                        }
+                                    })()}
                                     createdAt={post.created_at}
                                     content={post.content}
                                     mediaUrl={post.media_url}

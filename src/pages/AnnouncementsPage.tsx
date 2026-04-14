@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -7,6 +8,7 @@ import { Megaphone, Plus } from 'lucide-react';
 import { CreateAnnouncementDialog } from '@/components/feed/CreateAnnouncementDialog';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { PageHeader } from '@/components/common/PageHeader';
 
 interface Announcement {
     id: string;
@@ -91,26 +93,17 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     };
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-24">
+        <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24">
             <div className="max-w-4xl mx-auto px-4 md:px-8">
-                <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 min-w-0">
-                        <div className="p-3 bg-primary/10 rounded-xl shrink-0">
-                            <Megaphone className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-foreground mb-1 sm:mb-2 truncate">
-                                Announcements
-                            </h1>
-                            <p className="text-muted-foreground text-sm sm:text-base md:text-lg break-words">
-                                Stay updated with the latest news and updates from the platform
-                            </p>
-                        </div>
-                    </div>
-                    {user && (
+                <PageHeader 
+                  title="Announcements" 
+                  subtitle="Stay updated with the latest news and updates from the platform" 
+                  Icon={Megaphone}
+                  actions={
+                    user ? (
                         <div className="flex gap-2">
-                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90">
-                                <Plus className="mr-2 h-4 w-4" />
+                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+                                <Plus className="mr-2 h-5 w-5" />
                                 New Announcement
                             </Button>
                             <CreateAnnouncementDialog
@@ -119,8 +112,9 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                                 onAnnouncementCreated={fetchAnnouncements}
                             />
                         </div>
-                    )}
-                </div>
+                    ) : undefined
+                  }
+                />
 
                 {loading ? (
                     <div className="space-y-4">

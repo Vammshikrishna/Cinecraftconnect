@@ -6,8 +6,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Phone, Video, MoreVertical, Reply, Trash2, ShieldBan, X } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { useCall } from '@/hooks/useCall';
-import { LiveKitCallContainer } from '@/components/calls/LiveKitCallContainer';
+import { useGlobalCall } from '@/contexts/CallContext';
 import { MessageComposer } from './MessageComposer';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
@@ -42,7 +41,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [inCall, setInCall] = useState(false);
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
@@ -50,8 +48,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
 
-  // Use spaceId for the call room, as RLS policies expect project_space_id
-  const { activeCall, loading, startCall, joinCall } = useCall('project', spaceId || '');
+  // Global Call state
+  const { callState, startCall: startGlobalCall } = useGlobalCall();
+  const isInCall = callState.isActive && callState.roomId === spaceId;
+  const loading = false; // Simplified for now as context handles it
 
   useEffect(() => {
     const fetchSpaceId = async () => {
@@ -210,7 +210,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       .delete()
       .eq('id', messageId)
       .eq('user_id', user.id);
-    
+
     if (error) {
       console.error('Error undoing message:', error);
       toast({ title: "Error", description: "Failed to undo message", variant: "destructive" });
@@ -225,7 +225,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       p_table: 'project_space_messages',
       p_message_id: messageId
     });
-    
+
     if (error) {
       console.error('Error hiding message:', error);
       toast({ title: "Error", description: "Failed to hide message", variant: "destructive" });
@@ -264,27 +264,15 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
 
   const handleStartCall = async () => {
-    const call = await startCall();
-    if (call) {
-      setInCall(true);
-    } else {
+    if (!spaceId) return;
+    const success = await startGlobalCall('project', spaceId, projectName || 'Project Call');
+    if (!success) {
       toast({
         title: "Error",
         description: "Failed to start call. Please try again.",
         variant: "destructive"
       });
     }
-  };
-
-  const handleJoinCall = async () => {
-    const success = await joinCall();
-    if (success) {
-      setInCall(true);
-    }
-  };
-
-  const handleLeaveCall = () => {
-    setInCall(false);
   };
 
   const formatTime = (timestamp: string) => {
@@ -345,23 +333,15 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   // Otherwise show chat interface
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
-      
-      {/* PIP Call Overlay using Portal */}
-      {inCall && activeCall && (
-        <LiveKitCallContainer
-          roomId={spaceId || projectId}
-          onLeave={handleLeaveCall}
-          roomName={projectName || 'Project Call'}
-          projectId={projectId}
-        />
-      )}
+
+      {/* Global call handles everything now, no local LiveKitCallContainer needed here */}
 
       <div className="flex flex-wrap justify-between items-center p-4 border-b border-border gap-2 shrink-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <h2 className="text-lg font-semibold">Project Chat</h2>
         <div className="flex gap-2 items-center">
-          {activeCall ? (
-            <Button size="sm" variant="default" onClick={handleJoinCall} disabled={loading}>
-              <Video className="h-4 w-4 mr-2" />Join Call
+          {isInCall ? (
+            <Button size="sm" variant="outline" className="text-green-500 border-green-500/20 bg-green-500/10 pointer-events-none">
+              <Video className="h-4 w-4 mr-2" />In Call
             </Button>
           ) : (
             <>
@@ -384,7 +364,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             <p>No messages yet. Start the conversation!</p>
           </div>
         ) : (
-              messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
+          messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
             const isOwn = message.user_id === user?.id;
             const isShare = isShareContent(message.content);
             return (
@@ -402,7 +382,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                         {message.profiles?.full_name || 'Unknown User'}
                       </p>
                     )}
-                    
+
                     {message.reply_to_id && !message.is_deleted && (() => {
                       const repliedMsg = messages.find(m => m.id === message.reply_to_id);
                       if (!repliedMsg) return null;
@@ -414,13 +394,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                           <div className="opacity-90 line-clamp-1">
                             {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
                               repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                              repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                              repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                              repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                              repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                              repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                              repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
-                              repliedMsg.content
+                                repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                                  repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                                    repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                                      repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                        repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                          repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
+                                            repliedMsg.content
                             )}
                           </div>
                         </div>
@@ -435,7 +415,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                       renderMessageContent(message.content)
                     )}
                   </div>
-                  
+
                   {!message.is_deleted && (
                     <div className={`absolute ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} top-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
                       <DropdownMenu>
@@ -453,10 +433,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                               <Trash2 className="h-4 w-4 mr-2" /> Undo
                             </DropdownMenuItem>
                           )}
-                        <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                          <X className="h-4 w-4 mr-2" /> Delete for Me
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                            <X className="h-4 w-4 mr-2" /> Delete for Me
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                   )}
@@ -481,13 +461,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
               </div>
               <div className="text-muted-foreground truncate">
                 {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                 replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                 replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                 replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                 replyingTo.content}
+                  replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                    replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                      replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                        replyingTo.content}
               </div>
             </div>
-            <button 
+            <button
               onClick={() => setReplyingTo(null)}
               className="p-1.5 rounded-full hover:bg-background text-muted-foreground transition-colors"
             >

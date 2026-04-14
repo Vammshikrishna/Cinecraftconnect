@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +7,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Search, Link as LinkIcon, Share2, Film, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
 
 interface AnnouncementShareSheetProps {
@@ -37,7 +35,6 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
     const [sentTo, setSentTo] = useState<Set<string>>(new Set());
     const { user } = useAuth();
     const { toast } = useToast();
-    const isDesktop = useMediaQuery("(min-width: 768px)");
     const { connections } = useConnections();
 
     useEffect(() => {
@@ -291,55 +288,90 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
         : targets;
 
     const Content = (
-        <div className="flex flex-col h-full max-h-[80vh]">
-            <div className="p-4 border-b border-border space-y-4">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+        <div className="flex flex-col h-full max-h-[85vh] overflow-hidden">
+            <div className="p-4 sm:p-6 space-y-4">
+                <div className="relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50 h-4 w-4 transition-colors group-focus-within:text-primary" />
                     <Input
                         autoFocus
-                        placeholder="Search..."
+                        placeholder="Search crew, projects, or rooms..."
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-9 bg-muted/50 border-none"
+                        className="pl-11 bg-muted/30 border-none rounded-2xl h-12 focus-visible:ring-1 focus-visible:ring-primary/30 transition-all font-medium"
                     />
                 </div>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2" onClick={handleCopyLink}>
+                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none px-1">
+                    <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        className="flex-shrink-0 gap-2 h-10 rounded-xl bg-muted/40 hover:bg-muted/60 border-none transition-all font-bold px-4" 
+                        onClick={handleCopyLink}
+                    >
                         <LinkIcon className="h-4 w-4" /> Copy Text
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2" onClick={handleSystemShare}>
-                        <Share2 className="h-4 w-4" /> Share via...
+                    <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        className="flex-shrink-0 gap-2 h-10 rounded-xl bg-primary/5 border-primary/20 hover:bg-primary/10 transition-all text-primary font-bold px-5 shadow-sm" 
+                        onClick={handleSystemShare}
+                    >
+                        <Share2 className="h-4 w-4" /> More
                     </Button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex-1 overflow-y-auto px-2 sm:px-4 pb-6 custom-scrollbar">
                 {loading ? (
-                    <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                    <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
+                        <div className="h-8 w-8 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+                        <p className="text-sm font-medium animate-pulse">Syncing crew...</p>
+                    </div>
                 ) : displayTargets.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">No results found</div>
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="p-4 bg-muted/30 rounded-full mb-3 text-muted-foreground/30">
+                            <Search className="h-10 w-10" />
+                        </div>
+                        <p className="text-sm font-bold text-muted-foreground">No matches found</p>
+                        <p className="text-xs text-muted-foreground/60 mt-1">Try a different name or room</p>
+                    </div>
                 ) : (
                     <div className="space-y-1">
-                        {displayTargets.map(target => (
-                            <div key={`${target.type}-${target.id}`} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors">
-                                <div className="flex items-center gap-3 overflow-hidden">
-                                    <Avatar className="h-12 w-12 border border-border">
-                                        <AvatarImage src={target.avatar_url || undefined} />
-                                        <AvatarFallback className="bg-primary/10 text-primary">
-                                            {target.type === 'project' ? <Film className="h-5 w-5" /> :
-                                                target.type === 'room' ? <MessageSquare className="h-5 w-5" /> :
-                                                    target.name[0]}
-                                        </AvatarFallback>
-                                    </Avatar>
+                        {displayTargets.map((target) => (
+                            <div 
+                                key={`${target.type}-${target.id}`} 
+                                className="flex items-center justify-between p-3 sm:p-4 hover:bg-primary/5 rounded-[1.5rem] transition-all group active:scale-[0.98]"
+                            >
+                                <div className="flex items-center gap-3 sm:gap-4 overflow-hidden flex-1">
+                                    <div className="relative shrink-0">
+                                        <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border-2 border-background shadow-lg group-hover:scale-105 transition-transform duration-300">
+                                            <AvatarImage src={target.avatar_url || undefined} className="object-cover" />
+                                            <AvatarFallback className="bg-primary/10 text-primary font-black">
+                                                {target.type === 'project' ? <Film size={20} /> :
+                                                    target.type === 'room' ? <MessageSquare size={20} /> :
+                                                        target.name[0]}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        {sentTo.has(target.id) && (
+                                            <div className="absolute -bottom-0.5 -right-0.5 bg-green-500 rounded-full p-1 border-2 border-background shadow-sm">
+                                                <div className="h-2 w-2 rounded-full bg-white" />
+                                            </div>
+                                        )}
+                                    </div>
                                     <div className="flex flex-col overflow-hidden">
-                                        <span className="font-medium truncate">{target.name}</span>
-                                        <span className="text-xs text-muted-foreground truncate">{target.subtitle}</span>
+                                        <span className="font-bold text-sm sm:text-base leading-tight truncate group-hover:text-primary transition-colors">
+                                            {target.name}
+                                        </span>
+                                        <span className="text-[10px] sm:text-xs text-muted-foreground/70 font-bold uppercase tracking-widest mt-0.5 truncate">
+                                            {target.subtitle}
+                                        </span>
                                     </div>
                                 </div>
                                 <Button
                                     size="sm"
                                     variant={sentTo.has(target.id) ? "ghost" : "default"}
-                                    className={sentTo.has(target.id) ? "text-green-500" : "bg-primary hover:bg-primary/90"}
+                                    className={sentTo.has(target.id) 
+                                        ? "text-green-500 font-bold bg-green-500/5 rounded-2xl min-w-[70px]" 
+                                        : "bg-primary text-primary-foreground hover:bg-primary/90 rounded-2xl h-10 px-5 font-bold min-w-[70px] shadow-lg shadow-primary/20"}
                                     disabled={sending === target.id || sentTo.has(target.id)}
                                     onClick={() => handleSend(target)}
                                 >
@@ -353,29 +385,14 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
         </div>
     );
 
-    if (isDesktop) {
-        return (
-            <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[400px] p-0 gap-0 bg-card text-card-foreground">
-                    <DialogHeader className="p-4 border-b border-border">
-                        <DialogTitle className="text-center">Share Announcement</DialogTitle>
-                        <DialogDescription className="sr-only">
-                            Share this announcement with connections, projects, or spaces.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {Content}
-                </DialogContent>
-            </Dialog>
-        );
-    }
-
     return (
         <Drawer open={isOpen} onOpenChange={onOpenChange}>
-            <DrawerContent className="bg-card text-card-foreground max-h-[90vh]">
-                <DrawerHeader className="border-b border-border">
-                    <DrawerTitle className="text-center">Share Announcement</DrawerTitle>
-                    <DrawerDescription className="sr-only">
-                        Share this announcement with connections, projects, or spaces.
+            <DrawerContent className="bg-background/95 backdrop-blur-3xl border-none rounded-t-[32px] max-h-[90vh]">
+                <div className="mx-auto w-12 h-1.5 rounded-full bg-muted/40 my-4" />
+                <DrawerHeader className="pb-2">
+                    <DrawerTitle className="text-xl font-black text-center">Share Announcement</DrawerTitle>
+                    <DrawerDescription className="text-center text-xs text-muted-foreground px-6">
+                        Send this update directly to your connections or spaces.
                     </DrawerDescription>
                 </DrawerHeader>
                 {Content}
