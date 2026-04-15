@@ -1,5 +1,4 @@
 
-import * as React from "react";
 import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,26 +7,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-type Theme = "dark" | "light" | "system";
+import { useTheme } from "@/components/theme-provider";
 
 export function ThemeToggle() {
-  const [theme, setThemeState] = React.useState<Theme>(() => {
-    const storedTheme = localStorage.getItem("theme") as Theme | null;
-    return storedTheme || "system";
-  });
-
-  React.useEffect(() => {
-    const isDark =
-      theme === "dark" ||
-      (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [theme]);
-
-  const setTheme = (newTheme: Theme) => {
-    localStorage.setItem("theme", newTheme);
-    setThemeState(newTheme);
-  };
+  const { setTheme } = useTheme();
 
   return (
     <DropdownMenu>

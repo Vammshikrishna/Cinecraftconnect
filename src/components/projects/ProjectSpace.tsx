@@ -199,6 +199,14 @@ export const ProjectSpace = ({
     return () => { active = false; };
   }, [projectId, resolvedSpaceId, user]);
 
+  useEffect(() => {
+    if (!checkingAccess && userRole === 'guest' && requestStatus !== 'approved') {
+      navigate(`/projects/${projectId}`, { replace: true });
+    }
+  }, [checkingAccess, userRole, requestStatus, projectId, navigate]);
+
+  const [requestNote, setRequestNote] = useState('');
+
   const handleJoinRequest = async () => {
 
     if (!user) {
@@ -215,7 +223,8 @@ export const ProjectSpace = ({
         .from('project_space_join_requests' as any)
         .insert({
           project_space_id: resolvedSpaceId,
-          user_id: user.id
+          user_id: user.id,
+          message: requestNote || null
         });
 
       if (error) {
@@ -348,6 +357,22 @@ export const ProjectSpace = ({
               <p className="text-muted-foreground">
                 You are not a member of this project. To view its content and collaborate, you must request to join.
               </p>
+
+              {requestStatus === 'none' && (
+                <div className="w-full space-y-2 text-left">
+                  <label htmlFor="requestNote" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Optional Note
+                  </label>
+                  <textarea
+                    id="requestNote"
+                    placeholder="Briefly explain why you're requesting to join..."
+                    value={requestNote}
+                    onChange={(e) => setRequestNote(e.target.value)}
+                    className="w-full min-h-[100px] bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                  />
+                </div>
+              )}
+
               {requestStatus === 'pending' && (
                 <div className="p-3 bg-yellow-500/10 text-yellow-500 rounded-md border border-yellow-500/20 text-sm w-full">
                   Your request is currently pending approval.

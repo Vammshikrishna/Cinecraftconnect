@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { Share2, Users, Hash, MessageSquare } from 'lucide-react';
+import { Share2, Users, Hash } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 
 interface FeedDiscussionCardProps {
     discussion: {
@@ -75,7 +76,7 @@ const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
                 <Button
                     className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-[18px] h-14 text-lg shadow-lg shadow-primary/10 transition-all active:scale-[0.98]"
                 >
-                    <MessageSquare className="h-5 w-5 mr-3 fill-current" />
+                    <DiscussionRoomIcon size={28} className="mr-3" />
                     Join Discussion Room
                 </Button>
             </Link>

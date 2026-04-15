@@ -87,7 +87,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     const navigate = useNavigate();
 
     const handleCardClick = () => {
-      navigate(`/projects/${project.id}/space`);
+      navigate(`/projects/${project.id}`);
     };
 
     const handleBookmarkClick = async (e: React.MouseEvent) => {

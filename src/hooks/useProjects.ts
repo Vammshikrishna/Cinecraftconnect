@@ -60,10 +60,11 @@ export const useProjects = (activeTab: string = 'all') => {
             let bookmarkedProjectIds = new Set<string>();
 
             if (user) {
-                // Get project_space IDs that are bookmarked
+                // Get project_space IDs that are bookmarked by the current user
                 const { data: bookmarksData, error: bookmarksError } = await supabase
                     .from('project_space_bookmarks')
-                    .select('project_space_id');
+                    .select('project_space_id')
+                    .eq('user_id', user.id);
 
                 if (!bookmarksError && bookmarksData && bookmarksData.length > 0) {
                     const spaceIds = bookmarksData.map(b => b.project_space_id);
@@ -89,7 +90,7 @@ export const useProjects = (activeTab: string = 'all') => {
 
             return projectsWithBookmarks as Project[];
         },
-        staleTime: 1000 * 60 * 5, // 5 minutes
+        staleTime: 1000 * 60, // Reduced staleTime to 1 minute for better responsiveness
     });
 
     const toggleBookmark = useMutation({
@@ -123,12 +124,8 @@ export const useProjects = (activeTab: string = 'all') => {
             }
         },
         onSuccess: (data) => {
-            // Optimistic update or invalidation
-            queryClient.setQueryData(['projects', activeTab, user?.id], (old: Project[] | undefined) => {
-                if (!old) return [];
-                return old.map(p => p.id === data.projectId ? { ...p, is_bookmarked: data.isBookmarked } : p)
-                    .filter(p => activeTab !== 'bookmarked' || p.is_bookmarked);
-            });
+            // Invalidate all projects queries to keep all tabs in sync
+            queryClient.invalidateQueries({ queryKey: ['projects'] });
             toast({ title: data.isBookmarked ? "Project bookmarked!" : "Bookmark removed" });
         },
         onError: (error: any) => {

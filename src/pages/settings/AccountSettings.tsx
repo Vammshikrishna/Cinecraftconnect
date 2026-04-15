@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, User, LogOut, Trash2 } from 'lucide-react';
+import { ArrowLeft, User, LogOut, Trash2, Zap, Building2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useAccountType } from '@/hooks/useAccountType';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -24,6 +25,40 @@ const AccountSettings = () => {
     const { signOut, user } = useAuth();
     const { toast } = useToast();
     const [isSigningOut, setIsSigningOut] = useState(false);
+    const { accountType } = useAccountType();
+    const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
+
+    const handleSwitchAccountType = async (newType: 'fan' | 'creator' | 'studio') => {
+        if (!user || newType === accountType) return;
+        
+        try {
+            setIsUpdatingAccount(true);
+            const { error } = await supabase
+                .from('profiles')
+                .update({ account_type: newType } as any)
+                .eq('id', user.id);
+                
+            if (error) throw error;
+            
+            toast({
+                title: "Account Updated",
+                description: `Your account is now set to ${newType.charAt(0).toUpperCase() + newType.slice(1)}. Reloading...`,
+            });
+            
+            setTimeout(() => {
+                window.location.href = '/feed';
+            }, 1500);
+        } catch (error: any) {
+            console.error('Error updating account:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update account type. Please try again.",
+                variant: 'destructive',
+            });
+        } finally {
+            setIsUpdatingAccount(false);
+        }
+    };
 
     const handleSignOut = async () => {
         try {
@@ -100,6 +135,81 @@ const AccountSettings = () => {
                 </div>
 
                 <div className="space-y-6">
+                    {/* Account Type Card */}
+                    <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader>
+                            <CardTitle>Account Role</CardTitle>
+                            <CardDescription>Switch between your roles on CineCraft Connect.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {[
+                                { 
+                                    id: 'fan', 
+                                    label: 'Fan / Audience', 
+                                    description: 'Follow creators, rate movies, and join discussions.',
+                                    icon: <User className="h-5 w-5" />
+                                },
+                                { 
+                                    id: 'creator', 
+                                    label: 'Creator Pro', 
+                                    description: 'Showcase your portfolio, apply for jobs, and access analytics.',
+                                    icon: <Zap className="h-5 w-5" />
+                                },
+                                { 
+                                    id: 'studio', 
+                                    label: 'Studio / Company', 
+                                    description: 'Post jobs, search for vendors, and hire talent.',
+                                    icon: <Building2 className="h-5 w-5" />
+                                }
+                            ].map((role) => (
+                                <div 
+                                    key={role.id}
+                                    className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
+                                        accountType === role.id 
+                                        ? 'bg-background border-primary shadow-sm' 
+                                        : 'bg-background/50 border-border hover:border-primary/30 hover:bg-background/80'
+                                    }`}
+                                >
+                                    <div className="flex gap-4">
+                                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${accountType === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                            {role.id === 'fan' ? <User className="h-5 w-5" /> : role.id === 'creator' ? <Zap className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
+                                        </div>
+                                        <div>
+                                            <Label className={`text-base font-bold ${accountType === role.id ? 'text-primary' : 'text-foreground'}`}>{role.label}</Label>
+                                            <p className="text-sm text-muted-foreground mt-0.5 max-w-sm">
+                                                {role.description}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        {accountType === role.id ? (
+                                            <div className="px-3 py-1 bg-primary text-primary-foreground text-xs font-bold rounded-full">
+                                                Active
+                                            </div>
+                                        ) : (
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm" 
+                                                disabled={isUpdatingAccount}
+                                                onClick={() => handleSwitchAccountType(role.id as any)}
+                                            >
+                                                Switch
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {(accountType === 'fan') && (
+                                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
+                                    <div className="h-5 w-5 text-amber-500 mt-0.5">⚠️</div>
+                                    <p className="text-xs text-amber-500 leading-relaxed">
+                                        Some Pro features require a subscription. Switching to Creator or Studio may prompt you to view our <Link to="/pricing" className="underline font-bold">Pricing Plans</Link>.
+                                    </p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     <Card>
                         <CardHeader>
                             <CardTitle>Session</CardTitle>

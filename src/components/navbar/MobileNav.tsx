@@ -1,6 +1,6 @@
 // Mobile navigation bar for mobile view
 import { Link, useLocation } from "react-router-dom";
-import { Home, Film, Briefcase, Users, Play, MoreHorizontal, ShoppingBag, Building2, BookOpen, Megaphone, Star, MessageSquare, FileStack } from "lucide-react";
+import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star, MessageSquare } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -8,10 +8,15 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAccountType } from "@/hooks/useAccountType";
+import DiscussionRoomIcon from "@/components/icons/DiscussionRoomIcon";
+import VendorIcon from "@/components/icons/VendorIcon";
+import StudioPageIcon from "@/components/icons/StudioPageIcon";
 
 export function MobileNav() {
   const location = useLocation();
   const { user } = useAuth();
+  const { isFan } = useAccountType();
 
   // Don't render mobile nav for unauthenticated users
   if (!user) {
@@ -25,13 +30,28 @@ export function MobileNav() {
     return location.pathname.startsWith(path);
   };
 
-  const navItems = [
+  const creatorNavItems = [
     { to: "/feed", icon: Home },
     { to: "/projects", icon: Film },
-    { to: "/discussion-rooms", icon: Play },
+    { to: "/discussion-rooms", icon: DiscussionRoomIcon },
     { to: "/jobs", icon: Briefcase },
     { to: "/network", icon: Users },
   ];
+
+  const fanNavItems = [
+    { to: "/feed", icon: Home },
+    { to: "/discussion-rooms", icon: DiscussionRoomIcon },
+    { to: "/ratings", icon: Star },
+    { to: "/announcements", icon: Megaphone },
+    { to: "/pages", icon: StudioPageIcon },
+  ];
+
+  const navItems = isFan ? fanNavItems : creatorNavItems;
+
+  // More-menu paths used for active-state detection
+  const commonMorePaths = ["/ratings", "/announcements", "/learn", "/marketplace", "/vendors", "/pages", "/messages", "/dm"];
+  const allMorePaths = commonMorePaths;
+  const isMoreActive = allMorePaths.some(p => location.pathname.startsWith(p));
 
   return (
     <>
@@ -44,86 +64,75 @@ export function MobileNav() {
               className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
             >
-              <Icon size={20} className={isActive(to) ? "text-primary" : ""} />
+              <Icon size={24} className={isActive(to) ? "text-primary" : ""} />
               {isActive(to) && (
                 <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
               )}
             </Link>
           ))}
+
+          {/* More dropdown for additional items */}
           {/* More dropdown for additional items */}
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${location.pathname.startsWith("/ratings") ||
-                  location.pathname.startsWith("/announcements") ||
-                  location.pathname.startsWith("/learn") ||
-                  location.pathname.startsWith("/marketplace") ||
-                  location.pathname.startsWith("/vendors") ||
-                  location.pathname.startsWith("/pages") ||
-                  location.pathname.startsWith("/messages") ||
-                  location.pathname.startsWith("/dm")
-                  ? "text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-                  }`}
-              >
-                <MoreHorizontal size={20} />
-                {(location.pathname.startsWith("/ratings") ||
-                  location.pathname.startsWith("/announcements") ||
-                  location.pathname.startsWith("/learn") ||
-                  location.pathname.startsWith("/marketplace") ||
-                  location.pathname.startsWith("/vendors") ||
-                  location.pathname.startsWith("/pages") ||
-                  location.pathname.startsWith("/messages") ||
-                  location.pathname.startsWith("/dm")) && (
+              <DropdownMenuTrigger asChild>
+                <button
+                  className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  <MoreHorizontal size={20} />
+                  {isMoreActive && (
                     <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
                   )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
-              <DropdownMenuItem asChild>
-                <Link to="/messages" className="flex items-center gap-3 cursor-pointer">
-                  <MessageSquare size={18} />
-                  <span>Messages</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
-                  <Star size={18} />
-                  <span>Ratings</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/announcements" className="flex items-center gap-3 cursor-pointer">
-                  <Megaphone size={18} />
-                  <span>Announcements</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/learn" className="flex items-center gap-3 cursor-pointer">
-                  <BookOpen size={18} />
-                  <span>Learn</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/marketplace" className="flex items-center gap-3 cursor-pointer">
-                  <ShoppingBag size={18} />
-                  <span>Marketplace</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/vendors" className="flex items-center gap-3 cursor-pointer">
-                  <Building2 size={18} />
-                  <span>Vendors</span>
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to="/pages" className="flex items-center gap-3 cursor-pointer">
-                  <FileStack size={18} />
-                  <span>Pages</span>
-                </Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
+
+                <DropdownMenuItem asChild>
+                  <Link to="/messages" className="flex items-center gap-3 cursor-pointer">
+                    <MessageSquare size={18} />
+                    <span>Messages</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
+                    <Star size={18} />
+                    <span>Ratings</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/announcements" className="flex items-center gap-3 cursor-pointer">
+                    <Megaphone size={18} />
+                    <span>Announcements</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/learn" className="flex items-center gap-3 cursor-pointer">
+                    <BookOpen size={18} />
+                    <span>Learn</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/marketplace" className="flex items-center gap-3 cursor-pointer">
+                    <ShoppingBag size={18} />
+                    <span>Marketplace</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/vendors" className="flex items-center gap-3 cursor-pointer">
+                    <VendorIcon size={18} />
+                    <span>Vendors</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/pages" className="flex items-center gap-3 cursor-pointer">
+                    <StudioPageIcon size={18} />
+                    <span>Pages</span>
+                  </Link>
+                </DropdownMenuItem>
+
+                {/* Analytics */}
+
+              </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </nav>
     </>

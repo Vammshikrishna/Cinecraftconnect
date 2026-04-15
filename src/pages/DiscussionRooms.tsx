@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccountType } from '@/hooks/useAccountType';
 import { supabase } from '@/integrations/supabase/client';
 
 import { Badge } from '@/components/ui/badge';
@@ -13,12 +14,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, MessageSquare, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2 } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { PageHeader } from '@/components/common/PageHeader';
+import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 
 // --- DATA INTERFACES ---
 
@@ -46,6 +48,15 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isFan } = useAccountType();
+
+  // Generate a stable anonymous display name for fans in public rooms
+  const fanAnonName = useMemo(() => {
+    if (!user) return 'Viewer';
+    // Deterministic number from user id so it's consistent per session
+    const num = parseInt(user.id.replace(/-/g, '').slice(0, 6), 16) % 999 + 1;
+    return `Viewer #${num}`;
+  }, [user]);
 
   // Use URL as the source of truth for the selected room
   const activeRoom = useMemo(() => {
@@ -132,6 +143,20 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     };
   }, [fetchData]);
 
+  const handleRoomJoin = (room: Room) => {
+    // Fans can only join PUBLIC rooms
+    if (isFan && room.room_type !== 'public') {
+      toast({
+        title: 'Access Restricted',
+        description: 'Fans can only participate in Public discussion rooms. Upgrade to Creator Pro for private room access.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    navigate(`/discussion-rooms/${room.id}`);
+  };
+
+
   const handleRoomCreated = (newRoom: Room) => {
     setRooms(prevRooms => [newRoom, ...prevRooms]);
     navigate(`/discussion-rooms/${newRoom.id}`);
@@ -197,6 +222,21 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   }
 
   if (activeRoom) {
+    // Extra guard: fans cannot view private rooms they stumbled into via URL
+    if (isFan && activeRoom.room_type === 'private') {
+      return (
+        <div className="fixed inset-x-0 top-14 md:top-16 bottom-0 bg-background flex flex-col items-center justify-center z-40 gap-4">
+          <div className="text-center max-w-sm px-6">
+            <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">🔒</span>
+            </div>
+            <h2 className="text-xl font-bold mb-2">Private Room</h2>
+            <p className="text-muted-foreground text-sm mb-6">This is a private discussion room. You need an explicit invitation from the creator to join.</p>
+            <button onClick={() => navigate('/discussion-rooms')} className="text-primary text-sm font-medium hover:underline">← Back to all rooms</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="fixed inset-x-0 top-14 md:top-16 bottom-0 bg-background text-foreground flex flex-col z-40 lg:pb-0">
         <DiscussionChatInterface
@@ -207,6 +247,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           categoryId={activeRoom.category_id}
           categories={categories}
           roomType={activeRoom.room_type}
+          fanDisplayName={isFan ? fanAnonName : undefined}
           onClose={() => {
             navigate('/discussion-rooms');
           }}
@@ -223,21 +264,29 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <PageHeader 
           title="Discussion Rooms" 
           subtitle="Connect and chat with film community in dedicated rooms" 
-          Icon={MessageSquare}
+          Icon={DiscussionRoomIcon}
           actions={
-            <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
-                  <PlusCircle size={20} />
-                  <span>Create Room</span>
-                </Button>
-              </DialogTrigger>
-              <CreateRoomModal
-                categories={categories}
-                closeModal={() => setCreateModalOpen(false)}
-                onRoomCreated={handleRoomCreated}
-              />
-            </Dialog>
+            // Only creators can create rooms
+            !isFan ? (
+              <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
+                <DialogTrigger asChild>
+                  <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
+                    <PlusCircle size={20} />
+                    <span>Create Room</span>
+                  </Button>
+                </DialogTrigger>
+                <CreateRoomModal
+                  categories={categories}
+                  closeModal={() => setCreateModalOpen(false)}
+                  onRoomCreated={handleRoomCreated}
+                />
+              </Dialog>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/30 text-sm text-muted-foreground">
+                <span>🎬</span>
+                <span>Viewing as <strong className="text-foreground">{fanAnonName}</strong></span>
+              </div>
+            )
           }
         />
 
@@ -245,7 +294,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4 text-primary">Featured Rooms</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6">
-            {featuredRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
+            {featuredRooms
+              // Hide private rooms from fans in the featured section
+              .filter(room => !(isFan && room.room_type === 'private'))
+              .map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
           </div>
         </section>
 
@@ -288,7 +340,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredAndSortedRooms.map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={(r) => navigate(`/discussion-rooms/${r.id}`)} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
+            {filteredAndSortedRooms
+              // Hide private rooms from fans in the listing
+              .filter(room => !(isFan && room.room_type === 'private'))
+              .map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -470,7 +525,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
                 className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10"
                 onClick={() => onJoin(room)}
               >
-                <MessageSquare className="w-4 h-4 mr-2" /> Join Discussion Room
+                <DiscussionRoomIcon size={22} className="mr-2" /> Join Discussion Room
               </Button>
             </div>
           </div>

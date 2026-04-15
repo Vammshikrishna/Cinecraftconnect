@@ -1,25 +1,38 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, Building2, ChevronDown, BookOpen, Star, Megaphone, MessageSquare, FileStack } from 'lucide-react';
+import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, MessageSquare } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { useAccountType } from '@/hooks/useAccountType';
+import VendorIcon from '@/components/icons/VendorIcon';
+import StudioPageIcon from '@/components/icons/StudioPageIcon';
 
 const MoreMenu = () => {
     const location = useLocation();
+    const { isFan } = useAccountType();
 
-    const moreItems = [
-        { path: '/messages', icon: MessageSquare, label: 'Messages' },
+    // Items available to everyone (fans + creators)
+    const commonItems = [
         { path: '/ratings', icon: Star, label: 'Ratings' },
         { path: '/announcements', icon: Megaphone, label: 'Announcements' },
-        { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
-        { path: '/vendors', icon: Building2, label: 'Vendors' },
-        { path: '/pages', icon: FileStack, label: 'Pages' },
-        { path: '/learn', icon: BookOpen, label: 'Learn' }
+        { path: '/pages', icon: StudioPageIcon, label: 'Pages' },
     ];
+
+
+    // Creator-only items
+    const creatorItems = [
+        { path: '/messages', icon: MessageSquare, label: 'Messages' },
+        { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
+        { path: '/vendors', icon: VendorIcon, label: 'Vendors' },
+        { path: '/learn', icon: BookOpen, label: 'Learn' },
+    ];
+
+    const moreItems = isFan ? commonItems : [...commonItems, ...creatorItems];
 
     // Check if any of the "more" items is active
     const isAnyActive = moreItems.some(item => location.pathname.startsWith(item.path));
@@ -41,7 +54,7 @@ const MoreMenu = () => {
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-                {moreItems.map(({ path, icon: Icon, label }) => (
+                {commonItems.map(({ path, icon: Icon, label }) => (
                     <DropdownMenuItem key={path} asChild>
                         <Link
                             to={path}
@@ -53,6 +66,25 @@ const MoreMenu = () => {
                         </Link>
                     </DropdownMenuItem>
                 ))}
+
+                {/* Creator-only section */}
+                {!isFan && (
+                    <>
+                        <DropdownMenuSeparator />
+                        {creatorItems.map(({ path, icon: Icon, label }) => (
+                            <DropdownMenuItem key={path} asChild>
+                                <Link
+                                    to={path}
+                                    className={`flex items-center gap-3 px-3 py-2 cursor-pointer ${location.pathname.startsWith(path) ? 'bg-primary/10 text-primary' : ''
+                                        }`}
+                                >
+                                    <Icon size={18} />
+                                    <span>{label}</span>
+                                </Link>
+                            </DropdownMenuItem>
+                        ))}
+                    </>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );

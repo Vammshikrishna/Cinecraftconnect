@@ -3,17 +3,20 @@ import { useState } from 'react';
 import { useCompanyPages } from '@/hooks/useCompanyPages';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Plus, Building2, TrendingUp, Filter } from 'lucide-react';
+import { Search, Plus, TrendingUp, Filter } from 'lucide-react';
 import { CompanyPageCard } from '@/components/pages/CompanyPageCard';
 import { CreatePageModal } from '@/components/pages/CreatePageModal';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { PageHeader } from '@/components/common/PageHeader';
 import { motion } from 'framer-motion';
+import { useAccountType } from '@/hooks/useAccountType';
+import StudioPageIcon from '@/components/icons/StudioPageIcon';
 
 const CompanyPages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { data: pages = [], isLoading } = useCompanyPages(searchQuery);
+  const { isFan } = useAccountType();
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/30">
@@ -26,13 +29,15 @@ const CompanyPages = () => {
         <PageHeader 
           title="Pages" 
           subtitle="Discover production houses, studios, agencies, and organizations" 
-          Icon={Building2}
+          Icon={StudioPageIcon}
           actions={
-            <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
-              <Plus size={20} strokeWidth={3} />
-              <span className="hidden xs:inline">Create a Page</span>
-              <span className="xs:hidden">Create</span>
-            </Button>
+            !isFan && (
+                <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
+                  <Plus size={20} strokeWidth={3} />
+                  <span className="hidden xs:inline">Create a Page</span>
+                  <span className="xs:hidden">Create</span>
+                </Button>
+            )
           }
         />
 
@@ -81,7 +86,7 @@ const CompanyPages = () => {
         {/* All Pages */}
         <div className="mt-12">
           <div className="flex items-center gap-3 mb-6">
-            <Building2 className="h-6 w-6 text-primary/60" />
+            <StudioPageIcon size={24} className="text-primary/60" />
             <h2 className="text-2xl font-black tracking-tight uppercase">
               {searchQuery ? `Results for "${searchQuery}"` : 'Industry Directory'}
             </h2>
@@ -94,16 +99,16 @@ const CompanyPages = () => {
             </div>
           ) : pages.length === 0 ? (
             <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
-              <Building2 size={56} className="mx-auto text-muted-foreground/30 mb-6" />
+              <StudioPageIcon size={56} className="mx-auto text-muted-foreground/30 mb-6" />
               <h3 className="text-2xl font-black mb-2">
                 {searchQuery ? 'The reel is empty...' : 'No pages yet'}
               </h3>
               <p className="text-muted-foreground mb-8 max-w-sm mx-auto font-medium">
                 {searchQuery
                   ? 'Try a different search term or explore all pages.'
-                  : 'Be the first to establish your organization\'s presence in our production ecosystem!'}
+                  : 'Establish your organization\'s presence in our production ecosystem!'}
               </p>
-              {!searchQuery && (
+              {!searchQuery && !isFan && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-8">
                   <Plus size={20} strokeWidth={3} />
                   Create a Page

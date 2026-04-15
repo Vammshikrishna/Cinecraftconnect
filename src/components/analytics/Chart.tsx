@@ -8,11 +8,20 @@ interface ChartProps {
 }
 
 export const Chart = ({ data, type, config }: ChartProps) => {
-    const renderChart = () => {
-        switch (type) {
-            case 'area':
-                return (
-                    <AreaChart data={data}>
+    // Basic safety check
+    if (type !== 'pie' && (!data || data.length === 0)) {
+        return (
+            <div className="flex items-center justify-center h-full w-full bg-muted/10 rounded-xl text-muted-foreground text-xs italic">
+                No data available for this period
+            </div>
+        );
+    }
+
+    switch (type) {
+        case 'area':
+            return (
+                <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                         <defs>
                             <linearGradient id="viewsGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3}/>
@@ -23,45 +32,58 @@ export const Chart = ({ data, type, config }: ChartProps) => {
                                 <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                        <Tooltip 
+                            contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                            itemStyle={{ fontSize: '12px' }}
+                        />
                         <Area type="monotone" dataKey="views" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#viewsGradient)" />
                         <Area type="monotone" dataKey="likes" stroke="hsl(var(--secondary))" strokeWidth={2} fill="url(#likesGradient)" />
                     </AreaChart>
-                );
-            case 'pie':
-                return (
+                </ResponsiveContainer>
+            );
+        case 'pie':
+            const pieData = config?.data || [];
+            return (
+                <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                        <Pie data={config.data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}>
-                            {config.data.map((entry: EngagementData, index: number) => (
+                        <Pie 
+                            data={pieData} 
+                            dataKey="value" 
+                            nameKey="name" 
+                            cx="50%" 
+                            cy="50%" 
+                            outerRadius={80} 
+                            innerRadius={60}
+                            paddingAngle={5}
+                            labelLine={false} 
+                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                        >
+                            {pieData.map((entry: EngagementData, index: number) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                         </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }} />
+                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
                     </PieChart>
-                );
-            case 'line':
-                return (
-                    <LineChart data={data}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))' }} />
-                        {config.map((line: any) => (
-                            <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </ResponsiveContainer>
+            );
+        case 'line':
+            return (
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                        <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                        <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
+                        {(config || []).map((line: any) => (
+                            <Line key={line.key} type="monotone" dataKey={line.key} stroke={line.color} strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: 'hsl(var(--background))' }} activeDot={{ r: 6, strokeWidth: 0 }} />
                         ))}
                     </LineChart>
-                );
-            default:
-                return null;
-        }
-    };
-
-    return (
-        <ResponsiveContainer width="100%" height="100%">
-            {renderChart()}
-        </ResponsiveContainer>
-    );
+                </ResponsiveContainer>
+            );
+        default:
+            return null;
+    }
 };

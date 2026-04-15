@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
-import { MapPin, Briefcase } from 'lucide-react';
+import { MapPin, Briefcase, Lock } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAccountType } from '@/hooks/useAccountType';
 
 interface JobShareCardProps {
     jobId: string;
@@ -13,12 +14,17 @@ interface JobShareCardProps {
 }
 
 export const JobShareCard = ({ jobId, title, company, location, logoUrl, description, imageUrl }: JobShareCardProps) => {
+    const { isFan } = useAccountType();
+
+    const Wrapper = isFan ? 'div' : Link;
+    const wrapperProps = isFan ? {} : { to: `/jobs/${jobId}` };
+
     return (
         <div className="w-full max-w-[440px] bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-2xl md:rounded-[28px] overflow-hidden transition-all hover:border-primary/50 hover:shadow-[0_20px_50px_-15px_rgba(var(--primary),0.15)] group relative bg-gradient-to-br from-zinc-100/50 to-zinc-50/50 dark:from-card dark:to-muted/5 shadow-sm dark:shadow-none">
             <div className="flex flex-col md:flex-row h-full">
                 {/* Header Image - Fixed Horizontal Professional Width */}
-                <Link
-                    to={`/jobs/${jobId}`}
+                <Wrapper
+                    {...wrapperProps as any}
                     className="relative w-full h-[40px] md:w-[75px] md:h-auto md:aspect-square overflow-hidden bg-muted group-hover:brightness-110 transition-all duration-500 shrink-0 border-b md:border-b-0 md:border-r border-black/5 dark:border-white/5"
                 >
                     {imageUrl ? (
@@ -42,7 +48,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                             Active
                         </span>
                     </div>
-                </Link>
+                </Wrapper>
 
                 {/* Content Container - Compact & Detailed */}
                 <div className="flex-1 px-4 py-4 md:px-5 md:py-5 flex flex-col justify-between gap-2.5 md:gap-3 min-w-0">
@@ -85,12 +91,21 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                     </div>
 
                     <div className="flex items-center gap-2 pt-0.5 md:pt-1 font-black uppercase tracking-widest text-[8px] md:text-[9px]">
-                        <Link to={`/jobs/${jobId}?apply=true`} className="flex-1 py-1.5 bg-primary text-primary-foreground text-center rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] no-underline">
-                            Apply
-                        </Link>
-                        <Link to={`/jobs/${jobId}`} className="flex-1 py-1.5 bg-muted/40 text-muted-foreground text-center rounded-xl hover:bg-muted transition-all border border-black/5 dark:border-white/5 no-underline">
-                            Details
-                        </Link>
+                        {isFan ? (
+                            <div className="flex-1 py-1.5 bg-muted/40 text-muted-foreground text-center rounded-xl border border-black/5 dark:border-white/5 flex items-center justify-center gap-1.5 opacity-80 cursor-not-allowed">
+                                <Lock size={10} />
+                                Creators Only
+                            </div>
+                        ) : (
+                            <>
+                                <Link to={`/jobs/${jobId}?apply=true`} className="flex-1 py-1.5 bg-primary text-primary-foreground text-center rounded-xl hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] no-underline">
+                                    Apply
+                                </Link>
+                                <Link to={`/jobs/${jobId}`} className="flex-1 py-1.5 bg-muted/40 text-muted-foreground text-center rounded-xl hover:bg-muted transition-all border border-black/5 dark:border-white/5 no-underline">
+                                    Details
+                                </Link>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>

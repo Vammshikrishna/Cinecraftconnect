@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
-import { Film, Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAccountType } from '@/hooks/useAccountType';
 import NavLinks from './NavLinks';
 import NotificationsDropdown from './NotificationsDropdown';
-
 import MoreMenu from './MoreMenu';
 import UserProfileMenu from './UserProfileMenu';
 import ChatMenu from './ChatMenu';
 import { MobileNav } from "./MobileNav";
+import AppLogo from '@/components/common/AppLogo';
 
 const Navbar = () => {
   const { user } = useAuth();
+  const { isFan } = useAccountType();
 
   return (
     <>
@@ -19,13 +21,7 @@ const Navbar = () => {
         <div className="w-full px-2 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-2 sm:gap-4">
             {/* Logo */}
-            <Link to="/" className="flex items-center flex-shrink-0 group min-w-0">
-              <Film className="h-5 w-5 sm:h-6 sm:w-6 lg:h-8 lg:w-8 text-primary mr-1 sm:mr-2 group-hover:scale-110 transition-transform duration-200" />
-              <span className="text-base sm:text-lg lg:text-xl xl:text-2xl font-bold text-gradient whitespace-nowrap">
-                <span className="hidden xl:inline">CineCraft Connect</span>
-                <span className="xl:hidden">CCC</span>
-              </span>
-            </Link>
+            <AppLogo size="md" to="/" />
 
             {/* Right side content */}
             <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 flex-shrink-0">
@@ -35,6 +31,14 @@ const Navbar = () => {
                   <div className="hidden lg:flex items-center gap-2 xl:gap-4">
                     <NavLinks />
                   </div>
+
+                  {/* Fan badge — always visible when logged in as fan */}
+                  {isFan && (
+                    <Link to="/pricing" className="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-bold shrink-0 hover:bg-primary/20 transition-all hover:scale-105 active:scale-95 shadow-sm">
+                      <Star className="h-3.5 w-3.5 fill-primary" />
+                      <span>Upgrade to Pro</span>
+                    </Link>
+                  )}
 
                   {/* Mobile: Show only search */}
                   <div className="lg:hidden flex items-center flex-1">
@@ -51,7 +55,6 @@ const Navbar = () => {
                   <div className="hidden lg:block">
                     <MoreMenu />
                   </div>
-                  {/* Desktop Search Icon - beside bell */}
                   <div className="hidden lg:block">
                     <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
                       <Link to="/search">
@@ -59,7 +62,7 @@ const Navbar = () => {
                       </Link>
                     </Button>
                   </div>
-                  <ChatMenu />
+                  {!isFan && <ChatMenu />}
                   <NotificationsDropdown />
                   <UserProfileMenu />
                 </>

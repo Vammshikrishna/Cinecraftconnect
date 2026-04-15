@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAccountType } from "@/hooks/useAccountType";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +40,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [filterExperience, setFilterExperience] = useState<string>('all');
   const { toast } = useToast();
   const { user } = useAuth();
+  const { isFan } = useAccountType();
   const navigate = useNavigate();
 
   const fetchJobs = async () => {
@@ -146,16 +148,19 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           subtitle="Explore unique roles in film and creative production" 
           Icon={Briefcase}
           actions={
-            <div className="flex flex-wrap gap-3">
-              <Link to="/jobs/applications">
-                <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">My Applications</Button>
-              </Link>
-              <Link to="/jobs/manage">
-                <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">Manage Postings</Button>
-              </Link>
-              <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
-            </div>
+            !isFan && (
+              <div className="flex flex-wrap gap-3">
+                <Link to="/jobs/applications">
+                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">My Applications</Button>
+                </Link>
+                <Link to="/jobs/manage">
+                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">Manage Postings</Button>
+                </Link>
+                <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
+              </div>
+            )
           }
+
         />
 
         {/* Search & Filter Bar using system glassmorphism */}

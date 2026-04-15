@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile } from '@/types';
@@ -27,37 +26,87 @@ import {
   Linkedin,
   Twitter,
   Facebook,
+  Building2,
+  Zap,
 } from 'lucide-react';
+
+import { useAccountType } from '@/hooks/useAccountType';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Star } from 'lucide-react';
 
 const ProfilePage = () => {
   const { user } = useAuth();
+  const { isFan, isStudio } = useAccountType();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  
+  const [activeTab, setActiveTab] = useState(tabParam || (isFan ? "saved" : "posts"));
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
   const [postCount, setPostCount] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
 
   const fetchCounts = useCallback(async () => {
     if (!user) return;
 
-    // Parallelize counts for better performance
-    const [postsRes, connectionsRes] = await Promise.all([
-      supabase
-        .from('posts')
-        .select('id', { count: 'exact', head: true })
-        .eq('author_id', user.id),
-      supabase
-        .from('user_connections')
-        .select('id', { count: 'exact', head: true })
-        .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
-        .eq('status', 'accepted')
-    ]);
+    // 1. Fetch all raw connections for this user
+    const { data: rawConnections, error: connError } = await supabase
+      .from('user_connections')
+      .select('*')
+      .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
+      .eq('status', 'accepted');
 
-    setPostCount(postsRes.count || 0);
-    setConnectionsCount(connectionsRes.count || 0);
+    if (rawConnections && !connError) {
+      // 2. Fetch profiles for these connections and determine account types
+      const userIds = Array.from(new Set(rawConnections.flatMap(c => [c.follower_id, c.following_id])));
+      
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, account_type')
+        .in('id', userIds);
+
+      const profilesMap = new Map(profiles?.map(p => [p.id, p]));
+
+      // 3. Categorize connections
+      const connections = rawConnections.filter(c => {
+        const otherId = c.follower_id === user.id ? c.following_id : c.follower_id;
+        const otherProfile = profilesMap.get(otherId);
+        // Standard connection if the other person is a creator or not specified
+        return otherProfile?.account_type === 'creator' || !otherProfile?.account_type;
+      });
+
+      const fanFollowers = rawConnections.filter(c => {
+        // Only count as fan follower if THEY follow US and they are a FAN
+        if (c.following_id !== user.id) return false;
+        const followerProfile = profilesMap.get(c.follower_id);
+        return followerProfile?.account_type === 'fan';
+      });
+
+      setConnectionsCount(connections.length);
+      setFollowersCount(fanFollowers.length);
+    }
+
+    // Still fetch post count separately for efficiency
+    const { count: postsCount } = await supabase
+      .from('posts')
+      .select('id', { count: 'exact', head: true })
+      .eq('author_id', user.id);
+
+    setPostCount(postsCount || 0);
+
+    // Fetch following count (people this user follows who are NOT fan accounts usually)
+    const { count: followingCount } = await supabase
+      .from('user_connections')
+      .select('id', { count: 'exact', head: true })
+      .eq('follower_id', user.id)
+      .eq('status', 'accepted');
+
+    setFollowingCount(followingCount || 0);
   }, [user]);
 
   useEffect(() => {
@@ -195,6 +244,23 @@ const ProfilePage = () => {
             </div>
 
             <div className="flex flex-col gap-2 items-center max-w-2xl">
+              {isFan ? (
+                <Link to="/pricing" className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full text-xs font-semibold mb-2 hover:bg-amber-500/20 transition-all cursor-pointer">
+                  <Star size={14} className="fill-amber-500" />
+                  <span>Fan Account</span>
+                </Link>
+              ) : isStudio ? (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 rounded-full text-xs font-black uppercase tracking-wider mb-2">
+                  <Building2 size={14} />
+                  <span>Studio / Company</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-xs font-black uppercase tracking-wider mb-2">
+                  <Zap size={14} className="fill-primary" />
+                  <span>Creator Pro</span>
+                </div>
+              )}
+
               <h1 className="text-3xl md:text-4xl font-bold text-gradient">
                 {profile.full_name || profile.username}
               </h1>
@@ -270,16 +336,41 @@ const ProfilePage = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-6 mt-6 py-4 border-t border-border/50 w-full justify-center">
-                <div className="flex flex-col items-center px-6">
-                  <span className="text-2xl font-bold text-foreground">{postCount}</span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Posts</span>
+              <div className="flex items-center gap-2 sm:gap-6 mt-6 py-4 border-t border-border/50 w-full justify-center flex-wrap">
+                {!isFan && (
+                  <>
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{postCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Posts</span>
+                    </div>
+                    <div className="hidden sm:block w-px h-8 bg-border/50" />
+                  </>
+                )}
+                <div className="flex flex-col items-center px-2 sm:px-4">
+                  <span className="text-2xl font-bold text-foreground">{followersCount}</span>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Followers</span>
                 </div>
-                <div className="w-px h-8 bg-border/50" />
-                <div className="flex flex-col items-center px-6">
-                  <span className="text-2xl font-bold text-foreground">{connectionsCount}</span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Connections</span>
-                </div>
+                
+                {isFan && (
+                  <>
+                    <div className="w-px h-8 bg-border/50" />
+                    
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{followingCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Following</span>
+                    </div>
+                  </>
+                )}
+
+                {(!isFan) && (
+                  <>
+                    <div className="hidden sm:block w-px h-8 bg-border/50" />
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{connectionsCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Connections</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="flex items-center justify-center gap-3 mt-2">
@@ -300,11 +391,18 @@ const ProfilePage = () => {
           </div>
         </header>
 
-        <Tabs defaultValue="posts" className="w-full">
+        <Tabs 
+          value={activeTab} 
+          onValueChange={(value) => {
+            setActiveTab(value);
+            setSearchParams({ tab: value });
+          }} 
+          className="w-full"
+        >
           <div className="relative w-full mb-6">
             <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide w-full md:justify-center" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
               <TabsList className="flex h-auto bg-transparent gap-2 p-0">
-                {['posts', 'saved', 'portfolio', 'projects', 'announcements', 'analytics', 'skills', 'experience'].map((tab) => (
+                {(isFan ? ['saved'] : isStudio ? ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience'] : ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience']).map((tab) => (
                   <TabsTrigger
                     key={tab}
                     value={tab}
@@ -320,16 +418,20 @@ const ProfilePage = () => {
             <div className="absolute left-0 top-0 bottom-2 w-4 bg-gradient-to-r from-background to-transparent pointer-events-none" />
           </div>
 
-          <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
-          <TabsContent value="portfolio" className="py-8">
-            <PortfolioGrid userId={user.id} isOwner={true} />
-          </TabsContent>
-          <TabsContent value="projects" className="py-8"><UserProjects userId={user.id} /></TabsContent>
-          <TabsContent value="announcements" className="py-8"><UserAnnouncements /></TabsContent>
-          <TabsContent value="analytics" className="py-8"><RealTimeAnalytics /></TabsContent>
-          <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
-          <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
           <TabsContent value="saved" className="py-8"><SavedPosts /></TabsContent>
+          {!isFan && (
+            <>
+              <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
+              <TabsContent value="portfolio" className="py-8">
+                <PortfolioGrid userId={user.id} isOwner={true} />
+              </TabsContent>
+              <TabsContent value="projects" className="py-8"><UserProjects userId={user.id} /></TabsContent>
+              <TabsContent value="announcements" className="py-8"><UserAnnouncements /></TabsContent>
+              <TabsContent value="analytics" className="py-8"><RealTimeAnalytics /></TabsContent>
+              <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
+              <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
+            </>
+          )}
         </Tabs>
       </div>
     </div>

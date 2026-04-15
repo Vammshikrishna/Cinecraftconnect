@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <!-- Primary gradient: emerald to teal -->
+    <linearGradient id="primaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="50%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#2dd4bf"/>
+    </linearGradient>
+    <!-- Accent glow gradient -->
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#171717"/>
+    </linearGradient>
+    <!-- Subtle inner glow -->
+    <radialGradient id="innerGlow" cx="50%" cy="40%" r="50%">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="transparent" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Drop shadow filter -->
+    <filter id="iconShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#059669" flood-opacity="0.4"/>
+    </filter>
+    <!-- Outer glow filter -->
+    <filter id="outerGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#bgGrad)"/>
+  
+  <!-- Subtle inner ambient glow -->
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#innerGlow)"/>
+
+  <!-- Border with gradient -->
+  <rect x="2" y="2" width="508" height="508" rx="110" ry="110" fill="none" stroke="url(#primaryGrad)" stroke-width="2.5" opacity="0.4"/>
+
+  <!-- Film strip / Aperture hybrid icon -->
+  <g transform="translate(256, 248)" filter="url(#iconShadow)">
+    
+    <!-- Outer lens ring -->
+    <circle cx="0" cy="0" r="130" fill="none" stroke="url(#primaryGrad)" stroke-width="8" opacity="0.3"/>
+    <circle cx="0" cy="0" r="120" fill="none" stroke="url(#primaryGrad)" stroke-width="3" opacity="0.6"/>
+    
+    <!-- Aperture blades (6-blade cinematic aperture) -->
+    <g opacity="0.85">
+      <!-- Blade 1 -->
+      <path d="M0,-95 L55,-48 L20,-10 Z" fill="url(#primaryGrad)" opacity="0.7"/>
+      <!-- Blade 2 -->
+      <path d="M55,-48 L82,25 L30,15 Z" fill="url(#primaryGrad)" opacity="0.6"/>
+      <!-- Blade 3 -->
+      <path d="M82,25 L27,80 L10,30 Z" fill="url(#primaryGrad)" opacity="0.7"/>
+      <!-- Blade 4 -->
+      <path d="M27,80 L-55,48 L-20,10 Z" fill="url(#primaryGrad)" opacity="0.6"/>
+      <!-- Blade 5 -->
+      <path d="M-55,48 L-82,-25 L-30,-15 Z" fill="url(#primaryGrad)" opacity="0.7"/>
+      <!-- Blade 6 -->
+      <path d="M-82,-25 L-27,-80 L-10,-30 Z" fill="url(#primaryGrad)" opacity="0.6"/>
+    </g>
+
+    <!-- Inner hexagonal aperture opening -->
+    <polygon points="0,-35 30,-17 30,17 0,35 -30,17 -30,-17" fill="#0a0a0a" stroke="url(#glowGrad)" stroke-width="2"/>
+
+    <!-- Central "play" triangle (cinema connection) -->
+    <polygon points="-8,-12 -8,12 14,0" fill="url(#glowGrad)" filter="url(#outerGlow)"/>
+    
+    <!-- Film perforations along the outer ring -->
+    <!-- Top perfs -->
+    <rect x="-6" y="-140" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.5"/>
+    <rect x="-46" y="-133" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.4" transform="rotate(-30, 0, 0)"/>
+    <rect x="34" y="-133" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.4" transform="rotate(30, 0, 0)"/>
+    
+    <!-- Bottom perfs -->
+    <rect x="-6" y="132" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.5"/>
+    <rect x="-46" y="125" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.4" transform="rotate(30, 0, 0)"/>
+    <rect x="34" y="125" width="12" height="8" rx="2" fill="url(#glowGrad)" opacity="0.4" transform="rotate(-30, 0, 0)"/>
+    
+    <!-- Side perfs -->
+    <rect x="-140" y="-4" width="8" height="12" rx="2" fill="url(#glowGrad)" opacity="0.5"/>
+    <rect x="132" y="-4" width="8" height="12" rx="2" fill="url(#glowGrad)" opacity="0.5"/>
+
+    <!-- Connection dots (nodes representing "Connect") -->
+    <circle cx="0" cy="-105" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    <circle cx="91" cy="52" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    <circle cx="-91" cy="52" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    <circle cx="91" cy="-52" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    <circle cx="-91" cy="-52" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    <circle cx="0" cy="105" r="5" fill="url(#glowGrad)" opacity="0.8"/>
+    
+    <!-- Connection lines between nodes -->
+    <line x1="0" y1="-105" x2="91" y2="-52" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+    <line x1="91" y1="-52" x2="91" y2="52" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+    <line x1="91" y1="52" x2="0" y2="105" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+    <line x1="0" y1="105" x2="-91" y2="52" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+    <line x1="-91" y1="52" x2="-91" y2="-52" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+    <line x1="-91" y1="-52" x2="0" y2="-105" stroke="url(#glowGrad)" stroke-width="1" opacity="0.3"/>
+  </g>
+
+  <!-- "CCC" text mark at the bottom -->
+  <text x="256" y="438" text-anchor="middle" font-family="'SF Pro Display', 'Inter', -apple-system, sans-serif" font-weight="700" font-size="36" letter-spacing="8" fill="url(#primaryGrad)" opacity="0.7">CCC</text>
+</svg>

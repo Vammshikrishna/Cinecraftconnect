@@ -15,11 +15,26 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageHeader } from '@/components/common/PageHeader';
 
+import { useAccountType } from "@/hooks/useAccountType";
+import { useNavigate } from "react-router-dom";
+
 const Network = () => {
   const { user: currentUser } = useAuth();
+  const navigate = useNavigate();
+  const { isFan } = useAccountType();
+  
   const [searchQuery, setSearchQuery] = useState("");
   const [craftFilter, setCraftFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("discover");
+
+  // Redirect fans
+  useState(() => {
+    if (isFan) {
+      navigate('/pricing');
+    }
+  });
+
+
   const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
 
   const { users, loading: usersLoading } = useUsers(searchQuery, craftFilter);

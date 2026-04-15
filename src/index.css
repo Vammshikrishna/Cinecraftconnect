@@ -72,22 +72,22 @@
   }
 
   .light {
-    /* iOS Glassmorphism Light Mode */
+    /* CineCraft Connect Light Mode */
     --background: 0 0% 98%;
     --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    --primary: 211 100% 50%;
-    /* iOS Blue */
+    --primary: 161 93% 30%;
+    /* CineCraft Green */
     --primary-foreground: 0 0% 100%;
-    --secondary: 280 80% 65%;
-    /* iOS Purple */
-    --secondary-foreground: 0 0% 100%;
+    --secondary: 160 8% 90%;
+    /* Soft Green-gray */
+    --secondary-foreground: 161 93% 30%;
     --muted: 210 40% 96%;
     --muted-foreground: 215 25% 35%;
-    --accent: 211 100% 55%;
+    --accent: 158 64% 51%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -95,7 +95,7 @@
     --warning: 38 92% 50%;
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: 211 100% 50%;
+    --ring: 161 93% 30%;
 
     /* Glass effect variables for light mode */
     --glass-opacity: 0.8;
@@ -331,7 +331,7 @@
      ============================================ */
 
   .text-gradient {
-    @apply bg-gradient-to-r from-primary to-accent-foreground bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary to-emerald-500 dark:to-accent-foreground bg-clip-text text-transparent;
   }
 
   .gradient-border {

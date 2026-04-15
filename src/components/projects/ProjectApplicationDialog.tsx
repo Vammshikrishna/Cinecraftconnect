@@ -37,10 +37,21 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
 
     setIsSubmitting(true);
     try {
-      const { error } = await supabase.from('project_space_join_requests').insert({
-        project_space_id: project.id,
+      // Resolve Space ID from Project ID
+      const { data: spaceData, error: spaceError } = await supabase
+        .from('project_spaces')
+        .select('id')
+        .eq('project_id', project.id)
+        .maybeSingle();
+
+      if (spaceError) throw spaceError;
+      if (!spaceData) throw new Error("Could not find project space");
+
+      const { error } = await supabase.from('project_space_join_requests' as any).insert({
+        project_space_id: spaceData.id,
         user_id: user.id,
         status: 'pending',
+        message: message || null
       });
 
       if (error) throw error;

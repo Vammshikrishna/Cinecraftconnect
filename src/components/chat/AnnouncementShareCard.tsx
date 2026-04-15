@@ -1,5 +1,6 @@
 import { Megaphone } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { JobShareCard } from './JobShareCard';
 
 interface AnnouncementShareCardProps {
     title: string;
@@ -22,9 +23,34 @@ export const AnnouncementShareCard = ({ title, content }: AnnouncementShareCardP
                     </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                    {content}
-                </p>
+                {content.includes('JOB_SHARE::') ? (
+                    (() => {
+                        try {
+                            const parts = content.split('JOB_SHARE::');
+                            const caption = parts[0].trim();
+                            const jsonStr = parts[parts.length - 1].trim();
+                            const shareData = JSON.parse(jsonStr);
+                            return (
+                                <div className="space-y-2">
+                                    {caption && <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{caption}</p>}
+                                    <div className="scale-[0.85] origin-top-left -mb-4">
+                                        <JobShareCard {...shareData} />
+                                    </div>
+                                </div>
+                            );
+                        } catch (e) {
+                            return (
+                                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
+                                    {content}
+                                </p>
+                            );
+                        }
+                    })()
+                ) : (
+                    <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
+                        {content}
+                    </p>
+                )}
             </div>
 
             {/* Optional: "Read More" logic if we had a dedicated page. For now, it's just a display card in chat. 
