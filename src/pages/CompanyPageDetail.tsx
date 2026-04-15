@@ -33,6 +33,7 @@ import { JobCreationModal } from '@/components/jobs/JobCreationModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
+import { useAccountType } from '@/hooks/useAccountType';
 
 const getInitials = (name: string) => {
   return name
@@ -52,6 +53,7 @@ const CompanyPageDetail = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isManageMembersOpen, setIsManageMembersOpen] = useState(false);
   const [postRatings, setPostRatings] = useState<Record<string, number>>({});
+  const { isFan } = useAccountType();
 
   // 1. Fetch Page Details
   const { data: page, isLoading: pageLoading } = useQuery({
@@ -300,7 +302,7 @@ const CompanyPageDetail = () => {
             {[
               { value: 'posts', label: 'Posts', icon: FileText },
               { value: 'about', label: 'About', icon: Building2 },
-              { value: 'jobs', label: 'Jobs', icon: Briefcase, count: jobs.length },
+              ...(!isFan ? [{ value: 'jobs', label: 'Jobs', icon: Briefcase, count: jobs.length }] : []),
               { value: 'people', label: 'Team', icon: Users, count: members.length },
             ].map(tab => (
               <TabsTrigger

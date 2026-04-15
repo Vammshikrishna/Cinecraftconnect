@@ -4,11 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAccountType } from '@/hooks/useAccountType';
 
 const UniversalCreateButton = () => {
     const [isOpen, setIsOpen] = useState(false);
+    const { isFan } = useAccountType();
 
     const toggleOpen = () => setIsOpen(!isOpen);
+
+    // Fans cannot create content — hide the button entirely
+    if (isFan) return null;
 
     interface Action {
         icon: any;

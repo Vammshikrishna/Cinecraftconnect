@@ -802,6 +802,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: 'fan' | 'creator' | null
           avatar_url: string | null
           bio: string | null
           craft: string | null
@@ -814,6 +815,7 @@ export type Database = {
           website: string | null
         }
         Insert: {
+          account_type?: 'fan' | 'creator' | null
           avatar_url?: string | null
           bio?: string | null
           craft?: string | null
@@ -826,6 +828,7 @@ export type Database = {
           website?: string | null
         }
         Update: {
+          account_type?: 'fan' | 'creator' | null
           avatar_url?: string | null
           bio?: string | null
           craft?: string | null

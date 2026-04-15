@@ -1,11 +1,12 @@
 
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccountType } from '@/hooks/useAccountType';
 import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
 import {
-    Megaphone, Film, MessageSquare, Star,
-    ShoppingBag, Building2, Users, Layout
+    Megaphone, Film, Star,
+    ShoppingBag, Users
 } from 'lucide-react';
 
 // Components
@@ -19,7 +20,8 @@ import FeedAnnouncementCard from './FeedAnnouncementCard';
 import FeedMarketplaceCard from './FeedMarketplaceCard';
 import FeedVendorCard from './FeedVendorCard';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
-import { PageHeader } from '@/components/common/PageHeader';
+import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
+import VendorIcon from '@/components/icons/VendorIcon';
 
 // Services
 import { getSafeImageUrl } from '@/services/tmdb';
@@ -35,6 +37,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user } = useAuth();
+    const { isFan } = useAccountType();
     const queryClient = useQueryClient();
 
     const { data, isLoading: loading, refetch } = useHomeFeed();
@@ -201,7 +204,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             id: 'discussions',
             hasData: feedData.discussions.length > 0,
             component: (
-                <FeedSection title="Active Discussions" icon={MessageSquare} linkTo="/discussion-rooms">
+                <FeedSection title="Active Discussions" icon={DiscussionRoomIcon} linkTo="/discussion-rooms">
                     {feedData.discussions.map((item: any) => (
                         <div key={item.id} className="w-[280px] md:w-[320px] flex-none snap-start h-full">
                             <FeedDiscussionCard
@@ -229,7 +232,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             id: 'vendors',
             hasData: feedData.vendors.length > 0,
             component: (
-                <FeedSection title="Featured Vendors" icon={Building2} linkTo="/vendors">
+                <FeedSection title="Featured Vendors" icon={VendorIcon} linkTo="/vendors">
                     {feedData.vendors.map((item: any) => (
                         <div key={item.id} className="w-[140px] md:w-[160px] flex-none snap-start h-full">
                             <FeedVendorCard vendor={item} />
@@ -265,18 +268,19 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 </FeedSection>
             )
         }
-    ].filter(section => section.hasData);
+    ].filter(section => section.hasData && (!isFan || !['projects', 'network', 'marketplace', 'vendors'].includes(section.id)));
 
     return (
-        <div className="space-y-6 pb-20">
-            <PageHeader 
-              title="Feed" 
-              subtitle="Stay updated with the latest from the film community" 
-              Icon={Layout}
-            />
-
+        <div className="space-y-6 pb-20 pt-6">
             <div className="px-1 sm:px-4">
-                <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />
+                {/* Only creators can compose posts */}
+                {!isFan && <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />}
+                {isFan && (
+                    <div className="rounded-xl border border-border/30 bg-card/40 px-4 py-3 text-sm text-muted-foreground flex items-center gap-2">
+                        <span className="text-base">🎬</span>
+                        <span>You're viewing as a <strong className="text-foreground">Fan</strong>. Follow creators to see their content here.</span>
+                    </div>
+                )}
             </div>
 
             {/* Posts with Interleaved Sections */}

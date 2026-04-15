@@ -974,6 +974,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_type: string | null
           avatar_url: string | null
           bio: string | null
           craft: string | null
@@ -991,6 +992,7 @@ export type Database = {
           youtube_url: string | null
         }
         Insert: {
+          account_type?: string | null
           avatar_url?: string | null
           bio?: string | null
           craft?: string | null
@@ -1008,6 +1010,7 @@ export type Database = {
           youtube_url?: string | null
         }
         Update: {
+          account_type?: string | null
           avatar_url?: string | null
           bio?: string | null
           craft?: string | null
@@ -1025,6 +1028,35 @@ export type Database = {
           youtube_url?: string | null
         }
         Relationships: []
+      }
+      profile_views: {
+        Row: {
+          id: string
+          profile_id: string
+          viewer_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          profile_id: string
+          viewer_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          profile_id?: string
+          viewer_id?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_views_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       project_applications: {
         Row: {

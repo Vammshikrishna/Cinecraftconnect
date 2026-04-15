@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccountType } from '@/hooks/useAccountType';
 import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { ChatListSkeleton } from '@/components/chat/ChatListSkeleton';
 import { EmptyState } from '@/components/chat/EmptyState';
 import { Conversation } from '@/types/chat';
 import { usePresence } from '@/hooks/usePresence';
-import { MessageSquare, Search, Plus, Users, Layout } from 'lucide-react';
+import { MessageSquare, Search, Plus, Users } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 
 const ChatsList = () => {
   const { user } = useAuth();
+  const { isFan } = useAccountType();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,12 +85,19 @@ const ChatsList = () => {
       }
 
       setSearchingUsers(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, username')
+        .select('id, full_name, avatar_url, username, account_type')
         .neq('id', user.id)
         .or(`full_name.ilike.%${userSearchTerm}%,username.ilike.%${userSearchTerm}%`)
         .limit(10);
+
+      // Fans can only DM other fans
+      if (isFan) {
+        query = query.eq('account_type', 'fan');
+      }
+
+      const { data, error } = await query;
 
       if (!error && data) {
         setSearchedUsers(data);
@@ -98,7 +107,7 @@ const ChatsList = () => {
 
     const debounce = setTimeout(searchUsers, 300);
     return () => clearTimeout(debounce);
-  }, [userSearchTerm, user?.id]);
+  }, [userSearchTerm, user?.id, isFan]);
 
   const handleStartChat = (userId: string) => {
     setIsNewChatOpen(false);
@@ -135,7 +144,9 @@ const ChatsList = () => {
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-black tracking-tight">Search Network</DialogTitle>
                   <DialogDescription className="font-medium">
-                    Start a encrypted direct communication channel
+                    {isFan
+                      ? 'Find other fans to start a conversation'
+                      : 'Start a encrypted direct communication channel'}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6 pt-4">

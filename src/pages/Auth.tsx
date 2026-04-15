@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Film, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import AppLogo from '@/components/common/AppLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -105,11 +106,8 @@ const Auth = () => {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
-          <Link to="/" className="inline-flex items-center justify-center mb-6">
-            <Film className="h-12 w-12 text-primary mr-3" />
-            <span className="text-4xl font-bold text-gradient">CineCraft Connect</span>
-          </Link>
+        <div className="text-center flex justify-center mb-6">
+            <AppLogo size="lg" to="/" />
         </div>
         <Card className="glass-card">
           <CardHeader className="text-center">

@@ -9,6 +9,7 @@ import { CreateAnnouncementDialog } from '@/components/feed/CreateAnnouncementDi
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader } from '@/components/common/PageHeader';
+import { useAccountType } from '@/hooks/useAccountType';
 
 interface Announcement {
     id: string;
@@ -36,10 +37,11 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     const [isCreateOpen, setIsCreateOpen] = useState(openCreate);
     const { toast } = useToast();
     const { user } = useAuth();
+    const { isFan } = useAccountType();
 
     useEffect(() => {
-        if (openCreate) setIsCreateOpen(true);
-    }, [openCreate]);
+        if (openCreate && !isFan) setIsCreateOpen(true);
+    }, [openCreate, isFan]);
 
     useEffect(() => {
         fetchAnnouncements();
@@ -100,7 +102,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                   subtitle="Stay updated with the latest news and updates from the platform" 
                   Icon={Megaphone}
                   actions={
-                    user ? (
+                    user && !isFan ? (
                         <div className="flex gap-2">
                             <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
                                 <Plus className="mr-2 h-5 w-5" />

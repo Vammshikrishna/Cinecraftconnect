@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
+import { useAccountType } from '@/hooks/useAccountType';
+
 interface Project {
   id: string;
   title: string;
@@ -16,11 +18,17 @@ interface Project {
 const ProjectSpacePage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const { isFan } = useAccountType();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isFan) {
+      navigate('/pricing');
+      return;
+    }
+
     if (!projectId) {
       setError('No project ID provided');
       setLoading(false);

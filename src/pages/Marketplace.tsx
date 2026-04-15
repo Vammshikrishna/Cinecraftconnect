@@ -15,12 +15,27 @@ import { EmptyState } from '@/components/ui/empty-state';
 
 import { PageHeader } from '@/components/common/PageHeader';
 
+import { useAccountType } from '@/hooks/useAccountType';
+import { useNavigate } from 'react-router-dom';
+
 const Marketplace = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const navigate = useNavigate();
+    const { isFan } = useAccountType();
+    
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<ListingType | 'all'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
+
+    // Redirect fans
+    useState(() => {
+        if (isFan) {
+            navigate('/pricing');
+        }
+    });
+
+
     const [filters, setFilters] = useState<{
         minPrice?: number;
         maxPrice?: number;

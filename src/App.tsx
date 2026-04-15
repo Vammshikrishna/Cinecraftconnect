@@ -15,13 +15,13 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Feed from "./pages/Feed";
 import Profile from "./pages/Profile";
+import Pricing from "./pages/Pricing";
 import PublicProfile from "./pages/PublicProfile";
 import Projects from "./pages/Projects";
 import ProjectSpacePage from "./pages/ProjectSpacePage";
 import Jobs from "./pages/Jobs";
 import Network from "./pages/Network";
 import NotFound from "./pages/NotFound";
-import Analytics from "./pages/Analytics";
 import LearningPortal from "./pages/LearningPortal";
 import CraftPage from "./pages/CraftPage";
 import AllCraftsPage from "./pages/AllCraftsPage";
@@ -53,6 +53,7 @@ import CompanyPageDetail from "./pages/CompanyPageDetail";
 import Notifications from "./pages/Notifications";
 import JobDetail from "@/pages/JobDetail";
 import PostDetailPage from "@/pages/PostDetailPage";
+import ProjectDetailPage from "./pages/ProjectDetailPage";
 
 // Custom route for the landing page
 const LandingRoute = () => {
@@ -61,7 +62,6 @@ const LandingRoute = () => {
 };
 
 import ScrollToTop from "@/components/ScrollToTop";
-
 import { CallProvider } from "@/contexts/CallContext";
 
 const App = () => {
@@ -90,8 +90,8 @@ const App = () => {
               <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
               <Route path="/profile/:userId" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
               <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
+              <Route path="/projects/:projectId" element={<ProtectedRoute><ProjectDetailPage /></ProtectedRoute>} />
               <Route path="/projects/:projectId/space" element={<ProtectedRoute><ProjectSpacePage /></ProtectedRoute>} />
               <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
               <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
@@ -103,6 +103,7 @@ const App = () => {
               <Route path="/messages" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
               <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
               <Route path="/dm/:userId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
               <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />

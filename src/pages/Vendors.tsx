@@ -8,9 +8,9 @@ import {
     Search,
     Filter,
     Plus,
-    CheckCircle2,
-    Building2
+    CheckCircle2
 } from 'lucide-react';
+import VendorIcon from '@/components/icons/VendorIcon';
 import { Vendor } from '@/types/marketplace';
 import { VendorRegistrationModal } from '@/components/vendors/VendorRegistrationModal';
 import { VendorCard } from '@/components/vendors/VendorCard';
@@ -18,12 +18,27 @@ import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { PageHeader } from '@/components/common/PageHeader';
 
 
+import { useAccountType } from '@/hooks/useAccountType';
+import { useNavigate } from 'react-router-dom';
+
+
 const Vendors = () => {
     const { toast } = useToast();
+    const navigate = useNavigate();
+    const { isFan } = useAccountType();
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [showRegistrationModal, setShowRegistrationModal] = useState(false);
+
+    // Redirect fans
+    useEffect(() => {
+        if (isFan) {
+            navigate('/pricing');
+        }
+    }, [isFan, navigate]);
+
+
 
     useEffect(() => {
         fetchVendors();
@@ -80,7 +95,7 @@ const Vendors = () => {
                 <PageHeader 
                   title="Vendors Directory" 
                   subtitle="Connect with verified industry businesses and service providers" 
-                  Icon={Building2}
+                  Icon={VendorIcon}
                   actions={
                     <Button onClick={() => setShowRegistrationModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
                         <Plus size={20} strokeWidth={3} />
@@ -129,7 +144,7 @@ const Vendors = () => {
                 {/* All Vendors */}
                 <div className="mt-12">
                     <div className="flex items-center gap-2 mb-6">
-                        <Building2 size={24} className="text-primary/60" />
+                        <VendorIcon size={24} className="text-primary/60" />
                         <h2 className="text-2xl font-black tracking-tight uppercase">Industry Directory</h2>
                     </div>
                     {loading ? (
@@ -141,7 +156,7 @@ const Vendors = () => {
                     ) : vendors.length === 0 ? (
                         <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
                             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                                <Building2 size={32} className="text-primary" />
+                                <VendorIcon size={32} className="text-primary" />
                             </div>
                             <h3 className="text-2xl font-black mb-2">No vendors found</h3>
                             <p className="text-muted-foreground mb-8 max-w-sm mx-auto">

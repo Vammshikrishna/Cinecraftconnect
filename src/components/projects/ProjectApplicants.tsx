@@ -10,6 +10,7 @@ interface Applicant {
   id: string;
   user_id: string;
   status: string;
+  message: string | null;
   profiles: {
     full_name: string;
     avatar_url: string;
@@ -60,6 +61,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
         id,
         user_id,
         status,
+        message,
         profiles:user_id (
           full_name,
           avatar_url,
@@ -162,6 +164,11 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                 <div>
                   <p className="font-bold text-foreground text-lg">{applicant.profiles?.full_name}</p>
                   <p className="text-sm text-primary font-medium">{applicant.profiles?.craft || 'No craft specified'}</p>
+                  {applicant.message && (
+                    <p className="text-sm text-muted-foreground mt-2 italic bg-muted/30 p-2 rounded-lg border border-border/50">
+                      "{applicant.message}"
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">

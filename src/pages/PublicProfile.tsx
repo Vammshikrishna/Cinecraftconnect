@@ -20,12 +20,15 @@ import {
   Linkedin,
   Twitter,
   Facebook,
+  Star,
 } from 'lucide-react';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import { UserProjects } from '@/components/profile/UserProjects';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatURL } from '@/lib/utils';
+import { useAccountType } from '@/hooks/useAccountType';
+import { useRecordView } from '@/hooks/useRecordView';
 
 interface Profile {
   id: string;
@@ -40,6 +43,7 @@ interface Profile {
   cover_image_url?: string;
   instagram_url?: string;
   youtube_url?: string;
+  account_type?: string;
   social_links?: {
     instagram?: string;
     linkedin?: string;
@@ -50,13 +54,19 @@ interface Profile {
 
 const PublicProfile = () => {
   const { userId } = useParams();
+  useRecordView(userId);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isFan } = useAccountType();
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
   const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [postCount, setPostCount] = useState(0);
+  const [connectionsCount, setConnectionsCount] = useState(0);
+  const [followingCount, setFollowingCount] = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
 
   useEffect(() => {
     if (userId) {
@@ -83,6 +93,56 @@ const PublicProfile = () => {
       if (error || !data) throw error || new Error('Profile not found');
       // Cast data to Profile type, ensuring skills is treated as string[]
       setProfile({ ...data, skills: [] } as unknown as Profile);
+
+      // 1. Fetch raw connection data for categorization
+      const { data: rawConnections, error: connError } = await supabase
+        .from('user_connections')
+        .select('*')
+        .or(`follower_id.eq.${data.id},following_id.eq.${data.id}`)
+        .eq('status', 'accepted');
+
+      if (rawConnections && !connError) {
+        // Collect all unique user IDs involved in these connections
+        const userIds = Array.from(new Set(rawConnections.flatMap(c => [c.follower_id, c.following_id])));
+        
+        // Fetch profiles for these users to check their account types
+        const { data: relatedProfiles } = await supabase
+          .from('profiles')
+          .select('id, account_type')
+          .in('id', userIds);
+
+        const profilesMap = new Map(relatedProfiles?.map(p => [p.id, p]));
+
+        // Categorize based on the platform's social model:
+        // - Connections: Creator-to-Creator links
+        // - Followers: Fans following this Creator
+        const c_count = rawConnections.filter(c => {
+          const otherId = c.follower_id === data.id ? c.following_id : c.follower_id;
+          const otherProfile = profilesMap.get(otherId);
+          return otherProfile?.account_type === 'creator' || !otherProfile?.account_type;
+        }).length;
+
+        const f_count = rawConnections.filter(c => {
+          if (c.following_id !== data.id) return false;
+          const followerProfile = profilesMap.get(c.follower_id);
+          return followerProfile?.account_type === 'fan';
+        }).length;
+
+        const following_c = rawConnections.filter(c => c.follower_id === data.id).length;
+
+        setConnectionsCount(c_count);
+        setFollowersCount(f_count);
+        setFollowingCount(following_c);
+      }
+
+      // Fetch posts count separately
+      const { count: pCount } = await supabase
+        .from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('author_id', data.id);
+      
+      setPostCount(pCount || 0);
+
     } catch (error) {
       console.error('Error fetching profile:', error);
       toast({ title: 'Error', description: 'Failed to load profile', variant: 'destructive' });
@@ -135,9 +195,13 @@ const PublicProfile = () => {
   const handleConnect = async () => {
     if (!user || !userId) return;
     try {
-      const { error } = await supabase.from('user_connections' as any).insert({ follower_id: user.id, following_id: userId, status: 'pending' });
+      const { error } = await supabase.from('user_connections' as any).insert({ 
+        follower_id: user.id, 
+        following_id: userId, 
+        status: isFan ? 'accepted' : 'pending' 
+      });
       if (error) throw error;
-      toast({ title: 'Success', description: 'Connection request sent' });
+      toast({ title: 'Success', description: isFan ? 'You are now following' : 'Connection request sent' });
       fetchConnectionStatus();
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to send request', variant: 'destructive' });
@@ -149,11 +213,11 @@ const PublicProfile = () => {
     try {
       const { error } = await supabase.from('user_connections' as any).delete().eq('id', connectionId);
       if (error) throw error;
-      toast({ title: 'Success', description: 'Connection request cancelled' });
+      toast({ title: 'Success', description: isFan ? 'Unfollowed successfully' : 'Connection request cancelled' });
       setConnectionStatus('none');
       setConnectionId(null);
     } catch (error: any) {
-      toast({ title: 'Error', description: 'Failed to cancel request', variant: 'destructive' });
+      toast({ title: 'Error', description: 'Failed to cancel', variant: 'destructive' });
     }
   };
 
@@ -211,6 +275,12 @@ const PublicProfile = () => {
             </div>
 
             <div className="flex flex-col gap-2 items-center max-w-2xl px-4">
+              {profile.account_type === 'fan' && (
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full text-xs font-semibold mb-2">
+                  <Star size={14} className="fill-amber-500" />
+                  <span>Fan Account</span>
+                </div>
+              )}
               <h1 className="text-3xl md:text-4xl font-bold text-gradient">
                 {profile.full_name || profile.username}
               </h1>
@@ -293,42 +363,106 @@ const PublicProfile = () => {
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mt-6">
-                {connectionStatus === 'connected' ? (
-                  <Button disabled variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm"><UserCheck className="mr-2 h-4 w-4" />Connected</Button>
-                ) : connectionStatus === 'pending_sent' ? (
-                  <Button onClick={handleCancelRequest} variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"><Clock className="mr-2 h-4 w-4" />Request Sent</Button>
-                ) : (
-                  <Button onClick={handleConnect} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"><UserPlus className="mr-2 h-4 w-4" />Connect</Button>
+              <div className="flex items-center gap-2 sm:gap-6 mt-6 py-4 border-t border-border/50 w-full justify-center flex-wrap">
+                {profile.account_type !== 'fan' && (
+                  <>
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{postCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Posts</span>
+                    </div>
+                    <div className="hidden sm:block w-px h-8 bg-border/50" />
+                  </>
                 )}
-                {connectionStatus === 'connected' && (
-                  <Button asChild className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/80">
-                    <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
-                  </Button>
+                
+                <div className="flex flex-col items-center px-2 sm:px-4">
+                  <span className="text-2xl font-bold text-foreground">{followersCount}</span>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Followers</span>
+                </div>
+                
+                {profile.account_type === 'fan' && (
+                  <>
+                    <div className="w-px h-8 bg-border/50" />
+                    
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{followingCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Following</span>
+                    </div>
+                  </>
+                )}
+
+                {profile.account_type !== 'fan' && (
+                  <>
+                    <div className="hidden sm:block w-px h-8 bg-border/50" />
+                    <div className="flex flex-col items-center px-2 sm:px-4">
+                      <span className="text-2xl font-bold text-foreground">{connectionsCount}</span>
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Connections</span>
+                    </div>
+                  </>
                 )}
               </div>
+
+              {isFan ? (
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mt-6">
+                  {connectionStatus === 'connected' ? (
+                    <Button onClick={handleCancelRequest} variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50"><UserCheck className="mr-2 h-4 w-4" />Following</Button>
+                  ) : (
+                    <Button onClick={handleConnect} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"><UserPlus className="mr-2 h-4 w-4" />Follow</Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md mt-6">
+                  {connectionStatus === 'connected' ? (
+                    <Button disabled variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm"><UserCheck className="mr-2 h-4 w-4" />Connected</Button>
+                  ) : connectionStatus === 'pending_sent' ? (
+                    <Button onClick={handleCancelRequest} variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"><Clock className="mr-2 h-4 w-4" />Request Sent</Button>
+                  ) : (
+                    <Button onClick={handleConnect} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"><UserPlus className="mr-2 h-4 w-4" />Connect</Button>
+                  )}
+                  {connectionStatus === 'connected' && (
+                    <Button asChild className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/80">
+                      <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </header>
 
-        <div className="mt-8">
-          <Tabs defaultValue="posts" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-muted/50">
-              <TabsTrigger value="posts">Posts</TabsTrigger>
-              <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-              <TabsTrigger value="projects">Projects</TabsTrigger>
-            </TabsList>
-            <TabsContent value="posts" className="py-6">
-              <UserPosts targetUserId={profile.id} />
-            </TabsContent>
-            <TabsContent value="portfolio" className="py-6">
-              <PortfolioGrid userId={profile.id} isOwner={false} />
-            </TabsContent>
-            <TabsContent value="projects" className="py-6">
-              <UserProjects userId={profile.id} />
-            </TabsContent>
-          </Tabs>
-        </div>
+        {profile.account_type !== 'fan' ? (
+          <div className="mt-8">
+            <Tabs defaultValue="posts" className="w-full">
+              <TabsList className={`grid w-full bg-muted/50 ${isFan ? 'grid-cols-1 max-w-sm mx-auto' : 'grid-cols-3'}`}>
+                <TabsTrigger value="posts">Posts</TabsTrigger>
+                {!isFan && (
+                  <>
+                    <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
+                    <TabsTrigger value="projects">Projects</TabsTrigger>
+                  </>
+                )}
+              </TabsList>
+              <TabsContent value="posts" className="py-6">
+                <UserPosts targetUserId={profile.id} />
+              </TabsContent>
+              {!isFan && (
+                <>
+                  <TabsContent value="portfolio" className="py-6">
+                    <PortfolioGrid userId={profile.id} isOwner={false} />
+                  </TabsContent>
+                  <TabsContent value="projects" className="py-6">
+                    <UserProjects userId={profile.id} />
+                  </TabsContent>
+                </>
+              )}
+            </Tabs>
+          </div>
+        ) : (
+          <div className="mt-8 text-center p-8 glass-card border border-border/50 text-muted-foreground">
+            <Star className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-foreground mb-2">Fan Account</h2>
+            <p>This user is a Cinecraft Fan. Fans support creators by watching, liking, and participating in discussions.</p>
+          </div>
+        )}
       </div>
     </div>
   );

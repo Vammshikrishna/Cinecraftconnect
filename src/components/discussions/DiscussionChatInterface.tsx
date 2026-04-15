@@ -41,9 +41,11 @@ interface DiscussionChatInterfaceProps {
   roomType: 'public' | 'private' | 'secret';
   onClose: () => void;
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
+  /** When set the current user appears under this alias and has no profile link */
+  fanDisplayName?: string;
 }
 
-export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
+export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated, fanDisplayName }: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);

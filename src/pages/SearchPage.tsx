@@ -9,6 +9,7 @@ import { ExploreGrid } from '@/components/search/ExploreGrid';
 import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
 import { PageHeader } from '@/components/common/PageHeader';
 import { motion } from 'framer-motion';
+import { useAccountType } from '@/hooks/useAccountType';
 
 // Basic type definitions for search results
 interface ProjectResult {
@@ -101,22 +102,30 @@ const SearchPage = () => {
     const [loading, setLoading] = useState(false);
     const [activeCategory, setActiveCategory] = useState(initialCategory);
     const navigate = useNavigate();
+    const { isFan } = useAccountType();
+    
+    const availableCategories = CATEGORIES.filter(c => {
+        if (!isFan) return true;
+        return ['all', 'people', 'discussions', 'posts'].includes(c.id);
+    });
 
     const fetchExploreItems = useCallback(async () => {
         setLoading(true);
         try {
-            const results = await Promise.allSettled([
-                supabase.from('projects').select('id, title, description, status, location, genre, image_url').limit(12),
+            const promises = [
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').limit(12),
                 supabase.from('discussion_rooms').select('id, title, description, name').limit(12),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name)').order('created_at', { ascending: false }).limit(32),
-                supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
-                supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12)
-            ]);
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12)
+            ];
+            
+            const results = await Promise.allSettled(promises as any[]);
 
             const items: ExploreItem[] = [];
 
-            const getData = <T,>(result: PromiseSettledResult<{ data: T | null, error: any }>) => {
-                if (result.status === 'fulfilled' && result.value.data) return result.value.data;
+            const getData = (result: any): any[] | null => {
+                if (result.status === 'fulfilled' && result.value?.data) return result.value.data as any[];
                 return null;
             };
 
@@ -162,7 +171,7 @@ const SearchPage = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isFan]);
 
     const performSearch = useCallback(async (searchQuery: string) => {
         if (searchQuery.length < 2) {
@@ -171,18 +180,20 @@ const SearchPage = () => {
         }
         setLoading(true);
         try {
-            const results = await Promise.allSettled([
-                supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
+            const promises = [
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('profiles').select('id, username, full_name, avatar_url').or(`username.ilike.%${searchQuery}%,full_name.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('discussion_rooms').select('id, title, description, name').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name)').ilike('content', `%${searchQuery}%`).limit(24),
                 supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),
-                supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
-                supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10)
-            ]);
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10)
+            ];
+            
+            const results = await Promise.allSettled(promises as any[]);
 
-            const getData = <T,>(result: PromiseSettledResult<{ data: T | null, error: any }>) => {
-                if (result.status === 'fulfilled' && result.value.data) return result.value.data;
+            const getData = (result: any): any[] | null => {
+                if (result.status === 'fulfilled' && result.value?.data) return result.value.data as any[];
                 return null;
             };
 
@@ -208,7 +219,7 @@ const SearchPage = () => {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isFan]);
 
 
     useEffect(() => {
@@ -279,7 +290,7 @@ const SearchPage = () => {
                         <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-primary group-focus-within:scale-110 transition-transform duration-500" size={24} />
                         <Input 
                             type="search" 
-                            placeholder="SEARCH PROJECTS, PEOPLE, POSTS..." 
+                            placeholder={isFan ? "SEARCH PEOPLE, POSTS, DISCUSSIONS..." : "SEARCH PROJECTS, PEOPLE, POSTS..."}
                             className="pl-16 pr-6 py-10 text-2xl w-full bg-card/60 backdrop-blur-3xl border-2 border-white/5 focus:border-primary/50 rounded-[2.5rem] transition-all shadow-2xl font-black uppercase tracking-tighter placeholder:text-muted-foreground/30 focus:ring-4 focus:ring-primary/10" 
                             value={query} 
                             onChange={handleSearch} 
@@ -289,7 +300,7 @@ const SearchPage = () => {
                 </motion.div>
 
                 <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4">
-                    {CATEGORIES.map(category => (
+                    {availableCategories.map(category => (
                         <button 
                             key={category.id} 
                             onClick={() => handleCategoryChange(category.id)} 
