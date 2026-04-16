@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
-import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import { useMessageSeen } from '@/hooks/useMessageSeen';
 
 
 interface Message {
@@ -44,7 +44,8 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const { markAsRead } = useChatReadStatus();
+  const { observeMessage } = useMessageSeen('project_messages');
+  const [readStatuses, setReadStatuses] = useState<any[]>([]);
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
 
@@ -110,10 +111,59 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     fetchSpaceId();
   }, [projectId, user]);
 
+  // Auto-join project space membership
+  useEffect(() => {
+    if (!spaceId || !user) return;
+
+    const ensureMembership = async () => {
+      if (!user || !spaceId) return;
+      
+      // Check if already a member
+      const { data: existing, error: fetchError } = await supabase
+        .from('project_space_members' as any)
+        .select('user_id')
+        .eq('project_space_id', spaceId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('Error checking project membership:', fetchError);
+        return;
+      }
+
+      if (!existing) {
+        // If not a member, check if they are the owner or an applicant to grant access
+        // (For now, keeping it simple: anyone who can access the space UI gets added as a member)
+        const { error: insertError } = await supabase
+          .from('project_space_members' as any)
+          .insert({ 
+            project_space_id: spaceId, 
+            user_id: user.id 
+          });
+
+        if (insertError) {
+          console.error('Error auto-joining project space:', insertError);
+        }
+      }
+    };
+
+    ensureMembership();
+  }, [spaceId, user]);
+
   useEffect(() => {
     if (!spaceId) return;
 
+    const fetchReadStatuses = async () => {
+      if (!spaceId) return;
+      const { data } = await supabase
+        .from('project_message_read_status' as any)
+        .select('user_id, last_read_at, profiles:user_id(full_name)')
+        .eq('project_space_id', spaceId);
+      if (data) setReadStatuses(data as any[]);
+    };
+
     fetchMessages();
+    fetchReadStatuses();
 
     const channel = supabase
       .channel(`project_messages:${spaceId}`)
@@ -125,6 +175,14 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       }, () => {
         fetchMessages();
       })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_message_read_status',
+        filter: `project_space_id=eq.${spaceId}`
+      }, () => {
+        fetchReadStatuses();
+      })
       .subscribe();
 
     return () => {
@@ -134,11 +192,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
   useEffect(() => {
     scrollToBottom();
-    // Also mark as read when messages are loaded/updated
-    if (spaceId && messages.length > 0) {
-      markAsRead('project', spaceId);
-    }
-  }, [messages, spaceId, markAsRead]);
+  }, [messages]);
 
 
   const fetchMessages = async () => {
@@ -191,6 +245,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
       if (error) throw error;
       setReplyingTo(null);
+      fetchMessages(); // Refresh UI immediately after sending
     } catch (err: any) {
       console.error('Send message error:', err);
       toast({
@@ -367,8 +422,28 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
           messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
             const isOwn = message.user_id === user?.id;
             const isShare = isShareContent(message.content);
+
+            // Calculate who seen this message in project space
+            const uniqueSeenByAtThisPoint = readStatuses.filter(rs => {
+              if (rs.user_id === user?.id) return false;
+              try {
+                const statusTime = new Date(rs.last_read_at).getTime();
+                const messageTime = new Date(message.created_at).getTime();
+                // Fuzzy match: within 100ms
+                return Math.abs(statusTime - messageTime) < 100;
+              } catch (e) {
+                return false;
+              }
+            }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
+
             return (
-              <div key={message.id} className={`flex gap-3 mb-4 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isOwn ? 'flex-row-reverse' : ''}`}>
+              <React.Fragment key={message.id}>
+              <div 
+                ref={observeMessage}
+                data-message-id={message.id}
+                data-sender-id={message.user_id}
+                className={`flex gap-3 mb-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isOwn ? 'flex-row-reverse' : ''}`}
+              >
                 <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
                   <AvatarImage src={message.profiles?.avatar_url || undefined} />
                   <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">
@@ -446,6 +521,14 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                   </span>
                 </div>
               </div>
+              {uniqueSeenByAtThisPoint.length > 0 && (
+                <div className={`flex ${isOwn ? 'justify-end pr-12' : 'justify-start pl-12'} mb-4 -mt-1`}>
+                  <span className="text-[10px] text-primary/60 font-medium tracking-tight">
+                    Seen by {uniqueSeenByAtThisPoint.join(', ')}
+                  </span>
+                </div>
+              )}
+              </React.Fragment>
             );
           })
         )}

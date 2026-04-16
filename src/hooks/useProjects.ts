@@ -20,6 +20,7 @@ export interface Project {
     created_at: string;
     image_url?: string;
     is_bookmarked?: boolean;
+    is_member?: boolean;
     profiles?: {
         full_name: string | null;
         username: string | null;
@@ -56,39 +57,43 @@ export const useProjects = (activeTab: string = 'all') => {
 
             if (projectsError && projectsError.code !== 'PGRST116') throw projectsError;
 
-            // 2. Fetch bookmarks if user is logged in
+            // 2. Fetch bookmarks & memberships if user is logged in
             let bookmarkedProjectIds = new Set<string>();
+            let memberProjectIds = new Set<string>();
 
             if (user) {
-                // Get project_space IDs that are bookmarked by the current user
-                const { data: bookmarksData, error: bookmarksError } = await supabase
-                    .from('project_space_bookmarks')
-                    .select('project_space_id')
-                    .eq('user_id', user.id);
+                // Get project_space IDs that are bookmarked or where user is member
+                const [bookmarksRes, membersRes] = await Promise.all([
+                    supabase.from('project_space_bookmarks').select('project_space_id').eq('user_id', user.id),
+                    supabase.from('project_space_members').select('project_space_id').eq('user_id', user.id)
+                ]);
 
-                if (!bookmarksError && bookmarksData && bookmarksData.length > 0) {
-                    const spaceIds = bookmarksData.map(b => b.project_space_id);
-                    const { data: spacesData } = await supabase
-                        .from('project_spaces')
-                        .select('project_id')
-                        .in('id', spaceIds);
+                // Map space IDs back to project IDs for bookmarks
+                if (bookmarksRes.data && bookmarksRes.data.length > 0) {
+                    const { data: bSpaces } = await supabase.from('project_spaces').select('project_id').in('id', bookmarksRes.data.map(b => b.project_space_id));
+                    bSpaces?.forEach(s => bookmarkedProjectIds.add(s.project_id));
+                }
 
-                    spacesData?.forEach(s => bookmarkedProjectIds.add(s.project_id));
+                // Map space IDs back to project IDs for memberships
+                if (membersRes.data && membersRes.data.length > 0) {
+                    const { data: mSpaces } = await supabase.from('project_spaces').select('project_id').in('id', membersRes.data.map(m => m.project_space_id));
+                    mSpaces?.forEach(s => memberProjectIds.add(s.project_id));
                 }
             }
 
             // 3. Merge
-            let projectsWithBookmarks = (projectsData || []).map((project: any) => ({
+            let projectsWithMetadata = (projectsData || []).map((project: any) => ({
                 ...project,
-                is_bookmarked: bookmarkedProjectIds.has(project.id)
+                is_bookmarked: bookmarkedProjectIds.has(project.id),
+                is_member: memberProjectIds.has(project.id) || project.creator_id === user?.id
             }));
 
             // Filter for bookmarked tab
             if (activeTab === 'bookmarked') {
-                projectsWithBookmarks = projectsWithBookmarks.filter((p: any) => p.is_bookmarked);
+                projectsWithMetadata = projectsWithMetadata.filter((p: any) => p.is_bookmarked);
             }
 
-            return projectsWithBookmarks as Project[];
+            return projectsWithMetadata as Project[];
         },
         staleTime: 1000 * 60, // Reduced staleTime to 1 minute for better responsiveness
     });

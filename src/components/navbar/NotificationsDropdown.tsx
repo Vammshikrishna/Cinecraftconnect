@@ -84,13 +84,19 @@ const NotificationsDropdown = () => {
 
     fetchNotifications();
 
-    const channel = supabase
-      .channel(`notifications:${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
-        () => fetchNotifications()
-      ).subscribe();
+    if (user?.id) {
+      const channel = supabase
+        .channel(`nav_notifications_${user.id}`)
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'notifications', 
+          filter: `user_id=eq.${user.id}` 
+        }, () => fetchNotifications())
+        .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+      return () => { supabase.removeChannel(channel); };
+    }
   }, [user?.id]);
 
   const markAsRead = async (notificationId: string) => {

@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { supabase } from '@/integrations/supabase/client';
@@ -14,12 +13,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2 } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, ArrowLeft } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
 import { EnhancedSkeleton, CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import { PageHeader } from '@/components/common/PageHeader';
+import { cn } from '@/lib/utils';
+import { getDisplayMessage } from '@/lib/chat-utils';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 
 // --- DATA INTERFACES ---
@@ -35,6 +36,7 @@ interface Room {
   creator_id: string;
   created_at: string;
   room_categories: { name: string } | null;
+  last_message?: { content: string; created_at: string; sender_name?: string } | null;
   // This is a client-side addition
   tags?: string[];
 }
@@ -50,6 +52,12 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const { user } = useAuth();
   const { isFan } = useAccountType();
 
+  // Use URL as the source of truth for the selected room
+  const activeRoom = useMemo(() => {
+    if (!roomId || rooms.length === 0) return null;
+    return rooms.find(r => r.id === roomId) || null;
+  }, [roomId, rooms]);
+
   // Generate a stable anonymous display name for fans in public rooms
   const fanAnonName = useMemo(() => {
     if (!user) return 'Viewer';
@@ -57,12 +65,6 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     const num = parseInt(user.id.replace(/-/g, '').slice(0, 6), 16) % 999 + 1;
     return `Viewer #${num}`;
   }, [user]);
-
-  // Use URL as the source of truth for the selected room
-  const activeRoom = useMemo(() => {
-    if (!roomId || rooms.length === 0) return null;
-    return rooms.find(r => r.id === roomId) || null;
-  }, [roomId, rooms]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -82,31 +84,54 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       const [roomsRes, categoriesRes] = await Promise.all([
         supabase
           .from('discussion_rooms')
-          .select('id, title, description, created_at, category_id, room_type, creator_id, member_count, room_categories(name), tags'),
+          .select(`
+            id, 
+            title, 
+            description, 
+            created_at, 
+            category_id, 
+            room_type, 
+            creator_id, 
+            member_count, 
+            room_categories(name), 
+            tags,
+            room_messages(content, created_at, profiles(full_name))
+          `)
+          .order('created_at', { foreignTable: 'room_messages', ascending: false }),
         supabase.from('room_categories').select('id, name')
       ]);
 
       if (roomsRes.error) throw roomsRes.error;
       if (categoriesRes.error) throw categoriesRes.error;
 
-      const formattedRooms = roomsRes.data.map(room => ({
-        ...room,
-        member_count: room.member_count || 0,
-        room_type: room.room_type as 'public' | 'private' | 'secret',
-        category_id: room.category_id || '',
-        creator_id: room.creator_id || '',
-        tags: room.tags || [],
-      }));
+      const formattedRooms = (roomsRes.data as any[]).map(room => {
+        const lastMsg = room.room_messages?.[0];
+        return {
+          ...room,
+          member_count: room.member_count || 0,
+          room_type: room.room_type as 'public' | 'private' | 'secret',
+          category_id: room.category_id || '',
+          creator_id: room.creator_id || '',
+          tags: room.tags || [],
+          last_message: lastMsg ? {
+            content: lastMsg.content,
+            created_at: lastMsg.created_at,
+            sender_name: lastMsg.profiles?.full_name || 'User'
+          } : null
+        };
+      });
 
       setRooms(formattedRooms);
       setCategories((categoriesRes.data || []).map(c => ({ ...c, description: null, icon: null })));
 
-      // Fetch active calls for discussion rooms
+      // Fetch active calls for discussion rooms (only started in last 6 hours to avoid stale status)
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
       const { data: activeCalls } = await supabase
         .from('calls' as any)
         .select('room_id')
         .eq('room_type', 'discussion')
-        .eq('status', 'active');
+        .eq('status', 'active')
+        .gt('created_at', sixHoursAgo);
 
       if (activeCalls) {
         setActiveCallRoomIds(new Set(activeCalls.map((c: any) => c.room_id)));
@@ -205,6 +230,16 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   // If we have a roomId but haven't found the room yet (and strict loading is true or rooms empty), show loading.
   const isResolvingDeepLink = loading || (!!roomId && !activeRoom && rooms.length === 0);
 
+  // JS-based screen size detection for conditional layout
+  const [isDesktopLayout, setIsDesktopLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => setIsDesktopLayout(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   if (isResolvingDeepLink) {
     return (
       <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
@@ -221,6 +256,141 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     );
   }
 
+  // --- Instagram-style Desktop Layout (Only when a room is selected) ---
+  if (isDesktopLayout && activeRoom) {
+    return (
+      <div className="h-screen w-full flex flex-col pt-16 bg-background overflow-hidden">
+        <div className="flex-1 flex overflow-hidden">
+          <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 backdrop-blur-xl shrink-0">
+            <div className="p-6 border-b border-border space-y-4">
+              <div className="flex items-center justify-between">
+                <Link to="/discussion-rooms" className="flex items-center gap-2 hover:text-primary transition-colors">
+                  <ArrowLeft size={18} />
+                  <h2 className="text-xl font-black tracking-tight">Discussions</h2>
+                </Link>
+                {!isFan && (
+                  <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
+                        <PlusCircle size={18} />
+                      </Button>
+                    </DialogTrigger>
+                    <CreateRoomModal
+                      categories={categories}
+                      closeModal={() => setCreateModalOpen(false)}
+                      onRoomCreated={handleRoomCreated}
+                    />
+                  </Dialog>
+                )}
+              </div>
+              
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
+                <Input
+                  placeholder="Search rooms..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="bg-muted/50 border-none pl-9 h-10 text-sm rounded-xl focus-visible:ring-1 focus-visible:ring-primary/30"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="flex-1 bg-muted/30 border-none h-8 text-[11px] font-bold rounded-lg uppercase tracking-wider">
+                    <SelectValue placeholder="Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="flex-1 bg-muted/30 border-none h-8 text-[11px] font-bold rounded-lg uppercase tracking-wider">
+                    <SelectValue placeholder="Sort" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="popularity">Popular</SelectItem>
+                    <SelectItem value="newest">Newest</SelectItem>
+                    <SelectItem value="name">Name</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
+              {filteredAndSortedRooms
+                .filter(room => !(isFan && room.room_type === 'private'))
+                .map(room => (
+                  <button
+                    key={room.id}
+                    onClick={() => handleRoomJoin(room)}
+                    className={cn(
+                      "w-full text-left p-4 rounded-2xl transition-all duration-300 group relative border border-transparent",
+                      activeRoom?.id === room.id 
+                        ? "bg-primary/10 border-primary/20 shadow-sm" 
+                        : "hover:bg-muted/50 hover:border-border/30"
+                    )}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <h3 className={cn(
+                        "font-bold text-sm truncate pr-2 flex-1",
+                        activeRoom?.id === room.id ? "text-primary" : "text-foreground group-hover:text-primary transition-colors"
+                      )}>
+                        {room.title}
+                      </h3>
+                      {activeCallRoomIds.has(room.id) && (
+                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground line-clamp-1 mb-2 opacity-70">
+                      {room.last_message 
+                        ? `${room.last_message.sender_name}: ${getDisplayMessage(room.last_message.content)}` 
+                        : (room.description || 'No messages yet...')}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                        <Users className="h-3 w-3" />
+                         {room.member_count}
+                      </div>
+                      <Badge variant="secondary" className="bg-muted text-[9px] px-1.5 py-0 rounded-md border-0 h-4">
+                        {room.room_categories?.name || 'General'}
+                      </Badge>
+                      {room.room_type === 'private' && (
+                        <Lock className="h-2.5 w-2.5 text-amber-500" />
+                      )}
+                    </div>
+                    {activeRoom?.id === room.id && (
+                      <div className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-primary rounded-r-full" />
+                    )}
+                  </button>
+                ))}
+              {filteredAndSortedRooms.length === 0 && (
+                <div className="text-center py-12">
+                   <p className="text-muted-foreground text-xs uppercase tracking-widest font-bold">No results found</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
+             <DiscussionChatInterface
+              roomId={activeRoom.id}
+              userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
+              roomTitle={activeRoom.title}
+              roomDescription={activeRoom.description}
+              categoryId={activeRoom.category_id}
+              categories={categories}
+              roomType={activeRoom.room_type}
+              onClose={() => navigate('/discussion-rooms')}
+              onRoomUpdated={handleRoomUpdated}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Mobile/Tablet Fullscreen View (when active) ---
   if (activeRoom) {
     // Extra guard: fans cannot view private rooms they stumbled into via URL
     if (isFan && activeRoom.room_type === 'private') {
@@ -247,7 +417,6 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           categoryId={activeRoom.category_id}
           categories={categories}
           roomType={activeRoom.room_type}
-          fanDisplayName={isFan ? fanAnonName : undefined}
           onClose={() => {
             navigate('/discussion-rooms');
           }}
@@ -257,6 +426,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     );
   }
 
+  // --- Mobile List View ---
   return (
     <div className="min-h-screen bg-background text-foreground pt-16 md:pt-20">
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24">
@@ -442,7 +612,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-popover border-border">
-                  <DropdownMenuItem onClick={() => onJoin(room)} className="cursor-pointer">
+                  <DropdownMenuItem onClick={() => { /* Edit logic if needed */ }} className="cursor-pointer">
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Room
                   </DropdownMenuItem>

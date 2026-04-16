@@ -18,7 +18,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { getDisplayMessage } from '@/lib/chat-utils';
 
 const ChatMenu = () => {
-  const { hasUnread } = useUnreadMessages();
+  const { hasUnread, unreadCount, lastMessageToken } = useUnreadMessages();
   const [previews, setPreviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -54,7 +54,7 @@ const ChatMenu = () => {
     // We fetch previews on mount AND when notification triggers.
     // We do NOT clear them just because hasUnread becomes false (e.g. visiting /messages)
     fetchPreviews();
-  }, [hasUnread]);
+  }, [hasUnread, lastMessageToken]);
 
   const getLink = (type: string, id: string) => {
     switch (type) {
@@ -92,8 +92,10 @@ const ChatMenu = () => {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <MessageSquare className="h-5 w-5" />
-          {hasUnread && (
-            <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-red-500" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-background animate-in zoom-in">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
           )}
         </Button>
       </DropdownMenuTrigger>
@@ -116,14 +118,14 @@ const ChatMenu = () => {
             {previews.filter(p => p.c_id).map((preview) => (
               <DropdownMenuItem key={`${preview.chat_type}-${preview.c_id}`} asChild className="p-0 focus:bg-accent/50 focus:outline-none cursor-pointer">
                 <Link to={getLink(preview.chat_type || 'dm', preview.c_id)} className="flex items-start gap-3 w-full p-2.5 sm:p-3 transition-colors">
-                  <div className="relative flex-shrink-0">
-                    {getIcon(preview.chat_type || 'dm', preview.avatar, preview.name)}
-                    {(preview.unread_count > 1) && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full border-2 border-background">
-                        {preview.unread_count}
-                      </span>
-                    )}
-                  </div>
+                    <div className="relative flex-shrink-0">
+                      {getIcon(preview.chat_type || 'dm', preview.avatar, preview.name)}
+                      {preview.unread_count > 0 && (
+                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full border-2 border-[#1c1c1e] shadow-sm">
+                          {preview.unread_count > 9 ? '9+' : preview.unread_count}
+                        </span>
+                      )}
+                    </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-baseline gap-2">
                       <span className="font-semibold text-sm truncate">{preview.name}</span>

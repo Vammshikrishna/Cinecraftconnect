@@ -87,7 +87,11 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     const navigate = useNavigate();
 
     const handleCardClick = () => {
-      navigate(`/projects/${project.id}`);
+      if (project.is_member) {
+        navigate(`/projects/${project.id}/space`);
+      } else {
+        navigate(`/projects/${project.id}`);
+      }
     };
 
     const handleBookmarkClick = async (e: React.MouseEvent) => {

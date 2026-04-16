@@ -73,15 +73,25 @@ const ProjectDetailPage = () => {
           .eq('project_id', projectId)
           .maybeSingle();
 
-        if (spaceData) {
-          const { data: memberData } = await supabase
-            .from('project_space_members')
-            .select('role')
-            .eq('project_space_id', spaceData.id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          setIsMember(!!memberData);
-        }
+          if (spaceData) {
+            const { data: memberData } = await supabase
+              .from('project_space_members')
+              .select('role')
+              .eq('project_space_id', spaceData.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            const isOwner = user.id === data.creator_id;
+            const isMemberRes = !!memberData;
+            
+            setIsMember(isMemberRes);
+
+            // Auto-redirect if member or owner
+            if (isMemberRes || isOwner) {
+              navigate(`/projects/${projectId}/space`, { replace: true });
+              return; // Exit early
+            }
+          }
 
         // 2. Check for application
         const { data: appData } = await supabase

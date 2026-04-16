@@ -26,8 +26,7 @@ import LearningPortal from "./pages/LearningPortal";
 import CraftPage from "./pages/CraftPage";
 import AllCraftsPage from "./pages/AllCraftsPage";
 import DiscussionRooms from "./pages/DiscussionRooms";
-import ChatsList from "./pages/ChatsList";
-import ChatPage from "./pages/ChatPage";
+import Messages from "./pages/Messages";
 import Settings from "./pages/Settings";
 import AppearanceSettings from "./pages/settings/AppearanceSettings";
 import NotificationsSettings from "./pages/settings/NotificationsSettings";
@@ -100,9 +99,9 @@ const App = () => {
               <Route path="/learn" element={<LearningPortal />} />
               <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
               <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
-              <Route path="/messages" element={<ProtectedRoute><ChatsList /></ProtectedRoute>} />
-              <Route path="/messages/:conversationId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-              <Route path="/dm/:userId" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+              <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+              <Route path="/messages/:conversationId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+              <Route path="/dm/:userId" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
               <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />

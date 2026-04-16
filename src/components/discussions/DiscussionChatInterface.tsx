@@ -28,7 +28,7 @@ import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
-import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import { useMessageSeen } from '@/hooks/useMessageSeen';
 
 
 interface DiscussionChatInterfaceProps {
@@ -41,11 +41,9 @@ interface DiscussionChatInterfaceProps {
   roomType: 'public' | 'private' | 'secret';
   onClose: () => void;
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
-  /** When set the current user appears under this alias and has no profile link */
-  fanDisplayName?: string;
 }
 
-export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated, fanDisplayName }: DiscussionChatInterfaceProps) => {
+export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -74,7 +72,6 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   }, [isCallMinimized, mobileTab]);
 
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const { markAsRead } = useChatReadStatus();
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -87,6 +84,9 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
   }, []);
+
+  const { observeMessage } = useMessageSeen('room_messages');
+  const [readStatuses, setReadStatuses] = useState<any[]>([]);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -105,8 +105,6 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     messagesEndRef.current?.scrollIntoView({ behavior });
     setIsAtBottom(true);
     setUnreadCount(0);
-    // Mark as read when explicitly scrolling to bottom
-    if (roomId) markAsRead('discussion', roomId);
   };
 
 
@@ -155,39 +153,41 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     if (!roomId || !user) return;
 
     const ensureMembership = async () => {
-      try {
-        const { data: existing } = await supabase
+      if (!user || !roomId) return;
+      const { data: existing } = await supabase
+        .from('room_members')
+        .select('user_id')
+        .eq('room_id', roomId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase
           .from('room_members')
-          .select('user_id')
-          .eq('room_id', roomId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (!existing) {
-          const { error } = await supabase
-            .from('room_members')
-            .insert({ room_id: roomId, user_id: user.id });
-
-          if (error && !error.message?.includes('duplicate')) {
-            console.error('Failed to auto-join room:', error);
-          }
-        }
-      } catch (err) {
-        console.error('Error ensuring room membership:', err);
+          .insert({ room_id: roomId, user_id: user.id });
       }
     };
 
     ensureMembership();
   }, [roomId, user]);
 
+  const fetchReadStatuses = useCallback(async () => {
+    if (!roomId) return;
+    const { data } = await supabase
+      .from('room_message_read_status' as any)
+      .select('user_id, last_read_at, profiles(full_name)')
+      .eq('room_id', roomId);
+    if (data) setReadStatuses(data as any[]);
+  }, [roomId]);
+
   useEffect(() => {
     fetchMessages();
+    fetchReadStatuses();
     const timer = setTimeout(() => {
       scrollToBottom('auto');
-      if (roomId) markAsRead('discussion', roomId);
     }, 500);
     return () => clearTimeout(timer);
-  }, [fetchMessages, markAsRead, roomId]);
+  }, [fetchMessages, fetchReadStatuses, roomId]);
 
 
   useEffect(() => {
@@ -207,6 +207,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
             }
           }
         })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_message_read_status', filter: `room_id=eq.${roomId}` }, fetchReadStatuses)
       .subscribe();
 
     return () => {
@@ -378,7 +379,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       {/* ===== HEADER ===== */}
       <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0">
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0 lg:hidden">
             <ArrowLeft className="h-5 w-5 text-foreground" />
           </button>
           <div className="min-w-0 flex-1 overflow-hidden pr-2">
@@ -520,8 +521,28 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
               messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
                 const isSender = message.profiles.id === user?.id;
                 const isShare = isShareContent(message.content);
+                
+                // Only show seen list if this is the newest seen message for those users
+                const uniqueSeenByAtThisPoint = readStatuses.filter(rs => {
+                  if (rs.user_id === user?.id) return false;
+                  try {
+                    const statusTime = new Date(rs.last_read_at).getTime();
+                    const messageTime = new Date(message.created_at).getTime();
+                    // Fuzzy match: within 100ms
+                    return Math.abs(statusTime - messageTime) < 100;
+                  } catch (e) {
+                    return false;
+                  }
+                }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
+
                 return (
-                  <div key={message.id} className={`flex items-end gap-2 my-3 group ${isSender ? 'flex-row-reverse' : ''}`}>
+                  <div key={message.id}>
+                  <div 
+                    ref={observeMessage}
+                    data-message-id={message.id}
+                    data-sender-id={message.user_id}
+                    className={`flex items-end gap-2 my-3 group ${isSender ? 'flex-row-reverse' : ''}`}
+                  >
                     <TooltipProvider delayDuration={100}>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -597,6 +618,14 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                       )}
                     </div>
                     <span className="text-[10px] text-muted-foreground shrink-0">{formatTimestamp(message.created_at)}</span>
+                  </div>
+                  {uniqueSeenByAtThisPoint.length > 0 && (
+                    <div className={`flex ${isSender ? 'justify-end pr-11' : 'justify-start pl-11'} mb-3 -mt-2`}>
+                      <span className="text-[10px] text-primary/60 font-medium">
+                        Seen by {uniqueSeenByAtThisPoint.join(', ')}
+                      </span>
+                    </div>
+                  )}
                   </div>
                 );
               })
@@ -754,7 +783,13 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                   const isSender = message.profiles.id === user?.id;
                   const isShare = isShareContent(message.content);
                   return (
-                    <div key={message.id} className={`flex items-end gap-2 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSender ? 'flex-row-reverse' : ''}`}>
+                    <div 
+                      key={message.id} 
+                      ref={observeMessage}
+                      data-message-id={message.id}
+                      data-sender-id={message.user_id}
+                      className={`flex items-end gap-2 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSender ? 'flex-row-reverse' : ''}`}
+                    >
                       <Link to={`/profile/${message.profiles.id}`}>
                         <Avatar className="h-9 w-9 cursor-pointer hover:scale-110 active:scale-95 transition-all shrink-0 shadow-sm border border-border/10">
                           <AvatarImage src={message.profiles.avatar_url || undefined} />
