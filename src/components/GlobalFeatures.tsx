@@ -2,6 +2,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
+import { useGlobalNotifications } from '@/hooks/useGlobalNotifications';
 
 /**
  * This component handles global features that should be active
@@ -16,6 +17,9 @@ const GlobalFeatures = () => {
     
     // Activate global presence tracking - this marks the user as online everywhere
     usePresence();
+
+    // Activate global notification listening
+    useGlobalNotifications();
 
     return (
         <>

@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { Bell, Check, X, Archive, Settings, Filter } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from '@/components/common/PageHeader';
+import { getNotificationIcon as getIcon, getDisplayMessage } from '@/lib/chat-utils';
 
 interface Notification {
   id: string;
@@ -39,18 +41,19 @@ interface Notification {
 }
 
 const EnhancedNotificationsCenter = () => {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [sortBy, setSortBy] = useState('newest');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     let mounted = true;
     const fetchNotifications = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           setNotifications([]);
           setLoading(false);
@@ -85,35 +88,26 @@ const EnhancedNotificationsCenter = () => {
     };
 
     fetchNotifications();
-
-    const setupRealtime = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
+    
+    if (user) {
       const channel = supabase
-        .channel('notifications-stream')
+        .channel(`notifications_center_${user.id}`)
         .on('postgres_changes', {
           event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${user.id}`
         }, () => {
-          if (mounted) {
-            fetchNotifications();
-          }
+          if (mounted) fetchNotifications();
         })
         .subscribe();
 
       return () => {
+        mounted = false;
         supabase.removeChannel(channel);
       };
-    };
-
-    setupRealtime();
-    return () => {
-      mounted = false;
-    };
-  }, [toast]);
+    }
+  }, [user, toast]);
 
   const markAsRead = async (id: string) => {
     try {
@@ -161,29 +155,61 @@ const EnhancedNotificationsCenter = () => {
     }
   };
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'like': return '❤️';
-      case 'comment': return '💬';
-      case 'new_follower': return '👤';
-      case 'job_application': return '💼';
-      case 'project_application': return '🚀';
-      case 'project_invite': return '✉️';
-      case 'mention': return '@';
-      default: return '🔔';
+  const handleAction = async (notification: Notification, action: 'accept' | 'decline') => {
+    if (!notification.related_id) {
+      toast({
+        title: "Error",
+        description: "Missing related data for this action.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setActionLoading(notification.id);
+    try {
+      const { type, related_id } = notification;
+      
+      if (type === 'project_invite' || type === 'project_application') {
+        const table = type === 'project_invite' ? 'project_space_join_requests' : 'project_applications';
+        const status = action === 'accept' ? 'approved' : 'rejected';
+        
+        const { error } = await supabase
+          .from(table as any)
+          .update({ status })
+          .eq('id', related_id as string);
+        
+        if (error) throw error;
+      } else if (type === 'new_follower') {
+          if (action === 'accept') {
+              await supabase.from('user_connections' as any).update({ status: 'accepted' }).eq('id', related_id as string);
+          } else {
+              await supabase.from('user_connections' as any).delete().eq('id', related_id as string);
+          }
+      }
+
+      await markAsRead(notification.id);
+      
+      toast({
+        title: action === 'accept' ? "Action Successful" : "Action Declined",
+        description: `You have ${action}ed this request.`
+      });
+    } catch (error) {
+      toast({
+        title: "Action Failed",
+        description: "Something went wrong while processing your request.",
+        variant: "destructive"
+      });
+    } finally {
+      setActionLoading(null);
     }
   };
 
+  const getNotificationIcon = (type: string) => {
+    return <span className="text-2xl">{getIcon(type)}</span>;
+  };
+
   const formatMessageContent = (content: string) => {
-    if (!content) return '';
-    if (content.startsWith('POST_SHARE::')) return 'Shared a post';
-    if (content.startsWith('MARKETPLACE_SHARE::')) return 'Shared a listing';
-    if (content.startsWith('ANNOUNCEMENT_SHARE::')) return 'Shared an announcement';
-    if (content.startsWith('VENDOR_SHARE::')) return 'Shared a vendor';
-    if (content.startsWith('PROJECT_SHARE::')) return 'Shared a project space';
-    if (content.startsWith('DISCUSSION_SHARE::')) return 'Shared a discussion room';
-    if (content.includes('JOB_SHARE::')) return 'Shared a job opportunity';
-    return content;
+    return getDisplayMessage(content);
   };
 
   const filterNotifications = (notifications: Notification[], filter: string) => {
@@ -326,10 +352,10 @@ const EnhancedNotificationsCenter = () => {
                   key={notification.id} 
                   className={`group relative overflow-hidden border-border/40 transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.2)] rounded-[1.5rem] ${
                     notification.is_read ? 'bg-card/40 opacity-80 grayscale-[0.2]' : 'bg-card/70 backdrop-blur-2xl shadow-lg ring-1 ring-primary/10'
-                  }`}
+                  } ${notification.priority === 'high' && !notification.is_read ? 'ring-2 ring-emerald-500/30 border-emerald-500/20' : ''}`}
                 >
                   <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${
-                    notification.is_read ? 'bg-transparent' : 'bg-primary'
+                    notification.is_read ? 'bg-transparent' : (notification.priority === 'high' ? 'bg-emerald-500 animate-pulse' : 'bg-primary')
                   }`} />
                   
                   <CardContent className="p-4 sm:p-5">
@@ -367,10 +393,23 @@ const EnhancedNotificationsCenter = () => {
                             </Link>
                           )}
                           
-                          {notification.is_actionable && (
+                          {notification.is_actionable && !notification.is_read && (
                             <div className="flex items-center gap-3">
-                              <Button className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/20">Accept</Button>
-                              <Button variant="ghost" className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-muted/40 hover:bg-muted">Decline</Button>
+                              <Button 
+                                onClick={() => handleAction(notification, 'accept')}
+                                disabled={!!actionLoading}
+                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/20"
+                              >
+                                {actionLoading === notification.id ? 'Processing...' : 'Accept'}
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                onClick={() => handleAction(notification, 'decline')}
+                                disabled={!!actionLoading}
+                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-muted/40 hover:bg-muted"
+                              >
+                                Decline
+                              </Button>
                             </div>
                           )}
 

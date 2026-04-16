@@ -47,6 +47,26 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
       if (spaceError) throw spaceError;
       if (!spaceData) throw new Error("Could not find project space");
 
+      // Check if application already exists
+      const { data: existingRequest, error: checkError } = await supabase
+        .from('project_space_join_requests' as any)
+        .select('id, status')
+        .eq('project_space_id', spaceData.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+      if (existingRequest) {
+        const req = existingRequest as any;
+        if (req.status === 'pending') {
+          toast({ title: 'Application Pending', description: 'You already have a pending application for this project.' });
+        } else {
+          toast({ title: 'Already Applied', description: `Your previous application status is ${req.status}.` });
+        }
+        onOpenChange(false);
+        return;
+      }
+
       const { error } = await supabase.from('project_space_join_requests' as any).insert({
         project_space_id: spaceData.id,
         user_id: user.id,
@@ -54,7 +74,14 @@ export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplic
         message: message || null
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') {
+          toast({ title: 'Already Applied', description: 'You have already sent an application for this project.' });
+          onOpenChange(false);
+          return;
+        }
+        throw error;
+      }
 
       toast({ title: 'Application Sent!', description: 'Your application has been sent to the project creator.' });
       onApplicationSent();

@@ -61,11 +61,42 @@ const SoundSettings = () => {
                                     <Label htmlFor="notification-sounds" className="text-base font-medium">Notification Sounds</Label>
                                     <p className="text-sm text-muted-foreground mt-1">Play sounds for new notifications</p>
                                 </div>
-                                <Switch
-                                    id="notification-sounds"
-                                    checked={settings?.notification_sounds ?? true}
-                                    onCheckedChange={(checked) => updateSetting('notification_sounds', checked)}
-                                />
+                                <div className="flex items-center gap-4">
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm" 
+                                      onClick={() => {
+                                          try {
+                                              const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+                                              const oscillator = audioContext.createOscillator();
+                                              const gainNode = audioContext.createGain();
+
+                                              oscillator.connect(gainNode);
+                                              gainNode.connect(audioContext.destination);
+
+                                              oscillator.type = 'sine';
+                                              oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+                                              
+                                              gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                                              gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
+                                              gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+                                              oscillator.start(audioContext.currentTime);
+                                              oscillator.stop(audioContext.currentTime + 0.5);
+                                          } catch (e) {
+                                              console.error("Web Audio failed:", e);
+                                          }
+                                      }}
+                                      className="text-xs h-8"
+                                    >
+                                        Test Sound
+                                    </Button>
+                                    <Switch
+                                        id="notification-sounds"
+                                        checked={settings?.notification_sounds ?? true}
+                                        onCheckedChange={(checked) => updateSetting('notification_sounds', checked)}
+                                    />
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
