@@ -12,6 +12,7 @@ import { useAccountType } from "@/hooks/useAccountType";
 import DiscussionRoomIcon from "@/components/icons/DiscussionRoomIcon";
 import VendorIcon from "@/components/icons/VendorIcon";
 import StudioPageIcon from "@/components/icons/StudioPageIcon";
+import { useGlobalCall } from "@/contexts/CallContext";
 
 export function MobileNav() {
   const location = useLocation();

@@ -528,6 +528,8 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   const [embeddedStyle, setEmbeddedStyle] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [pipPos, setPipPos] = useState({ x: 0, y: 0 });
 
+  const isEmbeddedView = location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/');
+
   // Handle snapping to corners like YouTube PiP
   const handleDragEnd = (_: any, info: any) => {
     if (!isMinimized) return;
@@ -559,15 +561,27 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
     }
 
     const checkNodeAndUpdate = () => {
-      const el = document.getElementById('discussion-call-container');
+      // Try finding the specific anchor for current context
+      const anchorId = location.pathname.includes('/projects/') ? 'project-call-container' : 'discussion-call-container';
+      const el = document.getElementById(anchorId) || document.getElementById('discussion-call-container');
+      
       if (el) {
         const rect = el.getBoundingClientRect();
-        setEmbeddedStyle({
-          top: rect.top,
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-        });
+        if (rect.width > 0 && rect.height > 0) {
+          setEmbeddedStyle({
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          });
+          return;
+        }
+      }
+      
+      // Fallback: If no anchor or anchor is invisible, default to a sensible center or PiP behavior
+      // but only if we are in an embedded view.
+      if (isEmbeddedView) {
+         setEmbeddedStyle({ top: 0, left: 0, width: 0, height: 0 });
       }
     };
 
@@ -654,7 +668,6 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
 
   if (!mounted) return null;
 
-  const isEmbeddedView = location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/');
 
   return createPortal(
     <AnimatePresence>

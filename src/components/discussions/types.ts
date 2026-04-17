@@ -10,6 +10,7 @@ export interface Message {
   profiles: {
     id: string;
     username: string | null;
+    full_name: string | null;
     avatar_url: string | null;
   };
   deleted_for_users?: string[];

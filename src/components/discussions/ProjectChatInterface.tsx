@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -25,6 +26,7 @@ interface Message {
   is_deleted?: boolean;
   reply_to_id?: string | null;
   profiles?: {
+    username: string | null;
     full_name: string | null;
     avatar_url: string | null;
   };
@@ -34,6 +36,41 @@ interface Message {
 interface ProjectChatInterfaceProps {
   projectId: string;
 }
+
+const SENDER_COLORS = [
+  'text-blue-700 dark:text-blue-300',
+  'text-emerald-700 dark:text-emerald-300',
+  'text-rose-700 dark:text-rose-300',
+  'text-amber-700 dark:text-amber-300',
+  'text-indigo-700 dark:text-indigo-300',
+  'text-cyan-700 dark:text-cyan-300',
+  'text-violet-700 dark:text-violet-300',
+  'text-orange-700 dark:text-orange-300',
+  'text-sky-700 dark:text-sky-300',
+  'text-pink-700 dark:text-pink-300',
+  'text-teal-700 dark:text-teal-300',
+  'text-fuchsia-700 dark:text-fuchsia-300',
+];
+
+const getUserColor = (userId: string) => {
+  if (!userId) return SENDER_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+};
+
+const getDateLabel = (date: Date) => {
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+  return format(date, 'MMMM d, yyyy');
+};
+
+const formatTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp);
+  return format(date, 'p');
+};
 
 export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) => {
   const { user } = useAuth();
@@ -209,6 +246,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         reply_to_id,
         deleted_for_users,
         profiles:user_id (
+          username,
           full_name,
           avatar_url
         )
@@ -330,10 +368,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     }
   };
 
-  const formatTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
 
   const renderMessageContent = (content: string) => {
     if (content.startsWith('POST_SHARE::')) {
@@ -419,25 +453,51 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             <p>No messages yet. Start the conversation!</p>
           </div>
         ) : (
-          messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
-            const isOwn = message.user_id === user?.id;
-            const isShare = isShareContent(message.content);
+          (() => {
+            const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
+            return visibleMessages.map((message, idx) => {
+              const isOwn = message.user_id === user?.id;
+              const isShare = isShareContent(message.content);
+              const messageDate = new Date(message.created_at);
+              const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+              const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
 
             // Calculate who seen this message in project space
-            const uniqueSeenByAtThisPoint = readStatuses.filter(rs => {
+            const currentReadBy = readStatuses.filter(rs => {
               if (rs.user_id === user?.id) return false;
               try {
                 const statusTime = new Date(rs.last_read_at).getTime();
                 const messageTime = new Date(message.created_at).getTime();
-                // Fuzzy match: within 100ms
-                return Math.abs(statusTime - messageTime) < 100;
-              } catch (e) {
-                return false;
-              }
+                return statusTime >= messageTime;
+              } catch (e) { return false; }
             }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
+            
+            // Only show reading indicator for the latest message read by each user to avoid clutter
+            const uniqueSeenBy = currentReadBy.filter(name => {
+              const userStatus = readStatuses.find(rs => (rs.profiles?.full_name?.split(' ')[0] || 'User') === name);
+              if (!userStatus) return false;
+              const statusTime = new Date(userStatus.last_read_at).getTime();
+              const messageTime = new Date(message.created_at).getTime();
+              
+              // Find if there's any newer message that this user has also read
+              const isLatest = !visibleMessages.some((m, mIdx) => {
+                if (mIdx <= idx) return false;
+                return statusTime >= new Date(m.created_at).getTime();
+              });
+              return isLatest;
+            });
 
             return (
               <React.Fragment key={message.id}>
+              {showDateSeparator && (
+                <div className="flex justify-center my-8">
+                  <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      {getDateLabel(messageDate)}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div 
                 ref={observeMessage}
                 data-message-id={message.id}
@@ -451,87 +511,92 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                   </AvatarFallback>
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
-                  <div className={`${(isShare && !message.is_deleted) ? 'p-0 bg-transparent' : `rounded-2xl p-3 ${message.is_deleted ? 'bg-muted/50 border border-border' : isOwn ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}`}>
-                    {!isOwn && (
-                      <p className="text-xs font-semibold mb-1 opacity-80">
-                        {message.profiles?.full_name || 'Unknown User'}
-                      </p>
+                  <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
+                    <div className={`${(isShare && !message.is_deleted) ? 'p-0 bg-transparent' : `rounded-2xl p-3 shadow-sm ${message.is_deleted ? 'bg-muted/50 border border-border' : isOwn ? 'bg-primary text-primary-foreground font-medium' : 'bg-muted'}`}`}>
+                      {!isOwn && !message.is_deleted && (
+                        <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
+                          {message.profiles?.username || message.profiles?.full_name || 'User'}
+                        </p>
+                      )}
+
+                      {message.reply_to_id && !message.is_deleted && (() => {
+                        const repliedMsg = messages.find(m => m.id === message.reply_to_id);
+                        if (!repliedMsg) return null;
+                        return (
+                          <div className={`mb-2 p-2 rounded-lg text-xs border ${isOwn ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
+                            <div className={`font-semibold text-[10px] mb-1 ${getUserColor(repliedMsg.user_id)}`}>
+                              {repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
+                            </div>
+                            <div className="opacity-90 line-clamp-1">
+                              {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
+                                repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
+                                  repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                                    repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                                      repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                                        repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                          repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                            repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
+                                              repliedMsg.content
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })()}
+
+                      {message.is_deleted ? (
+                        <p className="text-sm italic text-muted-foreground flex items-center gap-1">
+                          <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
+                        </p>
+                      ) : (
+                        renderMessageContent(message.content)
+                      )}
+                    </div>
+
+                    {!message.is_deleted && (
+                      <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
+                        {formatTimestamp(message.created_at)}
+                      </span>
                     )}
 
-                    {message.reply_to_id && !message.is_deleted && (() => {
-                      const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                      if (!repliedMsg) return null;
-                      return (
-                        <div className={`mb-2 p-2 rounded-lg text-xs border ${isOwn ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
-                          <div className="font-semibold text-[10px] mb-1 opacity-75">
-                            {repliedMsg.profiles?.full_name || 'User'}
-                          </div>
-                          <div className="opacity-90 line-clamp-1">
-                            {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
-                              repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                  repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                    repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                      repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                        repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                          repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
-                                            repliedMsg.content
+                    {!message.is_deleted && (
+                      <div className={`opacity-0 group-hover:opacity-100 transition-opacity`}>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                              <MoreVertical className="h-4 w-4" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36">
+                            <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                              <Reply className="h-4 w-4 mr-2" /> Reply
+                            </DropdownMenuItem>
+                            {isOwn && (
+                              <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                <Trash2 className="h-4 w-4 mr-2" /> Undo
+                              </DropdownMenuItem>
                             )}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {message.is_deleted ? (
-                      <p className="text-sm italic text-muted-foreground flex items-center gap-1">
-                        <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
-                      </p>
-                    ) : (
-                      renderMessageContent(message.content)
+                            <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                              <X className="h-4 w-4 mr-2" /> Delete for Me
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     )}
                   </div>
-
-                  {!message.is_deleted && (
-                    <div className={`absolute ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} top-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="p-1 text-muted-foreground hover:bg-muted rounded-full">
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-40">
-                          <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                            <Reply className="h-4 w-4 mr-2" /> Reply
-                          </DropdownMenuItem>
-                          {isOwn && (
-                            <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                              <Trash2 className="h-4 w-4 mr-2" /> Undo
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                            <X className="h-4 w-4 mr-2" /> Delete for Me
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  )}
-
-                  <span className="text-xs text-muted-foreground mt-1">
-                    {formatTime(message.created_at)}
-                  </span>
                 </div>
               </div>
-              {uniqueSeenByAtThisPoint.length > 0 && (
-                <div className={`flex ${isOwn ? 'justify-end pr-12' : 'justify-start pl-12'} mb-4 -mt-1`}>
+              {isOwn && uniqueSeenBy.length > 0 && (
+                <div className="flex justify-end pr-12 mb-4 -mt-1">
                   <span className="text-[10px] text-primary/60 font-medium tracking-tight">
-                    Seen by {uniqueSeenByAtThisPoint.join(', ')}
+                    Seen by {uniqueSeenBy.join(', ')}
                   </span>
                 </div>
               )}
               </React.Fragment>
             );
           })
-        )}
+        })()
+      )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -539,7 +604,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         {replyingTo && (
           <div className="bg-muted px-4 py-2 flex items-center justify-between border-b border-border text-xs">
             <div className="flex-1 overflow-hidden pr-2">
-              <div className="font-semibold text-primary mb-0.5">
+              <div className={`font-semibold mb-0.5 ${getUserColor(replyingTo.user_id)}`}>
                 Replying to {replyingTo.profiles?.full_name || 'User'}
               </div>
               <div className="text-muted-foreground truncate">
