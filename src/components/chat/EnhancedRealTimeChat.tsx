@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { 
     DropdownMenu, 
     DropdownMenuContent, 
@@ -16,9 +16,9 @@ import {
     DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
 import { Video, Phone, Settings, Trash2, Send, ArrowLeft, Smile, X, Reply, ShieldBan, MoreVertical, User, BellOff, ShieldAlert, Search } from 'lucide-react';
-import { useCall } from '@/hooks/useCall';
 import { useNavigate } from 'react-router-dom';
-import { LiveKitCallContainer } from '@/components/calls/LiveKitCallContainer';
+import { useCall } from '@/hooks/useCall';
+import { useGlobalCall } from '@/contexts/CallContext';
 import { useToast } from '@/hooks/use-toast';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
@@ -65,6 +65,30 @@ interface EnhancedRealTimeChatProps {
   onBackClick: () => void;
 }
 
+const SENDER_COLORS = [
+  'text-blue-700 dark:text-blue-300',
+  'text-emerald-700 dark:text-emerald-300',
+  'text-rose-700 dark:text-rose-300',
+  'text-amber-700 dark:text-amber-300',
+  'text-indigo-700 dark:text-indigo-300',
+  'text-cyan-700 dark:text-cyan-300',
+  'text-violet-700 dark:text-violet-300',
+  'text-orange-700 dark:text-orange-300',
+  'text-sky-700 dark:text-sky-300',
+  'text-pink-700 dark:text-pink-300',
+  'text-teal-700 dark:text-teal-300',
+  'text-fuchsia-700 dark:text-fuchsia-300',
+];
+
+const getUserColor = (userId: string) => {
+  if (!userId) return SENDER_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+};
+
 const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBackClick }: EnhancedRealTimeChatProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -74,12 +98,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [inCall, setInCall] = useState(false);
   const { markAsRead } = useChatReadStatus();
   const { toast } = useToast();
-
-  
-  const { activeCall, startCall, joinCall, leaveCall, endCall } = useCall('direct', roomId || '');
+  const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall } = useGlobalCall();
+  const { activeCall } = useCall('direct', roomId || '');
+  const isInCall = callState.isActive && callState.roomId === roomId;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const isPartnerOnline = onlineUserIds.includes(partnerId);
@@ -241,56 +264,37 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   };
 
   const handleStartCall = async () => {
-    const call = await startCall();
-    if (call) {
-      setInCall(true);
-    } else {
-      toast({
-        title: "Error",
-        description: "Failed to start call. Please try again.",
-        variant: "destructive"
-      });
+    if (!roomId) return;
+    const success = await startGlobalCall('direct', roomId, partnerName || 'Direct Call');
+    if (!success) {
+      toast({ title: "Failed to start call", variant: "destructive" });
     }
   };
 
   const handleJoinCall = async () => {
-    const success = await joinCall();
-    if (success) {
-      setInCall(true);
+    if (!roomId) return;
+    const success = await joinGlobalCall('direct', roomId, partnerName || 'Direct Call');
+    if (!success) {
+      toast({ title: "Failed to join call", variant: "destructive" });
     }
-  };
-
-  const handleLeaveCall = async () => {
-    // For DMs, we generally want to end the call for everyone if we leave, 
-    // or at least if we were the initiator.
-    if (activeCall?.started_by === user?.id) {
-      await endCall();
-    } else {
-      await leaveCall();
-    }
-    setInCall(false);
   };
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
-    if (isToday(date)) {
-      return format(date, 'p');
-    } else if (isYesterday(date)) {
-      return 'Yesterday';
-    } else {
-      return format(date, 'MMM d');
-    }
+    return format(date, 'p');
   };
 
-  if (inCall && activeCall) {
-    return (
-      <LiveKitCallContainer
-        roomId={roomId}
-        onLeave={handleLeaveCall}
-        roomName={partnerName || 'Direct Call'}
-      />
-    );
-  }
+  const getDateLabel = (date: Date) => {
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'MMMM d, yyyy');
+  };
+
+  const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
+  // Watermark logic: Find the index of the VERY LAST read message sent by me
+  const lastReadIndexSentByMe = visibleMessages.reduce((lastIdx, msg, idx) => 
+    (msg.sender_id === user?.id && (msg.is_read || msg.read_at)) ? idx : lastIdx, -1);
+
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground">
@@ -322,12 +326,20 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         </div>
         
         <div className="flex items-center gap-2">
-          {activeCall ? (
+          {activeCall && !isInCall ? (
             <Button 
                 onClick={handleJoinCall} 
                 className="bg-green-600 hover:bg-green-700 text-white rounded-full px-4 gap-2 animate-bounce-subtle"
             >
                 <Video className="h-4 w-4" /> Join Active Call
+            </Button>
+          ) : isInCall ? (
+            <Button 
+              variant="outline"
+              size="sm"
+              className="text-primary border-primary/20 bg-primary/10 rounded-full pointer-events-none"
+            >
+              <Video className="h-4 w-4 mr-2" /> In Call
             </Button>
           ) : (
             <div className="flex items-center gap-1">
@@ -400,18 +412,25 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       ) : (
         <>
           <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide">
-            {(() => {
-              const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
-              // Watermark logic: Find the index of the VERY LAST read message sent by me
-              const lastReadIndexSentByMe = visibleMessages.reduce((lastIdx, msg, idx) => 
-                (msg.sender_id === user?.id && (msg.is_read || msg.read_at)) ? idx : lastIdx, -1);
-
-              return visibleMessages.map((message, idx) => {
+            {visibleMessages.map((message, idx) => {
                 const isSender = message.sender_id === user?.id;
                 const isLatestRead = idx === lastReadIndexSentByMe;
-              return (
-                <React.Fragment key={message.id}>
-                <div 
+                const messageDate = new Date(message.created_at);
+                const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+                const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+
+                return (
+                  <Fragment key={message.id}>
+                  {showDateSeparator && (
+                    <div className="flex justify-center my-8">
+                      <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          {getDateLabel(messageDate)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  <div 
                   ref={observeMessage}
                   data-message-id={message.id}
                   data-unread={!message.is_read && !message.read_at}
@@ -423,132 +442,140 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
                   <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%]`}>
-                    <div className={`relative group ${message.is_deleted ? 'bg-muted/50 border border-border' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`)} rounded-2xl ${message.is_deleted ? 'p-3' : ''}`}>
-                      {!message.is_deleted && (
-                        <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                              <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                <Reply className="h-4 w-4 mr-2" /> Reply
-                              </DropdownMenuItem>
-                              {isSender && (
-                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
-                                  <Trash2 className="h-4 w-4 mr-2" /> Undo
+                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
+                      <div className={`relative ${message.is_deleted ? 'bg-muted/50 border border-border' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'bg-muted text-foreground font-medium'}`)} rounded-2xl ${message.is_deleted ? 'p-3' : ''}`}>
+                        {!message.is_deleted && (
+                          <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                                  <MoreVertical className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
+                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                  <Reply className="h-4 w-4 mr-2" /> Reply
                                 </DropdownMenuItem>
+                                {isSender && (
+                                  <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
+                                    <Trash2 className="h-4 w-4 mr-2" /> Undo
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
+                                  <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        )}
+                        {message.replied_to_message && !message.is_deleted && (
+                          <div className={`mb-2 p-2 rounded-lg text-xs border ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
+                            <div className={`font-semibold text-[10px] mb-1 ${getUserColor(message.replied_to_message.sender_profile?.full_name || 'User')}`}>
+                              {message.replied_to_message.sender_profile?.full_name || 'User'}
+                            </div>
+                            <div className="opacity-90 line-clamp-1">
+                              {message.replied_to_message.is_deleted ? <em>This message was deleted</em> : (
+                                message.replied_to_message.content.startsWith('POST_SHARE::') ? 'Shared a post' :
+                                message.replied_to_message.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
+                                message.replied_to_message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
+                                message.replied_to_message.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
+                                message.replied_to_message.content.startsWith('JOB_SHARE::') ? 'Shared a job' :
+                                message.replied_to_message.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
+                                message.replied_to_message.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
+                                message.replied_to_message.content
                               )}
-                              <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
-                                <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-                      {message.replied_to_message && !message.is_deleted && (
-                        <div className={`mb-2 p-2 rounded-lg text-xs border ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
-                          <div className="font-semibold text-[10px] mb-1 opacity-75">
-                            {message.replied_to_message.sender_profile?.full_name || 'User'}
+                            </div>
                           </div>
-                          <div className="opacity-90 line-clamp-1">
-                            {message.replied_to_message.is_deleted ? <em>This message was deleted</em> : (
-                              message.replied_to_message.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                              message.replied_to_message.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                              message.replied_to_message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                              message.replied_to_message.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                              message.replied_to_message.content.startsWith('JOB_SHARE::') ? 'Shared a job' :
-                              message.replied_to_message.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                              message.replied_to_message.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                              message.replied_to_message.content
+                        )}
+                        {message.is_deleted ? (
+                          <p className="text-sm italic text-muted-foreground flex items-center gap-1">
+                            <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
+                          </p>
+                        ) : (
+                          <>
+                            {message.content.startsWith('POST_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
+                                  return <PostShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                                  return <MarketplaceShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                                  return <AnnouncementShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('VENDOR_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
+                                  return <VendorShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('PROJECT_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
+                                  return <ProjectShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('DISCUSSION_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('DISCUSSION_SHARE::', ''));
+                                  return <DiscussionShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.includes('JOB_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const parts = message.content.split('JOB_SHARE::');
+                                  const caption = parts[0].trim();
+                                  const jsonStr = parts[parts.length - 1].trim();
+                                  const shareData = JSON.parse(jsonStr);
+                                  return (
+                                    <div className="space-y-2">
+                                      {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+                                      <JobShareCard {...shareData} />
+                                    </div>
+                                  );
+                                } catch (e) {
+                                  return <p className="text-sm break-words px-3 pt-2">{message.content}</p>;
+                                }
+                              })()
+                            ) : (
+                              <p className="text-sm break-words">{message.content}</p>
                             )}
-                          </div>
-                        </div>
+                          </>
+                        )}
+                      </div>
+
+                      {!message.is_deleted && (
+                        <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
+                          {formatTimestamp(message.created_at)}
+                        </span>
                       )}
-                      {message.is_deleted ? (
-                        <p className="text-sm italic text-muted-foreground flex items-center gap-1">
-                          <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
-                        </p>
-                      ) : message.content.startsWith('POST_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
-                            return <PostShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
-                            return <MarketplaceShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
-                            return <AnnouncementShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.startsWith('VENDOR_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
-                            return <VendorShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.startsWith('PROJECT_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
-                            return <ProjectShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.startsWith('DISCUSSION_SHARE::') ? (
-                        (() => {
-                          try {
-                            const shareData = JSON.parse(message.content.replace('DISCUSSION_SHARE::', ''));
-                            return <DiscussionShareCard {...shareData} />;
-                          } catch (e) {
-                            return <p className="text-sm break-words">{message.content}</p>;
-                          }
-                        })()
-                      ) : message.content.includes('JOB_SHARE::') ? (
-                        (() => {
-                          try {
-                            const parts = message.content.split('JOB_SHARE::');
-                            const caption = parts[0].trim();
-                            const jsonStr = parts[parts.length - 1].trim();
-                            const shareData = JSON.parse(jsonStr);
-                            return (
-                              <div className="space-y-2">
-                                {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
-                                <JobShareCard {...shareData} />
-                              </div>
-                            );
-                          } catch (e) {
-                            return <p className="text-sm break-words px-3 pt-2">{message.content}</p>;
-                          }
-                        })()
-                      ) : (
-                        <p className="text-sm break-words">{message.content}</p>
-                      )}
-                    </div>
-                    
-                    <div className={`mt-1 flex items-center gap-2 px-1`}>
-                      <span className="text-[10px] text-muted-foreground/60">{formatTimestamp(message.created_at)}</span>
                     </div>
                   </div>
                 </div>
@@ -559,12 +586,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     </span>
                   </div>
                 )}
-                </React.Fragment>
+                </Fragment>
               );
-            });
-          })()}
-            <div ref={messagesEndRef} />
-          </div>
+            })}
+          <div ref={messagesEndRef} />
+        </div>
           <div className="border-t border-border flex flex-col relative bg-background">
             {showEmojiPicker && (
               <div className="absolute bottom-full mb-2 z-10 left-2">
@@ -575,7 +601,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             {replyingTo && (
               <div className="bg-muted px-4 py-2 flex items-center justify-between border-b border-border text-xs">
                 <div className="flex-1 overflow-hidden pr-2">
-                  <div className="font-semibold text-primary mb-0.5">
+                  <div className={`font-semibold mb-0.5 ${getUserColor(replyingTo.sender_id)}`}>
                     Replying to {replyingTo.sender_profile?.full_name || 'User'}
                   </div>
                   <div className="text-muted-foreground truncate">

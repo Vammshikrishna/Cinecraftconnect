@@ -15,8 +15,8 @@ interface CallState {
 
 interface CallContextType {
   callState: CallState;
-  startCall: (roomType: 'discussion' | 'project', roomId: string, roomName: string, role?: string) => Promise<boolean>;
-  joinCall: (roomType: 'discussion' | 'project', roomId: string, roomName: string, role?: string) => Promise<boolean>;
+  startCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role?: string) => Promise<boolean>;
+  joinCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role?: string) => Promise<boolean>;
   leaveCall: () => void;
   toggleMinimize: (minimized?: boolean) => void;
 }
@@ -60,7 +60,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [user, callState.isActive]);
 
-  const startCall = async (roomType: 'discussion' | 'project', roomId: string, roomName: string, role: string = 'member') => {
+  const startCall = async (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role: string = 'member') => {
     if (!user) return false;
 
     try {
@@ -130,7 +130,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const joinCall = async (roomType: 'discussion' | 'project', roomId: string, roomName: string, role: string = 'member') => {
+  const joinCall = async (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role: string = 'member') => {
     if (!user) return false;
 
     // Fetch the active call for this room to get its connectionId

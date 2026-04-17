@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -6,8 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { Message, UserRole, Category } from './types';
 import { MessageComposer } from './MessageComposer';
 import { TypingIndicator } from './TypingIndicator';
@@ -15,7 +13,7 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   ArrowLeft, Settings, Users, Loader2, ChevronDown,
-  MessageSquare, Radio, Headphones, X, MoreVertical, Reply, Trash2, ShieldBan, Maximize2
+  MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan
 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { RoomMembers } from './RoomMembers';
@@ -30,7 +28,6 @@ import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 
-
 interface DiscussionChatInterfaceProps {
   roomId: string;
   userRole: UserRole;
@@ -41,9 +38,44 @@ interface DiscussionChatInterfaceProps {
   roomType: 'public' | 'private' | 'secret';
   onClose: () => void;
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
+  showBackButton?: boolean;
 }
 
-export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescription, categoryId, categories, onClose, onRoomUpdated }: DiscussionChatInterfaceProps) => {
+const SENDER_COLORS = [
+  'text-blue-700 dark:text-blue-300',
+  'text-emerald-700 dark:text-emerald-300',
+  'text-rose-700 dark:text-rose-300',
+  'text-amber-700 dark:text-amber-300',
+  'text-indigo-700 dark:text-indigo-300',
+  'text-cyan-700 dark:text-cyan-300',
+  'text-violet-700 dark:text-violet-300',
+  'text-orange-700 dark:text-orange-300',
+  'text-sky-700 dark:text-sky-300',
+  'text-pink-700 dark:text-pink-300',
+  'text-teal-700 dark:text-teal-300',
+  'text-fuchsia-700 dark:text-fuchsia-300',
+];
+
+const getUserColor = (userId: string) => {
+  if (!userId) return SENDER_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+};
+
+export const DiscussionChatInterface = ({
+  roomId,
+  userRole,
+  roomTitle,
+  roomDescription,
+  categoryId,
+  categories,
+  onClose,
+  onRoomUpdated,
+  showBackButton
+}: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -61,29 +93,31 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const [showJoinBanner, setShowJoinBanner] = useState(false);
   const [callLoading, setCallLoading] = useState(false);
 
-  // Mobile swipeable tab state
-  const [mobileTab, setMobileTab] = useState<'discussion' | 'chat'>('discussion');
-
-  // Auto-switch mobile tab to chat when call is minimized
-  useEffect(() => {
-    if (isCallMinimized && mobileTab === 'discussion') {
-      setMobileTab('chat');
-    }
-  }, [isCallMinimized, mobileTab]);
-
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-
-  const touchStartX = useRef<number | null>(null);
-  const touchStartY = useRef<number | null>(null);
-  // JS-based screen size detection
-  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches);
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
 
   useEffect(() => {
-    const mql = window.matchMedia('(min-width: 768px)');
+    const mql = window.matchMedia('(min-width: 1024px)');
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
   }, []);
+
+  // Mobile swipeable tab state
+  const [mobileTab, setMobileTab] = useState<'discussion' | 'chat'>('chat');
+
+  // Auto-switch mobile tab to chat when call is minimized
+  useEffect(() => {
+    if (!isDesktop && isInCall) {
+      if (isCallMinimized) {
+        setMobileTab('chat');
+      } else {
+        setMobileTab('discussion');
+      }
+    }
+  }, [isCallMinimized, isDesktop, isInCall]);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
+
 
   const { observeMessage } = useMessageSeen('room_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
@@ -92,21 +126,11 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
   const [unreadCount, setUnreadCount] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Show join banner when there's an active call and user hasn't joined (mocking activeCall check via a separate mechanism if needed, but for now using the fact that we can see active calls in the room list)
-  // Instead of a local activeCall, we can rely on the parent room data or a separate subscription if really needed, 
-  // but let's keep it simple: if the global call is for THIS room, we are in it.
-  useEffect(() => {
-    // If there is a global call for this room but user isn't 'joined' in their local UI state, 
-    // we should show banner. But since we just moved to global, 'isInCall' means they ARE joined.
-    // We'll trust the room isActive badge for "There is a call here".
-  }, [callState, roomId]);
-
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
     setIsAtBottom(true);
     setUnreadCount(0);
   };
-
 
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
@@ -135,6 +159,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           profiles (
             id,
             username,
+            full_name,
             avatar_url
           )
         `)
@@ -147,29 +172,6 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
       setLoading(false);
     }
   }, [roomId]);
-
-  // Auto-join room membership
-  useEffect(() => {
-    if (!roomId || !user) return;
-
-    const ensureMembership = async () => {
-      if (!user || !roomId) return;
-      const { data: existing } = await supabase
-        .from('room_members')
-        .select('user_id')
-        .eq('room_id', roomId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!existing) {
-        await supabase
-          .from('room_members')
-          .insert({ room_id: roomId, user_id: user.id });
-      }
-    };
-
-    ensureMembership();
-  }, [roomId, user]);
 
   const fetchReadStatuses = useCallback(async () => {
     if (!roomId) return;
@@ -188,7 +190,6 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     }, 500);
     return () => clearTimeout(timer);
   }, [fetchMessages, fetchReadStatuses, roomId]);
-
 
   useEffect(() => {
     const channel = supabase
@@ -275,17 +276,17 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         room_id: roomId
       });
       if (msgError) throw msgError;
-      toast({ title: "Success", description: "File uploaded successfully" });
+      toast({ title: "Success", description: "File shared successfully" });
     } catch (error: any) {
       console.error(error);
-      toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to share file", variant: "destructive" });
     }
   };
 
-  // --- Call Handlers ---
   const handleStartSpace = async () => {
     setCallLoading(true);
-    const success = await startGlobalCall('discussion', roomId, roomTitle, userRole);
+    // Simple casting for role compatibility
+    const success = await startGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
       toast({ title: "🎙️ Discussion Started!", description: "Your discussion room is now active!" });
@@ -296,7 +297,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
   const handleJoinSpace = async () => {
     setCallLoading(true);
-    const success = await joinGlobalCall('discussion', roomId, roomTitle, userRole);
+    const success = await joinGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
       toast({ title: "🎧 Joined Discussion", description: "You're now in the discussion." });
@@ -305,24 +306,23 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
     }
   };
 
-  // Navigation logic to ensure the call PERSISTS instead of dying
-  useEffect(() => {
-    // We specifically REMOVED the "leave on unmount" logic here.
-    // The call will continue in the GlobalCallOverlay even if we navigate away.
-  }, []);
-
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
-    if (isToday(date)) return format(date, 'p');
+    return format(date, 'p');
+  };
+
+  const getDateLabel = (date: Date) => {
+    if (isToday(date)) return 'Today';
     if (isYesterday(date)) return 'Yesterday';
-    return format(date, 'P');
+    return format(date, 'MMMM d, yyyy');
   };
 
   if (loading && messages.length === 0) {
     return <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>;
   }
 
-  // --- Render Share Card ---
+  const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
+
   const renderMessageContent = (content: string) => {
     if (content.startsWith('POST_SHARE::')) {
       try {
@@ -375,38 +375,37 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
 
   return (
     <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
-
-      {/* ===== HEADER ===== */}
+      {/* HEADER */}
       <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0 lg:hidden">
-            <ArrowLeft className="h-5 w-5 text-foreground" />
-          </button>
+          {(showBackButton || !isDesktop) && (
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0">
+              <ArrowLeft className="h-5 w-5 text-foreground" />
+            </button>
+          )}
           <div className="min-w-0 flex-1 overflow-hidden pr-2">
             <div className="flex items-center gap-2">
               <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
               {isInCall && (
-                <span className="flex items-center gap-1 text-[10px] font-semibold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
+                <span className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                  YOU ARE LIVE
+                  LIVE
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground truncate">{roomDescription}</p>
+            {roomDescription && <p className="text-xs text-muted-foreground truncate">{roomDescription}</p>}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Go Live button (not in call) */}
           {!isInCall && (
             <Button
               size="sm"
               onClick={handleStartSpace}
               disabled={callLoading}
               className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs shadow-lg shadow-purple-600/20 border-none flex items-center justify-center h-8 w-8 sm:w-auto sm:px-4 shrink-0"
-              title="Join Discussion"
             >
               {callLoading ? <Loader2 className="h-4 w-4 animate-spin sm:mr-1.5" /> : <Radio className="h-4 w-4 sm:mr-1.5" />}
-              <span className="hidden sm:inline">Join Discussion</span>
+              <span className="hidden sm:inline">Join Room</span>
             </Button>
           )}
 
@@ -440,7 +439,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         </div>
       </header>
 
-      {/* ===== JOIN LIVE BANNER (when call is active but user not joined) ===== */}
+      {/* JOIN LIVE BANNER */}
       {showJoinBanner && (
         <div className="mx-3 mt-2 bg-gradient-to-r from-purple-600/20 via-pink-600/20 to-purple-600/20 border border-purple-500/30 rounded-2xl p-4 shadow-lg animate-in slide-in-from-top duration-300">
           <div className="flex items-center justify-between">
@@ -452,7 +451,7 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
                 <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-background" />
               </div>
               <div>
-                <p className="text-foreground font-semibold text-sm">Discussion is Active!</p>
+                <p className="font-semibold text-sm">Discussion is Active!</p>
                 <p className="text-muted-foreground text-xs">Join to listen and participate</p>
               </div>
             </div>
@@ -460,16 +459,15 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
               <Button
                 size="sm"
                 onClick={handleJoinSpace}
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs px-4 h-8 shadow-lg shadow-purple-600/20 border-none"
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-full text-xs px-4 h-8"
               >
-                <Headphones className="w-3.5 h-3.5 mr-1.5" />
-                Join Discussion
+                Join
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => setShowJoinBanner(false)}
-                className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 rounded-full"
               >
                 <X className="w-3.5 h-3.5" />
               </Button>
@@ -478,154 +476,194 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
         </div>
       )}
 
-      {/* ===== MAIN CONTENT AREA ===== */}
+      {/* MOBILE CALL/CHAT TABS */}
+      {!isDesktop && isInCall && (
+        <div className="flex bg-background/95 backdrop-blur border-b border-border shadow-sm z-30 sticky top-[61px]">
+          <button
+            onClick={() => {
+              setMobileTab('discussion');
+              toggleMinimize(false);
+            }}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 relative ${mobileTab === 'discussion' ? 'text-primary' : 'text-muted-foreground'}`}
+          >
+            <Radio className="w-4 h-4" />
+            Discussion
+            {mobileTab === 'discussion' && (
+              <div 
+                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300" 
+              />
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setMobileTab('chat');
+              toggleMinimize(true);
+            }}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 relative ${mobileTab === 'chat' ? 'text-primary' : 'text-muted-foreground'}`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Chat
+            {mobileTab === 'chat' && (
+              <div 
+                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300"
+              />
+            )}
+            {unreadCount > 0 && (
+              <span className="absolute top-2 right-1/4 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            )}
+          </button>
+        </div>
+      )}
 
-      {/* ====== DESKTOP (md+): Side by Side ====== */}
-      {isDesktop ? <div className="flex flex-1 overflow-hidden relative flex-row">
-        {/* Left: Call Panel Placeholder when using Global Overlay */}
-        {isInCall && !isCallMinimized && (
-          <div id="discussion-call-container" className="w-full md:w-[55%] flex flex-col border-r border-border/30 shrink-0 overflow-hidden items-center justify-center relative bg-[#121214]">
-            <div className="text-center p-8">
-              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <Radio className="w-8 h-8 text-primary" />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Discussion Active</h3>
-              <p className="text-gray-400 text-sm mb-6">You are connected to the live session.</p>
+      {/* MAIN CONTENT AREA */}
+      <div className="flex flex-1 overflow-hidden relative flex-row">
+        {/* DISCUSSION PANEL / CALL AREA */}
+        {((isDesktop && isInCall && !isCallMinimized) || (!isDesktop && isInCall && mobileTab === 'discussion' && !isCallMinimized)) && (
+          <div id="discussion-call-container" className={`${isDesktop ? 'w-[55%] border-r' : 'w-full'} border-border/30 flex flex-col shrink-0 overflow-hidden relative bg-[#09090b]`}>
+            {isDesktop && (
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => toggleMinimize(true)}
-                className="rounded-full border-white/20 hover:bg-white/10"
+                className="absolute bottom-4 right-4 rounded-full shadow-md bg-background/20 backdrop-blur-sm border-white/20 text-white hover:bg-white/20 z-10"
               >
-                Switch to Picture-in-Picture
+                Minimize
               </Button>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Right: Chat */}
-        <div className="flex flex-col flex-1 min-w-0">
+        {/* CHAT AREA */}
+        <div className={`flex flex-col flex-1 min-w-0 bg-background ${(!isDesktop && isInCall && mobileTab === 'discussion' && !isCallMinimized) ? 'hidden' : 'flex'}`}>
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 flex flex-col overflow-y-auto p-4 custom-scrollbar"
+            className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 custom-scrollbar"
           >
-            {messages.length === 0 ? (
+            {visibleMessages.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
-                  <MessageSquare className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                  <MessageSquare className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
                   <p className="text-muted-foreground text-sm">No messages yet</p>
-                  <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
                 </div>
               </div>
             ) : (
-              messages.filter(m => !m.deleted_for_users?.includes(user?.id || '')).map((message) => {
-                const isSender = message.profiles.id === user?.id;
+              visibleMessages.map((message, idx) => {
+                const isSender = message.user_id === user?.id;
                 const isShare = isShareContent(message.content);
-                
-                // Only show seen list if this is the newest seen message for those users
-                const uniqueSeenByAtThisPoint = readStatuses.filter(rs => {
+                const messageDate = new Date(message.created_at);
+                const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+                const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+
+                const currentReadBy = readStatuses.filter(rs => {
                   if (rs.user_id === user?.id) return false;
                   try {
                     const statusTime = new Date(rs.last_read_at).getTime();
                     const messageTime = new Date(message.created_at).getTime();
-                    // Fuzzy match: within 100ms
-                    return Math.abs(statusTime - messageTime) < 100;
-                  } catch (e) {
-                    return false;
-                  }
+                    return statusTime >= messageTime;
+                  } catch (e) { return false; }
                 }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
 
                 return (
                   <div key={message.id}>
-                  <div 
-                    ref={observeMessage}
-                    data-message-id={message.id}
-                    data-sender-id={message.user_id}
-                    className={`flex items-end gap-2 my-3 group ${isSender ? 'flex-row-reverse' : ''}`}
-                  >
-                    <TooltipProvider delayDuration={100}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Link to={`/profile/${message.profiles.id}`}>
-                            <Avatar className="h-9 w-9 cursor-pointer hover:opacity-80 transition-opacity shrink-0 shadow-sm border border-border/10">
-                              <AvatarImage src={message.profiles.avatar_url || undefined} />
-                              <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
-                            </Avatar>
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent side={isSender ? 'right' : 'left'}>
-                          <p>{message.profiles.username}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                    <div className="flex items-end gap-2 relative max-w-[85%]">
-                      <div className={`${isShare && !message.is_deleted ? 'p-0 bg-transparent' : `p-2.5 rounded-2xl text-sm ${message.is_deleted ? 'bg-muted/50 border border-border/50' : isSender ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} relative`}>
-                        {message.reply_to_id && !message.is_deleted && (() => {
-                          const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                          if (!repliedMsg) return null;
-                          return (
-                            <div className={`mb-2 p-2 rounded-lg text-xs border ${isSender ? 'bg-white/10 border-white/20 text-white' : 'bg-background/50 border-border'}`}>
-                              <div className="font-semibold text-[10px] mb-0.5 opacity-75">
-                                {repliedMsg.profiles?.username || 'User'}
-                              </div>
-                              <div className="opacity-90 line-clamp-1 text-[11px]">
-                                {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
-                                  repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                    repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                      repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                        repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                          repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                            repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                              repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
-                                                repliedMsg.content
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })()}
-                        {message.is_deleted ? (
-                          <p className="text-xs italic flex items-center gap-1 opacity-70">
-                            <ShieldBan className="h-3 w-3" /> This message was deleted
-                          </p>
-                        ) : (
-                          renderMessageContent(message.content)
-                        )}
-                      </div>
-
-                      {!message.is_deleted && (
-                        <div className={`absolute ${isSender ? 'right-full mr-1' : 'left-full ml-1'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="p-1.5 text-muted-foreground hover:bg-muted rounded-full">
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                              <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                <Reply className="h-4 w-4 mr-2" /> Reply
-                              </DropdownMenuItem>
-                              {isSender && (
-                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                  <Trash2 className="h-4 w-4 mr-2" /> Undo
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                <X className="h-4 w-4 mr-2" /> Delete for Me
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                    {showDateSeparator && (
+                      <div className="flex justify-center my-6">
+                        <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            {getDateLabel(messageDate)}
+                          </span>
                         </div>
-                      )}
+                      </div>
+                    )}
+                    <div
+                      ref={observeMessage}
+                      data-message-id={message.id}
+                      className={`flex items-start gap-2 ${isSender ? 'flex-row-reverse' : 'flex-row'}`}
+                    >
+                      <Link to={`/profile/${message.profiles?.id}`} className="shrink-0 mt-1">
+                        <Avatar className="h-8 w-8 border border-border/10">
+                          <AvatarImage src={message.profiles?.avatar_url || undefined} />
+                          <AvatarFallback className="text-[10px] bg-muted font-bold">
+                            {(message.profiles?.username || message.profiles?.full_name || 'U').charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Link>
+
+                      <div className={`flex flex-col gap-1 max-w-[80%] ${isSender ? 'items-end' : 'items-start'}`}>
+                        <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
+                          <div className={`
+                        ${isShare && !message.is_deleted ? 'bg-transparent overflow-hidden rounded-xl border border-border/10' :
+                              isSender ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-none p-3 shadow-sm' :
+                                'bg-muted/80 backdrop-blur-sm rounded-2xl rounded-tl-none p-3 border border-border/10'}
+                        ${message.is_deleted ? 'bg-muted/30 border-dashed italic text-muted-foreground' : ''}
+                      `}>
+                            {!isSender && !message.is_deleted && (
+                              <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
+                                {message.profiles?.username || message.profiles?.full_name || 'User'}
+                              </p>
+                            )}
+                            {message.reply_to_id && !message.is_deleted && (() => {
+                              const repliedMsg = messages.find(m => m.id === message.reply_to_id);
+                              if (!repliedMsg) return null;
+                              return (
+                                <div className={`mb-2 p-2 rounded-lg text-xs border-l-4 ${isSender ? 'bg-white/10 border-white/30 text-white' : 'bg-background/50 border-primary/30'}`}>
+                                  <div className={`font-bold text-[10px] ${getUserColor(repliedMsg.user_id)}`}>
+                                    @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
+                                  </div>
+                                  <div className="opacity-80 line-clamp-1 truncate">
+                                    {repliedMsg.is_deleted ? 'Message deleted' : repliedMsg.content}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                            {message.is_deleted ? (
+                              <div className="flex items-center gap-1.5 py-1">
+                                <ShieldBan className="h-3.5 w-3.5" />
+                                <span className="text-xs">Message deleted</span>
+                              </div>
+                            ) : renderMessageContent(message.content)}
+                          </div>
+
+                          {!message.is_deleted && (
+                            <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
+                              {formatTimestamp(message.created_at)}
+                            </span>
+                          )}
+
+                          {!message.is_deleted && (
+                            <div className={`absolute top-0 ${isSender ? 'right-full mr-4' : 'left-full ml-4'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center`}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-muted">
+                                    <MoreVertical className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
+                                  <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                    <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                  </DropdownMenuItem>
+                                  {isSender && (
+                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
+                                    <X className="h-3.5 w-3.5 mr-2" /> Hide
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{formatTimestamp(message.created_at)}</span>
-                  </div>
-                  {uniqueSeenByAtThisPoint.length > 0 && (
-                    <div className={`flex ${isSender ? 'justify-end pr-11' : 'justify-start pl-11'} mb-3 -mt-2`}>
-                      <span className="text-[10px] text-primary/60 font-medium">
-                        Seen by {uniqueSeenByAtThisPoint.join(', ')}
-                      </span>
-                    </div>
-                  )}
+                    {isSender && currentReadBy.length > 0 && (
+                      <div className="flex justify-end pr-10 mt-1 mb-2">
+                        <span className="text-[9px] text-primary/60">
+                          Seen by {currentReadBy.join(', ')}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -634,272 +672,36 @@ export const DiscussionChatInterface = ({ roomId, userRole, roomTitle, roomDescr
           </div>
 
           {!isAtBottom && unreadCount > 0 && (
-            <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20">
-              <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 text-xs" size="sm">
-                <ChevronDown className="h-3.5 w-3.5" /> {unreadCount} new
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-20">
+              <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg h-8 px-4 text-xs" size="sm">
+                <ChevronDown className="h-3.5 w-3.5 mr-1" /> {unreadCount} new
               </Button>
             </div>
           )}
 
-          <div className="lg:pb-4 pb-[calc(56px+env(safe-area-inset-bottom))] border-t border-border bg-background flex flex-col">
+          <div className="p-3 bg-background border-t border-border">
             {replyingTo && (
-              <div className="bg-muted px-3 py-1.5 mb-2 rounded-md flex items-center justify-between border border-border text-xs">
-                <div className="flex-1 overflow-hidden pr-2">
-                  <div className="font-semibold text-primary mb-0.5 text-[10px] uppercase tracking-wider">
-                    Replying to {replyingTo.profiles?.username || 'User'}
-                  </div>
-                  <div className="text-muted-foreground truncate opacity-80">
-                    {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                      replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                        replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                          replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                            replyingTo.content}
-                  </div>
+              <div className="mx-2 mb-2 p-2 bg-muted/50 rounded-lg flex items-center justify-between border-l-4 border-primary animate-in slide-in-from-bottom-2">
+                <div className="flex-1 min-w-0 pr-4">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Replying to {replyingTo.profiles?.username}</p>
+                  <p className="text-xs text-muted-foreground truncate opacity-80">{replyingTo.content}</p>
                 </div>
-                <button
-                  onClick={() => setReplyingTo(null)}
-                  className="p-1 rounded hover:bg-background text-muted-foreground transition-colors shrink-0"
-                >
+                <button onClick={() => setReplyingTo(null)} className="p-1 hover:bg-muted rounded text-muted-foreground">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
             <TypingIndicator typingUsers={typingUsers} />
-            <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} userRole={userRole} />
+            <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} />
           </div>
         </div>
+      </div>
 
-        {isMembersSidebarOpen && <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />}
-      </div> : <div className="flex flex-col flex-1 overflow-hidden relative">
-
-        {/* Mobile Tab Bar (only when in call) */}
-        {isInCall && (
-          <div className="flex items-center bg-background border-b border-border shrink-0">
-            <button
-              onClick={() => setMobileTab('discussion')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors relative ${mobileTab === 'discussion' ? 'text-foreground' : 'text-muted-foreground'
-                }`}
-            >
-              <Radio className="w-3.5 h-3.5" />
-              Discussion
-              {mobileTab === 'discussion' && (
-                <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
-              )}
-            </button>
-            <button
-              onClick={() => setMobileTab('chat')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors relative ${mobileTab === 'chat' ? 'text-foreground' : 'text-muted-foreground'
-                }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              Chat
-              {unreadCount > 0 && mobileTab !== 'chat' && (
-                <span className="w-4 h-4 bg-primary text-primary-foreground text-[9px] font-bold rounded-full flex items-center justify-center">{unreadCount}</span>
-              )}
-              {mobileTab === 'chat' && (
-                <span className="absolute bottom-0 left-1/4 right-1/4 h-0.5 bg-primary rounded-full" />
-              )}
-            </button>
-          </div>
-        )}
-
-        {/* Swipeable Content Container */}
-        <div
-          className="flex-1 overflow-hidden relative"
-          onTouchStart={(e) => {
-            touchStartX.current = e.touches[0].clientX;
-            touchStartY.current = e.touches[0].clientY;
-          }}
-          onTouchEnd={(e) => {
-            if (touchStartX.current === null || touchStartY.current === null || !isInCall) return;
-            const deltaX = e.changedTouches[0].clientX - touchStartX.current;
-            const deltaY = e.changedTouches[0].clientY - touchStartY.current;
-            // Only swipe horizontally if it's more horizontal than vertical
-            if (Math.abs(deltaX) > 60 && Math.abs(deltaX) > Math.abs(deltaY)) {
-              if (deltaX < 0 && mobileTab === 'discussion') setMobileTab('chat');
-              if (deltaX > 0 && mobileTab === 'chat') setMobileTab('discussion');
-            }
-            touchStartX.current = null;
-            touchStartY.current = null;
-          }}
-        >
-          {/* Discussion View (when in call) */}
-          {isInCall && (
-            <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col overflow-hidden transition-all duration-300 ${mobileTab === 'discussion' ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none'}`}>
-              <div id="discussion-call-container" className="flex-1 flex flex-col items-center justify-center space-y-4 p-6 text-center relative bg-[#121214]">
-                 {isCallMinimized ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#121214] z-10 p-6 shadow-inner">
-                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
-                        <Radio className="w-8 h-8 text-primary opacity-50" />
-                      </div>
-                      <h3 className="text-xl font-bold text-white mb-2">Call is Minimized</h3>
-                      <p className="text-muted-foreground text-sm max-w-[260px] mb-8">
-                        Your video call is currently active in picture-in-picture mode.
-                      </p>
-                      <div className="flex flex-col gap-3 w-full max-w-[200px]">
-                        <Button onClick={() => toggleMinimize(false)} className="rounded-full w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg">
-                          <Maximize2 className="w-4 h-4 mr-2" /> Maximize
-                        </Button>
-                        <Button variant="outline" onClick={() => setMobileTab('chat')} className="rounded-full w-full border-white/10 hover:bg-white/5 text-white">
-                          <MessageSquare className="w-4 h-4 mr-2" /> Open Chat
-                        </Button>
-                      </div>
-                    </div>
-                 ) : (
-                    <>
-                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                        <Radio className="w-8 h-8 text-primary" />
-                      </div>
-                      <h3 className="text-xl font-bold text-white mb-2">Call is Active</h3>
-                      <p className="text-muted-foreground text-sm max-w-[240px] mb-6">
-                        You are connected to the live session in the persistent overlay.
-                      </p>
-                      <Button variant="outline" onClick={() => setMobileTab('chat')} className="rounded-full border-white/20 hover:bg-white/10 text-white shadow-lg">
-                        <MessageSquare className="w-4 h-4 mr-2" /> Open Chat
-                      </Button>
-                    </>
-                 )}
-              </div>
-            </div>
-          )}
-
-          {/* Chat View - Always shown when tab=chat during call or when no call */}
-          <div className={`absolute inset-x-0 top-0 bottom-0 flex flex-col transition-all duration-300 ${(!isInCall || mobileTab === 'chat') ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-full pointer-events-none'}`}>
-            <div
-              ref={!isInCall || mobileTab === 'chat' ? scrollContainerRef : undefined}
-              onScroll={handleScroll}
-              className="flex-1 flex flex-col overflow-y-auto p-3 pt-2 custom-scrollbar"
-            >
-              {messages.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="text-center">
-                    <MessageSquare className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
-                    <p className="text-muted-foreground text-sm">No messages yet</p>
-                    <p className="text-muted-foreground/60 text-xs mt-1">Start the conversation!</p>
-                  </div>
-                </div>
-              ) : (
-                messages.map((message) => {
-                  const isSender = message.profiles.id === user?.id;
-                  const isShare = isShareContent(message.content);
-                  return (
-                    <div 
-                      key={message.id} 
-                      ref={observeMessage}
-                      data-message-id={message.id}
-                      data-sender-id={message.user_id}
-                      className={`flex items-end gap-2 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSender ? 'flex-row-reverse' : ''}`}
-                    >
-                      <Link to={`/profile/${message.profiles.id}`}>
-                        <Avatar className="h-9 w-9 cursor-pointer hover:scale-110 active:scale-95 transition-all shrink-0 shadow-sm border border-border/10">
-                          <AvatarImage src={message.profiles.avatar_url || undefined} />
-                          <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{(message.profiles.username || 'U').charAt(0)}</AvatarFallback>
-                        </Avatar>
-                      </Link>
-                      <div className="flex items-end gap-2 relative max-w-[85%]">
-                        <div className={`${isShare && !message.is_deleted ? 'p-0 bg-transparent' : `p-2.5 rounded-2xl text-sm shadow-sm ${message.is_deleted ? 'bg-muted/50 border border-border/50 text-muted-foreground' : isSender ? 'bg-primary text-primary-foreground rounded-tr-none' : 'bg-muted rounded-tl-none'}`} relative cursor-default transition-all hover:shadow-md`}>
-                          {message.reply_to_id && !message.is_deleted && (() => {
-                            const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                            if (!repliedMsg) return null;
-                            return (
-                              <div className={`mb-2 p-2 rounded-lg text-xs border ${isSender ? 'bg-white/10 border-white/20 text-white' : 'bg-background/50 border-border'}`}>
-                                <div className="font-semibold text-[10px] mb-0.5 opacity-75">
-                                  {repliedMsg.profiles?.username || 'User'}
-                                </div>
-                                <div className="opacity-90 line-clamp-1 text-[11px]">
-                                  {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
-                                    repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                      repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                        repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                          repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                            repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                              repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                                repliedMsg.content
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })()}
-                          {message.is_deleted ? (
-                            <p className="text-xs italic flex items-center gap-1 opacity-70">
-                              <ShieldBan className="h-3 w-3" /> This message was deleted
-                            </p>
-                          ) : (
-                            renderMessageContent(message.content)
-                          )}
-                        </div>
-
-                        {!message.is_deleted && (
-                          <div className={`absolute ${isSender ? 'right-full mr-1' : 'left-full ml-1'} top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className="p-1.5 text-muted-foreground hover:bg-muted rounded-full">
-                                  <MoreVertical className="h-4 w-4" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                  <Reply className="h-4 w-4 mr-2" /> Reply
-                                </DropdownMenuItem>
-                                {isSender && (
-                                  <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                    <Trash2 className="h-4 w-4 mr-2" /> Undo
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-[9px] text-muted-foreground/50 shrink-0 font-medium">{formatTimestamp(message.created_at)}</span>
-                    </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {!isAtBottom && unreadCount > 0 && (
-              <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-20">
-                <Button onClick={() => scrollToBottom()} className="rounded-full shadow-lg bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 text-xs" size="sm">
-                  <ChevronDown className="h-3.5 w-3.5" /> {unreadCount} new
-                </Button>
-              </div>
-            )}
-
-            <div className="border-t border-border flex flex-col bg-background pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-2 sticky bottom-0 z-30">
-              {replyingTo && (
-                <div className="bg-muted px-3 py-1.5 mb-2 rounded-md flex items-center justify-between border border-border text-xs">
-                  <div className="flex-1 overflow-hidden pr-2">
-                    <div className="font-semibold text-primary mb-0.5 text-[10px] uppercase tracking-wider">
-                      Replying to {replyingTo.profiles?.username || 'User'}
-                    </div>
-                    <div className="text-muted-foreground truncate opacity-80">
-                      {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                        replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                          replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                            replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                              replyingTo.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                replyingTo.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                  replyingTo.content}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setReplyingTo(null)}
-                    className="p-1 rounded hover:bg-background text-muted-foreground transition-colors shrink-0"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              )}
-              <TypingIndicator typingUsers={typingUsers} />
-              <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} userRole={userRole} />
-            </div>
-          </div>
+      {isMembersSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:relative lg:inset-auto lg:w-80 border-l border-border bg-background animate-in slide-in-from-right duration-300">
+          <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />
         </div>
-
-        {isMembersSidebarOpen && <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />}
-      </div>}
+      )}
     </div>
   );
 };

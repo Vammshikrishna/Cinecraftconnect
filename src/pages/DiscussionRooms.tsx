@@ -22,6 +22,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { cn } from '@/lib/utils';
 import { getDisplayMessage } from '@/lib/chat-utils';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
+import { useGlobalCall } from '@/contexts/CallContext';
 
 // --- DATA INTERFACES ---
 
@@ -51,6 +52,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isFan } = useAccountType();
+  const { callState } = useGlobalCall();
+  const isInCall = callState.isActive && callState.roomId === roomId;
+  const isCallMinimized = callState.isMinimized;
 
   // Use URL as the source of truth for the selected room
   const activeRoom = useMemo(() => {
@@ -261,7 +265,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     return (
       <div className="h-screen w-full flex flex-col pt-16 bg-background overflow-hidden">
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 backdrop-blur-xl shrink-0">
+          {! (isInCall && !isCallMinimized) && (
+            <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 backdrop-blur-xl shrink-0 animate-in slide-in-from-left duration-300">
             <div className="p-6 border-b border-border space-y-4">
               <div className="flex items-center justify-between">
                 <Link to="/discussion-rooms" className="flex items-center gap-2 hover:text-primary transition-colors">
@@ -371,8 +376,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               )}
             </div>
           </div>
+        )}
 
-          <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
+        <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
              <DiscussionChatInterface
               roomId={activeRoom.id}
               userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
@@ -383,6 +389,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               roomType={activeRoom.room_type}
               onClose={() => navigate('/discussion-rooms')}
               onRoomUpdated={handleRoomUpdated}
+              showBackButton={isInCall && !isCallMinimized}
             />
           </div>
         </div>
@@ -395,7 +402,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     // Extra guard: fans cannot view private rooms they stumbled into via URL
     if (isFan && activeRoom.room_type === 'private') {
       return (
-        <div className="fixed inset-x-0 top-14 md:top-16 bottom-0 bg-background flex flex-col items-center justify-center z-40 gap-4">
+        <div className="fixed inset-x-0 top-14 md:top-16 bottom-16 bg-background flex flex-col items-center justify-center z-40 gap-4">
           <div className="text-center max-w-sm px-6">
             <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🔒</span>
@@ -408,7 +415,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       );
     }
     return (
-      <div className="fixed inset-x-0 top-14 md:top-16 bottom-0 bg-background text-foreground flex flex-col z-40 lg:pb-0">
+      <div className="fixed inset-x-0 top-14 md:top-16 bottom-16 bg-background text-foreground flex flex-col z-40 lg:pb-0">
         <DiscussionChatInterface
           roomId={activeRoom.id}
           userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
