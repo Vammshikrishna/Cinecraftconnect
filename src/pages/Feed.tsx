@@ -46,7 +46,7 @@ const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
 
     return (
         <div className="min-h-screen bg-background pt-20 relative">
-            <div className="container mx-auto px-4 pb-24 animate-fade-in">
+            <div className="container mx-auto px-4 md:px-8 pb-36 animate-fade-in">
                 <div className="max-w-4xl mx-auto">
                     <Suspense fallback={<FeedSkeleton />}>
                         <HomeTab postRatings={postRatings} onRate={handleRate} openCreate={openCreate} />

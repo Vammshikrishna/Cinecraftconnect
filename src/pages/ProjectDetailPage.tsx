@@ -133,7 +133,7 @@ const ProjectDetailPage = () => {
   const isOwner = user?.id === project.creator_id;
 
   return (
-    <div className="min-h-screen bg-background pt-24 pb-12">
+    <div className="min-h-screen bg-background pt-24 pb-40">
       <div className="max-w-4xl mx-auto px-4 md:px-8">
         <Button 
           variant="ghost" 

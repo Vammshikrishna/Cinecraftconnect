@@ -136,13 +136,13 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-36">
       {/* Background Orbs aligned with global theme */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="Jobs" 
           subtitle="Explore unique roles in film and creative production" 
@@ -151,10 +151,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
             !isFan && (
               <div className="flex flex-wrap gap-3">
                 <Link to="/jobs/applications">
-                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">My Applications</Button>
+                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-10 px-4 text-sm font-bold">My Applications</Button>
                 </Link>
                 <Link to="/jobs/manage">
-                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-12">Manage Postings</Button>
+                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-10 px-4 text-sm font-bold">Manage Postings</Button>
                 </Link>
                 <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
               </div>

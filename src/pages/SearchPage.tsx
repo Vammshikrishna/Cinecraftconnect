@@ -1,10 +1,9 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
-import { Search, ArrowLeft, Compass, Filter } from 'lucide-react';
+import { Search, Compass } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
 import { ExploreGrid } from '@/components/search/ExploreGrid';
 import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -263,18 +262,12 @@ const SearchPage = () => {
                 <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
             </div>
 
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
-                <div className="flex items-center gap-4 mb-4">
-                    <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover:bg-muted/50 transition-all rounded-xl h-10 w-10 border border-border/50 shadow-sm">
-                        <ArrowLeft className="h-5 w-5" />
-                    </Button>
-                    <div className="h-1 w-12 bg-primary/20 rounded-full" />
-                </div>
-
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
                 <PageHeader 
                     title="Discovery" 
                     subtitle="Global content grid synchronization engine. Find production partners, projects, and gear." 
                     Icon={Compass}
+                    onBack={() => navigate(-1)}
                     actions={
                         <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
                     }
@@ -283,15 +276,15 @@ const SearchPage = () => {
                 <motion.div 
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="relative max-w-2xl mx-auto mt-12 mb-12 group"
+                    className="relative max-w-2xl mx-auto mt-6 mb-8 group"
                 >
-                    <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-primary/5 to-secondary/20 rounded-[2.5rem] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
+                    <div className="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-secondary/10 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
                     <div className="relative">
-                        <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-primary group-focus-within:scale-110 transition-transform duration-500" size={24} />
+                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-primary/60 group-focus-within:text-primary transition-colors duration-300" size={20} />
                         <Input 
                             type="search" 
-                            placeholder={isFan ? "SEARCH PEOPLE, POSTS, DISCUSSIONS..." : "SEARCH PROJECTS, PEOPLE, POSTS..."}
-                            className="pl-16 pr-6 py-10 text-2xl w-full bg-card/60 backdrop-blur-3xl border-2 border-white/5 focus:border-primary/50 rounded-[2.5rem] transition-all shadow-2xl font-black uppercase tracking-tighter placeholder:text-muted-foreground/30 focus:ring-4 focus:ring-primary/10" 
+                            placeholder={isFan ? "Search people, posts, discussions..." : "Search projects, people, posts..."}
+                            className="pl-14 pr-6 py-6 text-base w-full bg-card/60 backdrop-blur-xl border border-border/50 focus:border-primary/50 rounded-2xl transition-all shadow-xl font-medium tracking-tight placeholder:text-muted-foreground/40 focus:ring-4 focus:ring-primary/5" 
                             value={query} 
                             onChange={handleSearch} 
                             autoFocus={!query} 

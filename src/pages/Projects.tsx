@@ -267,8 +267,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   };
 
   return (
-    <div className="min-h-screen bg-background pt-16 md:pt-20">
-      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24 animate-fade-in">
+    <div className="min-h-screen bg-background pt-20">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36 animate-fade-in">
         <PageHeader 
           title="Projects" 
           subtitle="Discover and collaborate on film projects" 

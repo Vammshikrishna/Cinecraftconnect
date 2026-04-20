@@ -5,7 +5,7 @@ import { Star } from 'lucide-react';
 
 const RatingsPage = () => {
     return (
-        <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
+        <div className="min-h-screen bg-background pt-20 pb-36 selection:bg-primary/30">
             {/* Background Orbs */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />

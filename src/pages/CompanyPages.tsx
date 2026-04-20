@@ -25,15 +25,15 @@ const CompanyPages = () => {
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="Pages" 
           subtitle="Discover production houses, studios, agencies, and organizations" 
           Icon={StudioPageIcon}
           actions={
             !isFan && (
-                <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 shadow-lg shadow-primary/20 hover:scale-105 transition-transform shrink-0">
-                  <Plus size={20} strokeWidth={3} />
+                <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+                  <Plus size={18} strokeWidth={3} />
                   <span className="hidden xs:inline">Create a Page</span>
                   <span className="xs:hidden">Create</span>
                 </Button>

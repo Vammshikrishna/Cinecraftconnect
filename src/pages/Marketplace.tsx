@@ -60,16 +60,16 @@ const Marketplace = () => {
 
     return (
         <div className="min-h-screen bg-background">
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-24 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-36 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Header */}
                 <PageHeader 
                   title="Marketplace" 
                   subtitle="Discover and rent professional equipment and cinematic locations from verified community members." 
                   Icon={LayoutGrid}
                   actions={
-                    <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-transform h-12 px-6 shrink-0">
-                        <Plus size={20} strokeWidth={3} />
-                        <span className="font-bold tracking-wide">Create Listing</span>
+                    <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
+                        <Plus size={18} strokeWidth={3} />
+                        <span>Create Listing</span>
                     </Button>
                   }
                 />

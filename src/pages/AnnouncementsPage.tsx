@@ -95,8 +95,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     };
 
     return (
-        <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24">
-            <div className="max-w-4xl mx-auto px-4 md:px-8">
+        <div className="min-h-screen bg-background pt-20 pb-36">
+            <div className="max-w-7xl mx-auto px-4 md:px-8">
                 <PageHeader 
                   title="Announcements" 
                   subtitle="Stay updated with the latest news and updates from the platform" 
@@ -104,8 +104,8 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                   actions={
                     user && !isFan ? (
                         <div className="flex gap-2">
-                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-6 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
-                                <Plus className="mr-2 h-5 w-5" />
+                            <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-10 px-4 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform text-sm">
+                                <Plus className="mr-2 h-4 w-4" />
                                 New Announcement
                             </Button>
                             <CreateAnnouncementDialog

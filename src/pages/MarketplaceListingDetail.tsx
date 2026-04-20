@@ -8,8 +8,6 @@ import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-    MapPin,
-    ArrowLeft,
     MessageSquare,
     Share2,
     Edit,
@@ -18,6 +16,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MarketplaceShareSheet } from '@/components/marketplace/MarketplaceShareSheet';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
+import { PageHeader } from '@/components/common/PageHeader';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -149,17 +148,30 @@ const MarketplaceListingDetail = () => {
     if (!listing) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-24">
+        <div className="min-h-screen bg-background pt-20 pb-40">
             <div className="max-w-6xl mx-auto px-4 md:px-8">
-                {/* Back Button */}
-                <Button
-                    variant="ghost"
-                    className="mb-6 pl-0 hover:pl-2 transition-all"
-                    onClick={() => navigate(-1)}
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Marketplace
-                </Button>
+                <PageHeader
+                    title={listing.title}
+                    subtitle={`Marketplace Listing in ${listing.location}`}
+                    onBack={() => navigate(-1)}
+                    actions={
+                        <div className="flex gap-2">
+                            {isOwner && (
+                                <>
+                                    <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setIsEditModalOpen(true)}>
+                                        <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="destructive" size="icon" className="rounded-xl shadow-lg shadow-red-500/20" onClick={handleDelete}>
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </>
+                            )}
+                            <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                                <Share2 className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    }
+                />
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 pt-4">
                     {/* Left Column: Images */}
@@ -192,50 +204,19 @@ const MarketplaceListingDetail = () => {
 
                     {/* Right Column: Details */}
                     <div className="space-y-8 flex flex-col">
-                        <div>
-                            <div className="flex items-start justify-between gap-4 mb-4">
-                                <div>
-                                    <div className="px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary uppercase tracking-widest inline-flex mb-4">
-                                        {listing.category}
-                                    </div>
-                                    <h1 className="text-4xl md:text-5xl font-black text-foreground mb-4 tracking-tight leading-tight">
-                                        {listing.title}
-                                    </h1>
-                                    <div className="inline-flex items-center text-[11px] font-bold text-muted-foreground uppercase tracking-widest gap-2 bg-black/5 dark:bg-white/5 py-2 px-4 rounded-xl border border-black/5 dark:border-white/5 w-fit">
-                                        <MapPin className="h-4 w-4 text-primary/60 shrink-0" />
-                                        {listing.location}
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {isOwner && (
-                                        <>
-                                            <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setIsEditModalOpen(true)}>
-                                                <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button variant="destructive" size="icon" className="rounded-xl shadow-lg shadow-red-500/20" onClick={handleDelete}>
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </>
-                                    )}
-                                    <Button variant="outline" size="icon" className="rounded-xl" onClick={() => setShowShareSheet(true)}>
-                                        <Share2 className="h-4 w-4" />
-                                    </Button>
-                                    <MarketplaceShareSheet
-                                        isOpen={showShareSheet}
-                                        onOpenChange={setShowShareSheet}
-                                        listingId={listing!.id}
-                                    />
-                                    <ListingCreationModal
-                                        open={isEditModalOpen}
-                                        onOpenChange={setIsEditModalOpen}
-                                        onSuccess={fetchListingDetails}
-                                        initialData={listing}
-                                        mode="edit"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] space-y-6 mt-6 shadow-xl relative overflow-hidden group">
+                             <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] space-y-6 mt-6 shadow-xl relative overflow-hidden group">
+                                 <MarketplaceShareSheet
+                                     isOpen={showShareSheet}
+                                     onOpenChange={setShowShareSheet}
+                                     listingId={listing!.id}
+                                 />
+                                 <ListingCreationModal
+                                     open={isEditModalOpen}
+                                     onOpenChange={setIsEditModalOpen}
+                                     onSuccess={fetchListingDetails}
+                                     initialData={listing}
+                                     mode="edit"
+                                 />
                                 {/* Atmospheric gradient inside pricing block */}
                                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[80px] -mr-32 -mt-32 pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
                                 
@@ -265,7 +246,6 @@ const MarketplaceListingDetail = () => {
                                     </Button> */}
                                 </div>
                             </div>
-                        </div>
 
                         <div className="space-y-5">
                             <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Description</h3>

@@ -1,7 +1,7 @@
 
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Camera, Film, Music, Brush, Scissors, Mic, Users, Laptop } from "lucide-react";
+import { Camera, Film, Music, Brush, Scissors, Mic, Users, Laptop } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/common/PageHeader";
 
@@ -59,20 +59,12 @@ const AllCraftsPage = () => {
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate(-1)} 
-          className="mb-6 hover:bg-muted/50 rounded-xl px-4 h-10 border border-border/50"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Explore
-        </Button>
-
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="The 24 Film Crafts" 
           subtitle="Filmmaking is a collaborative art form that brings together a diverse range of specialized crafts. Each craft contributes unique skills to the magic of cinema." 
           Icon={Film}
+          onBack={() => navigate(-1)}
         />
 
         <div className="max-w-6xl mx-auto mt-12">

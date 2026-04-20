@@ -165,7 +165,7 @@ const ContentDetailPage = () => {
     const displayRating = hoverRating ?? userRating ?? 0;
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen bg-background pb-40">
             {/* Hero Section */}
             <div className="relative w-full h-[60vh] md:h-[70vh]">
                 <div className="absolute inset-0">

@@ -179,13 +179,14 @@ const JobDetail = () => {
 
 
   return (
-    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-20">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-36">
       {/* Background Elements aligned with global theme */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 pt-16 md:pt-28 relative z-10">
+
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
         {/* Mobile Header Icons - Now integrated into the hero for better flow */}
         <div className="md:hidden flex items-center justify-between mb-2">
           <Button 
@@ -482,7 +483,7 @@ const JobDetail = () => {
       </main>
 
       {/* Sticky Bottom Apply Bar for Mobile */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl transition-transform duration-500">
+      <div className="lg:hidden fixed bottom-[calc(env(safe-area-inset-bottom)+70px)] left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-transform duration-500">
         <div className="flex items-center gap-3">
           {isOwner ? (
             <Button onClick={() => navigate('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
