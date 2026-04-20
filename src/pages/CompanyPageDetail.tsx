@@ -172,7 +172,7 @@ const CompanyPageDetail = () => {
   const canManage = isOwner || isMember;
 
   return (
-    <div className="min-h-screen bg-background pt-14 md:pt-[72px] pb-20 md:pb-0">
+    <div className="min-h-screen bg-background pt-20 pb-36">
       {/* 1. Header & Cover Section */}
       <div className="relative h-[220px] md:h-[350px] w-full bg-muted/40 group overflow-hidden">
         {page.cover_image_url ? (

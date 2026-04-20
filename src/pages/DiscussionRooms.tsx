@@ -414,7 +414,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     // Extra guard: fans cannot view private rooms they stumbled into via URL
     if (isFan && activeRoom.room_type === 'private') {
       return (
-        <div className="fixed inset-x-0 top-14 md:top-16 bottom-16 bg-background flex flex-col items-center justify-center z-40 gap-4">
+        <div className="fixed inset-x-0 top-14 md:top-16 bottom-[calc(env(safe-area-inset-bottom)+56px)] bg-background flex flex-col items-center justify-center z-40 gap-4">
           <div className="text-center max-w-sm px-6">
             <div className="w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🔒</span>
@@ -427,7 +427,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       );
     }
     return (
-      <div className="fixed inset-x-0 top-14 md:top-16 bottom-16 bg-background text-foreground flex flex-col z-40 lg:pb-0">
+      <div className="fixed inset-x-0 top-14 md:top-16 bottom-[calc(env(safe-area-inset-bottom)+56px)] bg-background text-foreground flex flex-col z-40 lg:pb-0">
         <DiscussionChatInterface
           roomId={activeRoom.id}
           userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
@@ -447,8 +447,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   // --- Mobile List View ---
   return (
-    <div className="min-h-screen bg-background text-foreground pt-16 md:pt-20">
-      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-24">
+    <div className="min-h-screen bg-background text-foreground pt-20">
+      <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36">
         {/* Header and Controls */}
         <PageHeader 
           title="Discussion Rooms" 

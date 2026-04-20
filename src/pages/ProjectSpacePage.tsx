@@ -88,7 +88,7 @@ const ProjectSpacePage = () => {
   }
 
   return (
-    <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col pt-14 lg:p-4 lg:pt-20 pb-0 overflow-hidden">
+    <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col pt-14 lg:p-4 lg:pt-20 pb-[calc(env(safe-area-inset-bottom)+56px)] lg:pb-0 overflow-hidden">
       <ProjectSpace
         projectId={project.id}
         projectTitle={project.title}

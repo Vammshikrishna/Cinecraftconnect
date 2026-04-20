@@ -324,14 +324,17 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-primary hover:bg-primary/90 h-9 px-3 sm:h-10 sm:px-4">
+        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
           {projectToEdit ? (
-            <span className="flex items-center"><Edit className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Update Project</span><span className="sm:hidden">Update</span></span>
+            <span className="flex items-center gap-2">
+              <Edit className="h-4 w-4" /> 
+              <span>Update Project</span>
+            </span>
           ) : (
-            <>
-              <Plus className="h-5 w-5 sm:mr-2 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">Create Project</span>
-            </>
+            <div className="flex items-center gap-2">
+              <Plus size={20} strokeWidth={3} />
+              <span>Create Project</span>
+            </div>
           )}
         </Button>
       </DialogTrigger>

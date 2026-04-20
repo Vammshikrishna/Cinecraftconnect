@@ -76,7 +76,7 @@ const Network = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24">
+      <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-36">
         
         <PageHeader 
           title="My Network" 

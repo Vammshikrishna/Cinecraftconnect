@@ -189,9 +189,9 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
         {triggerButton || (
-          <Button className="bg-primary hover:bg-primary/90">
+          <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
             <Plus className="mr-2 h-4 w-4" />
-            Post a Job
+            <span>{jobToEdit ? "Edit Job" : "Post a Job"}</span>
           </Button>
         )}
       </DialogTrigger>

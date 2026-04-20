@@ -216,11 +216,11 @@ const ProfilePage = () => {
   }
 
   return (
-    <div className="bg-background text-foreground min-h-screen flex justify-center pt-20 pb-24 relative overflow-hidden">
+    <div className="bg-background text-foreground min-h-screen flex justify-center pt-20 pb-40 relative overflow-hidden">
       {/* Background ambient effects */}
       <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
-      <div className="w-full max-w-4xl px-1 sm:px-4 relative z-10">
+      <div className="w-full max-w-4xl px-4 md:px-8 relative z-10">
         <header className="glass-card mb-8 relative overflow-hidden group pb-8">
           {/* Cover Photo */}
           <div className="h-32 md:h-48 w-full relative overflow-hidden">

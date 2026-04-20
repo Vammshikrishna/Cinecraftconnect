@@ -63,7 +63,7 @@ export function MobileNav() {
 
   return (
     <>
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-card/95 backdrop-blur-md border-t border-border pb-[calc(env(safe-area-inset-bottom)+16px)]">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-card/95 backdrop-blur-xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+20px)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
         <div className="flex items-center justify-around py-2 px-4">
           {navItems.map(({ to, icon: Icon, label }) => (
             <Link

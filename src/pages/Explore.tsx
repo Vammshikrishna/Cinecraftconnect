@@ -84,8 +84,8 @@ const Explore = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pt-20">
-      <div className="container mx-auto px-4 py-8 animate-fade-in">
+    <div className="min-h-screen bg-background pt-20 pb-36 selection:bg-primary/30">
+      <div className="max-w-7xl mx-auto px-4 md:px-8">
         <PageHeader 
           title="Explore & Discover" 
           subtitle="Find content, projects, people, and opportunities" 

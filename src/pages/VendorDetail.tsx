@@ -8,18 +8,17 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import {
     MapPin,
-    ArrowLeft,
     MessageSquare,
     Share2,
     Globe,
     Phone,
     Mail,
-    CheckCircle2,
     Building2,
     Star
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { VendorShareSheet } from '@/components/vendors/VendorShareSheet';
+import { PageHeader } from '@/components/common/PageHeader';
 
 const VendorDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -112,17 +111,18 @@ const VendorDetail = () => {
     if (!vendor) return null;
 
     return (
-        <div className="min-h-screen bg-background pt-20 pb-24">
+        <div className="min-h-screen bg-background pt-20 pb-40">
             <div className="max-w-6xl mx-auto px-4 md:px-8">
-                {/* Back Button */}
-                <Button
-                    variant="ghost"
-                    className="mb-6 pl-0 hover:pl-2 transition-all"
-                    onClick={() => navigate(-1)}
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Vendors
-                </Button>
+                <PageHeader
+                    title={vendor.business_name}
+                    subtitle="Industry Vendor Profile"
+                    onBack={() => navigate(-1)}
+                    actions={
+                        <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                            <Share2 className="h-4 w-4" />
+                        </Button>
+                    }
+                />
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
                     {/* Left Column: Visuals */}
@@ -189,33 +189,24 @@ const VendorDetail = () => {
                                     <AvatarImage src={vendor.logo_url || undefined} />
                                     <AvatarFallback><Building2 /></AvatarFallback>
                                 </Avatar>
-                                <div>
-                                    <div className="flex items-center justify-between">
-                                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-                                            {vendor.business_name}
-                                            {vendor.is_verified && <CheckCircle2 className="h-5 w-5 text-primary" />}
-                                        </h1>
-                                        <Button variant="outline" size="icon" onClick={() => setShowShareSheet(true)}>
-                                            <Share2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2 mt-2">
-                                        {vendor.category?.map((cat, idx) => (
-                                            <Badge key={idx} variant="outline" className="text-xs">
-                                                {cat}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                    {vendor.average_rating && vendor.average_rating > 0 && (
-                                        <div className="flex items-center gap-1 mt-2 text-sm font-medium">
-                                            <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
-                                            <span>{vendor.average_rating.toFixed(1)}</span>
-                                            <span className="text-muted-foreground">
-                                                ({vendor.review_count || 0} reviews)
-                                            </span>
-                                        </div>
-                                    )}
-                                </div>
+                                 <div>
+                                     <div className="flex flex-wrap gap-2 mt-2">
+                                         {vendor.category?.map((cat, idx) => (
+                                             <Badge key={idx} variant="outline" className="text-xs">
+                                                 {cat}
+                                             </Badge>
+                                         ))}
+                                     </div>
+                                     {vendor.average_rating && vendor.average_rating > 0 && (
+                                         <div className="flex items-center gap-1 mt-2 text-sm font-medium">
+                                             <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
+                                             <span>{vendor.average_rating.toFixed(1)}</span>
+                                             <span className="text-muted-foreground">
+                                                 ({vendor.review_count || 0} reviews)
+                                             </span>
+                                         </div>
+                                     )}
+                                 </div>
                             </div>
 
                             {/* Contact Actions */}
