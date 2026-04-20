@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Film, MoreVertical, Trash2, ExternalLink } from 'lucide-react';
+import { MapPin, Film, MoreVertical, Trash2, ExternalLink, MessageSquare } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
     DropdownMenu,
@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -44,9 +45,11 @@ interface FeedProjectCardProps {
 const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
+    const { unreadProjectIds } = useUnreadMessages();
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
 
+    const hasUnread = unreadProjectIds.includes(project.id);
     const isOwner = user?.id === project.creator_id;
     // Default cinematic placeholder image if none exists
     const displayImage = project.image_url || "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=800&q=80";
@@ -79,7 +82,16 @@ const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
     };
 
     return (
-        <div className="group bg-white dark:bg-card border border-border/50 rounded-[20px] overflow-hidden shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1">
+        <div className="group bg-white dark:bg-card border border-border/50 rounded-[20px] overflow-hidden shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 relative">
+            {/* Unread Message Indicator Overlay */}
+            {hasUnread && (
+                <div className="absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500 text-white text-[10px] font-black uppercase tracking-tighter shadow-lg shadow-red-500/30 animate-in zoom-in slide-in-from-right-4 duration-500">
+                    <MessageSquare className="h-3 w-3 fill-current" />
+                    New Activity
+                    <span className="flex h-2 w-2 rounded-full bg-white animate-pulse" />
+                </div>
+            )}
+
             <Link to={`/projects/${project.id}/space`} className="block relative aspect-[16/10] overflow-hidden">
                 <img 
                     src={displayImage} 
@@ -98,7 +110,7 @@ const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
 
             <div className="p-6 space-y-4 text-left">
                 <div className="space-y-2">
-                    <Link to={`/projects/${project.id}/space`}>
+                    <Link to={`/projects/${project.id}/space`} className="flex items-start justify-between gap-2">
                         <h3 className="text-2xl font-black text-foreground hover:text-primary transition-colors leading-none tracking-tight">
                             {project.title}
                         </h3>

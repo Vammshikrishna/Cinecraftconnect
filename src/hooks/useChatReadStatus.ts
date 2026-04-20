@@ -29,12 +29,12 @@ export const useChatReadStatus = () => {
                 }
             } else if (type === 'project') {
                 await supabase
-                    .from('project_message_read_status' as any)
+                    .from('project_space_message_read_status' as any)
                     .upsert({
-                        project_id: id,
+                        project_space_id: id,
                         user_id: user.id,
                         last_read_at: new Date().toISOString()
-                    });
+                    }, { onConflict: 'project_space_id,user_id' });
             } else if (type === 'discussion') {
               await supabase
                   .from('room_message_read_status' as any)
@@ -42,7 +42,7 @@ export const useChatReadStatus = () => {
                       room_id: id,
                       user_id: user.id,
                       last_read_at: new Date().toISOString()
-                  });
+                  }, { onConflict: 'room_id,user_id' });
             }
         } catch (err) {
             console.error('Error marking as read:', err);

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCall } from "@/hooks/useCall";
+import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import { DiscussionChatInterface } from "../discussions/DiscussionChatInterface";
 import { Category } from "../discussions/types";
 
@@ -32,7 +33,10 @@ const DiscussionRoomCard = ({
   const [isJoining, setIsJoining] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { unreadDiscussionIds } = useUnreadMessages();
   const { activeCall, loading: callLoading, startCall } = useCall('discussion', id || '');
+
+  const hasUnread = id && unreadDiscussionIds.includes(id);
 
   const joinRoom = async () => {
     if (!id) return;
@@ -126,7 +130,7 @@ const DiscussionRoomCard = ({
 
   return (
     <>
-      <div className="group h-full">
+      <div className="group h-full relative">
         <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-xl h-full flex flex-col">
 
           {/* Top gradient accent */}
@@ -140,10 +144,18 @@ const DiscussionRoomCard = ({
             </div>
           )}
 
+          {/* Unread Indicator */}
+          {hasUnread && !activeCall && (
+            <div className="absolute top-3 right-3 z-10 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-background shadow-lg shadow-red-500/40 animate-pulse" />
+          )}
+
           <div className="p-5 flex flex-col flex-1">
             {/* Title */}
-            <h3 className="text-lg font-bold tracking-tight text-foreground line-clamp-1 group-hover:text-primary transition-colors duration-300 mb-3 pr-16">
+            <h3 className="text-lg font-bold tracking-tight text-foreground line-clamp-1 group-hover:text-primary transition-colors duration-300 mb-3 pr-16 relative">
               {title}
+              {hasUnread && (
+                <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-red-500 align-middle mb-1" />
+              )}
             </h3>
 
             {/* Description */}
@@ -171,7 +183,7 @@ const DiscussionRoomCard = ({
             <div className="mt-auto pt-4 border-t border-border/30">
               <div className="flex gap-2">
                 <Button
-                  className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10"
+                  className={`flex-1 ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10 relative overflow-hidden`}
                   onClick={joinRoom}
                   disabled={isJoining}
                 >
@@ -179,8 +191,8 @@ const DiscussionRoomCard = ({
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                   ) : (
                     <>
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      Join Chat
+                      <MessageCircle className={`h-4 w-4 mr-2 ${hasUnread ? 'animate-bounce' : ''}`} />
+                      {hasUnread ? 'New Messages' : 'Join Chat'}
                     </>
                   )}
                 </Button>

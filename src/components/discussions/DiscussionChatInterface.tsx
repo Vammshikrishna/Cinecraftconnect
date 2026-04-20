@@ -27,6 +27,7 @@ import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
+import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -85,6 +86,7 @@ export const DiscussionChatInterface = ({
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
   const [isMembersSidebarOpen, setMembersSidebarOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const { markAsRead } = useChatReadStatus();
 
   // Global Call state
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize } = useGlobalCall();
@@ -190,6 +192,12 @@ export const DiscussionChatInterface = ({
     }, 500);
     return () => clearTimeout(timer);
   }, [fetchMessages, fetchReadStatuses, roomId]);
+
+  useEffect(() => {
+    if (user && roomId && messages.length > 0) {
+      markAsRead('discussion', roomId);
+    }
+  }, [roomId, messages.length, markAsRead, user]);
 
   useEffect(() => {
     const channel = supabase

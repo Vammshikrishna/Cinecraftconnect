@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, ArrowLeft } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, ArrowLeft, Bell } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 import { getDisplayMessage } from '@/lib/chat-utils';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import { useGlobalCall } from '@/contexts/CallContext';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 
 // --- DATA INTERFACES ---
 
@@ -53,6 +54,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { callState } = useGlobalCall();
+  const { unreadDiscussionIds } = useUnreadMessages();
   const isInCall = callState.isActive && callState.roomId === roomId;
   const isCallMinimized = callState.isMinimized;
 
@@ -325,50 +327,60 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
               {filteredAndSortedRooms
                 .filter(room => !(isFan && room.room_type === 'private'))
-                .map(room => (
-                  <button
-                    key={room.id}
-                    onClick={() => handleRoomJoin(room)}
-                    className={cn(
-                      "w-full text-left p-4 rounded-2xl transition-all duration-300 group relative border border-transparent",
-                      activeRoom?.id === room.id 
-                        ? "bg-primary/10 border-primary/20 shadow-sm" 
-                        : "hover:bg-muted/50 hover:border-border/30"
-                    )}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <h3 className={cn(
-                        "font-bold text-sm truncate pr-2 flex-1",
-                        activeRoom?.id === room.id ? "text-primary" : "text-foreground group-hover:text-primary transition-colors"
-                      )}>
-                        {room.title}
-                      </h3>
-                      {activeCallRoomIds.has(room.id) && (
-                        <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                .map(room => {
+                  const hasUnread = unreadDiscussionIds.includes(room.id);
+                  return (
+                    <button
+                      key={room.id}
+                      onClick={() => handleRoomJoin(room)}
+                      className={cn(
+                        "w-full text-left p-4 rounded-2xl transition-all duration-300 group relative border border-transparent",
+                        activeRoom?.id === room.id 
+                          ? "bg-primary/10 border-primary/20 shadow-sm" 
+                          : "hover:bg-muted/50 hover:border-border/30"
                       )}
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-1 mb-2 opacity-70">
-                      {room.last_message 
-                        ? `${room.last_message.sender_name}: ${getDisplayMessage(room.last_message.content)}` 
-                        : (room.description || 'No messages yet...')}
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                        <Users className="h-3 w-3" />
-                         {room.member_count}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex items-center gap-2 pr-2 flex-1">
+                          <h3 className={cn(
+                            "font-bold text-sm truncate",
+                            activeRoom?.id === room.id ? "text-primary" : "text-foreground group-hover:text-primary transition-colors"
+                          )}>
+                            {room.title}
+                          </h3>
+                          {hasUnread && (
+                            <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {activeCallRoomIds.has(room.id) && (
+                            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+                          )}
+                        </div>
                       </div>
-                      <Badge variant="secondary" className="bg-muted text-[9px] px-1.5 py-0 rounded-md border-0 h-4">
-                        {room.room_categories?.name || 'General'}
-                      </Badge>
-                      {room.room_type === 'private' && (
-                        <Lock className="h-2.5 w-2.5 text-amber-500" />
+                      <p className="text-xs text-muted-foreground line-clamp-1 mb-2 opacity-70">
+                        {room.last_message 
+                          ? `${room.last_message.sender_name}: ${getDisplayMessage(room.last_message.content)}` 
+                          : (room.description || 'No messages yet...')}
+                      </p>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                          <Users className="h-3 w-3" />
+                           {room.member_count}
+                        </div>
+                        <Badge variant="secondary" className="bg-muted text-[9px] px-1.5 py-0 rounded-md border-0 h-4">
+                          {room.room_categories?.name || 'General'}
+                        </Badge>
+                        {room.room_type === 'private' && (
+                          <Lock className="h-2.5 w-2.5 text-amber-500" />
+                        )}
+                      </div>
+                      {activeRoom?.id === room.id && (
+                        <div className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-primary rounded-r-full" />
                       )}
-                    </div>
-                    {activeRoom?.id === room.id && (
-                      <div className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-primary rounded-r-full" />
-                    )}
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               {filteredAndSortedRooms.length === 0 && (
                 <div className="text-center py-12">
                    <p className="text-muted-foreground text-xs uppercase tracking-widest font-bold">No results found</p>
@@ -555,9 +567,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; onJoin: (room: Room) => void; onDelete?: (roomId: string) => void; onShare?: (room: Room) => void; isActive?: boolean; }) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { unreadDiscussionIds } = useUnreadMessages();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
   const isOwner = user?.id === room.creator_id;
+  const hasUnread = unreadDiscussionIds.includes(room.id);
 
   const handleDelete = async () => {
     if (!onDelete) return;
@@ -593,18 +607,41 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
   const categoryName = room.room_categories?.name || 'General';
 
   return (
-    <div className="group h-full">
-      <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-xl h-full flex flex-col">
+    <div className="group h-full relative">
+      <div className={cn(
+        "relative overflow-hidden rounded-2xl border transition-all duration-500 h-full flex flex-col backdrop-blur-xl",
+        hasUnread 
+          ? "border-red-500/50 bg-red-500/5 shadow-lg shadow-red-500/5 hover:border-red-500/70" 
+          : "border-border/40 bg-card/60 hover:border-primary/40 hover:shadow-xl"
+      )}>
 
-        {/* Subtle gradient top accent */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+        {/* Top accent */}
+        <div className={cn(
+          "absolute top-0 left-0 right-0 h-1 transition-opacity duration-500",
+          hasUnread 
+            ? "bg-gradient-to-r from-red-500 to-transparent opacity-100" 
+            : "bg-gradient-to-r from-primary/60 via-primary/30 to-transparent opacity-0 group-hover:opacity-100"
+        )} />
+
+        {/* Unread Glow */}
+        {hasUnread && (
+          <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/10 blur-2xl rounded-full -mr-12 -mt-12 animate-pulse" />
+        )}
 
         <div className="p-5 flex flex-col flex-1">
           {/* Header */}
           <div className="flex justify-between items-start mb-3">
-            <h3 className="text-lg font-bold tracking-tight text-foreground line-clamp-2 break-all group-hover:text-primary transition-colors duration-300 pr-2 flex-1">
-              {room.title}
-            </h3>
+            <div className="flex items-center gap-2 pr-2 flex-1">
+              <h3 className={cn(
+                "text-lg font-bold tracking-tight line-clamp-2 break-all duration-300",
+                hasUnread ? "text-red-400" : "text-foreground group-hover:text-primary transition-colors"
+              )}>
+                {room.title}
+              </h3>
+              {hasUnread && (
+                <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse shrink-0" />
+              )}
+            </div>
             {isActive && (
               <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0 animate-pulse">
                 <Radio className="h-3 w-3" />
@@ -653,7 +690,10 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <Badge
               variant="secondary"
-              className="bg-primary/10 text-primary hover:bg-primary/20 transition-opacity uppercase text-[10px] tracking-widest font-bold px-2.5 py-0.5 rounded-md border-0"
+              className={cn(
+                "transition-all uppercase text-[10px] tracking-widest font-bold px-2.5 py-0.5 rounded-md border-0",
+                hasUnread ? "bg-red-500/20 text-red-400" : "bg-primary/10 text-primary hover:bg-primary/20"
+              )}
             >
               # {categoryName}
             </Badge>
@@ -673,36 +713,36 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
             {room.description || 'No description available.'}
           </p>
 
-          {/* Members */}
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
-            <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
-              <Users className="h-3 w-3 text-primary" />
+          {/* Members/Notification Row */}
+          <div className="flex items-center justify-between mt-auto mb-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
+                <Users className="h-3 w-3 text-primary" />
+              </div>
+              <span className="font-medium">{room.member_count} {room.member_count === 1 ? 'member' : 'members'}</span>
             </div>
-            <span className="font-medium">{room.member_count} {room.member_count === 1 ? 'member' : 'members'}</span>
+            {hasUnread && (
+              <span className="text-[10px] font-black text-red-500 animate-pulse flex items-center gap-1">
+                <Bell size={12} fill="currentColor" />
+                NEW MESSAGE
+              </span>
+            )}
           </div>
 
-          {/* Tags */}
-          {room.tags && room.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-4">
-              {room.tags.map(tag => (
-                <span
-                  key={tag}
-                  className="px-2.5 py-0.5 rounded-full bg-secondary/40 text-secondary-foreground/80 text-[11px] font-medium border border-border/30 hover:bg-secondary/60 transition-colors"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-
           {/* Action Buttons */}
-          <div className="mt-auto pt-4 border-t border-border/30">
+          <div className="pt-4 border-t border-border/30">
             <div className="flex gap-2">
               <Button
-                className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10"
+                className={cn(
+                  "flex-1 font-semibold rounded-xl h-10 transition-all active:scale-[0.98]",
+                  hasUnread 
+                    ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20" 
+                    : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg"
+                )}
                 onClick={() => onJoin(room)}
               >
-                <DiscussionRoomIcon size={22} className="mr-2" /> Join Discussion Room
+                {hasUnread ? <Bell size={18} className="mr-2 animate-bounce" /> : <DiscussionRoomIcon size={22} className="mr-2" />}
+                {hasUnread ? "View Messages" : "Join Discussion Room"}
               </Button>
             </div>
           </div>
