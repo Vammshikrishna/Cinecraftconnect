@@ -16,6 +16,7 @@ import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
+import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 
 
 interface Message {
@@ -83,6 +84,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { observeMessage } = useMessageSeen('project_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
+  const { markAsRead } = useChatReadStatus();
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
 
@@ -231,6 +233,11 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (user && spaceId && messages.length > 0) {
+      markAsRead('project', spaceId);
+    }
+  }, [spaceId, messages.length, markAsRead, user]);
 
   const fetchMessages = async () => {
     if (!spaceId) return;
@@ -477,7 +484,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
               const userStatus = readStatuses.find(rs => (rs.profiles?.full_name?.split(' ')[0] || 'User') === name);
               if (!userStatus) return false;
               const statusTime = new Date(userStatus.last_read_at).getTime();
-              const messageTime = new Date(message.created_at).getTime();
               
               // Find if there's any newer message that this user has also read
               const isLatest = !visibleMessages.some((m, mIdx) => {

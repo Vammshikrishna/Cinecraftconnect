@@ -54,6 +54,11 @@ import JobDetail from "@/pages/JobDetail";
 import PostDetailPage from "@/pages/PostDetailPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 
+// Legal Pages
+import PrivacyPolicy from "./pages/legal/PrivacyPolicy";
+import TermsOfService from "./pages/legal/TermsOfService";
+import CookiePolicy from "./pages/legal/CookiePolicy";
+
 // Custom route for the landing page
 const LandingRoute = () => {
   const { user } = useAuth();
@@ -127,6 +132,11 @@ const App = () => {
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
               <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
+
+              {/* Public Legal Routes */}
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/cookie" element={<CookiePolicy />} />
 
               <Route path="*" element={<NotFound />} />
             </Routes>

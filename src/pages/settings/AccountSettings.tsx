@@ -80,12 +80,43 @@ const AccountSettings = () => {
         }
     };
 
-    const handleDeleteAccount = () => {
-        toast({
-            title: "Account Deletion",
-            description: "Please contact support to delete your account.",
-            variant: "destructive"
-        });
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleDeleteAccount = async () => {
+        if (!user) return;
+        
+        try {
+            setIsDeleting(true);
+            
+            // Delete user data across collections
+            // Note: Cascade deletes should ideally be handled by Database foreign keys
+            // But we explicitly delete the profile which is the core identity
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', user.id);
+
+            if (profileError) throw profileError;
+
+            toast({
+                title: "Account Deleted",
+                description: "Your data has been removed and you have been signed out.",
+            });
+
+            // Log out and redirect
+            await signOut();
+            navigate('/auth');
+            
+        } catch (error: any) {
+            console.error('Error deleting account:', error);
+            toast({
+                title: "Error",
+                description: "Failed to delete account: " + error.message,
+                variant: "destructive"
+            });
+        } finally {
+            setIsDeleting(false);
+        }
     };
 
     const handleClearAllMessages = async () => {
@@ -258,8 +289,12 @@ const AccountSettings = () => {
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={handleDeleteAccount} className="bg-destructive text-destructive-foreground">
-                                                Delete Account
+                                            <AlertDialogAction 
+                                                onClick={handleDeleteAccount} 
+                                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+                                                disabled={isDeleting}
+                                            >
+                                                {isDeleting ? 'Deleting...' : 'Delete Account'}
                                             </AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>

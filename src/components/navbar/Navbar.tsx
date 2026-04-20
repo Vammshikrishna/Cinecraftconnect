@@ -7,9 +7,10 @@ import NavLinks from './NavLinks';
 import NotificationsDropdown from './NotificationsDropdown';
 import MoreMenu from './MoreMenu';
 import UserProfileMenu from './UserProfileMenu';
-import ChatMenu from './ChatMenu';
 import { MobileNav } from "./MobileNav";
 import AppLogo from '@/components/common/AppLogo';
+import { MessageSquare } from 'lucide-react';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 
 const Navbar = () => {
   const { user } = useAuth();
@@ -62,7 +63,7 @@ const Navbar = () => {
                       </Link>
                     </Button>
                   </div>
-                  {!isFan && <ChatMenu />}
+                  {!isFan && <ChatLink />}
                   <NotificationsDropdown />
                   <UserProfileMenu />
                 </>
@@ -86,6 +87,23 @@ const Navbar = () => {
       {/* Mobile Nav Menu (for links) */}
       {user && <MobileNav />}
     </>
+  );
+};
+
+const ChatLink = () => {
+  const { unreadCount } = useUnreadMessages();
+  
+  return (
+    <Button variant="ghost" size="icon" asChild className="relative text-muted-foreground hover:text-foreground">
+      <Link to="/messages">
+        <MessageSquare className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-background animate-in zoom-in">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </Link>
+    </Button>
   );
 };
 

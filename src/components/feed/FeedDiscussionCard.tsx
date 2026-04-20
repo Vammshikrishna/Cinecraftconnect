@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom';
-import { Share2, Users, Hash } from 'lucide-react';
+import { Share2, Users, Hash, Bell } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 
 interface FeedDiscussionCardProps {
@@ -17,6 +18,9 @@ interface FeedDiscussionCardProps {
 }
 
 const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
+    const { unreadDiscussionIds } = useUnreadMessages();
+    const hasUnread = unreadDiscussionIds.includes(discussion.id);
+
     const timeAgo = (dateStr: string) => {
         const diff = Date.now() - new Date(dateStr).getTime();
         const mins = Math.floor(diff / 60000);
@@ -31,12 +35,22 @@ const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
     const categoryName = discussion.category?.name || 'General';
 
     return (
-        <div className="h-full bg-card border border-border/50 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
+        <div className={`h-full bg-card border ${hasUnread ? 'border-red-500/50 shadow-red-500/10' : 'border-border/50'} rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col relative overflow-hidden`}>
+            {/* Unread Glow Effect */}
+            {hasUnread && (
+                <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-3xl rounded-full -mr-16 -mt-16 animate-pulse" />
+            )}
+
             {/* Header */}
             <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xl font-bold tracking-tight text-foreground leading-tight">
-                    {discussion.title}
-                </h3>
+                <div className="flex items-start gap-2">
+                    <h3 className="text-xl font-bold tracking-tight text-foreground leading-tight">
+                        {discussion.title}
+                    </h3>
+                    {hasUnread && (
+                        <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50 mt-1 animate-bounce" />
+                    )}
+                </div>
                 <button className="text-muted-foreground hover:text-foreground transition-colors p-1">
                     <Share2 className="h-5 w-5" />
                 </button>
@@ -74,10 +88,20 @@ const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
             {/* Primary Action */}
             <Link to={`/discussion-rooms/${discussion.id}`} className="block">
                 <Button
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-[18px] h-14 text-lg shadow-lg shadow-primary/10 transition-all active:scale-[0.98]"
+                    className={`w-full ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-bold rounded-[18px] h-14 text-lg shadow-lg transition-all active:scale-[0.98] relative`}
                 >
-                    <DiscussionRoomIcon size={28} className="mr-3" />
-                    Join Discussion Room
+                    {hasUnread ? (
+                        <Bell className="mr-3 h-6 w-6 animate-swing fill-current" />
+                    ) : (
+                        <DiscussionRoomIcon size={28} className="mr-3" />
+                    )}
+                    {hasUnread ? 'View New Messages' : 'Join Discussion Room'}
+                    {hasUnread && (
+                        <span className="absolute top-2 right-4 flex h-2 w-2">
+                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                             <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                        </span>
+                    )}
                 </Button>
             </Link>
         </div>

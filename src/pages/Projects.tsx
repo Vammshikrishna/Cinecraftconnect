@@ -21,9 +21,11 @@ import {
   Edit,
   Trash2,
   Loader2,
-  Share2
+  Share2,
+  Bell
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +87,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const ProjectCard = ({ project }: { project: Project }) => {
     const isBookmarked = project.is_bookmarked;
     const navigate = useNavigate();
+    const { unreadProjectIds } = useUnreadMessages();
+    const hasUnread = unreadProjectIds.includes(project.id);
 
     const handleCardClick = () => {
       if (project.is_member) {
@@ -108,7 +112,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     return (
       <div
         onClick={handleCardClick}
-        className="group relative bg-card border border-border rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1"
+        className={`group relative bg-card border ${hasUnread ? 'border-red-500/50 shadow-lg shadow-red-500/5' : 'border-border'} rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1`}
       >
         {/* Image Section */}
         <div
@@ -127,6 +131,11 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             </div>
           )}
 
+          {/* Unread Alert Overlay */}
+          {hasUnread && (
+            <div className="absolute inset-0 bg-red-500/10 backdrop-blur-[2px] z-[5] pointer-events-none" />
+          )}
+
           {/* Bookmark Button */}
           <button
             onClick={handleBookmarkClick}
@@ -135,8 +144,18 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             <Bookmark className={`w-4 h-4 ${isBookmarked ? 'fill-primary text-primary' : 'text-muted-foreground'}`} />
           </button>
 
-          {/* New Badge */}
-          {new Date(project.created_at) > new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) && (
+          {/* New Activity Banner */}
+          {hasUnread && (
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 translate-y-2 z-20">
+              <Badge className="bg-red-500 text-white shadow-lg shadow-red-500/40 border-none px-3 py-1 font-black text-[10px] uppercase tracking-tighter animate-bounce flex items-center gap-1.5">
+                <Bell size={12} fill="currentColor" className="animate-swing" />
+                New Activity
+              </Badge>
+            </div>
+          )}
+
+          {/* New Badge (Only if not unread to avoid clutter) */}
+          {!hasUnread && new Date(project.created_at) > new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) && (
             <div className="absolute top-3 left-3">
               <Badge className="bg-primary text-primary-foreground shadow-lg animate-pulse">New</Badge>
             </div>
@@ -186,18 +205,28 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
           {/* Status Badge */}
           <div className="absolute bottom-3 left-3">
-            <Badge variant={getStatusVariant(project.status)} className="capitalize shadow-lg bg-background/80 backdrop-blur-sm">
+            <Badge variant={getStatusVariant(project.status)} className={`capitalize shadow-lg ${hasUnread ? 'bg-red-500 text-white' : 'bg-background/80 backdrop-blur-sm'}`}>
               {project.status}
             </Badge>
           </div>
         </div>
 
         {/* Content Section */}
-        <div className="p-5 space-y-3">
+        <div className="p-5 space-y-3 relative">
+          {/* Unread Glow Effect */}
+          {hasUnread && (
+            <div className="absolute top-0 right-0 w-16 h-16 bg-red-500/5 blur-2xl rounded-full" />
+          )}
+
           {/* Title */}
-          <h3 className="font-bold text-xl text-foreground line-clamp-1 group-hover:text-primary transition-colors">
-            {project.title}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className={`font-bold text-xl line-clamp-1 transition-colors ${hasUnread ? 'text-red-500' : 'text-foreground group-hover:text-primary'}`}>
+              {project.title}
+            </h3>
+            {hasUnread && (
+              <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-sm shadow-red-500/50" />
+            )}
+          </div>
 
           {/* Description */}
           <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
@@ -227,8 +256,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
               {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}
             </span>
 
-            <div className="flex items-center gap-1 text-xs text-primary font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-              <span>View Project</span>
+            <div className={`flex items-center gap-1 text-xs font-medium transition-all ${hasUnread ? 'text-red-500 opacity-100' : 'text-primary opacity-0 group-hover:opacity-100'}`}>
+              <span>{hasUnread ? 'Join Workspace' : 'View Project'}</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </div>
           </div>
