@@ -14,6 +14,7 @@ import { usePostBookmarks } from "@/hooks/usePostBookmarks";
 import { useRealtimePostStats } from "@/hooks/useRealtimePostStats";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
+import { getOptimizedImage } from "@/utils/image-optimization";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import {
   DropdownMenu,
@@ -292,7 +293,7 @@ const PostCard = ({
         <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden">
           {item.type === 'image' ? (
             <img
-              src={item.url}
+              src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
               alt={imageAlt || "Post content"}
               className="w-full h-auto object-contain max-h-[600px] hover:scale-[1.01] transition-transform duration-1000"
             />
@@ -331,7 +332,7 @@ const PostCard = ({
             >
               {item.type === 'image' ? (
                 <img
-                  src={item.url}
+                  src={getOptimizedImage(item.url, { width: 600, quality: 80 })}
                   alt={`Media ${idx + 1}`}
                   className="w-full h-full object-cover sm:object-contain bg-black/20"
                 />
@@ -490,7 +491,7 @@ const PostCard = ({
             className="hover:opacity-80 transition-opacity relative z-10"
           >
             <Avatar className={`h-10 w-10 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
-              <AvatarImage src={pageInfo ? (pageInfo.logo_url || "/placeholder.svg") : (author.avatar || "/placeholder.svg")} className={pageInfo ? 'rounded-lg' : ''} />
+              <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || "/placeholder.svg"} className={pageInfo ? 'rounded-lg' : ''} />
               <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground ${pageInfo ? 'rounded-lg' : ''}`}>
                 {pageInfo ? pageInfo.name.charAt(0) : author.initials}
               </AvatarFallback>

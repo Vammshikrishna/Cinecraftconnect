@@ -16,6 +16,7 @@ import Experience from '@/components/profile/Experience';
 import { SavedPosts } from '@/components/profile/SavedPosts';
 import EditProfileForm from '@/components/profile/EditProfileForm';
 import { formatURL } from '@/lib/utils';
+import { getOptimizedImage } from '@/utils/image-optimization';
 import {
   Briefcase,
   MapPin,
@@ -185,8 +186,31 @@ const ProfilePage = () => {
 
   if (loading) {
     return (
-      <div className="w-full h-screen bg-black flex justify-center items-center pt-20">
-        <EnhancedSkeleton className="h-64 w-full max-w-3xl rounded-xl" />
+      <div className="bg-background min-h-screen flex justify-center pt-20 pb-40">
+        <div className="w-full max-w-4xl px-4 md:px-8">
+          <div className="glass-card mb-8 rounded-xl overflow-hidden">
+            <EnhancedSkeleton className="h-48 w-full" />
+            <div className="flex flex-col items-center -mt-16 pb-8 gap-4 px-6">
+              <EnhancedSkeleton className="w-32 h-32 rounded-full border-4 border-background" />
+              <EnhancedSkeleton className="h-8 w-64" />
+              <EnhancedSkeleton className="h-4 w-full max-w-md" />
+              <div className="flex gap-4 mt-4">
+                <EnhancedSkeleton className="h-10 w-32 rounded-full" />
+                <EnhancedSkeleton className="h-10 w-10 rounded-full" />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-4 mb-6 overflow-hidden">
+            {[1, 2, 3, 4, 5].map(i => (
+              <EnhancedSkeleton key={i} className="h-10 w-24 rounded-full flex-shrink-0" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {[1, 2, 3, 4].map(i => (
+              <EnhancedSkeleton key={i} className="h-64 w-full rounded-xl" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -225,7 +249,7 @@ const ProfilePage = () => {
           {/* Cover Photo */}
           <div className="h-32 md:h-48 w-full relative overflow-hidden">
             {profile.cover_image_url ? (
-              <img src={profile.cover_image_url} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+              <img src={getOptimizedImage(profile.cover_image_url, { width: 1200, quality: 90 })} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-primary/20 via-primary/5 to-secondary/10" />
             )}
@@ -236,7 +260,7 @@ const ProfilePage = () => {
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-full blur opacity-75 group-hover:opacity-100 transition duration-500"></div>
               <Avatar className="w-32 h-32 border-4 border-background relative shadow-2xl">
-                <AvatarImage src={profile.avatar_url || ''} alt={profile.username || 'User'} className="object-cover" />
+                <AvatarImage src={getOptimizedImage(profile.avatar_url, { width: 256, height: 256 }) || ''} alt={profile.username || 'User'} className="object-cover" />
                 <AvatarFallback className="bg-muted text-4xl font-bold text-muted-foreground">
                   {profile.username?.charAt(0).toUpperCase()}
                 </AvatarFallback>

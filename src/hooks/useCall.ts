@@ -6,8 +6,8 @@ interface Call {
     id: string;
     room_type: 'project' | 'discussion';
     room_id: string;
-    daily_room_name: string;
-    daily_room_url: string;
+    room_name: string;
+    room_url: string;
     status: 'active' | 'ended';
     started_by: string;
 }
