@@ -88,15 +88,15 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Generate unique name
       const uniqueSuffix = Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
-      const dailyName = `CineCraft_${roomType}_${roomId}_${uniqueSuffix}`;
+      const connectionId = `CineCraft_${roomType}_${roomId}_${uniqueSuffix}`;
 
       const { data, error } = await supabase
         .from('calls' as any)
         .insert([{
           room_type: roomType,
           room_id: roomId,
-          daily_room_name: dailyName,
-          daily_room_url: dailyName,
+          daily_room_name: connectionId,
+          daily_room_url: connectionId,
           started_by: user.id,
           status: 'active'
         }])
@@ -116,7 +116,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       setCallState({
         isActive: true,
         roomId,
-        connectionId: dailyName,
+        connectionId: connectionId,
         roomName,
         roomType,
         isMinimized: false,
