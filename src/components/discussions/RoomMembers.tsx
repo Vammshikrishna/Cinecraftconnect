@@ -9,13 +9,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Member {
   id: string;
-  username: string;
-  avatar_url: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
 }
 
 interface RoomMembersProps {
   roomId: string;
-  onClose: () => void;
+  onClose?: () => void;
 }
 
 export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
@@ -35,37 +36,27 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
         .select('user_id')
         .eq('room_id', roomId);
 
-      if (membersError) {
-        console.error('Error fetching room members:', membersError);
-        throw membersError;
-      }
+      if (membersError) throw membersError;
 
       if (!membersData || membersData.length === 0) {
-
         setMembers([]);
         return;
       }
 
       const userIds = membersData.map((m: any) => m.user_id);
 
-
       // 2. Fetch profiles for these user_ids
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url')
+        .select('id, username, full_name, avatar_url')
         .in('id', userIds);
 
-      if (profilesError) {
-        console.error('Error fetching profiles:', profilesError);
-        throw profilesError;
-      }
-
+      if (profilesError) throw profilesError;
 
       setMembers((profilesData || []) as Member[]);
     } catch (err: any) {
-      const errorMsg = err?.message || 'Failed to fetch room members.';
-      setError(errorMsg);
       console.error('Error fetching members:', err);
+      setError(err?.message || 'Failed to load members');
     } finally {
       setLoading(false);
     }
@@ -75,8 +66,13 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
     fetchMembers();
 
     const channel = supabase
-      .channel(`room_members:${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members', filter: `room_id=eq.${roomId}` }, fetchMembers)
+      .channel(`room_members_sync:${roomId}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'room_members', 
+        filter: `room_id=eq.${roomId}` 
+      }, fetchMembers)
       .subscribe();
 
     return () => {
@@ -85,58 +81,66 @@ export const RoomMembers = ({ roomId, onClose }: RoomMembersProps) => {
   }, [roomId, fetchMembers]);
 
   return (
-    <div className="absolute top-0 right-0 h-full w-full max-w-xs bg-background/95 backdrop-blur-xl border-l border-white/10 z-20 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
-      <header className="flex items-center justify-between p-4 border-b border-white/10 bg-muted/20">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-primary/20 rounded-lg">
-            <Users className="h-5 w-5 text-primary" />
+    <div className="flex flex-col w-72 max-h-[450px] bg-background/95 backdrop-blur-xl rounded-xl overflow-hidden shadow-2xl border border-white/10">
+      <header className="flex items-center justify-between p-3 border-b border-white/10 bg-muted/20 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-primary/20 rounded-lg">
+            <Users className="h-3.5 w-3.5 text-primary" />
           </div>
           <div>
-            <h2 className="font-bold text-sm">Room Members</h2>
-            <p className="text-[10px] text-muted-foreground">{members.length} {members.length === 1 ? 'person' : 'people'}</p>
+            <h2 className="font-bold text-xs">Room Members</h2>
+            <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold">
+              {members.length} {members.length === 1 ? 'person' : 'people'}
+            </p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors">
-          <X className="h-5 w-5" />
-        </button>
+        {onClose && (
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </header>
 
-      <ScrollArea className="flex-1">
-        {loading && (
-          <div className="flex items-center justify-center p-6">
-            <LoadingSpinner />
-          </div>
-        )}
-        {error && <p className="text-red-500 p-4">{error}</p>}
-        {!loading && !error && (
-          <div className="p-4 space-y-2">
-            {members.length === 0 ? (
-              <div className="text-center p-8 text-muted-foreground/50 border border-dashed border-white/10 rounded-xl">
-                <p>No members found.</p>
-              </div>
-            ) : (
-              members.map((member) => (
+      <ScrollArea className="flex-1 min-h-[100px]">
+        <div className="p-2 space-y-1">
+          {loading && members.length === 0 ? (
+            <div className="flex items-center justify-center p-8">
+              <LoadingSpinner />
+            </div>
+          ) : error ? (
+            <p className="text-[10px] text-destructive p-4 text-center">{error}</p>
+          ) : members.length === 0 ? (
+            <div className="text-center p-8 text-muted-foreground/40 italic">
+              <p className="text-[10px]">No members found</p>
+            </div>
+          ) : (
+            members.map((member) => {
+              const displayName = member.username || member.full_name || 'Anonymous';
+              return (
                 <Link
                   to={`/profile/${member.id}`}
                   key={member.id}
-                  className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group"
+                  className="flex items-center gap-2.5 p-2 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10 transition-all group"
                 >
-                  <Avatar className="h-10 w-10 border border-white/10 group-hover:border-primary/50 transition-colors">
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback className="bg-muted text-muted-foreground">{member.username?.charAt(0).toUpperCase() || '?'}</AvatarFallback>
+                  <Avatar className="h-8 w-8 border border-white/10 group-hover:border-primary/50 transition-colors">
+                    <AvatarImage src={member.avatar_url || undefined} />
+                    <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
+                      {displayName.charAt(0).toUpperCase()}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate group-hover:text-primary transition-colors">{member.username}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">View Profile</p>
+                    <p className="font-semibold text-xs truncate group-hover:text-primary transition-colors">
+                      {displayName}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground truncate opacity-60">View Profile</p>
                   </div>
                 </Link>
-              ))
-            )
-            }
-          </div>
-        )
-        }
-      </ScrollArea >
-    </div >
+              );
+            })
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 };
+

@@ -165,7 +165,7 @@ const Index = () => {
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <motion.div
             className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] rounded-full blur-[140px] transform-gpu"
-            style={{ 
+            style={{
               background: 'radial-gradient(circle, hsl(161 100% 40% / 0.45), transparent 70%)',
               willChange: 'transform'
             }}
@@ -174,7 +174,7 @@ const Index = () => {
           />
           <motion.div
             className="absolute -bottom-[15%] -right-[5%] w-[50vw] h-[50vw] rounded-full blur-[120px] transform-gpu"
-            style={{ 
+            style={{
               background: 'radial-gradient(circle, hsl(280 90% 70% / 0.40), transparent 70%)',
               willChange: 'transform'
             }}
@@ -293,7 +293,7 @@ const Index = () => {
           </motion.div>
 
           {/* Trust line */}
-            <motion.p
+          <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7, duration: 0.5 }}

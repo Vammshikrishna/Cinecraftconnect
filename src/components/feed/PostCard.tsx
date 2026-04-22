@@ -2,7 +2,7 @@ import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, Che
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "react-router-dom";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
@@ -151,6 +151,76 @@ const PostCard = ({
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewIndex, setViewIndex] = useState(0);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const wheelTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Common handler for touch and mouse ends
+  const processSwipe = (max: number, isViewer: boolean) => {
+    if (touchStart === null || touchEnd === null) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > 50;
+    const isRightSwipe = distance < -50;
+
+    if (isViewer) {
+      if (isLeftSwipe && viewIndex < max - 1) nextMedia(max);
+      if (isRightSwipe && viewIndex > 0) prevMedia(max);
+    } else {
+      if (isLeftSwipe && currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
+      if (isRightSwipe && currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
+    }
+    
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.clientX);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (touchStart !== null) {
+      setTouchEnd(e.clientX);
+    }
+  };
+
+  const handleWheel = (e: React.WheelEvent, max: number, isViewer: boolean = false) => {
+    // Only react to significant horizontal scrolling
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 20) {
+      if (wheelTimeout.current) return; // Cooldown active
+
+      if (e.deltaX > 0) {
+        // Swipe left
+        if (isViewer) {
+          if (viewIndex < max - 1) nextMedia(max);
+        } else {
+          if (currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
+        }
+      } else {
+        // Swipe right
+        if (isViewer) {
+          if (viewIndex > 0) prevMedia(max);
+        } else {
+          if (currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
+        }
+      }
+
+      // 400ms cooldown to prevent flying through images
+      wheelTimeout.current = setTimeout(() => {
+        wheelTimeout.current = null;
+      }, 400);
+    }
+  };
 
   const nextMedia = (max: number) => {
     setViewIndex((prev) => (prev + 1) % max);
@@ -320,7 +390,17 @@ const PostCard = ({
 
     // Carousel for multiple items
     return (
-      <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/10 relative overflow-hidden group/carousel ring-1 ring-white/10">
+      <div 
+        className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/10 relative overflow-hidden group/carousel ring-1 ring-white/10"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => processSwipe(items.length, false)}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={() => processSwipe(items.length, false)}
+        onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, false); }}
+        onWheel={(e) => handleWheel(e, items.length, false)}
+      >
         <div 
           className="relative aspect-square sm:aspect-video flex transition-transform duration-500 ease-out h-full"
           style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
@@ -674,7 +754,18 @@ const PostCard = ({
                 </div>
 
                 {/* Media Section: Left panel (Flexible) */}
-                <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none">
+                <div 
+                  className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none cursor-grab active:cursor-grabbing"
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={() => processSwipe(items.length, true)}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={() => processSwipe(items.length, true)}
+                  onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, true); }}
+                  onWheel={(e) => handleWheel(e, items.length, true)}
+                >
+
                   {/* Multimedia Controls */}
                   {hasMultiple && (
                     <>

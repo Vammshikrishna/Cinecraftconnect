@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useAccountType } from '@/hooks/useAccountType';
+import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 
 interface Announcement {
     id: string;
@@ -135,7 +136,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                         </p>
                     </div>
                 ) : (
-                    <div className="space-y-6">
+                    <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3, xl: 4 }} gap={6}>
                         {announcements.map((announcement) => (
                             <FeedAnnouncementCard
                                 key={announcement.id}
@@ -151,7 +152,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                                 }}
                             />
                         ))}
-                    </div>
+                    </ResponsiveGrid>
                 )}
             </div>
         </div>

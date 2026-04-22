@@ -15,8 +15,8 @@ export const ListingCard = ({ listing }: ListingCardProps) => {
     const reviewCount = listing.review_count || 0;
 
     return (
-        <Link to={`/marketplace/${listing.id}`} className="no-underline block group">
-            <div className="relative h-full bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] overflow-hidden transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_50px_-15px_rgba(var(--primary),0.15)] hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-br from-zinc-100/50 to-zinc-50/50 dark:from-card dark:to-muted/5 shadow-sm dark:shadow-none flex flex-col">
+        <Link to={`/marketplace/${listing.id}`} className="no-underline block group h-full">
+            <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2">
                 {/* Image Section */}
                 <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
                     {primaryImage ? (
@@ -98,8 +98,6 @@ export const ListingCard = ({ listing }: ListingCardProps) => {
                     </div>
                 </div>
 
-                {/* Subtle outer glow border */}
-                <div className="absolute inset-0 border border-black/5 dark:border-white/5 rounded-[28px] pointer-events-none group-hover:border-primary/20 transition-colors" />
             </div>
         </Link>
     );

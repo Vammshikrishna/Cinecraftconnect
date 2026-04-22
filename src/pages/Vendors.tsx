@@ -130,10 +130,10 @@ const Vendors = () => {
                             <CheckCircle2 size={24} className="text-primary" />
                             <h2 className="text-2xl font-black tracking-tight uppercase">Verified Professionals</h2>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
                             {vendors
                                 .filter(v => v.is_verified)
-                                .slice(0, 6)
+                                .slice(0, 8)
                                 .map((vendor) => (
                                     <VendorCard key={vendor.id} vendor={vendor} />
                                 ))}
@@ -148,8 +148,8 @@ const Vendors = () => {
                         <h2 className="text-2xl font-black tracking-tight uppercase">Industry Directory</h2>
                     </div>
                     {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                            {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+                            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                                 <EnhancedSkeleton key={i} className="h-[250px] rounded-[2.5rem]" />
                             ))}
                         </div>

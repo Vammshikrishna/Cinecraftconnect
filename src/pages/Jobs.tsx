@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/popover";
 import { PageHeader } from '@/components/common/PageHeader';
 
+
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
@@ -268,9 +269,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         {/* Job Listings using system cards */}
         <div className="space-y-6">
           {loading ? (
-            [1, 2, 3].map((i) => (
-              <div key={i} className="bg-card/20 border border-border/50 rounded-[2rem] p-8 h-48 animate-pulse" />
-            ))
+            <div className="space-y-6">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="glass-card-premium p-8 h-48 animate-pulse" />
+              ))}
+            </div>
+
           ) : jobs.length === 0 ? (
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -284,7 +288,8 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               <JobCreationModal onJobCreated={fetchJobs} />
             </motion.div>
           ) : (
-            <AnimatePresence mode="popLayout">
+            <div className="space-y-6">
+              <AnimatePresence mode="popLayout">
               {jobs.map((job, index) => {
                 const isApplied = appliedJobIds.has(job.id);
                 const isOwner = user?.id === job.posted_by;
@@ -293,35 +298,35 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                   <motion.div 
                     layout
                     key={job.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => navigate(`/jobs/${job.id}`)}
-                    className="group relative bg-card/40 border border-border/50 hover:border-primary/30 rounded-[2.5rem] p-6 md:p-10 transition-all cursor-pointer overflow-hidden shadow-xl hover:shadow-primary/5"
+                    className="group glass-card-premium p-6 md:p-8 cursor-pointer relative overflow-hidden"
                   >
                     {/* Hover Glow */}
                     <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                     
-                    <div className="flex flex-col md:flex-row justify-between gap-8 relative z-10">
-                      <div className="flex-grow space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between gap-6 relative z-10">
+                      <div className="flex-grow space-y-4">
                         <div className="flex items-center gap-4">
                           <motion.div whileHover={{ scale: 1.05 }} className="shrink-0 p-0.5 rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
-                            <Avatar className="h-16 w-16 rounded-[1rem] border-2 border-background">
+                            <Avatar className="h-16 w-16 md:h-20 md:w-20 rounded-[1.5rem] border-2 border-background">
                               <AvatarImage src={job.company_pages?.logo_url || ""} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-xl">
+                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-2xl">
                                 {(job.company_pages?.name || job.company).charAt(0)}
                               </AvatarFallback>
                             </Avatar>
                           </motion.div>
                           <div className="space-y-1">
-                            <h3 className="text-2xl font-black tracking-tight group-hover:text-primary transition-colors leading-none">
+                            <h3 className="text-2xl md:text-3xl font-black tracking-tight group-hover:text-primary transition-colors leading-none">
                               {job.title}
                             </h3>
                             <div className="flex items-center gap-2">
                               {job.company_pages ? (
-                                <span className="font-bold text-muted-foreground/60 text-sm">{job.company_pages.name}</span>
+                                <span className="font-bold text-muted-foreground/60 text-sm md:text-base">{job.company_pages.name}</span>
                               ) : (
-                                <span className="font-bold text-muted-foreground/60 text-sm">{job.company}</span>
+                                <span className="font-bold text-muted-foreground/60 text-sm md:text-base">{job.company}</span>
                               )}
                               <span className="w-1 h-1 rounded-full bg-muted-foreground/20" />
                               <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
@@ -349,12 +354,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-start md:items-end justify-between min-w-[220px]">
-                        <div className="text-left md:text-right w-full mb-6 md:mb-0">
+                      <div className="shrink-0 flex flex-col items-start md:items-end justify-between min-w-[240px]">
+                        <div className="text-left md:text-right w-full mb-6">
                           {(job.salary_min || job.salary_max) ? (
                             <div className="space-y-1">
                               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Est. Salary Range</p>
-                              <p className="text-2xl font-black text-primary tracking-tighter">
+                              <p className="text-2xl md:text-3xl font-black text-primary tracking-tighter">
                                 {job.salary_min ? `₹${job.salary_min.toLocaleString()}` : ''}
                                 {job.salary_min && job.salary_max ? ' - ' : ''}
                                 {job.salary_max ? `₹${job.salary_max.toLocaleString()}` : ''}
@@ -365,7 +370,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                           )}
                         </div>
 
-                        <div className="w-full">
+                        <div className="w-full md:w-auto min-w-[200px]">
                           {isOwner ? (
                             <Button 
                               variant="ghost" 
@@ -394,6 +399,8 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                 );
               })}
             </AnimatePresence>
+            </div>
+
           )}
         </div>
 
