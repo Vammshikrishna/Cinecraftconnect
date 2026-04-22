@@ -609,10 +609,10 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
   return (
     <div className="group h-full relative">
       <div className={cn(
-        "relative overflow-hidden rounded-2xl border transition-all duration-500 h-full flex flex-col backdrop-blur-xl",
+        "glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2",
         hasUnread 
-          ? "border-red-500/50 bg-red-500/5 shadow-lg shadow-red-500/5 hover:border-red-500/70" 
-          : "border-border/40 bg-card/60 hover:border-primary/40 hover:shadow-xl"
+          ? "border-red-500/50 shadow-lg shadow-red-500/20" 
+          : ""
       )}>
 
         {/* Top accent */}

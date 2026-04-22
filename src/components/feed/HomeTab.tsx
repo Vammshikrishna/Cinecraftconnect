@@ -17,11 +17,12 @@ import FeedProjectCard from './FeedProjectCard';
 import FeedDiscussionCard from './FeedDiscussionCard';
 import FeedRatingCard from './FeedRatingCard';
 import FeedAnnouncementCard from './FeedAnnouncementCard';
-import FeedMarketplaceCard from './FeedMarketplaceCard';
-import FeedVendorCard from './FeedVendorCard';
+import { ListingCard } from '@/components/marketplace/ListingCard';
+import { VendorCard } from '@/components/vendors/VendorCard';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import VendorIcon from '@/components/icons/VendorIcon';
+import UserCard from '../network/UserCard';
 
 // Services
 import { getSafeImageUrl } from '@/services/tmdb';
@@ -58,7 +59,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const {
         connections: existingConnections,
         sentRequests,
-        sendConnectionRequest
+        pendingRequests,
+        sendConnectionRequest,
+        acceptConnectionRequest,
+        cancelConnectionRequest,
+        removeConnection
     } = useConnections();
 
     const refreshFeed = () => refetch();
@@ -155,45 +160,27 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                             const isPending = sentRequests.some(r => r.following_id === profile.id);
 
                             return (
-                                <div key={profile.id} className="w-[200px] md:w-[220px] flex-none snap-start">
-                                    <div className="bg-card rounded-lg border border-border p-4 hover:shadow-lg transition-all duration-200 h-full flex flex-col items-center text-center font-sans">
-                                        <Link to={`/profile/${profile.id}`} className="flex flex-col items-center w-full flex-grow cursor-pointer group">
-                                            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-3 group-hover:ring-2 ring-primary transition-all">
-                                                {profile.avatar_url ? (
-                                                    <img src={profile.avatar_url} alt={profile.full_name} className="w-full h-full rounded-full object-cover" />
-                                                ) : (
-                                                    <span className="text-xl font-bold text-primary">
-                                                        {getInitials(profile.full_name || profile.username)}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <h3 className="font-semibold text-sm mb-1 line-clamp-1 group-hover:text-primary transition-colors">
-                                                {profile.full_name || profile.username}
-                                            </h3>
-                                            <p className="text-xs text-muted-foreground mb-2">@{profile.username}</p>
-
-                                            {profile.craft && (
-                                                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full mb-2">
-                                                    {profile.craft}
-                                                </span>
-                                            )}
-                                            {profile.bio && (
-                                                <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{profile.bio}</p>
-                                            )}
-                                        </Link>
-
-                                        {isPending ? (
-                                            <button disabled className="mt-auto w-full text-xs bg-muted text-muted-foreground px-4 py-1.5 rounded-md cursor-not-allowed">
-                                                Pending
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => sendConnectionRequest(profile.id)}
-                                                className="mt-auto w-full text-xs bg-primary text-primary-foreground px-4 py-1.5 rounded-md hover:bg-primary/90 transition-colors">
-                                                Connect
-                                            </button>
-                                        )}
-                                    </div>
+                                <div key={profile.id} className="w-[260px] md:w-[280px] flex-none snap-start mx-1 first:ml-0 h-full">
+                                    <UserCard
+                                        user={{
+                                            ...profile,
+                                            connection_status: isPending ? 'pending_sent' : 'none',
+                                            suggestion_reason: profile.suggestion_reason || 'Suggested for you'
+                                        }}
+                                        onConnect={sendConnectionRequest}
+                                        onAccept={(id) => {
+                                            const req = pendingRequests.find(r => r.follower_id === id);
+                                            if (req) acceptConnectionRequest(req.id);
+                                        }}
+                                        onCancelRequest={(id) => {
+                                            const req = sentRequests.find(r => r.following_id === id);
+                                            if (req) cancelConnectionRequest(req.id);
+                                        }}
+                                        onRemoveConnection={(id) => {
+                                            const conn = existingConnections.find(c => c.follower_id === id || c.following_id === id);
+                                            if (conn) removeConnection(conn.id);
+                                        }}
+                                    />
                                 </div>
                             );
                         })}
@@ -221,8 +208,8 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             component: (
                 <FeedSection title="Marketplace Highlights" icon={ShoppingBag} linkTo="/marketplace">
                     {feedData.marketplace.map((item: any) => (
-                        <div key={item.id} className="w-[160px] md:w-[180px] flex-none snap-start h-full">
-                            <FeedMarketplaceCard item={item} />
+                        <div key={item.id} className="w-[220px] md:w-[240px] flex-none snap-start h-full">
+                            <ListingCard listing={item} />
                         </div>
                     ))}
                 </FeedSection>
@@ -234,8 +221,8 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             component: (
                 <FeedSection title="Featured Vendors" icon={VendorIcon} linkTo="/vendors">
                     {feedData.vendors.map((item: any) => (
-                        <div key={item.id} className="w-[140px] md:w-[160px] flex-none snap-start h-full">
-                            <FeedVendorCard vendor={item} />
+                        <div key={item.id} className="w-[220px] md:w-[240px] flex-none snap-start h-full">
+                            <VendorCard vendor={item} />
                         </div>
                     ))}
                 </FeedSection>

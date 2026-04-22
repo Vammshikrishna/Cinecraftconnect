@@ -22,7 +22,8 @@ import {
   Trash2,
   Loader2,
   Share2,
-  Bell
+  Bell,
+  Users
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
@@ -109,10 +110,12 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
       setIsShareSheetOpen(true);
     };
 
+    const rolesCount = project.required_roles?.length || 0;
+
     return (
       <div
         onClick={handleCardClick}
-        className={`group relative bg-card border ${hasUnread ? 'border-red-500/50 shadow-lg shadow-red-500/5' : 'border-border'} rounded-xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer hover:-translate-y-1`}
+        className={`group glass-card-premium cursor-pointer w-full h-full flex flex-col ${hasUnread ? 'border-red-500/50 shadow-lg shadow-red-500/10' : ''}`}
       >
         {/* Image Section */}
         <div
@@ -234,18 +237,25 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           </p>
 
           {/* Metadata */}
-          <div className="flex flex-wrap items-center gap-3 pt-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             {project.location && (
-              <div className="flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 border border-border/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                <MapPin className="w-3 h-3 text-primary/60" />
                 <span>{project.location}</span>
               </div>
             )}
 
+            {rolesCount > 0 && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-wider text-primary">
+                <Users className="w-3 h-3" />
+                <span>{rolesCount} {rolesCount === 1 ? 'Role' : 'Roles'} Open</span>
+              </div>
+            )}
+
             {project.genre && project.genre.length > 0 && (
-              <div className="flex items-center gap-1">
-                <Film className="w-3.5 h-3.5" />
-                <span className="line-clamp-1">{project.genre.slice(0, 2).join(', ')}</span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 border border-border/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                <Film className="w-3 h-3 text-primary/60" />
+                <span className="line-clamp-1">{project.genre.slice(0, 1).join(', ')}</span>
               </div>
             )}
           </div>
@@ -294,9 +304,9 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           </Tabs>
         </div>
 
-        {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
+        {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
           filteredProjects.length > 0 ? (
-            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3 }} gap={6} className="gap-3 sm:gap-6">
+            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3, xl: 4 }} gap={6} className="gap-3 sm:gap-6">
               {filteredProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
             </ResponsiveGrid>
           ) : (

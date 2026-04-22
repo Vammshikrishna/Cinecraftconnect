@@ -15,7 +15,9 @@ import {
   ArrowLeft, Settings, Users, Loader2, ChevronDown,
   MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog } from '@/components/ui/dialog';
+
 import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
 import { useGlobalCall } from '@/contexts/CallContext';
@@ -84,7 +86,7 @@ export const DiscussionChatInterface = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
-  const [isMembersSidebarOpen, setMembersSidebarOpen] = useState(false);
+
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const { markAsRead } = useChatReadStatus();
 
@@ -144,7 +146,47 @@ export const DiscussionChatInterface = ({
     }
   };
 
+  // Auto-enroll user into room_members if they are a Pro/Creator (not a fan)
+  useEffect(() => {
+    const enrollUser = async () => {
+      if (!user || !roomId) return;
+      
+      // Fans are anonymous viewers and shouldn't be added to room_members
+      const isFan = user.user_metadata?.role === 'fan';
+      if (isFan) return;
+
+      try {
+        const { data: existingMember, error: checkError } = await supabase
+          .from('room_members')
+          .select('user_id')
+          .eq('room_id', roomId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        if (!existingMember) {
+          const { error: joinError } = await supabase
+            .from('room_members')
+            .insert({
+              room_id: roomId,
+              user_id: user.id,
+              role: 'member'
+            });
+          
+          if (joinError) throw joinError;
+          console.log(`Successfully enrolled user ${user.id} in room ${roomId}`);
+        }
+      } catch (err) {
+        console.error('Error in auto-enrollment:', err);
+      }
+    };
+
+    enrollUser();
+  }, [user, roomId]);
+
   const fetchMessages = useCallback(async () => {
+
     if (!roomId) return;
     try {
       setLoading(true);
@@ -417,9 +459,17 @@ export const DiscussionChatInterface = ({
             </Button>
           )}
 
-          <Button variant="ghost" size="icon" onClick={() => setMembersSidebarOpen(true)} className="h-8 w-8">
-            <Users className="w-4 h-4" />
-          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors">
+                <Users className="w-4 h-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="p-0 border-none bg-transparent shadow-none w-auto mt-2 animate-in fade-in zoom-in-95 duration-200">
+              <RoomMembers roomId={roomId} />
+            </PopoverContent>
+          </Popover>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -705,11 +755,7 @@ export const DiscussionChatInterface = ({
         </div>
       </div>
 
-      {isMembersSidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:relative lg:inset-auto lg:w-80 border-l border-border bg-background animate-in slide-in-from-right duration-300">
-          <RoomMembers roomId={roomId} onClose={() => setMembersSidebarOpen(false)} />
-        </div>
-      )}
+
     </div>
   );
 };

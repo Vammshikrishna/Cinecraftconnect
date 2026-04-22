@@ -13,6 +13,7 @@ export interface UserProfile {
   website: string;
   connection_status?: 'none' | 'pending_sent' | 'pending_received' | 'connected';
   connection_id?: string;
+  suggestion_reason?: string;
 }
 
 export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') => {
@@ -45,7 +46,7 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
 
       // Execute in parallel
       const [currentUserResult, profilesResult, connectionsResult] = await Promise.all([
-        supabase.from('profiles').select('craft').eq('id', user.id).single(),
+        supabase.from('profiles').select('craft, location').eq('id', user.id).single(),
         profilesQuery.limit(50),
         connectionsQuery
       ]);
@@ -54,6 +55,7 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
       if (connectionsResult.error) throw connectionsResult.error;
 
       const userCraft = currentUserResult.data?.craft || '';
+      const userLocation = (currentUserResult.data as any)?.location || '';
       const profilesData = profilesResult.data || [];
       const connectionsData = connectionsResult.data || [];
 
@@ -77,10 +79,42 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
           connection_id = receivedConnection.id;
         }
 
+        // Compute suggestion reason
+        let suggestion_reason = 'Suggested for you';
+
+        if (connection_status === 'connected') {
+          suggestion_reason = 'Connected';
+        } else if (connection_status === 'pending_sent' || connection_status === 'pending_received') {
+          suggestion_reason = 'Pending connection';
+        } else {
+          // Check for mutual connections: does this user share any connections with the current user?
+          const currentUserConnectionIds = connectionsData
+            .filter(c => c.status === 'accepted')
+            .map(c => c.follower_id === user.id ? c.following_id : c.follower_id);
+          
+          // Check if any of the other users who are connected to the current user 
+          // also appear as connections of this profile (mutual friends)
+          const profileConnections = connectionsData.filter(
+            c => (c.follower_id === profile.id || c.following_id === profile.id) && c.status === 'accepted'
+          );
+          const hasMutual = profileConnections.length > 0;
+
+          if (hasMutual) {
+            suggestion_reason = 'Mutual connection';
+          } else if (profile.craft && userCraft && profile.craft.toLowerCase() === userCraft.toLowerCase()) {
+            suggestion_reason = 'Based on your craft';
+          } else if (profile.location && userLocation && profile.location === userLocation) {
+            suggestion_reason = 'Based on location';
+          } else if (profile.craft) {
+            suggestion_reason = 'Based on network';
+          }
+        }
+
         return {
           ...profile,
           connection_status,
           connection_id,
+          suggestion_reason,
         };
       });
 

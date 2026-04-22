@@ -136,8 +136,8 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                 announcement={announcement}
             />
 
-            <div className="relative h-full flex flex-col justify-between overflow-hidden rounded-2xl border border-black/5 dark:border-white/10 bg-white/60 dark:bg-card/40 backdrop-blur-xl transition-all duration-300 hover:border-orange-500/50 hover:shadow-[0_0_30px_-10px_rgba(249,115,22,0.3)] group min-h-[220px]">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-transparent to-red-500/5 opacity-100 transition-opacity duration-500 pointer-events-none" />
+            <div className="glass-card-premium min-h-[220px] transition-transform duration-500 hover:-translate-y-2">
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-red-500/5 opacity-40 transition-opacity duration-500 pointer-events-none" />
 
                 <div className="relative p-6 flex flex-col h-full z-10">
                     <div className="flex items-start gap-4 mb-4">

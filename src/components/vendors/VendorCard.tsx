@@ -14,8 +14,8 @@ export const VendorCard = ({ vendor }: VendorCardProps) => {
     const reviewCount = vendor.review_count || 0;
 
     return (
-        <Link to={`/vendors/${vendor.id}`} className="no-underline block group">
-            <div className="relative h-full bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] overflow-hidden transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_50px_-15px_rgba(var(--primary),0.15)] hover:scale-[1.02] active:scale-[0.98] bg-gradient-to-br from-zinc-100/50 to-zinc-50/50 dark:from-card dark:to-muted/5 shadow-sm dark:shadow-none p-6 flex flex-col gap-5">
+        <Link to={`/vendors/${vendor.id}`} className="no-underline block group h-full">
+            <div className="glass-card-premium h-full p-6 flex flex-col gap-5 transition-transform duration-500 hover:-translate-y-2">
                 {/* Header: Logo and Verified */}
                 <div className="flex items-start justify-between">
                     <div className="relative">
@@ -83,8 +83,6 @@ export const VendorCard = ({ vendor }: VendorCardProps) => {
                     </div>
                 </div>
 
-                {/* Subtle outer glow border */}
-                <div className="absolute inset-0 border border-black/5 dark:border-white/5 rounded-[28px] pointer-events-none group-hover:border-primary/20 transition-colors" />
             </div>
         </Link>
     );

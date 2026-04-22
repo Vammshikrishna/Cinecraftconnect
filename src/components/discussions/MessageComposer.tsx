@@ -96,7 +96,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
   const isOverLimit = charCount > 2000;
 
   return (
-    <div className="border-t border-border bg-background/50 backdrop-blur-sm p-2 sm:p-4">
+    <div className="p-2 sm:p-4">
       {error && (
         <div className="mb-2 px-2 text-xs text-destructive flex items-center gap-1">
           <span>{error}</span>
