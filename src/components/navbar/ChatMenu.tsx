@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -80,7 +80,7 @@ const ChatMenu = () => {
       );
     } else {
       return (
-        <div className="h-10 w-10 rounded-md bg-green-500/10 flex items-center justify-center text-green-500 border border-green-500/20">
+        <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center text-green-500 border border-primary/20">
           <span className="font-bold text-xs">#</span>
         </div>
       );
@@ -111,7 +111,7 @@ const ChatMenu = () => {
 
         {loading ? (
           <div className="p-4 flex justify-center text-muted-foreground">
-            <span className="animate-spin mr-2">⏳</span> Loading...
+            <span className="animate-spin mr-2">â³</span> Loading...
           </div>
         ) : previews.filter(p => p.c_id).length > 0 ? (
           <div className="max-h-[300px] overflow-y-auto no-scrollbar scroll-smooth flex-1">
@@ -160,3 +160,4 @@ const ChatMenu = () => {
 };
 
 export default ChatMenu;
+

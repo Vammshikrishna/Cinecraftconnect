@@ -520,7 +520,12 @@ const CompanyPageDetail = () => {
                           <div className="pt-6 border-t border-border/40 flex items-center justify-between">
                              <div className="flex items-center gap-1.5 text-primary font-black">
                                 <IndianRupee className="h-4 w-4" />
-                                <span>{job.salary_range || 'Competitive'}</span>
+                                <span>
+                                  {job.salary_min ? `₹${job.salary_min.toLocaleString()}` : ''}
+                                  {job.salary_min && job.salary_max ? ' - ' : ''}
+                                  {job.salary_max ? `₹${job.salary_max.toLocaleString()}` : ''}
+                                  {!job.salary_min && !job.salary_max && 'Competitive'}
+                                </span>
                              </div>
                              <span className="text-[10px] text-muted-foreground/60 font-black uppercase tracking-widest">
                                 {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}

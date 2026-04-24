@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -114,7 +114,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                                     name: projectTitle,
                                     avatar_url: null,
                                     type: 'project',
-                                    subtitle: `Project Space • ${space.name}`
+                                    subtitle: `Project Space â€¢ ${space.name}`
                                 });
                             }
                         });
@@ -324,7 +324,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                                         size="sm"
                                         variant={sentTo.has(target.id) ? "ghost" : "default"}
                                         className={sentTo.has(target.id)
-                                            ? "text-green-500 font-bold min-w-[70px] bg-green-500/5 rounded-xl shrink-0"
+                                            ? "text-primary font-bold min-w-[70px] bg-primary/5 rounded-xl shrink-0"
                                             : "bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl h-9 px-4 font-bold min-w-[70px] shadow-lg shadow-primary/20 shrink-0 text-xs"}
                                         disabled={sending === target.id || sentTo.has(target.id)}
                                         onClick={() => handleSend(target)}
@@ -372,3 +372,4 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         </Drawer>
     );
 }
+

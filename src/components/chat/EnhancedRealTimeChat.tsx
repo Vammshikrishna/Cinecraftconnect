@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -67,7 +67,7 @@ interface EnhancedRealTimeChatProps {
 
 const SENDER_COLORS = [
   'text-blue-700 dark:text-blue-300',
-  'text-emerald-700 dark:text-emerald-300',
+  'text-primary dark:text-primary/70 dark:text-primary/80',
   'text-rose-700 dark:text-rose-300',
   'text-amber-700 dark:text-amber-300',
   'text-indigo-700 dark:text-indigo-300',
@@ -443,7 +443,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   </Avatar>
                   <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%]`}>
                     <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                      <div className={`relative ${message.is_deleted ? 'bg-muted/50 border border-border' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent' : `p-3 rounded-2xl ${isSender ? 'bg-primary text-primary-foreground shadow-sm font-medium' : 'bg-muted text-foreground font-medium'}`)} rounded-2xl ${message.is_deleted ? 'p-3' : ''}`}>
+                      <div className={`relative transition-all duration-300 ${message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-2xl italic text-muted-foreground' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent rounded-2xl border border-border/10 overflow-hidden' : `${isSender ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}`)}`}>
                         {!message.is_deleted && (
                           <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
                             <DropdownMenu>
@@ -469,7 +469,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           </div>
                         )}
                         {message.replied_to_message && !message.is_deleted && (
-                          <div className={`mb-2 p-2 rounded-lg text-xs border ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
+                          <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
                             <div className={`font-semibold text-[10px] mb-1 ${getUserColor(message.replied_to_message.sender_profile?.full_name || 'User')}`}>
                               {message.replied_to_message.sender_profile?.full_name || 'User'}
                             </div>
@@ -653,3 +653,4 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 };
 
 export default EnhancedRealTimeChat;
+

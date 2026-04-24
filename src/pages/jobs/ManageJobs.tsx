@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -210,7 +210,7 @@ const ManageJobs = () => {
 
     const getStatusColor = (status: string) => {
         switch (status) {
-            case 'accepted': return 'bg-green-500/10 text-green-500 border-green-500/20';
+            case 'accepted': return 'bg-primary/10 text-green-500 border-primary/20';
             case 'rejected': return 'bg-red-500/10 text-red-500 border-red-500/20';
             case 'interviewing': return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
             case 'reviewing': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
@@ -418,7 +418,7 @@ const ManageJobs = () => {
                                                                     <div className="flex items-center gap-3"><MessageSquare className="w-4 h-4 text-blue-500"/> Interview</div>
                                                                 </SelectItem>
                                                                 <SelectItem value="accepted" className="font-black text-[10px] uppercase tracking-widest p-4 cursor-pointer focus:bg-primary/10 transition-colors">
-                                                                    <div className="flex items-center gap-3"><CheckCircle2 className="w-4 h-4 text-emerald-500"/> Hire</div>
+                                                                    <div className="flex items-center gap-3"><CheckCircle2 className="w-4 h-4 text-primary"/> Hire</div>
                                                                 </SelectItem>
                                                                 <SelectItem value="rejected" className="font-black text-[10px] uppercase tracking-widest p-4 cursor-pointer focus:bg-primary/10 transition-colors">
                                                                     <div className="flex items-center gap-3"><XCircle className="w-4 h-4 text-rose-500"/> Close</div>
@@ -444,3 +444,4 @@ const ManageJobs = () => {
 };
 
 export default ManageJobs;
+

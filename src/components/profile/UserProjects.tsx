@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,7 +31,7 @@ const getStatusColor = (status: string | null) => {
   switch (status?.toLowerCase()) {
     case 'active':
     case 'in production':
-      return 'bg-green-500/10 text-green-500 border-green-500/20';
+      return 'bg-primary/10 text-primary border-primary/20';
     case 'pre-production':
     case 'planning':
       return 'bg-blue-500/10 text-blue-500 border-blue-500/20';
@@ -254,10 +254,10 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
                     <DollarSign className="h-4 w-4 text-primary/70 shrink-0" />
                     <span>
                       {project.budget_min && project.budget_max
-                        ? `₹${project.budget_min.toLocaleString()} - ₹${project.budget_max.toLocaleString()}`
+                        ? `â‚¹${project.budget_min.toLocaleString()} - â‚¹${project.budget_max.toLocaleString()}`
                         : project.budget_min
-                          ? `From ₹${project.budget_min.toLocaleString()}`
-                          : `Up to ₹${project.budget_max?.toLocaleString()}`
+                          ? `From â‚¹${project.budget_min.toLocaleString()}`
+                          : `Up to â‚¹${project.budget_max?.toLocaleString()}`
                       }
                     </span>
                   </div>
@@ -279,3 +279,4 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
     </div>
   );
 };
+

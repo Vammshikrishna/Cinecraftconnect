@@ -104,7 +104,7 @@ const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBack
     }
 
     return (
-        <div className="h-full flex flex-col bg-gray-900 text-white">
+        <div className="h-full flex flex-col bg-background text-foreground">
             <ChatHeader 
                 partnerName={partnerName} 
                 partnerAvatarUrl={partnerAvatarUrl} 

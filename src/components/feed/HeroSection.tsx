@@ -1,4 +1,4 @@
-import { useAuth } from '@/contexts/AuthContext';
+﻿import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Plus, Film, MessageSquare, Briefcase } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -58,3 +58,4 @@ const HeroSection = () => {
 };
 
 export default HeroSection;
+

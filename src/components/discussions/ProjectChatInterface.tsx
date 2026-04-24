@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,7 +40,7 @@ interface ProjectChatInterfaceProps {
 
 const SENDER_COLORS = [
   'text-blue-700 dark:text-blue-300',
-  'text-emerald-700 dark:text-emerald-300',
+  'text-primary dark:text-primary/70 dark:text-primary/80',
   'text-rose-700 dark:text-rose-300',
   'text-amber-700 dark:text-amber-300',
   'text-indigo-700 dark:text-indigo-300',
@@ -436,7 +436,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         <h2 className="text-lg font-semibold">Project Chat</h2>
         <div className="flex gap-2 items-center">
           {isInCall ? (
-            <Button size="sm" variant="outline" className="text-green-500 border-green-500/20 bg-green-500/10 pointer-events-none">
+            <Button size="sm" variant="outline" className="text-green-500 border-primary/20 bg-primary/10 pointer-events-none">
               <Video className="h-4 w-4 mr-2" />In Call
             </Button>
           ) : (
@@ -518,7 +518,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
                   <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                    <div className={`${(isShare && !message.is_deleted) ? 'p-0 bg-transparent' : `rounded-2xl p-3 shadow-sm ${message.is_deleted ? 'bg-muted/50 border border-border' : isOwn ? 'bg-primary text-primary-foreground font-medium' : 'bg-muted'}`}`}>
+                    <div className={`relative transition-all duration-300 ${(isShare && !message.is_deleted) ? 'p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10' : message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground' : isOwn ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}`}>
                       {!isOwn && !message.is_deleted && (
                         <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
                           {message.profiles?.username || message.profiles?.full_name || 'User'}
@@ -529,7 +529,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                         const repliedMsg = messages.find(m => m.id === message.reply_to_id);
                         if (!repliedMsg) return null;
                         return (
-                          <div className={`mb-2 p-2 rounded-lg text-xs border ${isOwn ? 'bg-primary-foreground/10 border-primary-foreground/20' : 'bg-background/50 border-border'}`}>
+                          <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isOwn ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
                             <div className={`font-semibold text-[10px] mb-1 ${getUserColor(repliedMsg.user_id)}`}>
                               {repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
                             </div>
@@ -640,3 +640,4 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     </div>
   );
 };
+

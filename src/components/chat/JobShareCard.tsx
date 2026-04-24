@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { MapPin, Briefcase, Lock } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAccountType } from '@/hooks/useAccountType';
@@ -30,7 +30,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                     {imageUrl ? (
                         <img src={imageUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                     ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-primary/20 via-emerald-700/10 to-blue-600/5 flex items-center justify-center relative overflow-hidden">
+                        <div className="w-full h-full bg-gradient-to-br from-primary/20 via-primary/10 to-blue-600/5 flex items-center justify-center relative overflow-hidden">
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-50" />
                             <Briefcase className="w-4 h-4 text-primary/40 group-hover:scale-110 transition-transform duration-500" />
                         </div>
@@ -79,7 +79,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                                 <MapPin size={10} className="text-primary/40" />
                                 <span className="truncate">{location || 'Remote'}</span>
                             </div>
-                            <span className="opacity-30">•</span>
+                            <span className="opacity-30">â€¢</span>
                             <span className="truncate">Full-time</span>
                         </div>
 
@@ -115,3 +115,4 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
         </div>
     );
 };
+

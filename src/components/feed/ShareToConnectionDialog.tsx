@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -183,7 +183,7 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
                                 </div>
 
                                 {sentTo.has(connection.id) ? (
-                                    <Button variant="ghost" size="sm" disabled className="text-green-500">
+                                    <Button variant="ghost" size="sm" disabled className="text-primary">
                                         <Check className="h-4 w-4 mr-1" /> Sent
                                     </Button>
                                 ) : (
@@ -204,3 +204,4 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
         </Dialog>
     );
 }
+

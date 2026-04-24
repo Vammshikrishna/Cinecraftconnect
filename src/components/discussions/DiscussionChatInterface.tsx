@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { Message, UserRole, Category } from './types';
@@ -46,7 +44,7 @@ interface DiscussionChatInterfaceProps {
 
 const SENDER_COLORS = [
   'text-blue-700 dark:text-blue-300',
-  'text-emerald-700 dark:text-emerald-300',
+  'text-primary dark:text-primary/70 dark:text-primary/80',
   'text-rose-700 dark:text-rose-300',
   'text-amber-700 dark:text-amber-300',
   'text-indigo-700 dark:text-indigo-300',
@@ -339,7 +337,7 @@ export const DiscussionChatInterface = ({
     const success = await startGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
-      toast({ title: "🎙️ Discussion Started!", description: "Your discussion room is now active!" });
+      toast({ title: "ðŸŽ™ï¸ Discussion Started!", description: "Your discussion room is now active!" });
     } else {
       toast({ title: "Error", description: "Failed to start discussion.", variant: "destructive" });
     }
@@ -350,7 +348,7 @@ export const DiscussionChatInterface = ({
     const success = await joinGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
-      toast({ title: "🎧 Joined Discussion", description: "You're now in the discussion." });
+      toast({ title: "ðŸŽ§ Joined Discussion", description: "You're now in the discussion." });
     } else {
       toast({ title: "Error", description: "Failed to join discussion.", variant: "destructive" });
     }
@@ -411,7 +409,7 @@ export const DiscussionChatInterface = ({
         return <DiscussionShareCard {...shareData} />;
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
-    return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>;
+    return <p className="text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</p>;
   };
 
   const isShareContent = (content: string) =>
@@ -622,6 +620,22 @@ export const DiscussionChatInterface = ({
                   } catch (e) { return false; }
                 }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
 
+                // Only show "Seen by" on the LAST message each user has read
+                const uniqueSeenBy = currentReadBy.filter(name => {
+                  const userStatus = readStatuses.find(rs =>
+                    (rs.profiles?.full_name?.split(' ')[0] || 'User') === name && rs.user_id !== user?.id
+                  );
+                  if (!userStatus) return false;
+                  const statusTime = new Date(userStatus.last_read_at).getTime();
+                  // Check there is NO newer sender message that this user has also read
+                  const isLatest = !visibleMessages.some((m, mIdx) => {
+                    if (mIdx <= idx) return false; // only look at messages AFTER this one
+                    if (m.user_id !== user?.id) return false; // only care about sender's messages
+                    return statusTime >= new Date(m.created_at).getTime();
+                  });
+                  return isLatest;
+                });
+
                 return (
                   <div key={message.id}>
                     {showDateSeparator && (
@@ -636,92 +650,84 @@ export const DiscussionChatInterface = ({
                     <div
                       ref={observeMessage}
                       data-message-id={message.id}
-                      className={`flex items-start gap-2 ${isSender ? 'flex-row-reverse' : 'flex-row'}`}
+                      className={`flex flex-col ${isSender ? 'items-end pl-12' : 'items-start pr-12'}`}
                     >
-                      <Link to={`/profile/${message.profiles?.id}`} className="shrink-0 mt-1">
-                        <Avatar className="h-8 w-8 border border-border/10">
-                          <AvatarImage src={message.profiles?.avatar_url || undefined} />
-                          <AvatarFallback className="text-[10px] bg-muted font-bold">
-                            {(message.profiles?.username || message.profiles?.full_name || 'U').charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                      </Link>
 
-                      <div className={`flex flex-col gap-1 max-w-[80%] ${isSender ? 'items-end' : 'items-start'}`}>
-                        <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                          <div className={`
-                        ${isShare && !message.is_deleted ? 'bg-transparent overflow-hidden rounded-xl border border-border/10' :
-                              isSender ? 'bg-primary text-primary-foreground rounded-2xl rounded-tr-none p-3 shadow-sm' :
-                                'bg-muted/80 backdrop-blur-sm rounded-2xl rounded-tl-none p-3 border border-border/10'}
-                        ${message.is_deleted ? 'bg-muted/30 border-dashed italic text-muted-foreground' : ''}
-                      `}>
-                            {!isSender && !message.is_deleted && (
-                              <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
-                                {message.profiles?.username || message.profiles?.full_name || 'User'}
-                              </p>
-                            )}
-                            {message.reply_to_id && !message.is_deleted && (() => {
-                              const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                              if (!repliedMsg) return null;
-                              return (
-                                <div className={`mb-2 p-2 rounded-lg text-xs border-l-4 ${isSender ? 'bg-white/10 border-white/30 text-white' : 'bg-background/50 border-primary/30'}`}>
-                                  <div className={`font-bold text-[10px] ${getUserColor(repliedMsg.user_id)}`}>
-                                    @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
-                                  </div>
-                                  <div className="opacity-80 line-clamp-1 truncate">
-                                    {repliedMsg.is_deleted ? 'Message deleted' : repliedMsg.content}
-                                  </div>
+                      <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
+                        <div className={`
+                          relative transition-all duration-300
+                          ${isShare && !message.is_deleted ? 'bg-transparent overflow-hidden rounded-2xl border border-border/10' :
+                            isSender ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' :
+                              'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}
+                          ${message.is_deleted ? 'bg-muted/50 border-dashed italic text-muted-foreground' : ''}
+                        `}>
+                          {!isSender && !message.is_deleted && (
+                            <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
+                              {message.profiles?.username || message.profiles?.full_name || 'User'}
+                            </p>
+                          )}
+                          {message.reply_to_id && !message.is_deleted && (() => {
+                            const repliedMsg = messages.find(m => m.id === message.reply_to_id);
+                            if (!repliedMsg) return null;
+                            return (
+                              <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
+                                <div className={`font-black text-[9px] uppercase tracking-tighter mb-0.5 ${getUserColor(repliedMsg.user_id)}`}>
+                                  @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
                                 </div>
-                              );
-                            })()}
-                            {message.is_deleted ? (
-                              <div className="flex items-center gap-1.5 py-1">
-                                <ShieldBan className="h-3.5 w-3.5" />
-                                <span className="text-xs">Message deleted</span>
+                                <div className="opacity-80 line-clamp-1 truncate">
+                                  {repliedMsg.is_deleted ? 'Message deleted' : repliedMsg.content}
+                                </div>
                               </div>
-                            ) : renderMessageContent(message.content)}
-                          </div>
-
-                          {!message.is_deleted && (
-                            <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
-                              {formatTimestamp(message.created_at)}
-                            </span>
-                          )}
-
-                          {!message.is_deleted && (
-                            <div className={`absolute top-0 ${isSender ? 'right-full mr-4' : 'left-full ml-4'} opacity-0 group-hover:opacity-100 transition-opacity flex items-center`}>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full hover:bg-muted">
-                                    <MoreVertical className="h-3.5 w-3.5" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                                  <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                    <Reply className="h-3.5 w-3.5 mr-2" /> Reply
-                                  </DropdownMenuItem>
-                                  {isSender && (
-                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
-                                    <X className="h-3.5 w-3.5 mr-2" /> Hide
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                            );
+                          })()}
+                          {message.is_deleted ? (
+                            <div className="flex items-center gap-1.5 py-1">
+                              <ShieldBan className="h-3.5 w-3.5" />
+                              <span className="text-xs">Message deleted</span>
                             </div>
-                          )}
+                          ) : renderMessageContent(message.content)}
                         </div>
+
+                        {!message.is_deleted && (
+                          <span className="text-[9px] text-muted-foreground/50 font-bold tabular-nums mb-1">
+                            {formatTimestamp(message.created_at)}
+                          </span>
+                        )}
+
+                        {!message.is_deleted && (
+                          <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-3' : 'left-full ml-3'} opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center`}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-white/50 backdrop-blur-sm border border-border/10 shadow-sm">
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 rounded-xl">
+                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                  <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                </DropdownMenuItem>
+                                {isSender && (
+                                  <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
+                                  <X className="h-3.5 w-3.5 mr-2" /> Hide
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        )}
                       </div>
+
+                      {isSender && uniqueSeenBy.length > 0 && (
+                        <div className="flex justify-end mt-1 mb-2">
+                          <span className="text-[9px] font-bold text-primary/60 tracking-tight">
+                            Seen by {uniqueSeenBy.join(', ')}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {isSender && currentReadBy.length > 0 && (
-                      <div className="flex justify-end pr-10 mt-1 mb-2">
-                        <span className="text-[9px] text-primary/60">
-                          Seen by {currentReadBy.join(', ')}
-                        </span>
-                      </div>
-                    )}
                   </div>
                 );
               })
@@ -759,3 +765,4 @@ export const DiscussionChatInterface = ({
     </div>
   );
 };
+

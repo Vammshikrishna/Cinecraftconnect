@@ -380,7 +380,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                               Manage Listing
                             </Button>
                           ) : isApplied ? (
-                            <Button disabled className="w-full h-14 rounded-2xl bg-green-500/10 text-green-500 border border-green-500/20 font-bold">
+                            <Button disabled className="w-full h-14 rounded-2xl bg-primary/10 text-primary border border-primary/20 font-bold">
                               <CheckCircle className="mr-2 h-5 w-5" />
                               Applied
                             </Button>
@@ -421,3 +421,4 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 };
 
 export default Jobs;
+

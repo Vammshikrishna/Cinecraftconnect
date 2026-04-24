@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,7 +118,7 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
                                     name: projectTitle,
                                     avatar_url: null,
                                     type: 'project',
-                                    subtitle: `Project Space • ${space.name}`
+                                    subtitle: `Project Space â€¢ ${space.name}`
                                 });
                             }
                         });
@@ -370,7 +370,7 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
                                     size="sm"
                                     variant={sentTo.has(target.id) ? "ghost" : "default"}
                                     className={sentTo.has(target.id) 
-                                        ? "text-green-500 font-bold bg-green-500/5 rounded-2xl min-w-[70px]" 
+                                        ? "text-primary font-bold bg-primary/5 rounded-2xl min-w-[70px]" 
                                         : "bg-primary text-primary-foreground hover:bg-primary/90 rounded-2xl h-10 px-5 font-bold min-w-[70px] shadow-lg shadow-primary/20"}
                                     disabled={sending === target.id || sentTo.has(target.id)}
                                     onClick={() => handleSend(target)}
@@ -400,3 +400,4 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
         </Drawer>
     );
 }
+

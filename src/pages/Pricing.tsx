@@ -1,4 +1,4 @@
-
+﻿
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { PRICING_TIERS } from '@/types/pricing';
@@ -100,7 +100,7 @@ const PricingCard = ({ tier, billingCycle, index }: PricingCardProps) => {
             "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
             isFan && "bg-muted/40 text-muted-foreground",
             isCreator && "bg-secondary text-primary-foreground",
-            isStudio && "bg-emerald-500/10 text-emerald-500"
+            isStudio && "bg-primary/10 text-primary"
         )}>
           {isFan && "Free forever"}
           {isCreator && "Core Revenue"}
@@ -122,12 +122,12 @@ const PricingCard = ({ tier, billingCycle, index }: PricingCardProps) => {
 
       <div className="mb-6">
         <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-black tracking-tight">₹{price.toLocaleString()}</span>
+          <span className="text-4xl font-black tracking-tight">â‚¹{price.toLocaleString()}</span>
           <span className="text-muted-foreground font-medium">{cycleText}</span>
         </div>
         {billingCycle === 'monthly' && tier.price.yearly > 0 && (
           <p className="text-xs text-muted-foreground mt-1">
-            ₹{(tier.price.yearly).toLocaleString()}/yr — <span className="text-primary font-bold">save 30%</span>
+            â‚¹{(tier.price.yearly).toLocaleString()}/yr â€” <span className="text-primary font-bold">save 30%</span>
           </p>
         )}
         {isStudio && (
@@ -150,7 +150,7 @@ const PricingCard = ({ tier, billingCycle, index }: PricingCardProps) => {
                     benefit.status === 'yes' && "text-primary",
                     benefit.status === 'no' && "text-muted-foreground/30",
                     benefit.status === 'limited' && "text-amber-500",
-                    benefit.status === 'advanced' && "text-emerald-500",
+                    benefit.status === 'advanced' && "text-primary",
                     benefit.status === 'custom' && "text-blue-500"
                 )}>
                   {benefit.text}
@@ -185,3 +185,4 @@ const PricingCard = ({ tier, billingCycle, index }: PricingCardProps) => {
 };
 
 export default Pricing;
+

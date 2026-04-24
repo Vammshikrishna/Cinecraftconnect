@@ -11,22 +11,22 @@ interface ChatHeaderProps {
 }
 
 export const ChatHeader = ({ partnerName, partnerAvatarUrl, onBackClick, onPhoneClick, onVideoClick }: ChatHeaderProps) => (
-    <div className="flex items-center justify-between p-4 border-b border-gray-700">
+    <div className="flex items-center justify-between p-4 border-b border-border bg-background">
         <div className="flex items-center">
-            <button onClick={onBackClick} className="mr-4 text-gray-400 hover:text-white">
+            <button onClick={onBackClick} className="mr-4 text-muted-foreground hover:text-foreground transition-colors">
                 <ChevronLeft size={24} />
             </button>
-            <Avatar className="h-10 w-10 mr-4">
+            <Avatar className="h-10 w-10 mr-4 border border-border/10 shadow-sm">
                 <AvatarImage src={partnerAvatarUrl} alt={partnerName} />
-                <AvatarFallback>{partnerName?.charAt(0)?.toUpperCase() || 'U'}</AvatarFallback>
+                <AvatarFallback className="font-bold text-xs bg-muted text-foreground">{partnerName?.charAt(0)?.toUpperCase() || 'U'}</AvatarFallback>
             </Avatar>
-            <h2 className="text-xl font-bold">{partnerName}</h2>
+            <h2 className="text-xl font-bold tracking-tight">{partnerName}</h2>
         </div>
         <div className="flex gap-2">
-            <Button variant="ghost" size="icon" onClick={onPhoneClick} className="text-gray-400 hover:text-white hover:bg-gray-800 rounded-full">
+            <Button variant="ghost" size="icon" onClick={onPhoneClick} className="text-muted-foreground hover:text-foreground hover:bg-muted rounded-full">
                 <Phone size={20} />
             </Button>
-            <Button variant="ghost" size="icon" onClick={onVideoClick} className="text-gray-400 hover:text-white hover:bg-gray-800 rounded-full">
+            <Button variant="ghost" size="icon" onClick={onVideoClick} className="text-muted-foreground hover:text-foreground hover:bg-muted rounded-full">
                 <Video size={20} />
             </Button>
         </div>

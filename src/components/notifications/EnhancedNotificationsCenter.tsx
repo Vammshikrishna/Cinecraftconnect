@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Bell, Check, X, Archive, Settings, Filter } from 'lucide-react';
@@ -352,10 +352,10 @@ const EnhancedNotificationsCenter = () => {
                   key={notification.id} 
                   className={`group relative overflow-hidden border-border/40 transition-all duration-500 hover:border-primary/50 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.2)] rounded-[1.5rem] ${
                     notification.is_read ? 'bg-card/40 opacity-80 grayscale-[0.2]' : 'bg-card/70 backdrop-blur-2xl shadow-lg ring-1 ring-primary/10'
-                  } ${notification.priority === 'high' && !notification.is_read ? 'ring-2 ring-emerald-500/30 border-emerald-500/20' : ''}`}
+                  } ${notification.priority === 'high' && !notification.is_read ? 'ring-2 ring-primary/30 border-primary/20' : ''}`}
                 >
                   <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${
-                    notification.is_read ? 'bg-transparent' : (notification.priority === 'high' ? 'bg-emerald-500 animate-pulse' : 'bg-primary')
+                    notification.is_read ? 'bg-transparent' : (notification.priority === 'high' ? 'bg-primary animate-pulse' : 'bg-primary')
                   }`} />
                   
                   <CardContent className="p-4 sm:p-5">
@@ -398,7 +398,7 @@ const EnhancedNotificationsCenter = () => {
                               <Button 
                                 onClick={() => handleAction(notification, 'accept')}
                                 disabled={!!actionLoading}
-                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/20"
+                                className="rounded-2xl font-black text-xs uppercase tracking-widest px-6 h-11 bg-primary hover:bg-primary shadow-lg shadow-emerald-500/20"
                               >
                                 {actionLoading === notification.id ? 'Processing...' : 'Accept'}
                               </Button>

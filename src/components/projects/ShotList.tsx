@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
@@ -276,7 +276,7 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                     <div className="flex justify-between items-start">
                                                         <div className="flex items-center gap-3">
                                                             <span className={`text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border transition-colors ${
-                                                                shot.status === 'completed' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                                                                shot.status === 'completed' ? 'bg-primary/10 text-primary/80 border-primary/20' :
                                                                 shot.status === 'in-progress' ? 'bg-primary/10 text-primary border-primary/20' :
                                                                 'bg-muted/30 text-muted-foreground border-border'
                                                             }`}>
@@ -335,3 +335,4 @@ const ShotList = ({ project_id }: ShotListProps) => {
 };
 
 export default ShotList;
+

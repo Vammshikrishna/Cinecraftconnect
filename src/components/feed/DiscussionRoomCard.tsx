@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { MessageCircle, Phone, Users, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -138,7 +138,7 @@ const DiscussionRoomCard = ({
 
           {/* Live call indicator */}
           {activeCall && (
-            <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-green-500/15 border border-green-500/30 text-green-400 text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full animate-pulse">
+            <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-primary/15 border border-primary/30 text-green-400 text-[10px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping" />
               Live
             </div>
@@ -199,7 +199,7 @@ const DiscussionRoomCard = ({
                 <Button
                   variant="outline"
                   className={`flex-1 font-semibold rounded-xl h-10 transition-all duration-300 ${activeCall
-                    ? 'border-green-500/50 text-green-400 hover:bg-green-500/10 hover:border-green-500/70 shadow-sm shadow-green-500/10'
+                    ? 'border-primary/50 text-green-400 hover:bg-primary/10 hover:border-primary/70 shadow-sm shadow-primary/10'
                     : 'border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5'
                     }`}
                   onClick={handleStartCall}
@@ -244,3 +244,4 @@ const DiscussionRoomCard = ({
 };
 
 export default DiscussionRoomCard;
+

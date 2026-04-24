@@ -7,10 +7,20 @@ interface MessageProps {
 }
 
 export const Message = ({ message, isSender }: MessageProps) => (
-    <div className={cn("flex mb-4", isSender ? "justify-end" : "justify-start")}>
-        <div className={cn("rounded-lg px-4 py-2 max-w-[85%]", isSender ? "bg-blue-600 text-white" : "bg-gray-700")}>
-            <p>{message.content}</p>
-            <span className="text-xs text-gray-400 mt-1 block text-right">{new Date(message.created_at).toLocaleTimeString()}</span>
+    <div className={cn("flex mb-4 group", isSender ? "justify-end" : "justify-start")}>
+        <div className={cn(
+            "px-4 py-2.5 max-w-[85%] shadow-sm font-medium transition-all",
+            isSender 
+                ? "bg-primary text-primary-foreground rounded-[22px] rounded-tr-[4px]" 
+                : "bg-muted text-foreground rounded-[22px] rounded-tl-[4px]"
+        )}>
+            <p className="text-sm">{message.content}</p>
+            <span className={cn(
+                "text-[9px] font-bold mt-1 block text-right opacity-60",
+                isSender ? "text-primary-foreground" : "text-muted-foreground"
+            )}>
+                {new Date(message.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+            </span>
         </div>
     </div>
 );

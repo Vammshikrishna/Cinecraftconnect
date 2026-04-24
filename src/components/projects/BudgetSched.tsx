@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -393,7 +393,7 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                                     <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{formatDateRange(item.start_date, item.end_date)}</p>
                                                 </div>
                                             </div>
-                                            <span className={`text-[9px] font-bold px-3 py-1.5 rounded-full uppercase tracking-tighter ${item.status === 'completed' ? 'bg-green-500/10 text-green-600 border border-green-500/20' :
+                                            <span className={`text-[9px] font-bold px-3 py-1.5 rounded-full uppercase tracking-tighter ${item.status === 'completed' ? 'bg-primary/10 text-primary border border-primary/20' :
                                                 item.status === 'in-progress' ? 'bg-primary/10 text-primary border border-primary/20' :
                                                     item.status === 'delayed' ? 'bg-destructive/10 text-destructive border border-destructive/20' :
                                                         'bg-card border border-border shadow-sm'
@@ -433,3 +433,4 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
 };
 
 export default BudgetSched;
+
