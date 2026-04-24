@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 import { useRef, useEffect, useState, useMemo } from 'react';
 import {
   Film, Users, MessageSquare, Briefcase, ShoppingBag,
@@ -9,9 +9,9 @@ import {
 import { motion, useScroll, useTransform, useInView } from 'framer-motion';
 import Footer from '@/components/Footer';
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Reusable: scroll-reveal wrapper
-   ───────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const Reveal = ({
   children,
   delay = 0,
@@ -45,9 +45,9 @@ const Reveal = ({
   );
 };
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Film-strip decoration (pure CSS/SVG)
-   ───────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const FilmStrip = ({ className = '' }: { className?: string }) => (
   <div className={`pointer-events-none select-none ${className}`} aria-hidden>
     <svg width="48" height="600" viewBox="0 0 48 600" fill="none" className="opacity-[0.07]">
@@ -66,9 +66,9 @@ const FilmStrip = ({ className = '' }: { className?: string }) => (
 
 
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Typewriter headline
-   ───────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const roles = ['Directors', 'Content Creators', 'YouTubers', 'Cinematographers', 'Editors', 'Producers', 'TV Producers', 'Sound Designers', 'Writers', 'Actors', 'VFX Artists'];
 
 const TypewriterRole = () => {
@@ -102,9 +102,9 @@ const TypewriterRole = () => {
   );
 };
 
-/* ─────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Main Landing Page
-   ───────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const Index = () => {
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -118,8 +118,8 @@ const Index = () => {
     {
       icon: Clapperboard,
       title: 'Project Spaces',
-      desc: 'Dedicated workspaces for every production — from short films to feature-length projects. Organize scripts, shot lists, call sheets, and team roles all in one place.',
-      accent: 'from-emerald-500 to-teal-600',
+      desc: 'Dedicated workspaces for every production â€” from short films to feature-length projects. Organize scripts, shot lists, call sheets, and team roles all in one place.',
+      accent: 'from-primary to-accent',
     },
     {
       icon: Users,
@@ -130,7 +130,7 @@ const Index = () => {
     {
       icon: MessageSquare,
       title: 'Discussion Rooms',
-      desc: 'Real-time conversations with your crew. Share references, give feedback on cuts, and brainstorm ideas — with threads, reactions, and file sharing built in.',
+      desc: 'Real-time conversations with your crew. Share references, give feedback on cuts, and brainstorm ideas â€” with threads, reactions, and file sharing built in.',
       accent: 'from-violet-500 to-purple-600',
     },
     {
@@ -158,10 +158,10 @@ const Index = () => {
   return (
     <div className="relative min-h-screen bg-background overflow-x-hidden">
 
-      {/* ═════════════ HERO ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• HERO â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section ref={heroRef} className="relative z-10 min-h-[100dvh] flex items-center justify-center px-4 overflow-hidden">
 
-        {/* Cinematic ambient light — two warm diffused orbs */}
+        {/* Cinematic ambient light â€” two warm diffused orbs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <motion.div
             className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] rounded-full blur-[140px] transform-gpu"
@@ -268,7 +268,7 @@ const Index = () => {
           >
             CineCraft Connect is the professional network built for the entire
             entertainment ecosystem. From Movies & TV to YouTube & Social Media,
-            manage productions, discover talent, and collaborate — all in one platform.
+            manage productions, discover talent, and collaborate â€” all in one platform.
           </motion.p>
 
           {/* CTAs */}
@@ -299,14 +299,14 @@ const Index = () => {
             transition={{ delay: 0.7, duration: 0.5 }}
             className="mt-8 text-xs text-muted-foreground/60 tracking-wide"
           >
-            Free to use · No credit card · Built by creators, for creators
+            Free to use Â· No credit card Â· Built by creators, for creators
           </motion.p>
         </motion.div>
       </section>
 
 
 
-      {/* ═════════════ WHAT YOU CAN DO ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• WHAT YOU CAN DO â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-24 md:py-32 px-4 relative">
         {/* Section background accent */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -353,7 +353,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ═════════════ THE CRAFT — VISUAL SHOWCASE ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• THE CRAFT â€” VISUAL SHOWCASE â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-24 md:py-32 px-4 relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute bottom-0 left-[10%] w-[50vw] h-[30vw] rounded-full blur-[160px] bg-secondary/[0.06]" />
@@ -361,7 +361,7 @@ const Index = () => {
 
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-            {/* Left — Text */}
+            {/* Left â€” Text */}
             <Reveal direction="left">
               <div>
                 <p className="text-primary font-semibold text-sm tracking-widest uppercase mb-3">
@@ -374,7 +374,7 @@ const Index = () => {
                 </h2>
                 <p className="text-muted-foreground text-lg leading-relaxed mb-8">
                   Whether you&apos;re organizing a 3-day indie shoot or coordinating a
-                  multi-unit production, CineCraft adapts to the way you work — not the
+                  multi-unit production, CineCraft adapts to the way you work â€” not the
                   other way around.
                 </p>
 
@@ -395,7 +395,7 @@ const Index = () => {
               </div>
             </Reveal>
 
-            {/* Right — Visual card stack */}
+            {/* Right â€” Visual card stack */}
             <Reveal direction="right" delay={0.15}>
               <div className="relative">
                 {/* Back card */}
@@ -405,15 +405,15 @@ const Index = () => {
                   transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
                 />
 
-                {/* Main card — a mock project space */}
+                {/* Main card â€” a mock project space */}
                 <div className="relative glass-card rounded-2xl p-6 border border-border/50">
                   <div className="flex items-center gap-3 mb-5">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
                       <Clapperboard className="h-5 w-5 text-white" />
                     </div>
                     <div>
                       <div className="font-semibold text-foreground text-sm">Midnight Horizon</div>
-                      <div className="text-xs text-muted-foreground">Feature Film · In Production</div>
+                      <div className="text-xs text-muted-foreground">Feature Film Â· In Production</div>
                     </div>
                     <div className="ml-auto glass-badge text-primary text-[10px] font-bold uppercase tracking-wider">
                       Active
@@ -423,7 +423,7 @@ const Index = () => {
                   {/* Mock crew avatars */}
                   <div className="flex items-center mb-5">
                     <div className="flex -space-x-2">
-                      {['bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-emerald-500'].map((bg, i) => (
+                      {['bg-sky-500', 'bg-violet-500', 'bg-amber-500', 'bg-rose-500', 'bg-primary'].map((bg, i) => (
                         <div key={i} className={`w-8 h-8 rounded-full ${bg} border-2 border-background flex items-center justify-center text-[10px] text-white font-bold`}>
                           {['D', 'J', 'S', 'M', 'R'][i]}
                         </div>
@@ -440,7 +440,7 @@ const Index = () => {
                     </div>
                     <div className="h-1.5 bg-border/30 rounded-full overflow-hidden">
                       <motion.div
-                        className="h-full bg-gradient-to-r from-primary to-emerald-400 rounded-full"
+                        className="h-full bg-gradient-to-r from-primary to-primary/70 rounded-full"
                         initial={{ width: '0%' }}
                         whileInView={{ width: '67%' }}
                         viewport={{ once: true }}
@@ -451,7 +451,7 @@ const Index = () => {
 
                   {/* Mock task list */}
                   <div className="space-y-2">
-                    {['Location scout — Completed', 'Table read — Tomorrow 4 PM', 'Shot list review — In progress'].map((task, i) => (
+                    {['Location scout â€” Completed', 'Table read â€” Tomorrow 4 PM', 'Shot list review â€” In progress'].map((task, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs">
                         <div className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-emerald-400' : i === 2 ? 'bg-amber-400' : 'bg-sky-400'}`} />
                         <span className="text-muted-foreground">{task}</span>
@@ -465,7 +465,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ═════════════ ROLES MARQUEE ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• ROLES MARQUEE â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-12 border-y border-border/40 overflow-hidden">
         <motion.div
           className="flex gap-8 whitespace-nowrap"
@@ -489,7 +489,7 @@ const Index = () => {
         </motion.div>
       </section>
 
-      {/* ═════════════ TRUST / SECURITY ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• TRUST / SECURITY â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-24 md:py-32 px-4">
         <div className="max-w-5xl mx-auto">
           <Reveal>
@@ -509,7 +509,7 @@ const Index = () => {
                   </h2>
                   <p className="text-muted-foreground leading-relaxed">
                     Enterprise-grade encryption, granular permissions, and full control over
-                    who sees your projects, drafts, and portfolio. Share when you&apos;re ready —
+                    who sees your projects, drafts, and portfolio. Share when you&apos;re ready â€”
                     not before.
                   </p>
                 </div>
@@ -536,7 +536,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ═════════════ HOW IT WORKS ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• HOW IT WORKS â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-24 md:py-32 px-4 relative">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-[20%] w-[40vw] h-[30vw] rounded-full blur-[160px] bg-primary/[0.04]" />
@@ -581,7 +581,7 @@ const Index = () => {
               <Reveal key={i} delay={i * 0.12}>
                 <div className="text-center relative">
                   {/* Step number circle */}
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20 relative z-10">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-primary/20 relative z-10">
                     <item.icon className="h-5 w-5 text-white" />
                   </div>
 
@@ -597,7 +597,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ═════════════ FINAL CTA ═════════════ */}
+      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• FINAL CTA â•â•â•â•â•â•â•â•â•â•â•â•â• */}
       <section className="py-24 md:py-32 px-4">
         <Reveal>
           <div className="max-w-3xl mx-auto text-center">
@@ -611,7 +611,7 @@ const Index = () => {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link to="/register">
                 <button className="glass-button-primary px-10 py-5 text-base font-semibold hover-scale click-effect group flex items-center gap-2">
-                  Get Started — It&apos;s Free
+                  Get Started â€” It&apos;s Free
                   <Sparkles className="h-4 w-4 group-hover:rotate-12 transition-transform" />
                 </button>
               </Link>

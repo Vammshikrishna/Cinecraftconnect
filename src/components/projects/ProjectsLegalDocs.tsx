@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
@@ -104,3 +104,4 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
 };
 
 export default ProjectsLegalDocs;
+

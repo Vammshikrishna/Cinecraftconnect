@@ -18,17 +18,17 @@ export const MessageInput = ({ onSendMessage }: MessageInputProps) => {
     };
 
     return (
-        <div className="p-4 border-t border-gray-700">
+        <div className="p-4 border-t border-border bg-background pb-safe-offset-4">
             <div className="flex items-center space-x-2">
                 <Input
                     placeholder="Type a message..."
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                    className="bg-gray-800 border-gray-700 rounded-full"
+                    className="bg-muted border-transparent focus-visible:ring-1 focus-visible:ring-primary/50 rounded-full h-11"
                 />
-                <Button onClick={handleSendMessage} className="rounded-full bg-blue-600 hover:bg-blue-700">
-                    <Send size={20} />
+                <Button onClick={handleSendMessage} size="icon" className="rounded-full bg-primary hover:bg-primary/90 h-11 w-11 shrink-0">
+                    <Send size={18} />
                 </Button>
             </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                                 name: projectTitle,
                                 avatar_url: null,
                                 type: 'space',
-                                subtitle: `Project Space • ${space.name}`
+                                subtitle: `Project Space â€¢ ${space.name}`
                             });
                         }
                     });
@@ -328,7 +328,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                                 <Button
                                     size="sm"
                                     variant={sentTo.has(target.id) ? "ghost" : "default"}
-                                    className={sentTo.has(target.id) ? "text-green-500" : "bg-primary hover:bg-primary/90"}
+                                    className={sentTo.has(target.id) ? "text-primary" : "bg-primary hover:bg-primary/90"}
                                     disabled={sending === target.id || sentTo.has(target.id)}
                                     onClick={() => handleSend(target)}
                                 >
@@ -372,3 +372,4 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
         </Drawer>
     );
 }
+

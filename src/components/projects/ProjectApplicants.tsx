@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -196,7 +196,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
                     </Button>
                   </>
                 ) : (
-                  <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-green-500' : 'text-red-500'}`}>
+                  <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-primary' : 'text-red-500'}`}>
                     {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}
                   </p>
                 )}
@@ -210,3 +210,4 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
 };
 
 export default ProjectApplicants;
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Users, Activity, Layers, Play, Grid3x3, ChevronLeft, ChevronRight, Share2, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -191,7 +191,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-blue-500/10 text-blue-400 border-blue-500/20 px-2 py-0">Project</Badge>
-                  <span className="text-[10px] text-muted-foreground opacity-60">• {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
+                  <span className="text-[10px] text-muted-foreground opacity-60">â€¢ {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
                 </div>
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-xl font-bold tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{project.title}</h3>
@@ -220,7 +220,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
             <Card key={room.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => navigate(`/discussion-rooms/${room.id}`)}>
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-green-500/10 text-green-400 border-green-500/20 px-2 py-0">Live Discussion</Badge>
+                  <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-primary/10 text-green-400 border-primary/20 px-2 py-0">Live Discussion</Badge>
                   <div className="flex items-center gap-1 text-[10px] text-green-500 font-bold animate-pulse">
                     <Activity className="h-3 w-3" />
                   </div>

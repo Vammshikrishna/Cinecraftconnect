@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+﻿import React, { useState, useCallback, useRef } from 'react';
 import { Upload, X, Image, Video, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -179,7 +179,7 @@ export const EnhancedFileUpload: React.FC<FileUploadProps> = ({
                 Drop files here or click to browse
               </p>
               <p className="text-xs text-muted-foreground">
-                Max {maxSize}MB • {accept.replace(/\*/g, 'all types')}
+                Max {maxSize}MB â€¢ {accept.replace(/\*/g, 'all types')}
               </p>
             </div>
           </div>

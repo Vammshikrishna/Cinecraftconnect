@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+﻿import { Link } from 'react-router-dom';
 
 import { Heart, MessageCircle, Play, Layers, User, Building2, ShoppingBag, Megaphone, MessageSquare, MapPin, Film } from 'lucide-react';
 
@@ -47,7 +47,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
             'bg-gradient-to-br from-pink-500 to-rose-500',
             'bg-gradient-to-br from-purple-500 to-indigo-500',
             'bg-gradient-to-br from-blue-500 to-cyan-500',
-            'bg-gradient-to-br from-emerald-500 to-teal-500',
+            'bg-gradient-to-br from-primary to-accent',
             'bg-gradient-to-br from-orange-500 to-amber-500',
         ];
         const index = id.charCodeAt(0) % gradients.length;
@@ -232,7 +232,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-4">
                                 <div className="flex items-center gap-1.5 mb-1">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
                                     <span className="text-[clamp(7.5px,2vw,9px)] font-black text-white uppercase tracking-[0.15em]">Verified</span>
                                 </div>
                                 <p className="text-white font-black uppercase tracking-tighter text-[clamp(11px,3.5vw,15px)] leading-none truncate">@{item.username}</p>
@@ -343,8 +343,8 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                                         <div className="px-1 py-0.5 rounded-sm bg-blue-500/10 border border-blue-500/20 text-[clamp(6.5px,1.5vw,7.5px)] font-black text-blue-600 uppercase tracking-widest leading-none w-fit shrink-0">
                                             {String((item as any).category || 'GEAR').toUpperCase()}
                                         </div>
-                                        <span className="text-emerald-500 font-black text-[clamp(9px,2.5vw,11px)] tracking-tighter shrink-0">
-                                            ₹{item.price_per_day}
+                                        <span className="text-primary font-black text-[clamp(9px,2.5vw,11px)] tracking-tighter shrink-0">
+                                            â‚¹{item.price_per_day}
                                         </span>
                                     </div>
                                     <span className="block text-[clamp(7.5px,2vw,9px)] font-black text-muted-foreground uppercase tracking-widest truncate opacity-60">{item.location || 'GLOBAL'}</span>
@@ -371,3 +371,4 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
 
     return renderContent();
 };
+

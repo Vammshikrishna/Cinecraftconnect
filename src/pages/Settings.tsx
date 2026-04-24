@@ -1,4 +1,4 @@
-
+﻿
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ const SettingsPage = () => {
       description: 'Control your privacy and data visibility',
       icon: Lock,
       color: 'text-green-500',
-      bgColor: 'bg-green-500/10',
+      bgColor: 'bg-primary/10',
       path: '/settings/privacy'
     },
     {
@@ -138,7 +138,7 @@ const SettingsPage = () => {
         <Card className="mt-8 border-primary/20 bg-primary/5 rounded-2xl">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <span className="text-xl">💡</span> Quick Tip
+              <span className="text-xl">ðŸ’¡</span> Quick Tip
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -153,3 +153,4 @@ const SettingsPage = () => {
 };
 
 export default SettingsPage;
+

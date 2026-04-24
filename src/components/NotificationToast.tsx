@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useState } from 'react';
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,7 +26,7 @@ const iconMap = {
 };
 
 const colorMap = {
-  success: 'border-green-500/20 bg-green-500/10 text-green-400',
+  success: 'border-primary/20 bg-primary/10 text-green-400',
   error: 'border-red-500/20 bg-red-500/10 text-red-400',
   info: 'border-blue-500/20 bg-blue-500/10 text-blue-400',
   warning: 'border-yellow-500/20 bg-yellow-500/10 text-yellow-400',
@@ -119,3 +119,4 @@ export const ToastContainer = () => {
     </div>
   );
 };
+

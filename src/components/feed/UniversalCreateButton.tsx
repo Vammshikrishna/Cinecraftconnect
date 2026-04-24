@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Plus, PenTool, Film, MessageSquare, Briefcase, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
@@ -12,7 +12,7 @@ const UniversalCreateButton = () => {
 
     const toggleOpen = () => setIsOpen(!isOpen);
 
-    // Fans cannot create content — hide the button entirely
+    // Fans cannot create content â€” hide the button entirely
     if (isFan) return null;
 
     interface Action {
@@ -115,3 +115,4 @@ const UniversalCreateButton = () => {
 };
 
 export default UniversalCreateButton;
+

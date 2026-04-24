@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { motion } from "framer-motion";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -108,7 +108,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                     </VisuallyHidden>
 
                     {/* Header: Branded Emerald Section */}
-                    <div className="bg-gradient-to-br from-primary to-emerald-700 p-6 sm:p-10 text-primary-foreground relative overflow-hidden shrink-0">
+                    <div className="bg-gradient-to-br from-primary to-primary/90 p-6 sm:p-10 text-primary-foreground relative overflow-hidden shrink-0">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
                         <div className="flex items-center gap-3 sm:gap-4 relative z-10">
                              <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner shrink-0">
@@ -204,3 +204,4 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
         </Dialog>
     );
 }
+

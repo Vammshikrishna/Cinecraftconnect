@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -336,7 +336,7 @@ export const ListingCreationModal = ({
                 {step === 3 && (
                     <div className="space-y-4">
                         <div>
-                            <Label htmlFor="pricePerDay">Price per Day (₹) *</Label>
+                            <Label htmlFor="pricePerDay">Price per Day (â‚¹) *</Label>
                             <Input
                                 id="pricePerDay"
                                 type="number"
@@ -349,7 +349,7 @@ export const ListingCreationModal = ({
                         </div>
 
                         <div>
-                            <Label htmlFor="pricePerWeek">Price per Week (₹) (Optional)</Label>
+                            <Label htmlFor="pricePerWeek">Price per Week (â‚¹) (Optional)</Label>
                             <Input
                                 id="pricePerWeek"
                                 type="number"
@@ -457,3 +457,4 @@ export const ListingCreationModal = ({
         </Dialog>
     );
 };
+

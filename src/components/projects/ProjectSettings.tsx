@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,10 +66,10 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             'bg-gradient-to-br from-pink-500 to-rose-500',
             'bg-gradient-to-br from-purple-500 to-indigo-500',
             'bg-gradient-to-br from-blue-500 to-cyan-500',
-            'bg-gradient-to-br from-emerald-500 to-teal-500',
+            'bg-gradient-to-br from-primary to-accent',
             'bg-gradient-to-br from-orange-500 to-amber-500',
             'bg-gradient-to-br from-red-500 to-orange-600',
-            'bg-gradient-to-br from-green-500 to-emerald-600',
+            'bg-gradient-to-br from-primary to-primary/80',
         ];
         const index = Array.from(id).reduce((acc, char) => acc + char.charCodeAt(0), 0) % gradients.length;
         return gradients[index];
@@ -321,7 +321,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                             onClick={() => openStep('financials')}
                             className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-colors group text-left"
                         >
-                            <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-all shadow-sm">
+                            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary/80 group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
                                 <Wallet className="w-5 h-5" />
                             </div>
                             <div className="flex-1">
@@ -454,7 +454,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                             <div className="space-y-10">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-emerald-400">Min Budget</Label>
+                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-primary/80">Min Budget</Label>
                                         <Input
                                             type="number"
                                             value={budgetMin}
@@ -464,7 +464,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                         />
                                     </div>
                                     <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-emerald-400">Max Budget</Label>
+                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-primary/80">Max Budget</Label>
                                         <Input
                                             type="number"
                                             value={budgetMax}
@@ -650,3 +650,4 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 };
 
 export default ProjectSettings;
+

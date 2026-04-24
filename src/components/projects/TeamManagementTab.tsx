@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -118,7 +118,7 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button size="icon" variant="outline" className="text-green-500 hover:text-green-600" onClick={() => handleApplication(app.id, app.profiles, app.role, true)}><Check className="h-4 w-4" /></Button>
+                  <Button size="icon" variant="outline" className="text-green-500 hover:text-primary" onClick={() => handleApplication(app.id, app.profiles, app.role, true)}><Check className="h-4 w-4" /></Button>
                   <Button size="icon" variant="outline" className="text-red-500 hover:text-red-600" onClick={() => handleApplication(app.id, app.profiles, app.role, false)}><X className="h-4 w-4" /></Button>
                 </div>
               </div>
@@ -148,3 +148,4 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
     </div>
   );
 };
+

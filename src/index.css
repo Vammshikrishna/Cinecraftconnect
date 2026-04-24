@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Work+Sans&display=swap");
+﻿@import url("https://fonts.googleapis.com/css2?family=Work+Sans&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Lora&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Inconsolata&display=swap");
 @tailwind base;
@@ -7,55 +7,48 @@
 
 @layer base {
   :root {
-    /* iOS Glassmorphism Dark Mode */
+    /* Tangerine Dream - Default Mode */
     --background: 0 0% 96%;
-    /* Deep dark background */
     --foreground: 0 0% 9%;
     --card: 0 0% 98%;
-    /* Slightly lighter for glass effect */
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 89%;
     --popover-foreground: 0 0% 9%;
-    --primary: 161 93% 30%;
-    /* iOS Blue */
-    --primary-foreground: 151 80% 95%;
-    --secondary: 220 13.0435% 90.9804%;
-    /* iOS Purple */
-    --secondary-foreground: 0 0% 9%;
-    --muted: 220 13.0435% 90.9804%;
-    --muted-foreground: 0 0% 9%;
-    --accent: 166 76% 96%;
-    /* Brighter iOS Blue */
-    --accent-foreground: 173 80% 40%;
+    --primary: 7 100% 60%;              /* #FF4B33 - Tangerine Red-Orange */
+    --primary-foreground: 0 0% 100%;   /* White text on primary */
+    --secondary: 7 60% 92%;            /* Light peachy tint */
+    --secondary-foreground: 7 100% 30%;
+    --muted: 7 20% 93%;                /* Warm light gray */
+    --muted-foreground: 0 0% 40%;
+    --accent: 16 100% 66%;             /* Warm orange #FF6B3D */
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
     --success: 142 76% 36%;
     --warning: 38 92% 50%;
-    --border: 0 0% 83%;
-    /* Subtle border */
+    --border: 7 15% 87%;               /* Warm-tinted border */
     --input: 0 0% 83%;
-    --ring: 149 80.3922% 90%;
+    --ring: 7 100% 60%;
     --radius: 0.75rem;
-    /* More rounded like iOS */
 
     /* Glass effect variables */
     --glass-opacity: 0.7;
     --glass-blur: 40px;
-    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-border: rgba(255, 75, 51, 0.15);
     --glass-shadow: rgba(0, 0, 0, 0.3);
-    --chart-1: 158 64% 51%;
-    --chart-2: 141 69% 58%;
-    --chart-3: 172 66% 50%;
-    --chart-4: 82 77% 55%;
-    --chart-5: 216 12.1951% 83.9216%;
+    --chart-1: 7 100% 60%;   /* Primary red-orange */
+    --chart-2: 16 100% 66%;  /* Warm orange */
+    --chart-3: 0 72% 50%;    /* Deep red */
+    --chart-4: 30 100% 64%;  /* Amber-orange */
+    --chart-5: 7 40% 80%;    /* Light salmon */
     --sidebar: 0 0% 98%;
     --sidebar-foreground: 0 0% 9%;
-    --sidebar-primary: 161 93% 30%;
-    --sidebar-primary-foreground: 151 80% 95%;
+    --sidebar-primary: 7 100% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 0 0% 32%;
     --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 0 0% 83%;
-    --sidebar-ring: 161 93% 30%;
+    --sidebar-border: 7 15% 87%;
+    --sidebar-ring: 7 100% 60%;
     --font-sans: 'Work Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
     --font-serif: 'Lora', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
     --font-mono: 'Inconsolata', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
@@ -72,39 +65,37 @@
   }
 
   .light {
-    /* CineCraft Connect Light Mode */
-    --background: 210 20% 96%;
-    --foreground: 222 47% 11%;
+    /* Tangerine Dream - Light Mode */
+    --background: 7 20% 97%;           /* Very warm off-white */
+    --foreground: 0 0% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 0 0% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
-    --primary: 161 93% 30%;
-    /* CineCraft Green */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 160 8% 90%;
-    /* Soft Green-gray */
-    --secondary-foreground: 161 93% 30%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 25% 35%;
-    --accent: 158 64% 51%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 7 100% 60%;             /* #FF4B33 â€” Tangerine Red-Orange */
+    --primary-foreground: 0 0% 100%;   /* White */
+    --secondary: 7 60% 93%;            /* Peach blush */
+    --secondary-foreground: 7 80% 35%;
+    --muted: 7 25% 93%;                /* Warm light muted */
+    --muted-foreground: 0 0% 38%;
+    --accent: 16 100% 66%;             /* Warm orange */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 76% 36%;
     --warning: 38 92% 50%;
-    --border: 210 15% 90%;
-    --input: 214 32% 91%;
-    --ring: 161 93% 30%;
+    --border: 7 20% 89%;               /* Warm border */
+    --input: 7 15% 91%;
+    --ring: 7 100% 60%;
 
     /* Premium shadows for light mode */
-    --shadow-premium: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 4px 10px -2px rgba(0, 0, 0, 0.04);
+    --shadow-premium: 0 10px 30px -10px rgba(255, 75, 51, 0.12), 0 4px 10px -2px rgba(255, 75, 51, 0.06);
 
     /* Glass effect variables for light mode */
     --glass-opacity: 0.8;
     --glass-blur: 40px;
-    --glass-border: rgba(0, 0, 0, 0.1);
-    --glass-shadow: rgba(0, 0, 0, 0.1);
+    --glass-border: rgba(255, 75, 51, 0.12);
+    --glass-shadow: rgba(255, 75, 51, 0.08);
   }
 
   * {
@@ -123,39 +114,44 @@
     @apply scroll-smooth;
   }
 
+  #root {
+    @apply relative min-h-screen flex flex-col;
+  }
+
   .dark {
-    --background: 0 0% 9%;
+    /* Tangerine Dream - Dark Mode */
+    --background: 0 0% 9%;             /* Deep charcoal */
     --foreground: 0 0% 98%;
     --card: 0 0% 14%;
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 25%;
+    --popover: 0 0% 20%;
     --popover-foreground: 0 0% 98%;
-    --primary: 158 64% 51%;
-    --primary-foreground: 165 91% 9%;
-    --secondary: 0 0% 45%;
+    --primary: 7 95% 65%;              /* Slightly brighter for dark bg */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 7 30% 25%;            /* Dark warm brown-red */
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 45%;
-    --muted-foreground: 0 0% 98%;
-    --accent: 178 84% 10%;
-    --accent-foreground: 172 66% 50%;
+    --muted: 7 15% 22%;                /* Warm dark muted */
+    --muted-foreground: 0 0% 70%;
+    --accent: 16 80% 55%;              /* Orange accent in dark */
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 85% 97%;
-    --border: 0 0% 32%;
-    --input: 0 0% 32%;
-    --ring: 158 64% 51%;
-    --chart-1: 156 71% 66%;
-    --chart-2: 141 76% 73%;
-    --chart-3: 170 76% 64%;
-    --chart-4: 81 84% 67%;
-    --chart-5: 0 0% 45%;
+    --border: 7 15% 25%;               /* Warm dark border */
+    --input: 7 10% 28%;
+    --ring: 7 95% 65%;
+    --chart-1: 7 95% 65%;    /* Primary red-orange */
+    --chart-2: 16 90% 60%;   /* Warm orange */
+    --chart-3: 0 75% 55%;    /* Deep red */
+    --chart-4: 30 90% 60%;   /* Amber */
+    --chart-5: 7 50% 45%;    /* Muted salmon */
     --sidebar: 0 0% 14%;
     --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 158 64% 51%;
-    --sidebar-primary-foreground: 165 91% 9%;
-    --sidebar-accent: 172 66% 50%;
-    --sidebar-accent-foreground: 178 84% 10%;
-    --sidebar-border: 0 0% 32%;
-    --sidebar-ring: 158 64% 51%;
+    --sidebar-primary: 7 95% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 16 80% 55%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 7 15% 25%;
+    --sidebar-ring: 7 95% 65%;
     --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
     --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
     --shadow-sm: 0px 1px 1.5px 0px hsla(0, 0%, 0%, 0.86);
@@ -347,7 +343,7 @@
      ============================================ */
 
   .text-gradient {
-    @apply bg-gradient-to-r from-primary to-emerald-500 dark:to-accent-foreground bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary to-primary dark:to-accent-foreground bg-clip-text text-transparent;
   }
 
   .gradient-border {

@@ -74,54 +74,50 @@ const CallImplementation = ({
 
   if (isMinimized) {
     return (
-      <div className="p-2 sm:p-3 w-full h-full flex flex-col justify-between overflow-hidden">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="relative shrink-0">
-              <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
-            </div>
-            <p className="text-white text-[11px] sm:text-xs font-bold truncate tracking-tight">
-              {roomName || 'Live'}
-            </p>
-          </div>
-          <div className="flex items-center gap-0.5 shrink-0">
-            <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="text-white/70 hover:text-white hover:bg-white/10 h-7 w-7 p-0 rounded-full">
-              <Maximize2 className="w-3.5 h-3.5" />
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onLeave} className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-7 w-7 p-0 rounded-full">
-              <PhoneOff className="w-3.5 h-3.5" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Active speaker / Presenter preview */}
-        <div className="flex-1 min-h-0 mt-1 relative rounded-xl overflow-hidden bg-white/5 border border-white/10 group/preview transition-transform group-hover/bubble:scale-[1.01]">
+      <div className="w-full h-full relative overflow-hidden rounded-[2.5rem]">
+        {/* Full-bleed Video Background */}
+        <div className="absolute inset-0 z-0">
           {tracks.length > 0 ? (
-            <GridLayout tracks={tracks.slice(0, 1)}>
-              <ParticipantTile className="h-full w-full object-cover" />
+            <GridLayout tracks={tracks.slice(0, 1)} className="h-full w-full lk-pip-grid">
+              <ParticipantTile className="h-full w-full object-cover border-0 shadow-none lk-pip-tile" />
             </GridLayout>
           ) : (
-            <div className="h-full w-full flex items-center justify-center">
-              <div className="flex -space-x-2">
+            <div className="h-full w-full flex items-center justify-center bg-gradient-to-br from-[#1a1a2e] to-[#0f0f1a]">
+              <div className="flex -space-x-3">
                 {participants.slice(0, 3).map((p) => (
-                  <div key={p.sid} className="w-8 h-8 rounded-full bg-primary/30 border border-white/20 flex items-center justify-center text-xs font-bold text-white shadow-lg backdrop-blur-sm">
+                  <div key={p.sid} className="w-10 h-10 rounded-full bg-primary/20 border-2 border-white/10 flex items-center justify-center text-sm font-bold text-white backdrop-blur-md shadow-2xl">
                     {p.identity[0].toUpperCase()}
                   </div>
                 ))}
-                {participants.length > 3 && (
-                  <div className="w-8 h-8 rounded-full bg-secondary/80 border border-white/20 flex items-center justify-center text-xs font-bold text-white shadow-lg backdrop-blur-sm">
-                    +{participants.length - 3}
-                  </div>
-                )}
               </div>
             </div>
           )}
+        </div>
 
-          {/* Mini Speaker Badge */}
+        {/* Glossy Overlay for Controls */}
+        <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/60 via-transparent to-black/40 p-3 flex flex-col justify-between opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-300">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
+              <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+              <p className="text-white text-[10px] font-black truncate tracking-wider uppercase">
+                {roomName || 'Live'}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="text-white/80 hover:text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm">
+                <Maximize2 className="w-3.5 h-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onLeave} className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm">
+                <PhoneOff className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Mini Speaking Badge */}
           {participants.some(p => p.isSpeaking) && (
-            <div className="absolute bottom-1 right-1 px-1.5 py-0.5 bg-green-500/80 backdrop-blur-sm rounded-md flex items-center gap-1 scale-75 origin-bottom-right">
+            <div className="self-end px-2 py-1 bg-green-500/80 backdrop-blur-md rounded-full flex items-center gap-1.5 shadow-lg border border-white/20">
               <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-              <span className="text-[8px] text-white font-bold uppercase tracking-tighter">Speaking</span>
+              <span className="text-[9px] text-white font-black uppercase tracking-tighter">Speaking</span>
             </div>
           )}
         </div>
@@ -157,10 +153,35 @@ const CallImplementation = ({
         ))}
       </div>
 
-        <div className="flex-grow relative overflow-y-auto p-6 sm:p-10 flex items-center justify-center">
-          <GridLayout tracks={tracks} className="max-w-5xl mx-auto w-full">
+        <div className="flex-grow relative overflow-y-auto p-6 sm:p-10 flex flex-col items-center justify-center">
+          {/* Smart Grid: Limits visible tiles to 12 to ensure perfect performance even with 100+ participants */}
+          <GridLayout 
+            tracks={tracks.slice(0, 12)} 
+            className="max-w-6xl mx-auto w-full"
+          >
             <ParticipantTile className="rounded-3xl overflow-hidden border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-all duration-300" />
           </GridLayout>
+          
+          {/* Overflow Indicator for large calls */}
+          {participants.length > 12 && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6 px-4 py-2 bg-white/5 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-2 group cursor-pointer hover:bg-white/10 transition-all"
+              onClick={() => setShowParticipants(true)}
+            >
+              <div className="flex -space-x-2">
+                {participants.slice(12, 15).map(p => (
+                  <div key={p.sid} className="w-6 h-6 rounded-full bg-primary/20 border border-white/20 flex items-center justify-center text-[10px] font-bold">
+                    {p.identity[0].toUpperCase()}
+                  </div>
+                ))}
+              </div>
+              <span className="text-xs font-bold text-white/60 group-hover:text-white transition-colors">
+                + {participants.length - 12} other professionals in the room
+              </span>
+            </motion.div>
+          )}
         </div>
 
         {/* Responsive Panels with Glassmorphism */}
@@ -474,6 +495,29 @@ const CallImplementation = ({
           background: rgba(239, 68, 68, 0.4) !important;
           border-color: rgba(239, 68, 68, 0.5) !important;
         }
+        /* Hide internal library buttons that conflict with our custom UI */
+        .lk-focus-toggle-button, .lk-pin-button {
+          display: none !important;
+        }
+        /* Force PiP video to fill its container and remove square backgrounds */
+        .lk-pip-grid {
+          padding: 0 !important;
+          margin: 0 !important;
+        }
+        .lk-pip-tile {
+          background: transparent !important;
+          border: none !important;
+        }
+        .lk-pip-tile video {
+          object-fit: cover !important;
+          border-radius: inherit !important;
+        }
+        /* Remove resize handles and technical indicators in PiP */
+        .lk-pip-tile .lk-participant-metadata,
+        .lk-pip-tile [class*="lk-resize"],
+        .lk-pip-tile .lk-focus-toggle-button {
+          display: none !important;
+        }
         @media (max-width: 640px) {
           .modern-control-bar .lk-button-leave {
              width: 34px !important;
@@ -698,7 +742,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
         dragElastic={0.05}
         className={
           isMinimized
-            ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[99999] bg-[#0a0c14]/90 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] cursor-move touch-none group/bubble"
+            ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[99999] bg-transparent rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] cursor-move touch-none group/bubble"
             : isEmbeddedView
               ? "fixed z-[40] bg-[#121214] overflow-hidden border-r border-white/10 rounded-none"
               : "fixed inset-0 z-[99999] bg-[#121214] overflow-hidden"

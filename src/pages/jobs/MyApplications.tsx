@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -94,7 +94,7 @@ const MyApplications = () => {
             case 'pending': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
             case 'reviewing': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
             case 'interviewing': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-            case 'accepted': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+            case 'accepted': return 'bg-primary/10 text-primary/80 border-primary/20';
             case 'rejected': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
             default: return 'bg-gray-500/10 text-gray-500 border-gray-500/20';
         }
@@ -195,3 +195,4 @@ const MyApplications = () => {
 };
 
 export default MyApplications;
+

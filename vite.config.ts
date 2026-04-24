@@ -7,10 +7,18 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import tailwindcss from 'tailwindcss'
 import autoprefixer from 'autoprefixer'
 
+import { visualizer } from "rollup-plugin-visualizer"
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tsconfigPaths(),
+    visualizer({
+      open: false,
+      filename: "bundle-stats.html",
+      gzipSize: true,
+      brotliSize: true,
+    }),
   ].filter(Boolean),
   css: {
     postcss: {
@@ -40,6 +48,20 @@ export default defineConfig(({ mode }) => ({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/setupTests.ts',
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', 'lucide-react', 'framer-motion'],
+          'vendor-charts': ['recharts'],
+          'vendor-three': ['three'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1000,
   },
   esbuild: mode === 'production' ? {
     drop: ['console', 'debugger'],

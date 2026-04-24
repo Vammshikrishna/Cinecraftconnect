@@ -1,4 +1,4 @@
-import * as React from 'react';
+﻿import * as React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -296,8 +296,8 @@ export const RealTimeAnalytics = () => {
       title: 'Total Comments',
       value: analytics.totalComments,
       icon: MessageSquare,
-      gradient: 'from-green-500/20 to-emerald-600/20',
-      iconBg: 'bg-green-500/10',
+      gradient: 'from-primary/20 to-primary/80/20',
+      iconBg: 'bg-primary/10',
       iconColor: 'text-green-500',
       change: null
     },
@@ -499,3 +499,4 @@ export const RealTimeAnalytics = () => {
     </div>
   );
 };
+

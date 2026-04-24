@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -274,7 +274,7 @@ const ProfilePage = () => {
                   <span>Fan Account</span>
                 </Link>
               ) : isStudio ? (
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 rounded-full text-xs font-black uppercase tracking-wider mb-2">
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-xs font-black uppercase tracking-wider mb-2">
                   <Building2 size={14} />
                   <span>Studio / Company</span>
                 </div>
@@ -463,3 +463,4 @@ const ProfilePage = () => {
 };
 
 export default ProfilePage;
+

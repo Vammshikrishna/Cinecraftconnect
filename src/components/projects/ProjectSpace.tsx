@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle,
@@ -379,9 +379,9 @@ export const ProjectSpace = ({
                 </div>
               )}
               {requestStatus === 'approved' && (
-                <div className="p-3 bg-green-500/10 text-green-500 rounded-md border border-green-500/20 text-sm w-full">
+                <div className="p-3 bg-primary/10 text-green-500 rounded-md border border-primary/20 text-sm w-full">
                   Your request has been approved! <br />
-                  <Button variant="link" onClick={() => window.location.reload()} className="p-0 h-auto font-bold text-green-600">
+                  <Button variant="link" onClick={() => window.location.reload()} className="p-0 h-auto font-bold text-primary">
                     Refresh Page
                   </Button> to access.
                 </div>
@@ -401,7 +401,7 @@ export const ProjectSpace = ({
                   Request to Join
                 </Button>
               ) : requestStatus === 'approved' ? (
-                <Button onClick={() => window.location.reload()} className="flex-1 bg-green-600 hover:bg-green-700">
+                <Button onClick={() => window.location.reload()} className="flex-1 bg-primary hover:bg-primary/90">
                   Enter Space
                 </Button>
               ) : (
@@ -596,3 +596,4 @@ export const ProjectSpace = ({
     </div>
   );
 };
+

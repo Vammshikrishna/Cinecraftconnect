@@ -269,7 +269,7 @@ const JobDetail = () => {
                     </Button>
                   ) : isApplied ? (
                     <div className="flex items-center gap-2">
-                        <Button disabled className="h-14 px-10 rounded-full bg-green-500/10 text-green-500 border border-green-500/20 font-black">
+                        <Button disabled className="h-14 px-10 rounded-full bg-primary/10 text-primary border border-primary/20 font-black">
                         <CheckCircle className="mr-2 h-5 w-5" />
                         Applied
                         </Button>
@@ -300,9 +300,9 @@ const JobDetail = () => {
                         <span>{job.location || "Remote"}</span>
                     </div>
                     <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-muted/20">
-                        <span className="text-muted-foreground/30">·</span>
-                        <span className="text-green-600 font-black">{formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}</span>
-                        <span className="text-muted-foreground/30">·</span>
+                        <span className="text-muted-foreground/30">•</span>
+                        <span className="text-primary font-black">{formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}</span>
+                        <span className="text-muted-foreground/30">•</span>
                         <span className="text-muted-foreground/80 font-black">{applicationCount > 0 ? `${applicationCount} applicants` : 'Be the first to apply'}</span>
                     </div>
                 </div>
@@ -491,7 +491,7 @@ const JobDetail = () => {
             </Button>
           ) : isApplied ? (
             <div className="flex flex-1 items-center gap-2">
-                <Button disabled className="h-12 flex-[2] rounded-2xl bg-green-500/10 text-green-500 border border-green-500/20 font-black text-xs">
+                <Button disabled className="h-12 flex-[2] rounded-2xl bg-primary/10 text-primary border border-primary/20 font-black text-xs">
                 <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
                 Applied
                 </Button>
@@ -535,3 +535,4 @@ const JobDetail = () => {
 };
 
 export default JobDetail;
+
