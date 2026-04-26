@@ -6,12 +6,21 @@
 const fs = require('fs');
 const path = require('path');
 
+// Manually parse .env
+const envPath = path.resolve(process.cwd(), '.env');
+const env = fs.readFileSync(envPath, 'utf8');
+const envVars = {};
+env.split('\n').forEach(line => {
+  const [key, value] = line.split('=');
+  if (key && value) envVars[key.trim()] = value.trim();
+});
+
 // Configuration
 const CONFIG = {
   CONCURRENT_USERS: 100,
   TEST_DURATION_MS: 30000, // 30 seconds
-  SUPABASE_URL: 'https://zugtdutimulibaxwnlbs.supabase.co',
-  SUPABASE_KEY: 'REDACTED_ANON_KEY',
+  SUPABASE_URL: envVars.VITE_SUPABASE_URL,
+  SUPABASE_KEY: envVars.VITE_SUPABASE_ANON_KEY,
   ENDPOINTS: {
     FEED: '/rest/v1/posts?select=*&order=created_at.desc&limit=20',
     PROFILES: '/rest/v1/profiles?select=*&limit=50',
