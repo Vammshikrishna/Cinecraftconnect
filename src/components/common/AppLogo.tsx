@@ -36,16 +36,16 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '' }: App
     >
       <defs>
         <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="hsl(161, 93%, 30%)" />
-          <stop offset="50%" stopColor="hsl(158, 64%, 51%)" />
-          <stop offset="100%" stopColor="hsl(172, 66%, 50%)" />
+          <stop offset="0%" stopColor="hsl(7, 100%, 60%)" />
+          <stop offset="50%" stopColor="hsl(16, 100%, 66%)" />
+          <stop offset="100%" stopColor="hsl(30, 100%, 64%)" />
         </linearGradient>
         <linearGradient id="logoBg" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="hsl(0, 0%, 6%)" />
           <stop offset="100%" stopColor="hsl(0, 0%, 10%)" />
         </linearGradient>
         <radialGradient id="logoGlow" cx="50%" cy="40%" r="55%">
-          <stop offset="0%" stopColor="hsl(158, 64%, 51%)" stopOpacity="0.18" />
+          <stop offset="0%" stopColor="hsl(7, 100%, 60%)" stopOpacity="0.18" />
           <stop offset="100%" stopColor="transparent" stopOpacity="0" />
         </radialGradient>
         <filter id="playGlow" x="-50%" y="-50%" width="200%" height="200%">
