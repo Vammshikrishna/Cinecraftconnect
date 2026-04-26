@@ -1,4 +1,4 @@
-export const TMDB_API_KEY = '6f333da40e57ee8319f5f977a458ef98';
+export const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY || '';
 export const TMDB_BASE_URL = 'https://api.tmdb.org/3'; // Using api.tmdb.org to bypass common Jio/Airtel blocks
 export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342';
 
