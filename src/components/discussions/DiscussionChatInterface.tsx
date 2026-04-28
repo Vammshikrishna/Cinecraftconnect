@@ -10,13 +10,11 @@ import { TypingIndicator } from './TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
-  ArrowLeft, Settings, Users, Loader2, ChevronDown,
+  ArrowLeft, Settings, Loader2, ChevronDown,
   MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan
 } from 'lucide-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog } from '@/components/ui/dialog';
 
-import { RoomMembers } from './RoomMembers';
 import { RoomSettings } from './RoomSettings';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useToast } from '@/hooks/use-toast';
@@ -37,6 +35,7 @@ interface DiscussionChatInterfaceProps {
   categoryId: string;
   categories: Category[];
   roomType: 'public' | 'private' | 'secret';
+  roomSettings?: any;
   onClose: () => void;
   onRoomUpdated: (roomId: string, newTitle: string, newDescription: string) => void;
   showBackButton?: boolean;
@@ -75,7 +74,8 @@ export const DiscussionChatInterface = ({
   categories,
   onClose,
   onRoomUpdated,
-  showBackButton
+  showBackButton,
+  roomSettings
 }: DiscussionChatInterfaceProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -96,6 +96,9 @@ export const DiscussionChatInterface = ({
   const [callLoading, setCallLoading] = useState(false);
 
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  const [actualRole, setActualRole] = useState<string | null>(null);
+  const isAdmin = actualRole === 'admin' || userRole === 'creator';
+  const canSendMessages = !(roomSettings?.onlyAdminsSend && !isAdmin);
 
   useEffect(() => {
     const mql = window.matchMedia('(min-width: 1024px)');
@@ -181,6 +184,20 @@ export const DiscussionChatInterface = ({
     };
 
     enrollUser();
+  }, [user, roomId]);
+
+  useEffect(() => {
+    const fetchActualRole = async () => {
+      if (!user || !roomId) return;
+      const { data } = await supabase
+        .from('room_members')
+        .select('role')
+        .eq('room_id', roomId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (data) setActualRole(data.role);
+    };
+    fetchActualRole();
   }, [user, roomId]);
 
   const fetchMessages = useCallback(async () => {
@@ -285,15 +302,18 @@ export const DiscussionChatInterface = ({
 
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
-    const { error } = await supabase
-      .from('room_messages')
-      .delete()
-      .eq('id', messageId)
-      .eq('user_id', user.id);
+    
+    // Only admins or the sender can delete
+    const query = supabase.from('room_messages').delete().eq('id', messageId);
+    if (!isAdmin) {
+      query.eq('user_id', user.id);
+    }
+    
+    const { error } = await query;
 
     if (error) {
       console.error('Error undoing message:', error);
-      toast({ title: "Error", description: "Failed to undo message", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to delete message", variant: "destructive" });
     } else {
       setMessages(prev => prev.filter(m => m.id !== messageId));
     }
@@ -337,7 +357,7 @@ export const DiscussionChatInterface = ({
     const success = await startGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
-      toast({ title: "ðŸŽ™ï¸ Discussion Started!", description: "Your discussion room is now active!" });
+      toast({ title: "🎙️ Discussion Started!", description: "Your discussion room is now active!" });
     } else {
       toast({ title: "Error", description: "Failed to start discussion.", variant: "destructive" });
     }
@@ -348,7 +368,7 @@ export const DiscussionChatInterface = ({
     const success = await joinGlobalCall('discussion', roomId, roomTitle, userRole as any);
     setCallLoading(false);
     if (success) {
-      toast({ title: "ðŸŽ§ Joined Discussion", description: "You're now in the discussion." });
+      toast({ title: "🎧 Joined Discussion", description: "You're now in the discussion." });
     } else {
       toast({ title: "Error", description: "Failed to join discussion.", variant: "destructive" });
     }
@@ -433,7 +453,10 @@ export const DiscussionChatInterface = ({
           )}
           <div className="min-w-0 flex-1 overflow-hidden pr-2">
             <div className="flex items-center gap-2">
-              <h2 className="font-bold text-lg truncate text-foreground">{roomTitle}</h2>
+              <h2 className="font-bold text-lg truncate text-foreground flex items-center">
+                {roomSettings?.roomEmoji && <span className="mr-2 text-xl">{roomSettings.roomEmoji}</span>}
+                {roomTitle}
+              </h2>
               {isInCall && (
                 <span className="flex items-center gap-1 text-[10px] font-semibold text-red-500 bg-red-500/10 px-2 py-0.5 rounded-full shrink-0">
                   <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
@@ -457,29 +480,17 @@ export const DiscussionChatInterface = ({
             </Button>
           )}
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors">
-                <Users className="w-4 h-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="p-0 border-none bg-transparent shadow-none w-auto mt-2 animate-in fade-in zoom-in-95 duration-200">
-              <RoomMembers roomId={roomId} />
-            </PopoverContent>
-          </Popover>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 text-sm">
-              <DropdownMenuItem onClick={() => setSettingsOpen(true)} className="cursor-pointer">
-                <Settings className="w-4 h-4 mr-2" /> Discussion Settings
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+            onClick={() => setSettingsOpen(true)}
+            title="Discussion Settings"
+          >
+            <Settings className="w-4 h-4" />
+          </Button>
 
           <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
             <RoomSettings
@@ -494,6 +505,19 @@ export const DiscussionChatInterface = ({
           </Dialog>
         </div>
       </header>
+
+      {/* PINNED MESSAGE BANNER */}
+      {roomSettings?.pinnedMessage && (
+        <div className="bg-primary/5 border-b border-primary/10 px-4 py-2.5 flex items-start gap-3 shadow-sm z-10 shrink-0">
+          <div className="p-1.5 rounded-full bg-primary/10 text-primary mt-0.5">
+            <MessageSquare className="h-3.5 w-3.5 fill-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-black text-primary uppercase tracking-wider mb-0.5">Pinned Message</p>
+            <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed line-clamp-2">{roomSettings.pinnedMessage}</p>
+          </div>
+        </div>
+      )}
 
       {/* JOIN LIVE BANNER */}
       {showJoinBanner && (
@@ -596,7 +620,7 @@ export const DiscussionChatInterface = ({
             onScroll={handleScroll}
             className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 custom-scrollbar"
           >
-            {visibleMessages.length === 0 ? (
+            {visibleMessages.length === 0 && !roomSettings?.welcomeMessage ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
                   <MessageSquare className="h-12 w-12 text-muted-foreground/20 mx-auto mb-3" />
@@ -604,133 +628,145 @@ export const DiscussionChatInterface = ({
                 </div>
               </div>
             ) : (
-              visibleMessages.map((message, idx) => {
-                const isSender = message.user_id === user?.id;
-                const isShare = isShareContent(message.content);
-                const messageDate = new Date(message.created_at);
-                const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
-                const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
-
-                const currentReadBy = readStatuses.filter(rs => {
-                  if (rs.user_id === user?.id) return false;
-                  try {
-                    const statusTime = new Date(rs.last_read_at).getTime();
-                    const messageTime = new Date(message.created_at).getTime();
-                    return statusTime >= messageTime;
-                  } catch (e) { return false; }
-                }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
-
-                // Only show "Seen by" on the LAST message each user has read
-                const uniqueSeenBy = currentReadBy.filter(name => {
-                  const userStatus = readStatuses.find(rs =>
-                    (rs.profiles?.full_name?.split(' ')[0] || 'User') === name && rs.user_id !== user?.id
-                  );
-                  if (!userStatus) return false;
-                  const statusTime = new Date(userStatus.last_read_at).getTime();
-                  // Check there is NO newer sender message that this user has also read
-                  const isLatest = !visibleMessages.some((m, mIdx) => {
-                    if (mIdx <= idx) return false; // only look at messages AFTER this one
-                    if (m.user_id !== user?.id) return false; // only care about sender's messages
-                    return statusTime >= new Date(m.created_at).getTime();
-                  });
-                  return isLatest;
-                });
-
-                return (
-                  <div key={message.id}>
-                    {showDateSeparator && (
-                      <div className="flex justify-center my-6">
-                        <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                            {getDateLabel(messageDate)}
-                          </span>
-                        </div>
+              <>
+                {/* WELCOME MESSAGE */}
+                {roomSettings?.welcomeMessage && (
+                  <div className="flex flex-col items-center mb-6 mt-4">
+                    <div className="bg-muted/30 border border-border/50 rounded-2xl p-4 max-w-sm text-center">
+                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                        <span className="text-xl">👋</span>
                       </div>
-                    )}
-                    <div
-                      ref={observeMessage}
-                      data-message-id={message.id}
-                      className={`flex flex-col ${isSender ? 'items-end pl-12' : 'items-start pr-12'}`}
-                    >
+                      <h3 className="font-bold text-sm mb-1">Welcome to the Room!</h3>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{roomSettings.welcomeMessage}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {visibleMessages.map((message, idx) => {
+                  const isSender = message.user_id === user?.id;
+                  const isShare = isShareContent(message.content);
+                  const messageDate = new Date(message.created_at);
+                  const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+                  const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
 
-                      <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                        <div className={`
-                          relative transition-all duration-300
-                          ${isShare && !message.is_deleted ? 'bg-transparent overflow-hidden rounded-2xl border border-border/10' :
-                            isSender ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' :
-                              'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}
-                          ${message.is_deleted ? 'bg-muted/50 border-dashed italic text-muted-foreground' : ''}
-                        `}>
-                          {!isSender && !message.is_deleted && (
-                            <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
-                              {message.profiles?.username || message.profiles?.full_name || 'User'}
-                            </p>
-                          )}
-                          {message.reply_to_id && !message.is_deleted && (() => {
-                            const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                            if (!repliedMsg) return null;
-                            return (
-                              <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
-                                <div className={`font-black text-[9px] uppercase tracking-tighter mb-0.5 ${getUserColor(repliedMsg.user_id)}`}>
-                                  @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
+                  const currentReadBy = readStatuses.filter(rs => {
+                    if (rs.user_id === user?.id) return false;
+                    try {
+                      const statusTime = new Date(rs.last_read_at).getTime();
+                      const messageTime = new Date(message.created_at).getTime();
+                      return statusTime >= messageTime;
+                    } catch (e) { return false; }
+                  }).map(rs => rs.profiles?.full_name?.split(' ')[0] || 'User');
+
+                  const uniqueSeenBy = currentReadBy.filter(name => {
+                    const userStatus = readStatuses.find(rs =>
+                      (rs.profiles?.full_name?.split(' ')[0] || 'User') === name && rs.user_id !== user?.id
+                    );
+                    if (!userStatus) return false;
+                    const statusTime = new Date(userStatus.last_read_at).getTime();
+                    const isLatest = !visibleMessages.some((m, mIdx) => {
+                      if (mIdx <= idx) return false;
+                      if (m.user_id !== user?.id) return false;
+                      return statusTime >= new Date(m.created_at).getTime();
+                    });
+                    return isLatest;
+                  });
+
+                  return (
+                    <div key={message.id}>
+                      {showDateSeparator && (
+                        <div className="flex justify-center my-6">
+                          <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/20">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                              {getDateLabel(messageDate)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div
+                        ref={observeMessage}
+                        data-message-id={message.id}
+                        className={`flex flex-col ${isSender ? 'items-end pl-12' : 'items-start pr-12'}`}
+                      >
+                        <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
+                          <div className={`
+                            relative transition-all duration-300
+                            ${isShare && !message.is_deleted ? 'bg-transparent overflow-hidden rounded-2xl border border-border/10' :
+                              isSender ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' :
+                                'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}
+                            ${message.is_deleted ? 'bg-muted/50 border-dashed italic text-muted-foreground' : ''}
+                          `}>
+                            {!isSender && !message.is_deleted && (
+                              <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
+                                {message.profiles?.username || message.profiles?.full_name || 'User'}
+                              </p>
+                            )}
+                            {message.reply_to_id && !message.is_deleted && (() => {
+                              const repliedMsg = messages.find(m => m.id === message.reply_to_id);
+                              if (!repliedMsg) return null;
+                              return (
+                                <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
+                                  <div className={`font-black text-[9px] uppercase tracking-tighter mb-0.5 ${getUserColor(repliedMsg.user_id)}`}>
+                                    @{repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
+                                  </div>
+                                  <div className="opacity-80 line-clamp-1 truncate">
+                                    {repliedMsg.is_deleted ? 'Message deleted' : repliedMsg.content}
+                                  </div>
                                 </div>
-                                <div className="opacity-80 line-clamp-1 truncate">
-                                  {repliedMsg.is_deleted ? 'Message deleted' : repliedMsg.content}
-                                </div>
+                              );
+                            })()}
+                            {message.is_deleted ? (
+                              <div className="flex items-center gap-1.5 py-1">
+                                <ShieldBan className="h-3.5 w-3.5" />
+                                <span className="text-xs">Message deleted</span>
                               </div>
-                            );
-                          })()}
-                          {message.is_deleted ? (
-                            <div className="flex items-center gap-1.5 py-1">
-                              <ShieldBan className="h-3.5 w-3.5" />
-                              <span className="text-xs">Message deleted</span>
+                            ) : renderMessageContent(message.content)}
+                          </div>
+
+                          {!message.is_deleted && (
+                            <span className="text-[9px] text-muted-foreground/50 font-bold tabular-nums mb-1">
+                              {formatTimestamp(message.created_at)}
+                            </span>
+                          )}
+
+                          {!message.is_deleted && (
+                            <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-3' : 'left-full ml-3'} opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center`}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-white/50 backdrop-blur-sm border border-border/10 shadow-sm">
+                                    <MoreVertical className="h-3.5 w-3.5" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 rounded-xl">
+                                  <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                    <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                  </DropdownMenuItem>
+                                  {(isSender || isAdmin) && (
+                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
+                                    <X className="h-3.5 w-3.5 mr-2" /> Hide
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             </div>
-                          ) : renderMessageContent(message.content)}
+                          )}
                         </div>
 
-                        {!message.is_deleted && (
-                          <span className="text-[9px] text-muted-foreground/50 font-bold tabular-nums mb-1">
-                            {formatTimestamp(message.created_at)}
-                          </span>
-                        )}
-
-                        {!message.is_deleted && (
-                          <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-3' : 'left-full ml-3'} opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center`}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-white/50 backdrop-blur-sm border border-border/10 shadow-sm">
-                                  <MoreVertical className="h-3.5 w-3.5" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 rounded-xl">
-                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                  <Reply className="h-3.5 w-3.5 mr-2" /> Reply
-                                </DropdownMenuItem>
-                                {isSender && (
-                                  <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
-                                  <X className="h-3.5 w-3.5 mr-2" /> Hide
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                        {isSender && uniqueSeenBy.length > 0 && (
+                          <div className="flex justify-end mt-1 mb-2">
+                            <span className="text-[9px] font-bold text-primary/60 tracking-tight">
+                              Seen by {uniqueSeenBy.join(', ')}
+                            </span>
                           </div>
                         )}
                       </div>
-
-                      {isSender && uniqueSeenBy.length > 0 && (
-                        <div className="flex justify-end mt-1 mb-2">
-                          <span className="text-[9px] font-bold text-primary/60 tracking-tight">
-                            Seen by {uniqueSeenBy.join(', ')}
-                          </span>
-                        </div>
-                      )}
                     </div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -756,7 +792,7 @@ export const DiscussionChatInterface = ({
               </div>
             )}
             <TypingIndicator typingUsers={typingUsers} />
-            <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} />
+            <MessageComposer onSend={handleSendMessage} onAttach={handleAttach} onTyping={startTyping} onStopTyping={stopTyping} disabled={!canSendMessages} />
           </div>
         </div>
       </div>

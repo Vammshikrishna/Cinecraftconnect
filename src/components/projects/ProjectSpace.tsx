@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageCircle,
@@ -138,22 +138,7 @@ export const ProjectSpace = ({
       }
 
       try {
-        // 1. Check Membership
-        const { data: membership } = await supabase
-          .from('project_space_members')
-          .select('role')
-          .eq('project_space_id', resolvedSpaceId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (!active) return;
-
-        if (membership) {
-          setUserRole('member');
-          return;
-        }
-
-        // 2. Check Creator Status
+        // 1. Check Creator Status FIRST
         const { data: project } = await supabase
           .from('projects')
           .select('creator_id')
@@ -164,6 +149,25 @@ export const ProjectSpace = ({
 
         if (project && project.creator_id === user.id) {
           setUserRole('creator');
+          return;
+        }
+
+        // 2. Check Membership
+        const { data: membership } = await supabase
+          .from('project_space_members')
+          .select('role')
+          .eq('project_space_id', resolvedSpaceId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (!active) return;
+
+        if (membership) {
+          if (membership.role === 'admin') {
+            setUserRole('admin');
+          } else {
+            setUserRole('member');
+          }
           return;
         }
 

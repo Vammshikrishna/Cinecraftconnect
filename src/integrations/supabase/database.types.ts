@@ -391,6 +391,7 @@ export type Database = {
           project_id: string | null
           room_purpose: string | null
           room_type: string | null
+          settings: Json | null
           tags: string[] | null
           title: string
           updated_at: string
@@ -407,6 +408,7 @@ export type Database = {
           project_id?: string | null
           room_purpose?: string | null
           room_type?: string | null
+          settings?: Json | null
           tags?: string[] | null
           title: string
           updated_at?: string
@@ -423,6 +425,7 @@ export type Database = {
           project_id?: string | null
           room_purpose?: string | null
           room_type?: string | null
+          settings?: Json | null
           tags?: string[] | null
           title?: string
           updated_at?: string
@@ -813,6 +816,8 @@ export type Database = {
           updated_at: string | null
           username: string | null
           website: string | null
+          is_verified: boolean | null
+          is_banned: boolean | null
         }
         Insert: {
           account_type?: 'fan' | 'creator' | null
@@ -826,6 +831,8 @@ export type Database = {
           updated_at?: string | null
           username?: string | null
           website?: string | null
+          is_verified?: boolean | null
+          is_banned?: boolean | null
         }
         Update: {
           account_type?: 'fan' | 'creator' | null
@@ -839,6 +846,8 @@ export type Database = {
           updated_at?: string | null
           username?: string | null
           website?: string | null
+          is_verified?: boolean | null
+          is_banned?: boolean | null
         }
         Relationships: []
       }

@@ -179,7 +179,7 @@ export const EnhancedFileUpload: React.FC<FileUploadProps> = ({
                 Drop files here or click to browse
               </p>
               <p className="text-xs text-muted-foreground">
-                Max {maxSize}MB â€¢ {accept.replace(/\*/g, 'all types')}
+                Max {maxSize}MB • {accept.replace(/\*/g, 'all types')}
               </p>
             </div>
           </div>

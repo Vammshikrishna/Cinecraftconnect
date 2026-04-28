@@ -138,7 +138,7 @@ const SettingsPage = () => {
         <Card className="mt-8 border-primary/20 bg-primary/5 rounded-2xl">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
-              <span className="text-xl">ðŸ’¡</span> Quick Tip
+              <span className="text-xl">💡</span> Quick Tip
             </CardTitle>
           </CardHeader>
           <CardContent>

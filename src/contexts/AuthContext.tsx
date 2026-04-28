@@ -45,20 +45,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         }
 
-        if (initializedRef.current && error?.message === 'Session retrieval timed out') {
-          // If we already handled it, don't double set? 
-          // actually initializedRef is set to true at the END of this block usually.
-        }
+        const session = data?.session ?? null;
+        setSession(session);
+        setUser(session?.user ?? null);
 
-        setSession(data?.session ?? null);
-        setUser(data?.session?.user ?? null);
+        // If no session, we can stop loading now
+        if (!session) {
+          setIsLoading(false);
+          initializedRef.current = true;
+        }
       })
       .catch(err => {
         console.error('AuthContext: Unexpected error during session race:', err);
         setSession(null);
         setUser(null);
-      })
-      .finally(() => {
         setIsLoading(false);
         initializedRef.current = true;
       });
@@ -90,6 +90,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } else {
           setProfile(data as any);
         }
+        setIsLoading(false);
+        initializedRef.current = true;
       };
       fetchProfile();
     } else {

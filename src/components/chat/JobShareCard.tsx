@@ -79,7 +79,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                                 <MapPin size={10} className="text-primary/40" />
                                 <span className="truncate">{location || 'Remote'}</span>
                             </div>
-                            <span className="opacity-30">â€¢</span>
+                            <span className="opacity-30">•</span>
                             <span className="truncate">Full-time</span>
                         </div>
 

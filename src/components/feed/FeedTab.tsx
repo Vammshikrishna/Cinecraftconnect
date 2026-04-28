@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import PostCard from "./PostCard";
 import CraftFilters from "./CraftFilters";
+import VerificationBadge from "../common/VerificationBadge";
 import { useRealtimePosts } from "@/hooks/useRealtimePosts";
 import { performanceMonitor } from "@/utils/monitoring";
 import { cacheManager } from "@/utils/caching";
@@ -12,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 import MediaUpload from "./MediaUpload";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { z } from "zod";
 import { Post } from "@/types";
 import { useHomeFeed } from "@/hooks/useHomeFeed";
@@ -30,7 +32,7 @@ interface FeedTabProps {
 }
 
 const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [activeFilter, setActiveFilter] = useState("All");
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
@@ -250,17 +252,19 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   }
 
   return (
-    <>
-      <CraftFilters
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-      />
+    <div className="flex justify-center gap-6 lg:gap-10 max-w-[1180px] mx-auto pt-2 lg:pt-4 px-4 sm:px-0">
+      {/* Main Feed Column */}
+      <div className="w-full max-w-[560px] space-y-4">
+        <CraftFilters
+          activeFilter={activeFilter}
+          onFilterChange={setActiveFilter}
+        />
 
-      <Card className="glass-card p-6">
+      <Card className="glass-card p-4 lg:p-5">
         {!showCreatePost ? (
           <Button
             onClick={() => setShowCreatePost(true)}
-            className="w-full justify-start text-left bg-transparent hover:bg-accent border-dashed border-2 border-border h-12"
+            className="w-full justify-start text-left bg-transparent hover:bg-accent border-dashed border-2 border-border h-10 lg:h-11"
             variant="outline"
           >
             <PlusCircle className="mr-2 h-5 w-5" />
@@ -272,7 +276,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               placeholder="What's happening in your creative world?"
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
-              className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[100px]"
+              className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[80px]"
             />
 
             <MediaUpload
@@ -297,7 +301,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
         )}
       </Card>
 
-      <div className="mt-6 space-y-6">
+      <div className="mt-4 lg:mt-5 space-y-4 lg:space-y-5">
         {feedItems.length === 0 ? (
           <Card className="glass-card p-8 text-center">
             <p className="text-muted-foreground mb-4">No posts yet. Be the first to share something!</p>
@@ -306,7 +310,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
             </Button>
           </Card>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4 lg:space-y-5">
             {feedItems.map((item, index) => {
               if (item.type === 'blockA') {
                 return (
@@ -349,7 +353,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     role: authorRole,
                     craft: author?.craft || undefined,
                     initials: getInitials(authorName),
-                    avatar: author?.avatar_url || undefined
+                    avatar: author?.avatar_url || undefined,
+                    isVerified: author?.is_verified
                   }}
                   timeAgo={(() => {
                     try {
@@ -386,7 +391,80 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
           </div>
         )}
       </div>
-    </>
+    </div>
+
+      {/* Instagram-style Sidebar (Hidden on small screens) */}
+      <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-20 h-fit">
+        {/* User Mini Profile */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10 border border-border">
+              <AvatarImage src={profile?.avatar_url || user?.user_metadata?.avatar_url} />
+              <AvatarFallback className="bg-primary/10 text-primary font-bold text-sm">
+                {(profile?.full_name || user?.email)?.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[13px] font-bold text-foreground line-clamp-1">
+                  {profile?.username || profile?.full_name || user?.email?.split('@')[0]}
+                </span>
+                {profile?.is_verified && <VerificationBadge size="xs" />}
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                {profile?.craft || 'Personal Account'}
+              </span>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" className="text-primary text-xs font-bold hover:bg-transparent">Switch</Button>
+        </div>
+
+        {/* Suggestions Section */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[13px] font-bold text-muted-foreground">Suggestions for you</span>
+            <Button variant="ghost" size="sm" className="text-foreground text-[11px] font-bold hover:bg-transparent p-0 h-auto">See All</Button>
+          </div>
+          
+          <div className="space-y-3 px-1">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="bg-secondary/20 text-[10px]">TR</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-[12px] font-bold leading-tight">tech_renaissance</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">Followed by art_daily + 2 more</span>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-bold hover:bg-transparent p-0 h-auto">Follow</Button>
+             </div>
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="bg-secondary/20 text-[10px]">CD</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <span className="text-[12px] font-bold leading-tight">cine_director</span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">Suggested for you</span>
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-bold hover:bg-transparent p-0 h-auto">Follow</Button>
+             </div>
+          </div>
+        </div>
+
+        {/* Footer Links */}
+        <div className="px-2 pt-4">
+          <p className="text-[11px] text-muted-foreground/50 leading-relaxed tracking-tight">
+            About • Help • Press • API • Jobs • Privacy • Terms • Locations • Language • Meta Verified
+          </p>
+          <p className="text-[11px] text-muted-foreground/50 mt-4 uppercase tracking-widest font-medium">
+            © 2026 CINECRAFT FROM VAMMSHIKRISHNA
+          </p>
+        </div>
+      </aside>
+    </div>
   );
 };
 

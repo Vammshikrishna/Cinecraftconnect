@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { 
   ArrowLeft, MapPin, Briefcase, CheckCircle, 
   Share2, Bookmark, DollarSign, ExternalLink,
-  Info, 
+  Info, Flag,
   Users, 
   Globe, 
   Trash2,
@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import ReportDialog from "@/components/common/ReportDialog";
 
 const JobDetail = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -28,6 +29,7 @@ const JobDetail = () => {
   const [isApplying, setIsApplying] = useState(false);
   const [isApplied, setIsApplied] = useState(false);
   const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   const [applicationCount, setApplicationCount] = useState(0);
   const { user } = useAuth();
   const { toast } = useToast();
@@ -245,6 +247,11 @@ const JobDetail = () => {
                   <Button variant="ghost" size="icon" className="rounded-full hover:bg-muted/30">
                     <Bookmark size={20} />
                   </Button>
+                  {user && !isOwner && (
+                    <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(true)} className="rounded-full hover:bg-rose-500/10 hover:text-rose-500">
+                      <Flag size={18} />
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -530,6 +537,14 @@ const JobDetail = () => {
         onOpenChange={setIsShareSheetOpen}
         jobId={job.id}
       />
+      {job && (
+        <ReportDialog
+          open={isReportOpen}
+          onOpenChange={setIsReportOpen}
+          targetType="job"
+          targetId={job.id}
+        />
+      )}
     </div>
   );
 };

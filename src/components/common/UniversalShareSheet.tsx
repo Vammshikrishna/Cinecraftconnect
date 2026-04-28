@@ -114,7 +114,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                                     name: projectTitle,
                                     avatar_url: null,
                                     type: 'project',
-                                    subtitle: `Project Space â€¢ ${space.name}`
+                                    subtitle: `Project Space • ${space.name}`
                                 });
                             }
                         });

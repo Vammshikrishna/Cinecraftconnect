@@ -336,7 +336,7 @@ export const ListingCreationModal = ({
                 {step === 3 && (
                     <div className="space-y-4">
                         <div>
-                            <Label htmlFor="pricePerDay">Price per Day (â‚¹) *</Label>
+                            <Label htmlFor="pricePerDay">Price per Day (₹) *</Label>
                             <Input
                                 id="pricePerDay"
                                 type="number"
@@ -349,7 +349,7 @@ export const ListingCreationModal = ({
                         </div>
 
                         <div>
-                            <Label htmlFor="pricePerWeek">Price per Week (â‚¹) (Optional)</Label>
+                            <Label htmlFor="pricePerWeek">Price per Week (₹) (Optional)</Label>
                             <Input
                                 id="pricePerWeek"
                                 type="number"

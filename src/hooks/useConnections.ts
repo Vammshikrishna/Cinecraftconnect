@@ -17,6 +17,7 @@ export interface Connection {
     avatar_url: string;
     craft: string;
     location: string;
+    is_verified: boolean;
   };
   following_profile?: {
     id: string;
@@ -25,6 +26,7 @@ export interface Connection {
     avatar_url: string;
     craft: string;
     location: string;
+    is_verified: boolean;
   };
 }
 

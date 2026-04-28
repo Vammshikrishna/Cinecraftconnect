@@ -11,12 +11,14 @@ import {
     MessageSquare,
     Share2,
     Edit,
-    Trash2
+    Trash2,
+    Flag
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MarketplaceShareSheet } from '@/components/marketplace/MarketplaceShareSheet';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { PageHeader } from '@/components/common/PageHeader';
+import ReportDialog from '@/components/common/ReportDialog';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -28,6 +30,7 @@ const MarketplaceListingDetail = () => {
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [showShareSheet, setShowShareSheet] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isReportOpen, setIsReportOpen] = useState(false);
 
     const isOwner = user && listing && user.id === listing.user_id;
 
@@ -156,7 +159,7 @@ const MarketplaceListingDetail = () => {
                     onBack={() => navigate(-1)}
                     actions={
                         <div className="flex gap-2">
-                            {isOwner && (
+                            {isOwner ? (
                                 <>
                                     <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setIsEditModalOpen(true)}>
                                         <Edit className="h-4 w-4" />
@@ -165,6 +168,10 @@ const MarketplaceListingDetail = () => {
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </>
+                            ) : user && (
+                                <Button variant="ghost" size="icon" className="rounded-xl hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
+                                    <Flag className="h-4 w-4" />
+                                </Button>
                             )}
                             <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
                                 <Share2 className="h-4 w-4" />
@@ -290,8 +297,17 @@ const MarketplaceListingDetail = () => {
                     </div>
                 </div>
             </div>
+            {listing && (
+                <ReportDialog
+                    open={isReportOpen}
+                    onOpenChange={setIsReportOpen}
+                    targetType="listing"
+                    targetId={listing.id}
+                />
+            )}
         </div>
     );
 };
+
 
 export default MarketplaceListingDetail;

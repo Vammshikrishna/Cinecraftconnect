@@ -34,6 +34,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Trash2 } from 'lucide-react';
 
 const getInitials = (name: string) => {
   return name
@@ -169,7 +171,20 @@ const CompanyPageDetail = () => {
 
   const isOwner = page.owner_id === user?.id;
   const isMember = members.some(m => m.user_id === user?.id);
-  const canManage = isOwner || isMember;
+  const { isAdmin } = useAppRole();
+  const canManage = isOwner || isMember || isAdmin;
+
+  const handleDeletePage = async () => {
+    if (!confirm('Are you absolutely sure you want to delete this company page? This action is permanent.')) return;
+    try {
+      const { error } = await (supabase as any).from('company_pages').delete().eq('id', page.id);
+      if (error) throw error;
+      toast({ title: "Page deleted", description: "The company page has been removed successfully." });
+      navigate('/explore');
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background pt-20 pb-36">
@@ -222,6 +237,16 @@ const CompanyPageDetail = () => {
                 >
                   <Settings className="h-4 w-4" />
                 </Button>
+                {isAdmin && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={handleDeletePage}
+                    className="h-10 w-10 rounded-full bg-red-500/50 backdrop-blur-md border border-red-500/10 hover:bg-red-500 transition-all shadow-xl text-white"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             )}
           </div>

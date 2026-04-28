@@ -16,7 +16,7 @@ export function FormattedText({ text, className }: FormattedTextProps) {
   const parts = text.split(mentionRegex);
 
   return (
-    <p className={cn("break-words whitespace-pre-wrap", className)}>
+    <span className={cn("break-words whitespace-pre-wrap", className)}>
       {parts.map((part, index) => {
         if (part.match(mentionRegex)) {
           const username = part.substring(1);
@@ -33,6 +33,6 @@ export function FormattedText({ text, className }: FormattedTextProps) {
         }
         return part;
       })}
-    </p>
+    </span>
   );
 }

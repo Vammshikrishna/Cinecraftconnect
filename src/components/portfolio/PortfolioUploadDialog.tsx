@@ -13,18 +13,9 @@ import { Upload, X, Image, Video, FileText, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { PortfolioItemData } from "@/types/portfolio";
 
-interface PortfolioItemData {
-  id: string;
-  title: string;
-  description?: string;
-  media_url?: string;
-  media_type?: string;
-  project_type?: string;
-  role?: string;
-  completion_date?: string;
-  tags?: string[];
-}
+// Type moved to @/types/portfolio.ts
 
 interface PortfolioUploadDialogProps {
   isOpen: boolean;

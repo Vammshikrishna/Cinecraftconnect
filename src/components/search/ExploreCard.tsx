@@ -1,4 +1,4 @@
-﻿import { Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import { Heart, MessageCircle, Play, Layers, User, Building2, ShoppingBag, Megaphone, MessageSquare, MapPin, Film } from 'lucide-react';
 
@@ -20,7 +20,9 @@ export interface ExploreItem {
     author?: {
         username: string;
         full_name: string;
+        is_verified?: boolean;
     } | null;
+    is_verified?: boolean;
     price_per_day?: number;
     listing_type?: 'equipment' | 'location';
     business_name?: string;
@@ -54,7 +56,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
         return gradients[index];
     };
 
-    const Overlay = ({ likes, comments, author }: { likes?: number, comments?: number, author?: { username: string, full_name: string } | null }) => (
+    const Overlay = ({ likes, comments, author }: { likes?: number, comments?: number, author?: { username: string, full_name: string, is_verified?: boolean } | null }) => (
         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-between p-3 z-20 cursor-pointer">
             <div className="flex justify-start">
                 {author && (
@@ -65,6 +67,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                         <span className="text-[10px] font-black text-white/90 uppercase tracking-widest truncate max-w-[80px]">
                             {author.username}
                         </span>
+                        {author.is_verified && <div className="w-2.5 h-2.5 rounded-full bg-primary flex items-center justify-center scale-75 shrink-0"><div className="w-1 h-1 bg-white rounded-full" /></div>}
                     </div>
                 )}
             </div>
@@ -231,10 +234,12 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-4">
-                                <div className="flex items-center gap-1.5 mb-1">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                                    <span className="text-[clamp(7.5px,2vw,9px)] font-black text-white uppercase tracking-[0.15em]">Verified</span>
-                                </div>
+                                {item.is_verified && (
+                                    <div className="flex items-center gap-1.5 mb-1">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                        <span className="text-[clamp(7.5px,2vw,9px)] font-black text-white uppercase tracking-[0.15em]">Verified</span>
+                                    </div>
+                                )}
                                 <p className="text-white font-black uppercase tracking-tighter text-[clamp(11px,3.5vw,15px)] leading-none truncate">@{item.username}</p>
                                 <p className="text-white/60 text-[clamp(8px,2vw,10px)] font-bold uppercase tracking-widest truncate mt-0.5">{item.full_name}</p>
                             </div>
@@ -344,7 +349,7 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                                             {String((item as any).category || 'GEAR').toUpperCase()}
                                         </div>
                                         <span className="text-primary font-black text-[clamp(9px,2.5vw,11px)] tracking-tighter shrink-0">
-                                            â‚¹{item.price_per_day}
+                                            ₹{item.price_per_day}
                                         </span>
                                     </div>
                                     <span className="block text-[clamp(7.5px,2vw,9px)] font-black text-muted-foreground uppercase tracking-widest truncate opacity-60">{item.location || 'GLOBAL'}</span>

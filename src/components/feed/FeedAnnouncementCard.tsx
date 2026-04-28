@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAppRole } from "@/hooks/useAppRole";
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -55,8 +56,8 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
     const [isSaving, setIsSaving] = useState(false);
     const [editTitle, setEditTitle] = useState(announcement.title);
     const [editContent, setEditContent] = useState(announcement.content.includes('JOB_SHARE::') ? announcement.content.split('JOB_SHARE::')[0].trim() : announcement.content);
-
-    const isOwner = user?.id === announcement.author_id;
+    const { isAdmin } = useAppRole();
+    const canManage = user?.id === announcement.author_id || isAdmin;
 
     const handleShare = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -193,7 +194,7 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                         />
                     )}
 
-                    {isOwner && (
+                    {canManage && (
                         <div className="absolute top-4 right-4 z-20">
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>

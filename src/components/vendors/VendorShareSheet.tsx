@@ -111,7 +111,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                                 name: projectTitle,
                                 avatar_url: null,
                                 type: 'space',
-                                subtitle: `Project Space â€¢ ${space.name}`
+                                subtitle: `Project Space • ${space.name}`
                             });
                         }
                     });

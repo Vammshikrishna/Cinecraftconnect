@@ -118,7 +118,7 @@ export function AnnouncementShareSheet({ isOpen, onOpenChange, announcement }: A
                                     name: projectTitle,
                                     avatar_url: null,
                                     type: 'project',
-                                    subtitle: `Project Space â€¢ ${space.name}`
+                                    subtitle: `Project Space • ${space.name}`
                                 });
                             }
                         });

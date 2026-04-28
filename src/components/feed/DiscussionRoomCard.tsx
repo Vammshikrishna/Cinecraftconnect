@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { MessageCircle, Phone, Users, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -130,8 +130,11 @@ const DiscussionRoomCard = ({
 
   return (
     <>
-      <div className="group h-full relative">
-        <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-xl h-full flex flex-col">
+      <div 
+        className="group h-full relative cursor-pointer" 
+        onClick={joinRoom}
+      >
+        <div className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/60 backdrop-blur-xl transition-all duration-500 hover:border-primary/40 hover:shadow-xl h-full flex flex-col group-hover:border-primary/50">
 
           {/* Top gradient accent */}
           <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 via-primary/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -166,7 +169,7 @@ const DiscussionRoomCard = ({
             {/* Members */}
             <div className="flex items-center gap-3 mb-4">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
+                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
                   <Users className="h-3 w-3 text-primary" />
                 </div>
                 <span className="font-medium">{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
@@ -183,8 +186,7 @@ const DiscussionRoomCard = ({
             <div className="mt-auto pt-4 border-t border-border/30">
               <div className="flex gap-2">
                 <Button
-                  className={`flex-1 ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10 relative overflow-hidden`}
-                  onClick={joinRoom}
+                  className={`flex-1 ${hasUnread ? 'bg-red-500 hover:bg-red-600 shadow-red-500/20' : 'bg-primary hover:bg-primary/90'} text-primary-foreground font-semibold shadow-md hover:shadow-lg transition-all duration-300 rounded-xl h-10 relative overflow-hidden group-hover:scale-[1.02]`}
                   disabled={isJoining}
                 >
                   {isJoining ? (
@@ -192,7 +194,7 @@ const DiscussionRoomCard = ({
                   ) : (
                     <>
                       <MessageCircle className={`h-4 w-4 mr-2 ${hasUnread ? 'animate-bounce' : ''}`} />
-                      {hasUnread ? 'New Messages' : 'Join Chat'}
+                      {hasUnread ? 'New Messages' : 'Join Discussion Room'}
                     </>
                   )}
                 </Button>
@@ -202,7 +204,7 @@ const DiscussionRoomCard = ({
                     ? 'border-primary/50 text-green-400 hover:bg-primary/10 hover:border-primary/70 shadow-sm shadow-primary/10'
                     : 'border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5'
                     }`}
-                  onClick={handleStartCall}
+                  onClick={(e) => { e.stopPropagation(); handleStartCall(); }}
                   disabled={callLoading}
                 >
                   {callLoading ? (

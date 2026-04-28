@@ -109,9 +109,11 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '' }: App
     <span className={`flex items-center ${s.gap} group ${className}`}>
       {LogoIcon}
       {showText && (
-        <span className={`${s.text} font-bold text-gradient whitespace-nowrap select-none`}>
-          <span className="hidden xl:inline">CineCraft Connect</span>
-          <span className="xl:hidden">CCC</span>
+        <span className={`${s.text} font-bold whitespace-nowrap select-none flex items-center gap-1.5`}>
+          <span className="hidden xl:inline text-foreground">CineCraft</span>
+          <span className="hidden xl:inline text-primary">Connect</span>
+          <span className="xl:hidden text-foreground">C</span>
+          <span className="xl:hidden text-primary">CC</span>
         </span>
       )}
     </span>

@@ -191,7 +191,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-blue-500/10 text-blue-400 border-blue-500/20 px-2 py-0">Project</Badge>
-                  <span className="text-[10px] text-muted-foreground opacity-60">â€¢ {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
+                  <span className="text-[10px] text-muted-foreground opacity-60">• {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
                 </div>
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="text-xl font-bold tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{project.title}</h3>

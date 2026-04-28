@@ -13,6 +13,7 @@ export interface UserProfile {
   website: string;
   connection_status?: 'none' | 'pending_sent' | 'pending_received' | 'connected';
   connection_id?: string;
+  is_verified?: boolean;
   suggestion_reason?: string;
 }
 
@@ -88,9 +89,6 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
           suggestion_reason = 'Pending connection';
         } else {
           // Check for mutual connections: does this user share any connections with the current user?
-          const currentUserConnectionIds = connectionsData
-            .filter(c => c.status === 'accepted')
-            .map(c => c.follower_id === user.id ? c.following_id : c.follower_id);
           
           // Check if any of the other users who are connected to the current user 
           // also appear as connections of this profile (mutual friends)

@@ -1,4 +1,6 @@
-import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Share2, Bookmark, BookmarkCheck } from "lucide-react";
+import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Share2, Bookmark, Flag } from "lucide-react";
+import ReportDialog from "../common/ReportDialog";
+import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "react-router-dom";
@@ -12,6 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { usePostBookmarks } from "@/hooks/usePostBookmarks";
 import { useRealtimePostStats } from "@/hooks/useRealtimePostStats";
+import { useAppRole } from "@/hooks/useAppRole";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { getOptimizedImage } from "@/utils/image-optimization";
@@ -49,6 +52,7 @@ interface PostAuthor {
   craft?: string;
   initials: string;
   avatar?: string;
+  isVerified?: boolean;
 }
 
 interface PostProps {
@@ -109,11 +113,11 @@ const PostCard = ({
   const [isLiking, setIsLiking] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
-  
+
   // Edit/Delete State
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  
+
   // Bookmarks
   const { bookmarkedPostIds, toggleBookmark } = usePostBookmarks();
   const isBookmarked = bookmarkedPostIds.has(id);
@@ -136,7 +140,7 @@ const PostCard = ({
       } else {
         setEditContent(content);
       }
-      
+
       const items = Array.isArray(mediaItems) ? [...mediaItems] : [];
       if (items.length === 0 && (hasImage || hasVideo)) {
         items.push({ url: mediaUrl || "", type: hasImage ? "image" : "video" });
@@ -145,7 +149,11 @@ const PostCard = ({
     }
   }, [isEditOpen, content, mediaItems, hasImage, hasVideo, mediaUrl]);
 
+  const [isReportOpen, setIsReportOpen] = useState(false);
+
+  const { isAdmin } = useAppRole();
   const isOwner = user?.id === author.id || user?.id === authorId;
+  const canManage = isOwner || isAdmin;
 
   // View States
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -169,7 +177,7 @@ const PostCard = ({
       if (isLeftSwipe && currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
       if (isRightSwipe && currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
     }
-    
+
     setTouchStart(null);
     setTouchEnd(null);
   };
@@ -261,6 +269,11 @@ const PostCard = ({
     setShowComments(!showComments);
   };
 
+  const handleViewMedia = () => {
+    setViewIndex(currentMediaIndex);
+    setIsViewOpen(true);
+  };
+
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
@@ -275,7 +288,7 @@ const PostCard = ({
         title: "Success",
         description: "Post deleted successfully",
       });
-      
+
       if (onDelete) {
         onDelete(id);
       }
@@ -305,7 +318,7 @@ const PostCard = ({
     setIsSaving(true);
     try {
       let finalContent = editContent.trim();
-      
+
       // Preserve JOB_SHARE metadata if it exists
       if (content.includes('JOB_SHARE::')) {
         const parts = content.split('JOB_SHARE::');
@@ -348,7 +361,7 @@ const PostCard = ({
   const renderMediaGallery = () => {
     // Standardize to an array, checking both prop names just in case
     const items = Array.isArray(mediaItems) ? [...mediaItems] : [];
-    
+
     // Fallback to legacy single media only if the new system didn't catch any items
     if (items.length === 0 && (hasImage || hasVideo)) {
       items.push({ url: mediaUrl || "", type: hasImage ? "image" : "video" });
@@ -360,19 +373,19 @@ const PostCard = ({
     if (items.length === 1) {
       const item = items[0];
       return (
-        <div className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/20 relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden">
+        <div className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto sm:h-[400px] lg:h-[420px] flex items-center justify-center">
           {item.type === 'image' ? (
             <img
               src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
               alt={imageAlt || "Post content"}
-              className="w-full h-auto object-contain max-h-[600px] hover:scale-[1.01] transition-transform duration-1000"
+              className="w-full h-auto sm:h-full sm:object-contain object-cover block hover:scale-[1.01] transition-transform duration-700"
             />
           ) : (
-            <div className="relative aspect-video max-h-[600px] bg-black">
+            <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
               <video
                 src={item.url}
                 controls
-                className="w-full h-full object-contain"
+                className="w-full h-auto sm:h-full sm:object-contain object-cover"
                 preload="metadata"
               >
                 Your browser does not support video playback.
@@ -391,7 +404,7 @@ const PostCard = ({
     // Carousel for multiple items
     return (
       <div 
-        className="-mx-3 sm:-mx-6 mb-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+3rem)] bg-black/10 relative overflow-hidden group/carousel ring-1 ring-white/10"
+        className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={() => processSwipe(items.length, false)}
@@ -401,26 +414,28 @@ const PostCard = ({
         onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, false); }}
         onWheel={(e) => handleWheel(e, items.length, false)}
       >
-        <div 
-          className="relative aspect-square sm:aspect-video flex transition-transform duration-500 ease-out h-full"
+        <div
+          className="relative flex transition-transform duration-500 ease-out h-auto sm:h-[400px] lg:h-[420px] w-full"
           style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
         >
           {items.map((item, idx) => (
-            <div 
-              key={`${id}-carousel-${idx}`} 
-              className="w-full h-full flex-shrink-0"
+            <div
+              key={`${id}-carousel-${idx}`}
+              className="w-full h-full flex-none"
             >
               {item.type === 'image' ? (
-                <img
-                  src={getOptimizedImage(item.url, { width: 600, quality: 80 })}
-                  alt={`Media ${idx + 1}`}
-                  className="w-full h-full object-cover sm:object-contain bg-black/20"
-                />
+                <div className="w-full h-auto sm:h-full relative overflow-hidden flex items-center justify-center bg-black/5 sm:bg-black">
+                  <img
+                    src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
+                    alt={`Media ${idx + 1}`}
+                    className="w-full h-auto sm:h-full sm:object-contain object-cover"
+                  />
+                </div>
               ) : (
-                <div className="relative w-full h-full bg-black">
+                <div className="relative w-full h-auto sm:h-full bg-black/5 sm:bg-black flex items-center justify-center overflow-hidden">
                   <video
                     src={item.url}
-                    className="w-full h-full object-contain"
+                    className="w-full h-auto sm:h-full sm:object-contain object-cover"
                     muted
                     loop
                     onMouseOver={e => e.currentTarget.play()}
@@ -465,9 +480,9 @@ const PostCard = ({
         {/* Dots Indicator */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm z-10">
           {items.map((_, i) => (
-            <div 
-              key={i} 
-              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentMediaIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`} 
+            <div
+              key={i}
+              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === currentMediaIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`}
             />
           ))}
         </div>
@@ -515,7 +530,7 @@ const PostCard = ({
                           <video src={item.url} className="w-full h-full object-cover absolute inset-0 opacity-40" />
                         </div>
                       )}
-                      
+
                       {/* Delete button for individual media */}
                       <button
                         onClick={() => setEditMediaItems((prev: { url: string, type: 'image' | 'video' }[]) => prev.filter((_: any, i: number) => i !== idx))}
@@ -523,7 +538,7 @@ const PostCard = ({
                       >
                         <X size={14} strokeWidth={3} />
                       </button>
-                      
+
                       <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors pointer-events-none" />
                     </div>
                   ))}
@@ -560,48 +575,43 @@ const PostCard = ({
         </AlertDialogContent>
       </AlertDialog>
 
-    <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_30px_-10px_rgba(var(--primary),0.3)] group">
-      {/* Decorative gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-blue-500/5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-
-      <div className="relative p-3 sm:p-6">
-        <div className="flex items-center mb-4">
-          <Link 
-            to={pageInfo ? `/pages/${pageInfo.slug}` : (author.id ? `/profile/${author.id}` : '#')} 
-            className="hover:opacity-80 transition-opacity relative z-10"
-          >
-            <Avatar className={`h-10 w-10 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
-              <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || "/placeholder.svg"} className={pageInfo ? 'rounded-lg' : ''} />
-              <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground ${pageInfo ? 'rounded-lg' : ''}`}>
-                {pageInfo ? pageInfo.name.charAt(0) : author.initials}
-              </AvatarFallback>
-            </Avatar>
-          </Link>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between">
-              <div className="truncate">
-                {pageInfo ? (
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Link to={`/pages/${pageInfo.slug}`} className="hover:text-primary transition-colors relative z-10 truncate">
-                      <p className="font-semibold truncate">{pageInfo.name}</p>
+      <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 group">
+        <div className="relative">
+          {/* Header - Padded */}
+          <div className="flex items-center px-3 lg:px-4 py-2 lg:py-3">
+            <Link
+              to={pageInfo ? `/pages/${pageInfo.slug}` : (author.id ? `/profile/${author.id}` : '#')}
+              className="hover:opacity-80 transition-opacity relative z-10"
+            >
+              <Avatar className={`h-8 w-8 lg:h-9 lg:w-9 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
+                <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || "/placeholder.svg"} className={pageInfo ? 'rounded-lg' : ''} />
+                <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground text-xs ${pageInfo ? 'rounded-lg' : ''}`}>
+                  {pageInfo ? pageInfo.name.charAt(0) : author.initials}
+                </AvatarFallback>
+              </Avatar>
+            </Link>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <div className="truncate">
+                  {pageInfo ? (
+                    <div className="flex items-center gap-1.5 truncate">
+                      <Link to={`/pages/${pageInfo.slug}`} className="hover:text-primary transition-colors relative z-10 truncate">
+                        <p className="font-semibold truncate text-[13px] lg:text-[14px]">{pageInfo.name}</p>
+                      </Link>
+                    </div>
+                  ) : author.id ? (
+                    <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
+                      <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
+                      {author.isVerified && <VerificationBadge size="sm" />}
                     </Link>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-bold border border-primary/20 scale-90">
-                      PAGE
-                    </span>
-                  </div>
-                ) : author.id ? (
-                  <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 block truncate">
-                    <p className="font-semibold truncate">{author.name}</p>
-                  </Link>
-                ) : (
-                  <p className="font-semibold truncate">{author.name}</p>
-                )}
-                <p className="text-xs text-muted-foreground truncate">
-                  {pageInfo ? "Company Page" : author.role} • {timeAgo}
-                </p>
-              </div>
+                  ) : (
+                    <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
+                  )}
+                  <p className="text-[11px] lg:text-[12px] text-muted-foreground truncate">
+                    {pageInfo ? "Company Page" : author.role} • {timeAgo}
+                  </p>
+                </div>
 
-              {isOwner && (
                 <div className="flex-shrink-0 relative z-20">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -610,263 +620,290 @@ const PostCard = ({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background/95 backdrop-blur-xl border-white/10 rounded-2xl shadow-xl">
-                      <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-white/5">
-                        <Edit className="h-4 w-4 text-primary" />
-                        <span>Edit Post</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-red-500/10 text-red-500 focus:text-red-500">
-                        <Trash2 className="h-4 w-4" />
-                        <span>Delete Post</span>
-                      </DropdownMenuItem>
+                      {canManage ? (
+                        <>
+                          <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-white/5">
+                            <Edit className="h-4 w-4 text-primary" />
+                            <span>Edit Post</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-red-500/10 text-red-500 focus:text-red-500">
+                            <Trash2 className="h-4 w-4" />
+                            <span>Delete Post</span>
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <DropdownMenuItem onClick={() => setIsReportOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-rose-500/10 text-rose-500 focus:text-rose-500">
+                          <Flag className="h-4 w-4" />
+                          <span>Report Content</span>
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
+
+                  <ReportDialog 
+                    open={isReportOpen} 
+                    onOpenChange={setIsReportOpen}
+                    targetId={id}
+                    targetType="post"
+                  />
                 </div>
-              )}
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="mb-4 space-y-3">
-          <div className="text-[14px] leading-relaxed">
-             {content.includes('JOB_SHARE::') ? (
-                (() => {
-                  try {
-                    const parts = content.split('JOB_SHARE::');
-                    const caption = parts[0].trim();
-                    const jsonStr = parts[parts.length - 1].trim();
-                    const shareData = JSON.parse(jsonStr);
-                    return (
-                      <div className="space-y-3">
-                        {caption && <FormattedText text={caption} className="text-foreground/90 leading-relaxed" />}
-                        <div className="mt-3 block scale-90 origin-top-left">
-                          <JobShareCard {...shareData} />
+          
+          {/* Caption & Content - Now at the Top */}
+          <div className="px-3 lg:px-4 py-2">
+            <div className="space-y-2">
+              <div className="text-[13px] lg:text-[14px] leading-relaxed">
+                {content.includes('JOB_SHARE::') ? (
+                  (() => {
+                    try {
+                      const parts = content.split('JOB_SHARE::');
+                      const caption = parts[0].trim();
+                      const jsonStr = parts[parts.length - 1].trim();
+                      const shareData = JSON.parse(jsonStr);
+                      return (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-start">
+                             {caption && <FormattedText text={caption} className="text-foreground/90" />}
+                          </div>
+                          <div className="w-full">
+                            <JobShareCard {...shareData} />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  } catch (e) {
-                    return <FormattedText text={content} className="text-foreground/90 leading-relaxed" />;
-                  }
-                })()
-              ) : (
-                <FormattedText text={content} className="text-foreground/90 leading-relaxed" />
+                      );
+                    } catch (e) {
+                      return <FormattedText text={content} className="text-foreground/90" />;
+                    }
+                  })()
+                ) : (
+                  <FormattedText text={content} className="text-foreground/90" />
+                )}
+              </div>
+
+              {tags && tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pb-1">
+                  {tags.map((tag) => (
+                    <span key={tag} className="text-[11px] lg:text-[12px] font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full">
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
               )}
-          </div>
-        </div>
-
-        {renderMediaGallery()}
-
-        <div className="flex flex-wrap gap-2 mb-4 relative z-10">
-          {tags && tags.map((tag) => (
-            <span
-              key={tag}
-              className="text-xs px-2.5 py-1 bg-primary/5 border border-primary/10 rounded-full text-primary/80 hover:bg-primary/10 hover:border-primary/30 cursor-pointer transition-all duration-300"
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between pt-4 border-t border-white/5 relative z-10">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`text-muted-foreground hover:text-red-500 hover:bg-red-500/10 flex items-center gap-1.5 transition-all duration-300 ${isLiked ? 'text-red-500' : ''}`}
-            onClick={handleLike}
-            disabled={isLiking}
-          >
-            <Heart size={18} className={`transition-transform duration-300 ${isLiked ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
-            <span>{displayLikeCount}</span>
-          </Button>
-
-          <Button variant="ghost" size="sm" className={`text-muted-foreground hover:text-primary hover:bg-primary/10 flex items-center gap-1.5 transition-all duration-300 ${showComments ? 'text-primary' : ''}`} onClick={handleComment}>
-            <MessageCircle size={18} className={`transition-transform duration-300 ${showComments ? 'fill-current scale-110' : 'group-hover:scale-110'}`} />
-            <span>{displayCommentCount}</span>
-          </Button>
-
-          <ShareButton postId={id} shareCount={share_count} />
-
-          {/* Bookmark Button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`hover:bg-primary/10 group ${isBookmarked ? 'text-primary' : 'text-muted-foreground'}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleBookmark.mutate({ postId: id, isBookmarked });
-            }}
-            disabled={isTogglingBookmark}
-          >
-            {isBookmarked ? (
-              <BookmarkCheck className="h-5 w-5 fill-current" />
-            ) : (
-              <Bookmark className="h-5 w-5 group-hover:scale-110 transition-transform" />
-            )}
-            <VisuallyHidden>{isBookmarked ? 'Saved' : 'Save'}</VisuallyHidden>
-          </Button>
-        </div>
-      </div>
-      <AnimatePresence>
-        {showComments && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="overflow-hidden border-t border-white/5 bg-black/5"
-          >
-            <div className="p-3 sm:p-6 pt-2">
-              <CommentSection postId={id} />
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
 
-      {/* Full-screen Media Viewer with Interaction Panel */}
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="max-w-7xl w-full h-[95vh] lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
-          <VisuallyHidden>
-            <DialogTitle>Media Viewer for {author.name}'s Post</DialogTitle>
-            <DialogDescription>
-              Viewing images and interact with this post
-            </DialogDescription>
-          </VisuallyHidden>
-          {(() => {
-            const items = Array.isArray(mediaItems) && mediaItems.length > 0 ? mediaItems : (mediaUrl ? [{ url: mediaUrl, type: (hasImage ? 'image' : 'video') as 'image'|'video' }] : []);
-            const currentItem = items[viewIndex];
-            const hasMultiple = items.length > 1;
-            return (
-              <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
-                {/* Mobile Author Header (Hidden on Desktop) */}
-                <div className="lg:hidden p-4 border-b border-border/10 bg-background flex items-center justify-between z-50 shrink-0">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9 ring-1 ring-primary/20">
-                      <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                      <AvatarFallback className="bg-primary/10 text-primary font-bold">{author.initials}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-bold text-sm tracking-tight">{author.name}</p>
-                      <p className="text-[10px] text-muted-foreground italic -mt-0.5 opacity-80">{author.craft || 'Artist'}</p>
-                    </div>
-                  </div>
-                  {/* Dialog Default Close will be in Top Right of DialogContent, 
-                      but we keep this simple for layout balance if needed. 
-                      Actually Radix Close is usually top right of DialogContent. */}
-                </div>
+          {/* Media - Full width */}
+          <div className="w-full bg-black/5" onClick={handleViewMedia}>
+            {renderMediaGallery()}
+          </div>
 
-                {/* Media Section: Left panel (Flexible) */}
-                <div 
-                  className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none cursor-grab active:cursor-grabbing"
-                  onTouchStart={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={() => processSwipe(items.length, true)}
-                  onMouseDown={handleMouseDown}
-                  onMouseMove={handleMouseMove}
-                  onMouseUp={() => processSwipe(items.length, true)}
-                  onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, true); }}
-                  onWheel={(e) => handleWheel(e, items.length, true)}
+          {/* Footer actions and caption */}
+          <div className="px-3 lg:px-4 py-2 lg:py-3">
+            <div className="flex items-center justify-between mb-2 lg:mb-3">
+              <div className="flex items-center gap-5">
+                <button
+                  onClick={handleLike}
+                  disabled={isLiking}
+                  className={`flex items-center gap-1.5 transition-all duration-300 group/like ${isLiked ? 'text-red-500' : 'text-foreground/80 hover:text-red-500'}`}
                 >
-
-                  {/* Multimedia Controls */}
-                  {hasMultiple && (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
-                        onClick={(e) => { e.stopPropagation(); prevMedia(items.length); }}
-                      >
-                        <ChevronLeft className="h-6 w-6 lg:h-8 lg:w-8" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
-                        onClick={(e) => { e.stopPropagation(); nextMedia(items.length); }}
-                      >
-                        <ChevronRight className="h-6 w-6 lg:h-8 lg:w-8" />
-                      </Button>
-                      
-                      {/* Dots (Instagram Style Overlaid) */}
-                      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-1.5 px-2.5 py-1 rounded-full bg-black/20 backdrop-blur-[2px]">
-                        {items.map((_, i) => (
-                          <div 
-                            key={i} 
-                            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === viewIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`} 
-                          />
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Display Media: Full width on mobile */}
-                  <div className="h-full w-full flex items-center justify-center p-0 lg:p-8">
-                    {currentItem?.type === 'video' ? (
-                      <video
-                        key={currentItem.url}
-                        src={currentItem.url}
-                        controls
-                        autoPlay
-                        className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
-                      />
-                    ) : (
-                      <img
-                        key={currentItem?.url}
-                        src={currentItem?.url}
-                        alt="Media in viewer"
-                        className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
-                      />
-                    )}
+                  <div className="p-2 -m-2 rounded-full group-hover/like:bg-red-500/10 transition-colors">
+                    <Heart size={24} className={`transition-transform duration-300 group-active/like:scale-125 ${isLiked ? 'fill-current' : ''}`} />
                   </div>
-                </div>
+                  <span className="text-[13px] font-semibold">{displayLikeCount}</span>
+                </button>
+                
+                <button
+                  onClick={handleComment}
+                  className="flex items-center gap-1.5 transition-all duration-300 group/comment text-foreground/80 hover:text-primary"
+                >
+                  <div className="p-2 -m-2 rounded-full group-hover/comment:bg-primary/10 transition-colors">
+                    <MessageCircle size={24} />
+                  </div>
+                  <span className="text-[13px] font-semibold">{displayCommentCount}</span>
+                </button>
 
-                {/* Interaction Panel: Right panel (Fixed width on desktop, dynamic on mobile) */}
-                <div className="w-full lg:w-[420px] flex flex-col bg-card border-l border-border/10 shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden shadow-[-20px_0_40px_rgba(0,0,0,0.3)] order-2 lg:order-none z-10">
-                  {/* Post Header (Desktop) */}
-                  <div className="hidden lg:flex p-5 border-b border-border/10 items-center justify-between shrink-0 bg-background/50 backdrop-blur-xl">
+                <ShareButton postId={id} shareCount={share_count} />
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleBookmark.mutate({ postId: id, isBookmarked });
+                }}
+                disabled={isTogglingBookmark}
+                className={`transition-all duration-300 ${isBookmarked ? 'text-primary' : 'text-foreground hover:text-muted-foreground'}`}
+              >
+                <Bookmark size={22} className={isBookmarked ? 'fill-current' : ''} />
+              </button>
+            </div>
+
+              <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
+                View all {displayCommentCount} comments
+              </button>
+            </div>
+          </div>
+        <AnimatePresence>
+          {showComments && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+              className="overflow-hidden border-t border-white/5 bg-black/5"
+            >
+              <div className="p-3 sm:p-6 pt-2">
+                <CommentSection postId={id} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Full-screen Media Viewer with Interaction Panel */}
+        <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+          <DialogContent className="max-w-7xl w-full h-[95vh] lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
+            <VisuallyHidden>
+              <DialogTitle>Media Viewer for {author.name}'s Post</DialogTitle>
+              <DialogDescription>
+                Viewing images and interact with this post
+              </DialogDescription>
+            </VisuallyHidden>
+            {(() => {
+              const items = Array.isArray(mediaItems) && mediaItems.length > 0 ? mediaItems : (mediaUrl ? [{ url: mediaUrl, type: (hasImage ? 'image' : 'video') as 'image' | 'video' }] : []);
+              const currentItem = items[viewIndex];
+              const hasMultiple = items.length > 1;
+              return (
+                <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
+                  {/* Mobile Author Header (Hidden on Desktop) */}
+                  <div className="lg:hidden p-4 border-b border-border/10 bg-background flex items-center justify-between z-50 shrink-0">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-11 w-11 ring-2 ring-primary/20 shadow-md">
+                      <Avatar className="h-9 w-9 ring-1 ring-primary/20">
                         <AvatarImage src={author.avatar || "/placeholder.svg"} />
                         <AvatarFallback className="bg-primary/10 text-primary font-bold">{author.initials}</AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0">
+                      <div>
                         <p className="font-bold text-sm tracking-tight">{author.name}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Artist'}</p>
+                        <p className="text-[10px] text-muted-foreground italic -mt-0.5 opacity-80">{author.craft || 'Artist'}</p>
                       </div>
+                    </div>
+                    {/* Dialog Default Close will be in Top Right of DialogContent, 
+                      but we keep this simple for layout balance if needed. 
+                      Actually Radix Close is usually top right of DialogContent. */}
+                  </div>
+
+                  {/* Media Section: Left panel (Flexible) */}
+                  <div
+                    className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none cursor-grab active:cursor-grabbing"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={() => processSwipe(items.length, true)}
+                    onMouseDown={handleMouseDown}
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={() => processSwipe(items.length, true)}
+                    onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, true); }}
+                    onWheel={(e) => handleWheel(e, items.length, true)}
+                  >
+
+                    {/* Multimedia Controls */}
+                    {hasMultiple && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
+                          onClick={(e) => { e.stopPropagation(); prevMedia(items.length); }}
+                        >
+                          <ChevronLeft className="h-6 w-6 lg:h-8 lg:w-8" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
+                          onClick={(e) => { e.stopPropagation(); nextMedia(items.length); }}
+                        >
+                          <ChevronRight className="h-6 w-6 lg:h-8 lg:w-8" />
+                        </Button>
+
+                        {/* Dots (Instagram Style Overlaid) */}
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-1.5 px-2.5 py-1 rounded-full bg-black/20 backdrop-blur-[2px]">
+                          {items.map((_, i) => (
+                            <div
+                              key={i}
+                              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === viewIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Display Media: Full width on mobile */}
+                    <div className="h-full w-full flex items-center justify-center p-0 lg:p-8">
+                      {currentItem?.type === 'video' ? (
+                        <video
+                          key={currentItem.url}
+                          src={currentItem.url}
+                          controls
+                          autoPlay
+                          className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
+                        />
+                      ) : (
+                        <img
+                          key={currentItem?.url}
+                          src={currentItem?.url}
+                          alt="Media in viewer"
+                          className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
+                        />
+                      )}
                     </div>
                   </div>
 
-                  {/* Actions (Like, Comment, etc.) - ALWAYS AT TOP FOR MOBILE UNDER MEDIA, TOP OF RIGHT FOR DESKTOP */}
-                  <div className="p-4 lg:p-5 border-b border-border/10 bg-background/50 backdrop-blur-2xl shrink-0 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-6">
-                        <Button variant="ghost" size="icon" onClick={handleLike} disabled={isLiking} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                          <Heart className={`h-7 w-7 transition-all duration-300 ${isLiked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                          <MessageCircle className="h-7 w-7 hover:text-primary transition-colors duration-300" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                          <Share2 className="h-7 w-7 hover:text-primary transition-colors duration-300" />
-                        </Button>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-base font-black tracking-tight">{displayLikeCount} Likes</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Scrollable Content */}
-                  <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
-                    {content && (
-                      <div className="flex gap-3.5 items-start">
-                        <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10 ring-1 ring-primary/10">
+                  {/* Interaction Panel: Right panel (Fixed width on desktop, dynamic on mobile) */}
+                  <div className="w-full lg:w-[420px] flex flex-col bg-card border-l border-border/10 shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden shadow-[-20px_0_40px_rgba(0,0,0,0.3)] order-2 lg:order-none z-10">
+                    {/* Post Header (Desktop) */}
+                    <div className="hidden lg:flex p-5 border-b border-border/10 items-center justify-between shrink-0 bg-background/50 backdrop-blur-xl">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-11 w-11 ring-2 ring-primary/20 shadow-md">
                           <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                          <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">{author.initials}</AvatarFallback>
+                          <AvatarFallback className="bg-primary/10 text-primary font-bold">{author.initials}</AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <div className="text-[14px] leading-relaxed">
-                             <span className="font-bold text-foreground mr-2 tracking-tight">{author.name}</span>
-                             {content.includes('JOB_SHARE::') ? (
+                        <div className="min-w-0">
+                          <p className="font-bold text-sm tracking-tight">{author.name}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Artist'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions (Like, Comment, etc.) - ALWAYS AT TOP FOR MOBILE UNDER MEDIA, TOP OF RIGHT FOR DESKTOP */}
+                    <div className="p-4 lg:p-5 border-b border-border/10 bg-background/50 backdrop-blur-2xl shrink-0 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-6">
+                          <Button variant="ghost" size="icon" onClick={handleLike} disabled={isLiking} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                            <Heart className={`h-7 w-7 transition-all duration-300 ${isLiked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                            <MessageCircle className="h-7 w-7 hover:text-primary transition-colors duration-300" />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                            <Share2 className="h-7 w-7 hover:text-primary transition-colors duration-300" />
+                          </Button>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-base font-black tracking-tight">{displayLikeCount} Likes</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Scrollable Content */}
+                    <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
+                      {content && (
+                        <div className="flex gap-3.5 items-start">
+                          <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10 ring-1 ring-primary/10">
+                            <AvatarImage src={author.avatar || "/placeholder.svg"} />
+                            <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">{author.initials}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="text-[14px] leading-relaxed">
+                              <span className="font-bold text-foreground mr-2 tracking-tight">{author.name}</span>
+                              {content.includes('JOB_SHARE::') ? (
                                 (() => {
                                   try {
                                     const parts = content.split('JOB_SHARE::');
@@ -888,36 +925,36 @@ const PostCard = ({
                               ) : (
                                 <FormattedText text={content} className="inline text-foreground/90 leading-relaxed" />
                               )}
+                            </div>
+                            <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1.5 uppercase tracking-widest font-medium">
+                              {timeAgo}
+                            </p>
                           </div>
-                          <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1.5 uppercase tracking-widest font-medium">
-                             {timeAgo}
-                          </p>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    <div className="space-y-4">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/40 px-1 border-b border-white/5 pb-2">Conversation Thread</h4>
-                      <CommentSection postId={id} />
+                      <div className="space-y-4">
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/40 px-1 border-b border-white/5 pb-2">Conversation Thread</h4>
+                        <CommentSection postId={id} />
+                      </div>
+                    </div>
+
+                    {/* Timestamp ONLY footer */}
+                    <div className="p-3 border-t border-border/10 bg-background/90 backdrop-blur-2xl shrink-0 opacity-80">
+                      <p className="text-[9px] text-muted-foreground/50 uppercase tracking-[0.4em] font-black text-center py-1">
+                        PUBLISHED {new Date(createdAt || new Date()).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </p>
                     </div>
                   </div>
-
-                  {/* Timestamp ONLY footer */}
-                  <div className="p-3 border-t border-border/10 bg-background/90 backdrop-blur-2xl shrink-0 opacity-80">
-                    <p className="text-[9px] text-muted-foreground/50 uppercase tracking-[0.4em] font-black text-center py-1">
-                      PUBLISHED {new Date(createdAt || new Date()).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                    </p>
-                  </div>
                 </div>
-              </div>
-            );
+              );
 
-          })()}
-        </DialogContent>
-      </Dialog>
-    </div>
-  </>
-);
+            })()}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </>
+  );
 };
 
 export default PostCard;

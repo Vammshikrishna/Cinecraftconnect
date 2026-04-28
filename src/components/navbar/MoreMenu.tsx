@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone } from 'lucide-react';
+import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, Flag, Shield, Crown } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -9,12 +9,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppRole } from '@/hooks/useAppRole';
 import VendorIcon from '@/components/icons/VendorIcon';
 import StudioPageIcon from '@/components/icons/StudioPageIcon';
 
 const MoreMenu = () => {
     const location = useLocation();
     const { isFan } = useAccountType();
+    const { isModerator, isAdmin, isSuperAdmin } = useAppRole();
 
     // Items available to everyone (fans + creators)
     const commonItems = [
@@ -23,7 +25,6 @@ const MoreMenu = () => {
         { path: '/pages', icon: StudioPageIcon, label: 'Pages' },
     ];
 
-
     // Creator-only items
     const creatorItems = [
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
@@ -31,10 +32,17 @@ const MoreMenu = () => {
         { path: '/learn', icon: BookOpen, label: 'Learn' },
     ];
 
+    // Governance items — shown only to privileged roles
+    const governanceItems = [
+        ...(isModerator ? [{ path: '/moderation', icon: Flag, label: 'Moderation', color: 'text-amber-500' }] : []),
+        ...(isAdmin ? [{ path: '/admin', icon: Shield, label: 'Admin Panel', color: 'text-blue-500' }] : []),
+        ...(isSuperAdmin ? [{ path: '/super-admin', icon: Crown, label: 'Super Admin', color: 'text-amber-500' }] : []),
+    ];
+
     const moreItems = isFan ? commonItems : [...commonItems, ...creatorItems];
 
     // Check if any of the "more" items is active
-    const isAnyActive = moreItems.some(item => location.pathname.startsWith(item.path));
+    const isAnyActive = [...moreItems, ...governanceItems].some(item => location.pathname.startsWith(item.path));
 
     return (
         <DropdownMenu>
@@ -84,9 +92,31 @@ const MoreMenu = () => {
                         ))}
                     </>
                 )}
+
+                {/* Governance section — moderators, admins, super_admins only */}
+                {governanceItems.length > 0 && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <div className="px-3 py-1">
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Internal</p>
+                        </div>
+                        {governanceItems.map(({ path, icon: Icon, label, color }) => (
+                            <DropdownMenuItem key={path} asChild>
+                                <Link
+                                    to={path}
+                                    className={`flex items-center gap-3 px-3 py-2 cursor-pointer ${location.pathname.startsWith(path) ? 'bg-primary/10 text-primary' : ''}`}
+                                >
+                                    <Icon size={18} className={color} />
+                                    <span className={`font-bold ${color}`}>{label}</span>
+                                </Link>
+                            </DropdownMenuItem>
+                        ))}
+                    </>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );
 };
 
 export default MoreMenu;
+

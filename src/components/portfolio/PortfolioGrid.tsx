@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { PortfolioItem } from "./PortfolioItem";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAppRole } from "@/hooks/useAppRole";
+import { PortfolioItemData } from "@/types/portfolio";
 import { PortfolioItemDetail } from "./PortfolioItemDetail";
 import PortfolioUploadDialog from "./PortfolioUploadDialog";
 import {
@@ -17,19 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-interface PortfolioItemData {
-  id: string;
-  title: string;
-  description?: string;
-  media_url?: string;
-  media_type?: string;
-  project_type?: string;
-  role?: string;
-  completion_date?: string;
-  tags?: string[];
-  is_featured?: boolean;
-  user_id: string;
-}
+// Type moved to @/types/portfolio.ts
 
 interface PortfolioGridProps {
   userId?: string;
@@ -40,6 +30,8 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItemData[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { isAdmin } = useAppRole();
+  const canManage = isOwner || isAdmin;
 
   const [isDetailViewOpen, setIsDetailViewOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<PortfolioItemData | null>(null);
@@ -129,7 +121,7 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
 
   return (
     <div className="space-y-6">
-      {isOwner && (
+      {canManage && (
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">My Portfolio</h2>
           <Button onClick={handleAddNew}><Plus className="mr-2 h-4 w-4" />Add New Item</Button>
@@ -139,7 +131,7 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
       {portfolioItems.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-muted-foreground mb-4">{isOwner ? "You haven't added any portfolio items yet." : "No portfolio items to display."}</p>
-          {isOwner && <Button onClick={handleAddNew} variant="outline"><Plus className="mr-2 h-4 w-4" />Add Your First Item</Button>}
+          {canManage && <Button onClick={handleAddNew} variant="outline"><Plus className="mr-2 h-4 w-4" />Add Your First Item</Button>}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -151,7 +143,7 @@ export const PortfolioGrid = ({ userId, isOwner = false }: PortfolioGridProps) =
               description={item.description}
               mediaUrl={item.media_url}
               mediaType={item.media_type as 'image' | 'video' | 'audio' | 'document'}
-              isOwner={isOwner}
+              isOwner={canManage}
               onEdit={handleEdit}
               onDelete={openDeleteDialog}
               onView={handleView}

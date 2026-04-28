@@ -117,7 +117,7 @@ export function MarketplaceShareSheet({ isOpen, onOpenChange, listingId }: Marke
                                     name: projectTitle,
                                     avatar_url: null,
                                     type: 'space',
-                                    subtitle: `Project Space â€¢ ${space.name}`
+                                    subtitle: `Project Space • ${space.name}`
                                 });
                             }
                         });
@@ -138,7 +138,7 @@ export function MarketplaceShareSheet({ isOpen, onOpenChange, listingId }: Marke
                                     name: project.title, // Display Project Title for user clarity
                                     avatar_url: null,
                                     type: 'space',
-                                    subtitle: `Project Space â€¢ ${space.name}`
+                                    subtitle: `Project Space • ${space.name}`
                                 });
                             }
                         });

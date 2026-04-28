@@ -256,44 +256,53 @@ export type Database = {
         Row: {
           category_id: string | null
           created_at: string
-          creator_id: string | null
-          description: string | null
+          creator_id: string
+          description: string
           id: string
-          is_public: boolean | null
+          is_active: boolean | null
+          last_activity_at: string | null
           member_count: number | null
-          name: string
           project_id: string | null
+          room_purpose: string | null
           room_type: string | null
+          settings: Json | null
           tags: string[] | null
           title: string
+          updated_at: string
         }
         Insert: {
           category_id?: string | null
           created_at?: string
-          creator_id?: string | null
-          description?: string | null
+          creator_id: string
+          description: string
           id?: string
-          is_public?: boolean | null
+          is_active?: boolean | null
+          last_activity_at?: string | null
           member_count?: number | null
-          name: string
           project_id?: string | null
+          room_purpose?: string | null
           room_type?: string | null
+          settings?: Json | null
           tags?: string[] | null
           title: string
+          updated_at?: string
         }
         Update: {
           category_id?: string | null
           created_at?: string
-          creator_id?: string | null
-          description?: string | null
+          creator_id?: string
+          description?: string
           id?: string
-          is_public?: boolean | null
+          is_active?: boolean | null
+          last_activity_at?: string | null
           member_count?: number | null
-          name?: string
           project_id?: string | null
+          room_purpose?: string | null
           room_type?: string | null
+          settings?: Json | null
           tags?: string[] | null
           title?: string
+          updated_at?: string
         }
         Relationships: [
           {
@@ -990,6 +999,8 @@ export type Database = {
           username: string | null
           website: string | null
           youtube_url: string | null
+          is_verified: boolean | null
+          is_banned: boolean | null
         }
         Insert: {
           account_type?: string | null
@@ -1008,6 +1019,8 @@ export type Database = {
           username?: string | null
           website?: string | null
           youtube_url?: string | null
+          is_verified?: boolean | null
+          is_banned?: boolean | null
         }
         Update: {
           account_type?: string | null
@@ -1026,6 +1039,8 @@ export type Database = {
           username?: string | null
           website?: string | null
           youtube_url?: string | null
+          is_verified?: boolean | null
+          is_banned?: boolean | null
         }
         Relationships: []
       }

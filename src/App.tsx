@@ -6,9 +6,13 @@ import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/toaster";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import Navbar from "@/components/navbar/Navbar";
+import LandingNavbar from "@/components/landing/LandingNavbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import RoleGuard from "@/components/RoleGuard";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import GlobalFeatures from "@/components/GlobalFeatures";
+import ThemeSyncPrompt from "@/components/theme/ThemeSyncPrompt";
+import DesktopOnlyGuard from "@/components/DesktopOnlyGuard";
 
 // Lazy Loaded Pages
 const Index = lazy(() => import("./pages/Index"));
@@ -25,6 +29,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const LearningPortal = lazy(() => import("./pages/LearningPortal"));
 const CraftPage = lazy(() => import("./pages/CraftPage"));
 const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
+const SetupAdmin = lazy(() => import("./pages/admin/SetupAdmin"));
 const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
 const Messages = lazy(() => import("./pages/Messages"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -59,6 +64,15 @@ const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/legal/TermsOfService"));
 const CookiePolicy = lazy(() => import("./pages/legal/CookiePolicy"));
 
+// Marketing Pages
+const About = lazy(() => import("./pages/About"));
+const Features = lazy(() => import("./pages/Features"));
+
+// Internal Governance (role-gated)
+const ModerationDashboard = lazy(() => import("./pages/admin/ModerationDashboard"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
+
 // Custom route for the landing page
 const LandingRoute = () => {
   const { user } = useAuth();
@@ -69,7 +83,7 @@ import ScrollToTop from "@/components/ScrollToTop";
 import { CallProvider } from "@/contexts/CallContext";
 
 const App = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, isLoading } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <CallProvider>
@@ -77,7 +91,8 @@ const App = () => {
           <ScrollToTop />
           <Toaster />
           <GlobalFeatures />
-        {user && profile?.onboarding_completed && <Navbar />}
+          <ThemeSyncPrompt />
+        {!isLoading && (user && profile?.onboarding_completed ? <Navbar /> : <LandingNavbar />)}
         <ErrorBoundary>
           <Suspense
             fallback={
@@ -90,6 +105,8 @@ const App = () => {
               <Route path="/" element={<LandingRoute />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/register" element={<Auth />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/features" element={<Features />} />
               <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
               <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
               <Route path="/profile/:userId" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
@@ -100,7 +117,12 @@ const App = () => {
               <Route path="/jobs" element={<ProtectedRoute><Jobs /></ProtectedRoute>} />
               <Route path="/network" element={<ProtectedRoute><Network /></ProtectedRoute>} />
               <Route path="/craft/:craftName" element={<CraftPage />} />
-              <Route path="/craft/all" element={<AllCraftsPage />} />
+              <Route path="/all-crafts" element={<AllCraftsPage />} />
+              <Route path="/setup-admin" element={
+                <DesktopOnlyGuard>
+                  <SetupAdmin />
+                </DesktopOnlyGuard>
+              } />
               <Route path="/learn" element={<LearningPortal />} />
               <Route path="/discussion-rooms" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
               <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><DiscussionRooms /></ProtectedRoute>} />
@@ -137,6 +159,35 @@ const App = () => {
               <Route path="/privacy" element={<PrivacyPolicy />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/cookie" element={<CookiePolicy />} />
+
+              {/* Internal Governance Routes — role-gated */}
+              <Route path="/moderation" element={
+                <ProtectedRoute>
+                  <RoleGuard requiredRole="moderator">
+                    <DesktopOnlyGuard>
+                      <ModerationDashboard />
+                    </DesktopOnlyGuard>
+                  </RoleGuard>
+                </ProtectedRoute>
+              } />
+              <Route path="/admin" element={
+                <ProtectedRoute>
+                  <RoleGuard requiredRole="admin">
+                    <DesktopOnlyGuard>
+                      <AdminDashboard />
+                    </DesktopOnlyGuard>
+                  </RoleGuard>
+                </ProtectedRoute>
+              } />
+              <Route path="/super-admin" element={
+                <ProtectedRoute>
+                  <RoleGuard requiredRole="super_admin">
+                    <DesktopOnlyGuard>
+                      <SuperAdminDashboard />
+                    </DesktopOnlyGuard>
+                  </RoleGuard>
+                </ProtectedRoute>
+              } />
 
               <Route path="*" element={<NotFound />} />
             </Routes>
