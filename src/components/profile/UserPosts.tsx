@@ -12,6 +12,7 @@ import { InstagramShareSheet } from '@/components/feed/InstagramShareSheet';
 import { formatDistanceToNow } from 'date-fns';
 import { FormattedText } from '@/components/ui/formatted-text';
 import { JobShareCard } from '@/components/chat/JobShareCard';
+import VerificationBadge from '@/components/common/VerificationBadge';
 import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import {
   DropdownMenu,
@@ -32,6 +33,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAppRole } from "@/hooks/useAppRole";
 
 interface UserPostsProps {
   targetUserId: string;
@@ -44,6 +46,7 @@ interface ExtendedPost extends Post {
     username: string;
     avatar_url: string;
     craft: string;
+    is_verified: boolean;
   };
 }
 
@@ -57,6 +60,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
   const [showShareSheet, setShowShareSheet] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isAdmin } = useAppRole();
 
   // State for editing and deleting
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -79,7 +83,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
       const { data, error } = await supabase
         .from('posts')
-        .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
+        .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified)')
         .eq('author_id', targetUserId)
         .is('page_id', null)
         .order('created_at', { ascending: false });
@@ -499,7 +503,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
-                        {user?.id === selectedPost.author_id ? (
+                        {user?.id === selectedPost.author_id || isAdmin ? (
                           <>
                             <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
                               <Edit2 className="mr-2 h-4 w-4" />
@@ -662,7 +666,10 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         </AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex flex-col">
-                        <p className="font-black text-[15px] tracking-tight text-black leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-black text-[15px] tracking-tight text-black leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
+                          {selectedPost?.profiles.is_verified && <VerificationBadge size="xs" />}
+                        </div>
                         <p className="text-[10px] text-black/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
                       </div>
                     </div>
@@ -674,7 +681,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
-                        {user?.id === selectedPost.author_id ? (
+                        {user?.id === selectedPost.author_id || isAdmin ? (
                           <>
                             <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
                               <Edit2 className="mr-2 h-4 w-4" />

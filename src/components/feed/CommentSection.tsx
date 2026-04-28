@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeComments } from "@/hooks/useRealtimeComments";
+import { useAppRole } from "@/hooks/useAppRole";
 import { Trash2, MoreHorizontal } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -21,6 +22,7 @@ import { Comment } from "@/types";
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
+  const { isAdmin } = useAppRole();
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -89,6 +91,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
         full_name: user.user_metadata?.full_name || "You",
         username: user.user_metadata?.username || "",
         avatar_url: user.user_metadata?.avatar_url || null,
+        is_verified: user.user_metadata?.is_verified || false,
       },
     };
 
@@ -199,6 +202,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
             onDelete={handleDeleteComment}
             isReply={false}
             user={{ id: user?.id }}
+            isAdmin={isAdmin}
             getInitials={getInitials}
           />
         ))}
@@ -215,6 +219,7 @@ const CommentItem = ({
   onDelete, 
   isReply, 
   user,
+  isAdmin,
   getInitials
 }: { 
   comment: Comment, 
@@ -223,11 +228,13 @@ const CommentItem = ({
   onDelete: (id: string) => void,
   isReply: boolean,
   user: { id?: string },
+  isAdmin: boolean,
   getInitials: (name: string) => string
 }) => {
   const [showReplies, setShowReplies] = useState(false);
   const [isTranslated, setIsTranslated] = useState(false);
   const isCurrentUser = user.id === comment.user_id;
+  const canDelete = isCurrentUser || isAdmin;
   const authorName = isCurrentUser ? "You" : (comment.profiles?.username || comment.profiles?.full_name?.split(' ')[0] || "Anonymous");
   const initials = getInitials(isCurrentUser ? (user.id ? "You" : "U") : (comment.profiles?.full_name || authorName));
   const avatarUrl = isCurrentUser ? (user.id ? (comment.profiles?.avatar_url || null) : null) : comment.profiles?.avatar_url;
@@ -300,7 +307,7 @@ const CommentItem = ({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="bg-background/95 backdrop-blur-xl border-white/10 rounded-xl shadow-xl min-w-[120px]">
-                {user.id === comment.user_id && (
+                {canDelete && (
                   <DropdownMenuItem 
                     onClick={() => onDelete(comment.id)}
                     className="rounded-lg gap-2 cursor-pointer focus:bg-red-500/10 text-red-500 focus:text-red-500 py-2.5"
@@ -351,6 +358,7 @@ const CommentItem = ({
                   onDelete={onDelete}
                   isReply={true}
                   user={user}
+                  isAdmin={isAdmin}
                   getInitials={getInitials}
                 />
               ))}

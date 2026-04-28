@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { MessageCircle, UserPlus, UserCheck, Clock, Users, Briefcase, Sparkles, MapPin, Globe } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import VerificationBadge from '../common/VerificationBadge';
 
 interface UserCardProps {
   user: {
@@ -16,6 +17,7 @@ interface UserCardProps {
     location?: string | null;
     bio?: string | null;
     connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
+    is_verified?: boolean;
     suggestion_reason?: string;
   };
   onConnect: (userId: string) => void;
@@ -63,7 +65,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
         return (
           <Button 
             size="sm" 
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-xs font-bold uppercase tracking-wider" 
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-[11px] font-bold" 
             onClick={() => onAccept(user.id)}
           >
             <UserCheck size={14} className="mr-1.5" /> Accept
@@ -73,7 +75,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
         return (
           <Button 
             size="sm" 
-            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-xs font-bold uppercase tracking-wider" 
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-[11px] font-bold" 
             onClick={() => onConnect(user.id)}
           >
             <UserPlus size={14} className="mr-1.5" /> Connect
@@ -104,8 +106,9 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
         {/* Name and Info */}
         <div className="space-y-1 mb-4 w-full">
           <Link to={`/profile/${user.id}`} className="block">
-            <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-none pt-1">
+            <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-none pt-1 flex items-center justify-center gap-1.5">
               {user.full_name || user.username}
+              {user.is_verified && <VerificationBadge size="sm" />}
             </h3>
           </Link>
           

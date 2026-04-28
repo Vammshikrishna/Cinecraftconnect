@@ -1,12 +1,51 @@
 import { Link } from 'react-router-dom';
 import { MarketplaceListing } from '@/types/marketplace';
-import { MapPin, Star, User } from 'lucide-react';
+import { MapPin, Star, User, MoreVertical, Trash2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface ListingCardProps {
     listing: MarketplaceListing;
 }
 
 export const ListingCard = ({ listing }: ListingCardProps) => {
+    const { user } = useAuth();
+    const { isAdmin } = useAppRole();
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+    
+    const isOwner = user?.id === listing.user_id;
+    const canManage = isOwner || isAdmin;
+
+    const handleDelete = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!confirm('Are you sure you want to delete this listing?')) return;
+        
+        const { error } = await supabase
+            .from('marketplace_listings')
+            .delete()
+            .eq('id', listing.id);
+            
+        if (error) {
+            toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        } else {
+            toast({ title: 'Success', description: 'Listing deleted successfully' });
+            queryClient.invalidateQueries({ queryKey: ['marketplace-listings'] });
+        }
+    };
+
     const primaryImage = listing.images && listing.images.length > 0
         ? listing.images[0]
         : undefined;
@@ -36,10 +75,27 @@ export const ListingCard = ({ listing }: ListingCardProps) => {
                     )}
                     
                     {/* Category Badge overlaying image */}
-                    <div className="absolute top-3 right-3 shadow-lg">
+                    <div className="absolute top-3 right-3 flex items-center gap-2 shadow-lg">
                         <div className="px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md border border-white/20 text-[9px] font-black text-foreground uppercase tracking-[0.1em]">
                             {listing.category}
                         </div>
+                        
+                        {canManage && (
+                            <div className="relative z-30" onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full bg-background/80 backdrop-blur-md hover:bg-background border border-white/20">
+                                            <MoreVertical size={12} className="text-foreground" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" className="bg-background border-border">
+                                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={handleDelete}>
+                                            <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+                        )}
                     </div>
                 </div>
 

@@ -46,10 +46,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { getGradientForString } from '@/utils/colors';
 import { useProjects, Project } from '@/hooks/useProjects';
+import { useAppRole } from '@/hooks/useAppRole';
 import { PageHeader } from '@/components/common/PageHeader';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
+  const { isAdmin } = useAppRole();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -164,8 +166,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             </div>
           )}
 
-          {/* Owner Actions */}
-          {user?.id === project.creator_id && (
+          {/* Management Actions */}
+          {(user?.id === project.creator_id || isAdmin) && (
             <div className="absolute bottom-3 right-3 z-20" onClick={(e) => e.stopPropagation()}>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -194,8 +196,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
             </div>
           )}
 
-          {/* Share Button for Non-Owners */}
-          {user?.id !== project.creator_id && (
+          {/* Share Button for Non-Managers */}
+          {(user?.id !== project.creator_id && !isAdmin) && (
             <div className="absolute bottom-3 right-3 z-20" onClick={(e) => e.stopPropagation()}>
                <button
                 onClick={handleShareClick}

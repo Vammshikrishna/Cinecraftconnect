@@ -12,7 +12,7 @@ const UniversalCreateButton = () => {
 
     const toggleOpen = () => setIsOpen(!isOpen);
 
-    // Fans cannot create content â€” hide the button entirely
+    // Fans cannot create content — hide the button entirely
     if (isFan) return null;
 
     interface Action {

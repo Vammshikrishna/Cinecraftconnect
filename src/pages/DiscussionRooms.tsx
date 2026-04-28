@@ -24,6 +24,7 @@ import { getDisplayMessage } from '@/lib/chat-utils';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
+import { useAppRole } from '@/hooks/useAppRole';
 
 // --- DATA INTERFACES ---
 
@@ -41,6 +42,7 @@ interface Room {
   last_message?: { content: string; created_at: string; sender_name?: string } | null;
   // This is a client-side addition
   tags?: string[];
+  settings?: any;
 }
 
 // --- MAIN PAGE COMPONENT ---
@@ -101,6 +103,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             member_count, 
             room_categories(name), 
             tags,
+            settings,
             room_messages(content, created_at, profiles(full_name))
           `)
           .order('created_at', { foreignTable: 'room_messages', ascending: false }),
@@ -119,6 +122,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           category_id: room.category_id || '',
           creator_id: room.creator_id || '',
           tags: room.tags || [],
+          settings: room.settings || {},
           last_message: lastMsg ? {
             content: lastMsg.content,
             created_at: lastMsg.created_at,
@@ -343,10 +347,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                       <div className="flex justify-between items-start mb-1">
                         <div className="flex items-center gap-2 pr-2 flex-1">
                           <h3 className={cn(
-                            "font-bold text-sm truncate",
+                            "font-bold text-sm truncate flex items-center",
                             activeRoom?.id === room.id ? "text-primary" : "text-foreground group-hover:text-primary transition-colors"
                           )}>
-                            {room.title}
+                            {room.settings?.roomEmoji && <span className="mr-2 text-base shrink-0">{room.settings.roomEmoji}</span>}
+                            <span className="truncate">{room.title}</span>
                           </h3>
                           {hasUnread && (
                             <span className="flex h-2 w-2 rounded-full bg-red-500 animate-pulse shrink-0" />
@@ -391,18 +396,21 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         )}
 
         <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
-             <DiscussionChatInterface
-              roomId={activeRoom.id}
-              userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
-              roomTitle={activeRoom.title}
-              roomDescription={activeRoom.description}
-              categoryId={activeRoom.category_id}
-              categories={categories}
-              roomType={activeRoom.room_type}
-              onClose={() => navigate('/discussion-rooms')}
-              onRoomUpdated={handleRoomUpdated}
-              showBackButton={isInCall && !isCallMinimized}
-            />
+          <DiscussionChatInterface
+            roomId={activeRoom.id}
+            userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
+            roomTitle={activeRoom.title}
+            roomDescription={activeRoom.description}
+            categoryId={activeRoom.category_id}
+            categories={categories}
+            roomType={activeRoom.room_type}
+            roomSettings={activeRoom.settings}
+            onClose={() => {
+              navigate('/discussion-rooms');
+            }}
+            onRoomUpdated={handleRoomUpdated}
+            showBackButton={isInCall && !isCallMinimized}
+          />
           </div>
         </div>
       </div>
@@ -436,6 +444,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           categoryId={activeRoom.category_id}
           categories={categories}
           roomType={activeRoom.room_type}
+          roomSettings={activeRoom.settings}
           onClose={() => {
             navigate('/discussion-rooms');
           }}
@@ -568,9 +577,11 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
   const { user } = useAuth();
   const { toast } = useToast();
   const { unreadDiscussionIds } = useUnreadMessages();
+  const { isAdmin } = useAppRole();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
   const isOwner = user?.id === room.creator_id;
+  const canManage = isOwner || isAdmin;
   const hasUnread = unreadDiscussionIds.includes(room.id);
 
   const handleDelete = async () => {
@@ -607,9 +618,12 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
   const categoryName = room.room_categories?.name || 'General';
 
   return (
-    <div className="group h-full relative">
+    <div 
+      className="group h-full relative cursor-pointer" 
+      onClick={() => onJoin(room)}
+    >
       <div className={cn(
-        "glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2",
+        "glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2 group-hover:border-primary/40",
         hasUnread 
           ? "border-red-500/50 shadow-lg shadow-red-500/20" 
           : ""
@@ -633,10 +647,11 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
           <div className="flex justify-between items-start mb-3">
             <div className="flex items-center gap-2 pr-2 flex-1">
               <h3 className={cn(
-                "text-lg font-bold tracking-tight line-clamp-2 break-all duration-300",
+                "text-lg font-bold tracking-tight line-clamp-2 break-all duration-300 flex items-center",
                 hasUnread ? "text-red-400" : "text-foreground group-hover:text-primary transition-colors"
               )}>
-                {room.title}
+                {room.settings?.roomEmoji && <span className="mr-2 text-2xl shrink-0">{room.settings.roomEmoji}</span>}
+                <span className="line-clamp-2">{room.title}</span>
               </h3>
               {hasUnread && (
                 <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse shrink-0" />
@@ -648,20 +663,25 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
                 ACTIVE
               </span>
             )}
-            {isOwner && (
+            {canManage && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0 -mt-0.5">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7 text-muted-foreground hover:text-foreground shrink-0 -mt-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <MoreVertical className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-popover border-border">
+                <DropdownMenuContent align="end" className="bg-popover border-border" onClick={(e) => e.stopPropagation()}>
                   <DropdownMenuItem onClick={() => { /* Edit logic if needed */ }} className="cursor-pointer">
                     <Edit className="h-4 w-4 mr-2" />
                     Edit Room
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => setDeleteDialogOpen(true)}
+                    onClick={() => { setDeleteDialogOpen(true); }}
                     className="cursor-pointer text-destructive focus:text-destructive"
                   >
                     <Trash2 className="h-4 w-4 mr-2" />
@@ -674,11 +694,11 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {!isOwner && (
+            {!canManage && (
                <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0 -mt-0.5"
+                className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0 -mt-0.5 relative z-10"
                 onClick={(e) => { e.stopPropagation(); onShare?.(room); }}
                >
                  <Share2 className="h-4 w-4" />
@@ -716,7 +736,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
           {/* Members/Notification Row */}
           <div className="flex items-center justify-between mt-auto mb-4">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10">
+              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
                 <Users className="h-3 w-3 text-primary" />
               </div>
               <span className="font-medium">{room.member_count} {room.member_count === 1 ? 'member' : 'members'}</span>
@@ -734,12 +754,11 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, isActive }: { room: Room; o
             <div className="flex gap-2">
               <Button
                 className={cn(
-                  "flex-1 font-semibold rounded-xl h-10 transition-all active:scale-[0.98]",
+                  "flex-1 font-semibold rounded-xl h-10 transition-all active:scale-[0.98] group-hover:scale-[1.02]",
                   hasUnread 
                     ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/20" 
                     : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-md hover:shadow-lg"
                 )}
-                onClick={() => onJoin(room)}
               >
                 {hasUnread ? <Bell size={18} className="mr-2 animate-bounce" /> : <DiscussionRoomIcon size={22} className="mr-2" />}
                 {hasUnread ? "View Messages" : "Join Discussion Room"}

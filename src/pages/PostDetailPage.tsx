@@ -31,7 +31,8 @@ const PostDetailPage = () => {
                         full_name,
                         username,
                         avatar_url,
-                        craft
+                        craft,
+                        is_verified
                     )
                 `)
                 .eq('id', postId || '')
@@ -89,7 +90,8 @@ const PostDetailPage = () => {
                         role: author?.craft || 'Creator',
                         craft: author?.craft,
                         initials: initials,
-                        avatar: author?.avatar_url
+                        avatar: author?.avatar_url,
+                        isVerified: author?.is_verified
                     }}
                     timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
                     content={post.content}

@@ -277,20 +277,66 @@ export function useIsPageAdmin(pageId: string | undefined) {
   });
 }
 
-// Fetch user's own pages
+// Fetch user's own pages (owned and admin managed)
 export function useMyPages() {
   const { user } = useAuth();
   return useQuery({
     queryKey: ['my-pages', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const { data, error } = await supabase
+      
+      // Fetch pages owned by user
+      const ownedPagesPromise = supabase
         .from('company_pages' as any)
         .select('*')
-        .eq('owner_id', user.id)
-        .order('created_at', { ascending: false });
+        .eq('owner_id', user.id);
+        
+      // Fetch pages where user is admin
+      const adminPagesPromise = supabase
+        .from('company_page_admins' as any)
+        .select('company_pages(*)')
+        .eq('user_id', user.id);
+        
+      const [ownedRes, adminRes] = await Promise.all([ownedPagesPromise, adminPagesPromise]);
+      
+      if (ownedRes.error) throw ownedRes.error;
+      if (adminRes.error) throw adminRes.error;
+      
+      const owned = ownedRes.data || [];
+      const adminManaged = (adminRes.data || []).map((a: any) => a.company_pages).filter(Boolean);
+      
+      // Combine and remove duplicates
+      const allPages = [...owned, ...adminManaged];
+      const uniquePagesMap = new Map();
+      allPages.forEach(p => {
+        if (!uniquePagesMap.has(p.id)) {
+          uniquePagesMap.set(p.id, p);
+        }
+      });
+      
+      const uniquePages = Array.from(uniquePagesMap.values());
+      
+      return uniquePages.sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ) as unknown as CompanyPage[];
+    },
+    enabled: !!user,
+  });
+}
+
+// Fetch user's followed page IDs
+export function useFollowedPageIds() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['followed-page-ids', user?.id],
+    queryFn: async () => {
+      if (!user) return new Set<string>();
+      const { data, error } = await supabase
+        .from('company_page_followers' as any)
+        .select('page_id')
+        .eq('user_id', user.id);
       if (error) throw error;
-      return (data || []) as unknown as CompanyPage[];
+      return new Set((data || []).map((f: any) => f.page_id));
     },
     enabled: !!user,
   });

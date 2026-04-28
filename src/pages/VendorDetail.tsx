@@ -19,6 +19,8 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { VendorShareSheet } from '@/components/vendors/VendorShareSheet';
 import { PageHeader } from '@/components/common/PageHeader';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Trash2 } from 'lucide-react';
 
 const VendorDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -29,6 +31,7 @@ const VendorDetail = () => {
     const [loading, setLoading] = useState(true);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [showShareSheet, setShowShareSheet] = useState(false);
+    const { isAdmin } = useAppRole();
 
     useEffect(() => {
         if (id) {
@@ -89,6 +92,19 @@ const VendorDetail = () => {
             });
         }
     };
+    
+    const handleDeleteVendor = async () => {
+        if (!vendor) return;
+        if (!confirm('Are you sure you want to delete this vendor profile? This action cannot be undone.')) return;
+        try {
+            const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
+            if (error) throw error;
+            toast({ title: "Vendor Deleted", description: "The vendor profile has been successfully removed." });
+            navigate('/vendors');
+        } catch (error: any) {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        }
+    };
 
     if (loading) {
         return (
@@ -118,9 +134,16 @@ const VendorDetail = () => {
                     subtitle="Industry Vendor Profile"
                     onBack={() => navigate(-1)}
                     actions={
-                        <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
-                            <Share2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                                <Share2 className="h-4 w-4" />
+                            </Button>
+                            {isAdmin && (
+                                <Button variant="ghost" size="icon" className="rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-none" onClick={handleDeleteVendor}>
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
                     }
                 />
 

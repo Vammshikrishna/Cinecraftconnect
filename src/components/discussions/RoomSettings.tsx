@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, X, Lock, Globe, Tag, Shield, Bell, BellOff, MessageSquareOff, ImageOff, Link2Off, Filter, Clock, Pin, Smile, Volume2, VolumeX, Users } from 'lucide-react';
+import { 
+  Loader2, X, Lock, Globe, Tag, Shield, Bell, BellOff, MessageSquareOff, ImageOff, Link2Off, Filter, Clock, Pin, Smile, Volume2, VolumeX, Users,
+  Trash2, AlertCircle, MessageSquare, MoreVertical, UserMinus, UserCheck
+} from 'lucide-react';
 import { DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +26,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 
 interface RoomSettingsProps {
   roomId: string;
@@ -63,24 +73,129 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
   const [welcomeMessage, setWelcomeMessage] = useState('');
   const [roomEmoji, setRoomEmoji] = useState('💬');
 
+  // WhatsApp-style settings
+  const [onlyAdminsSend, setOnlyAdminsSend] = useState(false);
+  const [onlyAdminsEdit, setOnlyAdminsEdit] = useState(false);
+  const [creatorId, setCreatorId] = useState<string | null>(null);
+  
+  // Participants state
+  const [members, setMembers] = useState<any[]>([]);
+  const [isFetchingMembers, setIsFetchingMembers] = useState(false);
+
+  const fetchMembers = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      setIsFetchingMembers(true);
+      
+      // 1. Fetch room members
+      const { data: membersData, error: membersError } = await supabase
+        .from('room_members')
+        .select('user_id, role, joined_at')
+        .eq('room_id', roomId)
+        .order('joined_at', { ascending: true });
+
+      if (membersError) throw membersError;
+      
+      if (!membersData || membersData.length === 0) {
+        setMembers([]);
+        return;
+      }
+
+      // 2. Fetch profiles for these users
+      const userIds = membersData.map(m => m.user_id);
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, username, avatar_url')
+        .in('id', userIds);
+
+      if (profilesError) throw profilesError;
+
+      // 3. Merge data
+      const mergedMembers = membersData.map(member => ({
+        ...member,
+        profiles: profilesData?.find(p => p.id === member.user_id) || null
+      }));
+
+      setMembers(mergedMembers);
+    } catch (err) {
+      console.error('Error fetching members:', err);
+    } finally {
+      setIsFetchingMembers(false);
+    }
+  }, [roomId]);
+
+  const handleMemberAction = async (userId: string, action: 'remove' | 'promote' | 'demote') => {
+    try {
+      if (action === 'remove') {
+        const { error } = await supabase
+          .from('room_members')
+          .delete()
+          .eq('room_id', roomId)
+          .eq('user_id', userId);
+        if (error) throw error;
+        toast({ title: "Member removed", description: "The participant has been removed from the room." });
+      } else {
+        const newRole = action === 'promote' ? 'admin' : 'member';
+        const { error } = await supabase
+          .from('room_members')
+          .update({ role: newRole })
+          .eq('room_id', roomId)
+          .eq('user_id', userId);
+        if (error) throw error;
+        toast({ 
+          title: action === 'promote' ? "Admin promoted" : "Admin demoted", 
+          description: `User role has been updated to ${newRole}.` 
+        });
+      }
+      fetchMembers();
+    } catch (err) {
+      console.error('Error performing member action:', err);
+      toast({ title: "Action failed", description: "Could not update member status.", variant: "destructive" });
+    }
+  };
+
   // Fetch current room settings
   useEffect(() => {
     const fetchRoomDetails = async () => {
       const { data } = await supabase
         .from('discussion_rooms')
-        .select('room_type')
+        .select('room_type, member_count, tags, settings, creator_id')
         .eq('id', roomId)
         .single();
 
       if (data) {
         const roomData = data as any;
         setIsPrivate(roomData.room_type === 'private');
-        if (roomData.member_limit !== undefined) setMemberLimit(roomData.member_limit);
+        setCreatorId(roomData.creator_id);
+        if (roomData.member_count !== undefined) setMemberLimit(roomData.member_count);
         if (roomData.tags !== undefined) setTags(roomData.tags || []);
+        
+        // Load settings from JSON
+        if (roomData.settings) {
+          const s = roomData.settings;
+          if (s.muteRoom !== undefined) setMuteRoom(s.muteRoom);
+          if (s.mentionsOnly !== undefined) setMentionsOnly(s.mentionsOnly);
+          if (s.soundAlerts !== undefined) setSoundAlerts(s.soundAlerts);
+          if (s.slowMode !== undefined) setSlowMode(s.slowMode);
+          if (s.slowModeInterval !== undefined) setSlowModeInterval(s.slowModeInterval);
+          if (s.allowMediaSharing !== undefined) setAllowMediaSharing(s.allowMediaSharing);
+          if (s.allowLinks !== undefined) setAllowLinks(s.allowLinks);
+          if (s.profanityFilter !== undefined) setProfanityFilter(s.profanityFilter);
+          if (s.pinnedMessage !== undefined) setPinnedMessage(s.pinnedMessage);
+          if (s.welcomeMessage !== undefined) setWelcomeMessage(s.welcomeMessage);
+          if (s.roomEmoji !== undefined) setRoomEmoji(s.roomEmoji);
+          if (s.memberLimit !== undefined) setMemberLimit(s.memberLimit);
+          if (s.onlyAdminsSend !== undefined) setOnlyAdminsSend(s.onlyAdminsSend);
+          if (s.onlyAdminsEdit !== undefined) setOnlyAdminsEdit(s.onlyAdminsEdit);
+        }
       }
     };
+    
     fetchRoomDetails();
+    fetchMembers();
   }, [roomId]);
+
+
 
   const handleAddTag = () => {
     if (newTag.trim() && !tags.includes(newTag.trim()) && tags.length < 10) {
@@ -96,6 +211,23 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
   const handleSave = async () => {
     setSubmitting(true);
     try {
+      const roomSettings = {
+        memberLimit,
+        muteRoom,
+        mentionsOnly,
+        soundAlerts,
+        slowMode,
+        slowModeInterval,
+        allowMediaSharing,
+        allowLinks,
+        profanityFilter,
+        pinnedMessage,
+        welcomeMessage,
+        roomEmoji,
+        onlyAdminsSend,
+        onlyAdminsEdit
+      };
+
       const { error } = await supabase
         .from('discussion_rooms')
         .update({
@@ -103,7 +235,8 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
           description,
           category_id: categoryId,
           room_type: isPrivate ? 'private' : 'public',
-          name: title
+          tags: tags,
+          settings: roomSettings as any
         })
         .eq('id', roomId);
 
@@ -206,6 +339,13 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
               <span>Appearance</span>
             </TabsTrigger>
             <TabsTrigger
+              value="members"
+              className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:bg-muted/50 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
+            >
+              <Users className="h-4 w-4 shrink-0" />
+              <span>Participants</span>
+            </TabsTrigger>
+            <TabsTrigger
               value="advanced"
               className="flex-1 md:flex-none justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 h-auto data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive hover:bg-destructive/5 transition-all duration-200 rounded-lg border border-transparent font-medium text-muted-foreground whitespace-nowrap"
             >
@@ -215,7 +355,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
           </TabsList>
 
           <div className="hidden md:block mt-auto pt-6 border-t border-border">
-            <p className="text-xs text-muted-foreground/50 text-center font-mono">ID: {roomId.slice(0, 8)}</p>
+            {/* ID hidden as requested */}
           </div>
         </div>
 
@@ -225,7 +365,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
             <div className="p-8">
 
               {/* General Tab */}
-              <TabsContent value="general" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="general" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 tracking-tight">General Information</h3>
                   <p className="text-sm text-muted-foreground mb-6">Configure the basic details of your room.</p>
@@ -300,7 +440,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
               </TabsContent>
 
               {/* Privacy Tab */}
-              <TabsContent value="privacy" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="privacy" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 tracking-tight">Privacy & Access</h3>
                   <p className="text-sm text-muted-foreground mb-6">Control who can see and join your room.</p>
@@ -350,7 +490,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
               </TabsContent>
 
               {/* Notifications Tab */}
-              <TabsContent value="notifications" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="notifications" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 tracking-tight">Notifications</h3>
                   <p className="text-sm text-muted-foreground mb-6">Manage how you receive notifications from this room.</p>
@@ -399,7 +539,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
               </TabsContent>
 
               {/* Moderation Tab */}
-              <TabsContent value="moderation" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="moderation" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 tracking-tight">Moderation</h3>
                   <p className="text-sm text-muted-foreground mb-6">Control content and behavior in your room.</p>
@@ -475,12 +615,135 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
                       </div>
                       <Switch checked={profanityFilter} onCheckedChange={setProfanityFilter} />
                     </div>
+
+                    <div className="pt-6 border-t border-border">
+                      <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4">Group Permissions</h4>
+                      
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-background shadow-sm">
+                          <div className="flex-1 pr-4">
+                            <Label className="flex items-center gap-2 text-sm font-semibold mb-0.5">
+                              <MessageSquare className="h-4 w-4 text-primary" />
+                              Send Messages
+                            </Label>
+                            <p className="text-xs text-muted-foreground">Choose who can send messages to this room.</p>
+                          </div>
+                          <Select 
+                            value={onlyAdminsSend ? "admins" : "all"} 
+                            onValueChange={(v) => setOnlyAdminsSend(v === "admins")}
+                          >
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All participants</SelectItem>
+                              <SelectItem value="admins">Only Admins</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-background shadow-sm">
+                          <div className="flex-1 pr-4">
+                            <Label className="flex items-center gap-2 text-sm font-semibold mb-0.5">
+                              <AlertCircle className="h-4 w-4 text-primary" />
+                              Edit Room Settings
+                            </Label>
+                            <p className="text-xs text-muted-foreground">Choose who can change the room's name, emoji, and info.</p>
+                          </div>
+                          <Select 
+                            value={onlyAdminsEdit ? "admins" : "all"} 
+                            onValueChange={(v) => setOnlyAdminsEdit(v === "admins")}
+                          >
+                            <SelectTrigger className="w-[140px] h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All participants</SelectItem>
+                              <SelectItem value="admins">Only Admins</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Members Tab */}
+              <TabsContent value="members" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
+                <div>
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-xl font-semibold mb-1 tracking-tight">Participants</h3>
+                      <p className="text-sm text-muted-foreground">{members.length} members in this room</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={fetchMembers} disabled={isFetchingMembers}>
+                      {isFetchingMembers ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-2" /> : <Users className="h-3.5 w-3.5 mr-2" />}
+                      Refresh
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+                    {members.map((member, index) => {
+                      const isCreator = member.user_id === creatorId;
+                      const isAdmin = member.role === 'admin' || isCreator;
+                      
+                      return (
+                        <div key={`${member.user_id}-${index}`} className="flex items-center justify-between p-3 rounded-xl hover:bg-muted/30 transition-colors border border-transparent hover:border-border/50">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Avatar className="h-10 w-10 border border-border/10">
+                              <AvatarImage src={member.profiles?.avatar_url} />
+                              <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
+                                {member.profiles?.full_name?.substring(0, 2).toUpperCase() || "CC"}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold truncate flex items-center gap-1.5">
+                                {member.profiles?.full_name || member.profiles?.username || "Unknown User"}
+                                {isCreator && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-black uppercase tracking-tighter">Owner</span>}
+                                {!isCreator && isAdmin && <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full font-bold">Admin</span>}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground truncate">
+                                joined {new Date(member.joined_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          {!isCreator && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                                  <MoreVertical className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-48 rounded-xl">
+                                {isAdmin ? (
+                                  <DropdownMenuItem onClick={() => handleMemberAction(member.user_id, 'demote')}>
+                                    <UserMinus className="h-4 w-4 mr-2" /> Dismiss as Admin
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onClick={() => handleMemberAction(member.user_id, 'promote')}>
+                                    <UserCheck className="h-4 w-4 mr-2" /> Make Admin
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem 
+                                  onClick={() => handleMemberAction(member.user_id, 'remove')}
+                                  className="text-destructive focus:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" /> Remove from Group
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </TabsContent>
 
               {/* Appearance Tab */}
-              <TabsContent value="appearance" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="appearance" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 tracking-tight">Appearance</h3>
                   <p className="text-sm text-muted-foreground mb-6">Customize how your room looks and feels.</p>
@@ -541,7 +804,7 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
               </TabsContent>
 
               {/* Advanced Tab */}
-              <TabsContent value="advanced" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 outline-none data-[state=inactive]:hidden">
+              <TabsContent value="advanced" className="space-y-6 m-0 animate-in fade-in slide-in-from-right-4 duration-300 focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=inactive]:hidden">
                 <div>
                   <h3 className="text-xl font-semibold mb-1 text-destructive">Danger Zone</h3>
                   <p className="text-sm text-muted-foreground mb-6">Irreversible actions for this room.</p>

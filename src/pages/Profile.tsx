@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,9 +27,11 @@ import {
   Linkedin,
   Twitter,
   Facebook,
+  Youtube,
   Building2,
   Zap,
 } from 'lucide-react';
+import VerificationBadge from '@/components/common/VerificationBadge';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
@@ -247,7 +249,7 @@ const ProfilePage = () => {
       <div className="w-full max-w-4xl px-4 md:px-8 relative z-10">
         <header className="glass-card mb-8 relative overflow-hidden group pb-8">
           {/* Cover Photo */}
-          <div className="h-32 md:h-48 w-full relative overflow-hidden">
+          <div className="h-32 md:h-44 w-full relative overflow-hidden">
             {profile.cover_image_url ? (
               <img src={getOptimizedImage(profile.cover_image_url, { width: 1200, quality: 90 })} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
             ) : (
@@ -256,161 +258,157 @@ const ProfilePage = () => {
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
           </div>
 
-          <div className="relative z-10 flex flex-col items-center text-center gap-4 -mt-16">
-            <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-secondary rounded-full blur opacity-75 group-hover:opacity-100 transition duration-500"></div>
-              <Avatar className="w-32 h-32 border-4 border-background relative shadow-2xl">
-                <AvatarImage src={getOptimizedImage(profile.avatar_url, { width: 256, height: 256 }) || ''} alt={profile.username || 'User'} className="object-cover" />
-                <AvatarFallback className="bg-muted text-4xl font-bold text-muted-foreground">
-                  {profile.username?.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            </div>
+          <div className="relative z-10 flex flex-col items-start px-6 md:px-12 py-8">
+            {/* Expanded Avatar and Identity Block */}
+            <div className="flex items-start gap-6 md:gap-10 mb-8 -mt-20 md:-mt-28 w-full">
+              <div className="shrink-0 flex flex-col items-center gap-4 -ml-2 md:-ml-4">
+                <Avatar className="w-40 h-40 md:w-56 md:h-56 border-4 border-border shadow-2xl">
+                  <AvatarImage src={getOptimizedImage(profile.avatar_url, { width: 512, height: 512 }) || ''} alt={profile.username || 'User'} className="object-cover" />
+                  <AvatarFallback className="bg-muted text-4xl font-black text-muted-foreground">
+                    {profile.username?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
 
-            <div className="flex flex-col gap-2 items-center max-w-2xl">
-              {isFan ? (
-                <Link to="/pricing" className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full text-xs font-semibold mb-2 hover:bg-amber-500/20 transition-all cursor-pointer">
-                  <Star size={14} className="fill-amber-500" />
-                  <span>Fan Account</span>
-                </Link>
-              ) : isStudio ? (
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-xs font-black uppercase tracking-wider mb-2">
-                  <Building2 size={14} />
-                  <span>Studio / Company</span>
+                {/* Craft and Location Badges stay in left column */}
+                <div className="flex flex-col items-center gap-2 mt-2 w-full">
+                  {profile.craft && (
+                    <Link to={`/learning-portal?craft=${encodeURIComponent(profile.craft)}`} className="flex items-center gap-1.5 hover:text-primary transition-colors px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-[11px] font-medium w-full justify-center">
+                      <Briefcase size={12} />
+                      <span>{profile.craft}</span>
+                    </Link>
+                  )}
+                  {profile.location && (
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-[11px] font-medium w-full justify-center text-muted-foreground whitespace-nowrap">
+                      <MapPin size={12} />
+                      <span>{profile.location}</span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-xs font-black uppercase tracking-wider mb-2">
-                  <Zap size={14} className="fill-primary" />
-                  <span>Creator Pro</span>
+              </div>
+
+              <div className="flex flex-col gap-4 pt-16 md:pt-24 flex-1">
+                <div className="flex flex-col gap-2">
+                  {isFan ? (
+                    <Link to="/pricing" className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full text-[10px] font-black uppercase tracking-wider hover:bg-amber-500/20 transition-all cursor-pointer w-fit">
+                      <Star size={12} className="fill-amber-500" />
+                      <span>Fan Account</span>
+                    </Link>
+                  ) : isStudio ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-[10px] font-black uppercase tracking-wider w-fit">
+                      <Building2 size={12} />
+                      <span>Studio / Company</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-[10px] font-black uppercase tracking-wider w-fit">
+                      <Zap size={12} className="fill-primary" />
+                      <span>Creator Pro</span>
+                    </div>
+                  )}
+                  <h1 className="text-xl md:text-3xl font-black text-foreground tracking-tight leading-tight flex items-center gap-2">
+                    {profile.full_name || profile.username}
+                    {profile.is_verified && <VerificationBadge size="lg" />}
+                  </h1>
                 </div>
-              )}
 
-              <h1 className="text-3xl md:text-4xl font-bold text-gradient">
-                {profile.full_name || profile.username}
-              </h1>
-
-              {profile.bio && (
-                <p className="text-muted-foreground text-sm md:text-base max-w-prose leading-relaxed">
-                  {profile.bio}
-                </p>
-              )}
-
-              <div className="flex flex-wrap items-center justify-center gap-4 mt-2 text-sm text-muted-foreground">
-                {profile.craft && (
-                  <Link to={`/learning-portal?craft=${encodeURIComponent(profile.craft)}`} className="flex items-center gap-1.5 hover:text-primary transition-colors px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20">
-                    <Briefcase size={14} />
-                    <span>{profile.craft}</span>
-                  </Link>
+                {profile.bio && (
+                  <p className="text-muted-foreground text-sm md:text-base max-w-prose leading-relaxed font-medium">
+                    {profile.bio}
+                  </p>
                 )}
-                {profile.location && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20">
-                    <MapPin size={14} />
-                    <span>{profile.location}</span>
-                  </div>
-                )}
+
+                {/* Social Icons moved to below bio */}
+                <div className="flex items-center gap-2 mt-2">
+                  {(profile.social_links?.instagram || profile.instagram_url) && (
+                    <a href={formatURL(profile.social_links?.instagram || profile.instagram_url)} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-all hover:scale-110">
+                        <Instagram size={18} />
+                      </Button>
+                    </a>
+                  )}
+
+                  {profile.social_links?.linkedin && (
+                    <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-all hover:scale-110">
+                        <Linkedin size={18} />
+                      </Button>
+                    </a>
+                  )}
+
+                  {profile.social_links?.twitter && (
+                    <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-all hover:scale-110">
+                        <Twitter size={18} />
+                      </Button>
+                    </a>
+                  )}
+
+                  {profile.social_links?.facebook && (
+                    <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-all hover:scale-110">
+                        <Facebook size={18} />
+                      </Button>
+                    </a>
+                  )}
+
+                  {((profile.social_links as any)?.youtube || profile.youtube_url) && (
+                  <a href={formatURL((profile.social_links as any)?.youtube || profile.youtube_url)} target="_blank" rel="noopener noreferrer">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-600 hover:bg-red-600/10 transition-all hover:scale-110">
+                        <Youtube size={18} />
+                      </Button>
+                    </a>
+                  )}
+                </div>
+                
                 {profile.website && (
-                  <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20">
-                    <Globe size={14} />
+                  <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors text-xs text-muted-foreground mt-2">
+                    <Globe size={12} />
                     <span>{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
                   </a>
                 )}
               </div>
+            </div>
 
-              <div className="flex items-center justify-center gap-3 mt-4">
-                {(profile.social_links?.instagram || profile.instagram_url) && (
-                  <a href={formatURL(profile.social_links?.instagram || profile.instagram_url)} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-all hover:scale-110">
-                      <Instagram size={18} />
-                    </Button>
-                  </a>
-                )}
-
-                {profile.social_links?.linkedin && (
-                  <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-all hover:scale-110">
-                      <Linkedin size={18} />
-                    </Button>
-                  </a>
-                )}
-
-                {profile.social_links?.twitter && (
-                  <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-all hover:scale-110">
-                      <Twitter size={18} />
-                    </Button>
-                  </a>
-                )}
-
-                {profile.social_links?.facebook && (
-                  <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-all hover:scale-110">
-                      <Facebook size={18} />
-                    </Button>
-                  </a>
-                )}
-
-                {profile.youtube_url && (
-                  <a href={formatURL(profile.youtube_url)} target="_blank" rel="noopener noreferrer">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-500 hover:bg-red-500/10 transition-all hover:scale-110">
-                      <div className="flex items-center justify-center w-4 h-4 bg-current rounded-full">
-                        <div className="w-0 h-0 border-t-[2px] border-t-transparent border-l-[4px] border-l-background border-b-[2px] border-b-transparent ml-0.5"></div>
-                      </div>
-                    </Button>
-                  </a>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 sm:gap-6 mt-6 py-4 border-t border-border/50 w-full justify-center flex-wrap">
+            {/* Compact Stats Row (Now only contains stats) */}
+            <div className="flex flex-wrap items-center gap-8 mt-4 w-full px-2">
+              <div className="flex items-center gap-6 py-2">
                 {!isFan && (
-                  <>
-                    <div className="flex flex-col items-center px-2 sm:px-4">
-                      <span className="text-2xl font-bold text-foreground">{postCount}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Posts</span>
-                    </div>
-                    <div className="hidden sm:block w-px h-8 bg-border/50" />
-                  </>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold text-foreground">{postCount}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Posts</span>
+                  </div>
                 )}
-                <div className="flex flex-col items-center px-2 sm:px-4">
-                  <span className="text-2xl font-bold text-foreground">{followersCount}</span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Followers</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-foreground">{followersCount}</span>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Followers</span>
                 </div>
-                
-                {isFan && (
-                  <>
-                    <div className="w-px h-8 bg-border/50" />
-                    
-                    <div className="flex flex-col items-center px-2 sm:px-4">
-                      <span className="text-2xl font-bold text-foreground">{followingCount}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Following</span>
-                    </div>
-                  </>
-                )}
-
-                {(!isFan) && (
-                  <>
-                    <div className="hidden sm:block w-px h-8 bg-border/50" />
-                    <div className="flex flex-col items-center px-2 sm:px-4">
-                      <span className="text-2xl font-bold text-foreground">{connectionsCount}</span>
-                      <span className="text-xs text-muted-foreground uppercase tracking-wider">Connections</span>
-                    </div>
-                  </>
+                {isFan ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold text-foreground">{followingCount}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Following</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg font-bold text-foreground">{connectionsCount}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Connections</span>
+                  </div>
                 )}
               </div>
+            </div>
 
-              <div className="flex items-center justify-center gap-3 mt-2">
-                <Button
-                  onClick={() => setIsEditing(true)}
-                  className="gap-2 bg-primary hover:bg-primary/90 text-white rounded-full px-6 shadow-lg shadow-primary/20 transition-all hover:scale-105"
-                >
-                  <Pencil className="h-4 w-4" />
-                  <span>Edit Profile</span>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-3 mt-6 w-full justify-start">
+              <Button
+                onClick={() => setIsEditing(true)}
+                className="gap-2 bg-primary hover:bg-primary/90 text-white rounded-full px-6 shadow-lg shadow-primary/20 transition-all hover:scale-105"
+              >
+                <Pencil className="h-4 w-4" />
+                <span>Edit Profile</span>
+              </Button>
+              <Link to="/settings">
+                <Button variant="outline" size="icon" className="rounded-full border-border/50 hover:bg-secondary/10 hover:text-foreground transition-all hover:scale-105">
+                  <Settings className="h-4 w-4" />
                 </Button>
-                <Link to="/settings">
-                  <Button variant="outline" size="icon" className="rounded-full border-border/50 hover:bg-secondary/10 hover:text-foreground transition-all hover:scale-105">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </Link>
-              </div>
+              </Link>
             </div>
           </div>
         </header>

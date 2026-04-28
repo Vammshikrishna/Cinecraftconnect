@@ -1,17 +1,19 @@
-﻿import { Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useRef, useEffect, useState, useMemo } from 'react';
 import {
-  Film, Users, MessageSquare, Briefcase, ShoppingBag,
+  Film, Users, Briefcase, ShoppingBag,
   Sparkles, Shield, Globe, Lock, Star,
-  ArrowRight, Clapperboard, Camera, Mic, Headphones,
+  ArrowRight, Camera, Mic, Headphones,
   Play, Zap
 } from 'lucide-react';
 import { motion, useScroll, useTransform, useInView } from 'framer-motion';
+import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import Footer from '@/components/Footer';
+import LandingNavbar from '@/components/landing/LandingNavbar';
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────────
    Reusable: scroll-reveal wrapper
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+   ───────────────────────────────────────────── */
 const Reveal = ({
   children,
   delay = 0,
@@ -45,9 +47,9 @@ const Reveal = ({
   );
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────────
    Film-strip decoration (pure CSS/SVG)
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+   ───────────────────────────────────────────── */
 const FilmStrip = ({ className = '' }: { className?: string }) => (
   <div className={`pointer-events-none select-none ${className}`} aria-hidden>
     <svg width="48" height="600" viewBox="0 0 48 600" fill="none" className="opacity-[0.07]">
@@ -66,9 +68,9 @@ const FilmStrip = ({ className = '' }: { className?: string }) => (
 
 
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────────
    Typewriter headline
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+   ───────────────────────────────────────────── */
 const roles = ['Directors', 'Content Creators', 'YouTubers', 'Cinematographers', 'Editors', 'Producers', 'TV Producers', 'Sound Designers', 'Writers', 'Actors', 'VFX Artists'];
 
 const TypewriterRole = () => {
@@ -102,9 +104,9 @@ const TypewriterRole = () => {
   );
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────────
    Main Landing Page
-   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+   ───────────────────────────────────────────── */
 const Index = () => {
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
@@ -116,9 +118,9 @@ const Index = () => {
 
   const features = useMemo(() => [
     {
-      icon: Clapperboard,
+      icon: Film,
       title: 'Project Spaces',
-      desc: 'Dedicated workspaces for every production â€” from short films to feature-length projects. Organize scripts, shot lists, call sheets, and team roles all in one place.',
+      desc: 'Dedicated workspaces for every production — from short films to feature-length projects. Organize scripts, shot lists, call sheets, and team roles all in one place.',
       accent: 'from-primary to-accent',
     },
     {
@@ -128,9 +130,9 @@ const Index = () => {
       accent: 'from-sky-500 to-blue-600',
     },
     {
-      icon: MessageSquare,
+      icon: DiscussionRoomIcon,
       title: 'Discussion Rooms',
-      desc: 'Real-time conversations with your crew. Share references, give feedback on cuts, and brainstorm ideas â€” with threads, reactions, and file sharing built in.',
+      desc: 'Real-time conversations with your crew. Share references, give feedback on cuts, and brainstorm ideas — with threads, reactions, and file sharing built in.',
       accent: 'from-violet-500 to-purple-600',
     },
     {
@@ -157,11 +159,12 @@ const Index = () => {
 
   return (
     <div className="relative min-h-screen bg-background overflow-x-hidden">
+      <LandingNavbar />
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• HERO â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── HERO ───────────── */}
       <section ref={heroRef} className="relative z-10 min-h-[100dvh] flex items-center justify-center px-4 overflow-hidden">
 
-        {/* Cinematic ambient light â€” two warm diffused orbs */}
+        {/* Cinematic ambient light — two warm diffused orbs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <motion.div
             className="absolute -top-[20%] -left-[10%] w-[60vw] h-[60vw] rounded-full blur-[140px] transform-gpu"
@@ -190,8 +193,8 @@ const Index = () => {
         {/* Floating film icons */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden aria-hidden">
           {[
-            Camera, Mic, Headphones, Film, Clapperboard, Play,
-            Star, Users, Briefcase, ShoppingBag, Shield, MessageSquare
+            Camera, Mic, Headphones, Film, Sparkles, Play,
+            Star, Users, Briefcase, ShoppingBag, Shield, DiscussionRoomIcon
           ].map((Icon, i) => {
             const positions = [
               { left: '8%', top: '15%' },
@@ -223,7 +226,7 @@ const Index = () => {
                   delay: i * 0.3,
                 }}
               >
-                <Icon size={24 + (i % 3) * 8} strokeWidth={1.5} />
+                <Icon size={24} strokeWidth={1.5} />
               </motion.div>
             );
           })}
@@ -268,7 +271,7 @@ const Index = () => {
           >
             CineCraft Connect is the professional network built for the entire
             entertainment ecosystem. From Movies & TV to YouTube & Social Media,
-            manage productions, discover talent, and collaborate â€” all in one platform.
+            manage productions, discover talent, and collaborate — all in one platform.
           </motion.p>
 
           {/* CTAs */}
@@ -299,14 +302,14 @@ const Index = () => {
             transition={{ delay: 0.7, duration: 0.5 }}
             className="mt-8 text-xs text-muted-foreground/60 tracking-wide"
           >
-            Free to use Â· No credit card Â· Built by creators, for creators
+            Free to use · No credit card · Built by creators, for creators
           </motion.p>
         </motion.div>
       </section>
 
 
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• WHAT YOU CAN DO â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── WHAT YOU CAN DO ───────────── */}
       <section className="py-24 md:py-32 px-4 relative">
         {/* Section background accent */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -315,45 +318,62 @@ const Index = () => {
 
         <div className="max-w-6xl mx-auto relative z-10">
           <Reveal>
-            <div className="mb-16 max-w-2xl">
-              <p className="text-primary font-semibold text-sm tracking-widest uppercase mb-3">
-                Everything you need
-              </p>
-              <h2 className="text-3xl md:text-5xl font-bold leading-tight mb-4">
-                One platform for your
-                <br />
-                entire production.
-              </h2>
-              <p className="text-muted-foreground text-lg leading-relaxed">
-                From pre-production to wrap, CineCraft Connect replaces a dozen apps with
-                tools designed specifically for how film crews actually work.
-              </p>
+            <div className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-6">
+              <div className="max-w-2xl">
+                <p className="text-primary font-semibold text-sm tracking-widest uppercase mb-3">
+                  Everything you need
+                </p>
+                <h2 className="text-3xl md:text-5xl font-bold leading-tight mb-4">
+                  One platform for your
+                  <br />
+                  entire production.
+                </h2>
+                <p className="text-muted-foreground text-lg leading-relaxed">
+                  From pre-production to wrap, CineCraft Connect replaces a dozen apps with
+                  tools designed specifically for how film crews actually work.
+                </p>
+              </div>
+              <Link to="/features" className="group flex items-center gap-2 text-primary font-bold text-sm uppercase tracking-widest hover:opacity-80 transition-opacity">
+                View All Features
+                <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+              </Link>
             </div>
           </Reveal>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature, i) => (
               <Reveal key={i} delay={i * 0.08} className="h-full">
-                <div className="group glass-card p-7 rounded-2xl h-full flex flex-col transition-all duration-300 hover:translate-y-[-4px] hover:shadow-lg hover:shadow-primary/5 border border-border/50 hover:border-primary/20">
-                  {/* Icon */}
-                  <div
-                    className={`w-11 h-11 rounded-xl bg-gradient-to-br ${feature.accent} flex items-center justify-center mb-5 shadow-lg group-hover:scale-110 transition-transform duration-300`}
-                  >
-                    <feature.icon className="h-5 w-5 text-white" strokeWidth={2} />
+                <Link 
+                  to={feature.title.toLowerCase().includes('project') ? '/features#projects' : 
+                      feature.title.toLowerCase().includes('marketplace') ? '/features#marketplace' :
+                      feature.title.toLowerCase().includes('job') ? '/features#jobs' :
+                      feature.title.toLowerCase().includes('discussion') ? '/features#discussions' :
+                      feature.title.toLowerCase().includes('network') ? '/features#network' : '/features'}
+                  className="group block h-full"
+                >
+                  <div className="glass-card p-7 rounded-2xl h-full flex flex-col transition-all duration-300 hover:translate-y-[-4px] hover:shadow-lg hover:shadow-primary/5 border border-border/50 hover:border-primary/20">
+                    {/* Icon */}
+                    <div
+                      className={`w-11 h-11 rounded-xl bg-gradient-to-br ${feature.accent} flex items-center justify-center mb-5 shadow-lg group-hover:scale-110 transition-transform duration-300`}
+                    >
+                      <feature.icon className="h-5 w-5 text-white" strokeWidth={2} />
+                    </div>
+
+                    <h3 className="text-xl font-bold text-foreground mb-2">{feature.title}</h3>
+                    <p className="text-muted-foreground text-sm leading-relaxed flex-1">{feature.desc}</p>
+                    
+                    <div className="mt-4 flex items-center gap-2 text-primary font-bold text-[10px] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                      Learn More <ArrowRight size={12} />
+                    </div>
                   </div>
-
-                  <h3 className="text-xl font-bold text-foreground mb-2">{feature.title}</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed flex-1">{feature.desc}</p>
-
-
-                </div>
+                </Link>
               </Reveal>
             ))}
           </div>
         </div>
       </section>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• THE CRAFT â€” VISUAL SHOWCASE â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── THE CRAFT — VISUAL SHOWCASE ───────────── */}
       <section className="py-24 md:py-32 px-4 relative overflow-hidden">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute bottom-0 left-[10%] w-[50vw] h-[30vw] rounded-full blur-[160px] bg-secondary/[0.06]" />
@@ -361,7 +381,7 @@ const Index = () => {
 
         <div className="max-w-6xl mx-auto relative z-10">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-            {/* Left â€” Text */}
+            {/* Left — Text */}
             <Reveal direction="left">
               <div>
                 <p className="text-primary font-semibold text-sm tracking-widest uppercase mb-3">
@@ -374,7 +394,7 @@ const Index = () => {
                 </h2>
                 <p className="text-muted-foreground text-lg leading-relaxed mb-8">
                   Whether you&apos;re organizing a 3-day indie shoot or coordinating a
-                  multi-unit production, CineCraft adapts to the way you work â€” not the
+                  multi-unit production, CineCraft adapts to the way you work — not the
                   other way around.
                 </p>
 
@@ -395,7 +415,7 @@ const Index = () => {
               </div>
             </Reveal>
 
-            {/* Right â€” Visual card stack */}
+            {/* Right — Visual card stack */}
             <Reveal direction="right" delay={0.15}>
               <div className="relative">
                 {/* Back card */}
@@ -405,15 +425,15 @@ const Index = () => {
                   transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
                 />
 
-                {/* Main card â€” a mock project space */}
+                {/* Main card — a mock project space */}
                 <div className="relative glass-card rounded-2xl p-6 border border-border/50">
                   <div className="flex items-center gap-3 mb-5">
                     <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center">
-                      <Clapperboard className="h-5 w-5 text-white" />
+                      <Film className="h-5 w-5 text-white" />
                     </div>
                     <div>
                       <div className="font-semibold text-foreground text-sm">Midnight Horizon</div>
-                      <div className="text-xs text-muted-foreground">Feature Film Â· In Production</div>
+                      <div className="text-xs text-muted-foreground">Feature Film · In Production</div>
                     </div>
                     <div className="ml-auto glass-badge text-primary text-[10px] font-bold uppercase tracking-wider">
                       Active
@@ -451,7 +471,7 @@ const Index = () => {
 
                   {/* Mock task list */}
                   <div className="space-y-2">
-                    {['Location scout â€” Completed', 'Table read â€” Tomorrow 4 PM', 'Shot list review â€” In progress'].map((task, i) => (
+                    {['Location scout — Completed', 'Table read — Tomorrow 4 PM', 'Shot list review — In progress'].map((task, i) => (
                       <div key={i} className="flex items-center gap-2 text-xs">
                         <div className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-emerald-400' : i === 2 ? 'bg-amber-400' : 'bg-sky-400'}`} />
                         <span className="text-muted-foreground">{task}</span>
@@ -465,7 +485,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• ROLES MARQUEE â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── ROLES MARQUEE ───────────── */}
       <section className="py-12 border-y border-border/40 overflow-hidden">
         <motion.div
           className="flex gap-8 whitespace-nowrap"
@@ -489,7 +509,7 @@ const Index = () => {
         </motion.div>
       </section>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• TRUST / SECURITY â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── TRUST / SECURITY ───────────── */}
       <section className="py-24 md:py-32 px-4">
         <div className="max-w-5xl mx-auto">
           <Reveal>
@@ -509,7 +529,7 @@ const Index = () => {
                   </h2>
                   <p className="text-muted-foreground leading-relaxed">
                     Enterprise-grade encryption, granular permissions, and full control over
-                    who sees your projects, drafts, and portfolio. Share when you&apos;re ready â€”
+                    who sees your projects, drafts, and portfolio. Share when you&apos;re ready —
                     not before.
                   </p>
                 </div>
@@ -536,7 +556,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• HOW IT WORKS â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── HOW IT WORKS ───────────── */}
       <section className="py-24 md:py-32 px-4 relative">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-[20%] w-[40vw] h-[30vw] rounded-full blur-[160px] bg-primary/[0.04]" />
@@ -597,7 +617,7 @@ const Index = () => {
         </div>
       </section>
 
-      {/* â•â•â•â•â•â•â•â•â•â•â•â•â• FINAL CTA â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+      {/* ───────────── FINAL CTA ───────────── */}
       <section className="py-24 md:py-32 px-4">
         <Reveal>
           <div className="max-w-3xl mx-auto text-center">
@@ -611,7 +631,7 @@ const Index = () => {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link to="/register">
                 <button className="glass-button-primary px-10 py-5 text-base font-semibold hover-scale click-effect group flex items-center gap-2">
-                  Get Started â€” It&apos;s Free
+                  Get Started — It&apos;s Free
                   <Sparkles className="h-4 w-4 group-hover:rotate-12 transition-transform" />
                 </button>
               </Link>

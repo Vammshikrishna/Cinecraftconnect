@@ -94,7 +94,7 @@ export const ProfileCompletion = () => {
         }
     };
 
-    const totalSteps = 3; // Step 0, 1, 2 â†’ display as 1, 2, 3
+    const totalSteps = 3; // Step 0, 1, 2 → display as 1, 2, 3
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -112,12 +112,12 @@ export const ProfileCompletion = () => {
 
                 <div className="bg-card border border-border rounded-lg p-6 shadow-lg">
 
-                    {/* â”€â”€ STEP 0: Account Type â”€â”€ */}
+                    {/* ── STEP 0: Account Type ── */}
                     {step === 0 && (
                         <div className="space-y-6">
                             <div className="text-center mb-2">
                                 <h2 className="text-xl font-bold mb-1">How will you use CineCraft?</h2>
-                                <p className="text-sm text-muted-foreground">Choose your account type â€” you can't change this later.</p>
+                                <p className="text-sm text-muted-foreground">Choose your account type — you can't change this later.</p>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -194,10 +194,10 @@ export const ProfileCompletion = () => {
                             {accountType && (
                                 <div className={`rounded-lg p-3 text-xs border ${accountType === 'fan' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : accountType === 'studio' ? 'bg-primary/10 border-primary/30 text-primary/80' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`}>
                                     {accountType === 'fan'
-                                        ? 'ðŸŽ¬ As a Fan you can like, comment, follow creators, rate content, and join public discussion spaces anonymously.'
+                                        ? '🎬 As a Fan you can like, comment, follow creators, rate content, and join public discussion spaces anonymously.'
                                         : accountType === 'studio'
                                         ? 'ðŸ¢ As a Studio/Company you can post jobs, search for vendors, hire creators, and manage professional film projects.'
-                                        : 'ðŸŽ¥ As a Creator you get full access â€” posts, projects, analytics, private rooms, DMs to anyone, and a verified badge.'}
+                                        : '🎥 As a Creator you get full access — posts, projects, analytics, private rooms, DMs to anyone, and a verified badge.'}
                                 </div>
                             )}
 
@@ -211,7 +211,7 @@ export const ProfileCompletion = () => {
                         </div>
                     )}
 
-                    {/* â”€â”€ STEP 1: Basic Info â”€â”€ */}
+                    {/* ── STEP 1: Basic Info ── */}
                     {step === 1 && (
                         <div className="space-y-6">
                             <div>
@@ -229,7 +229,7 @@ export const ProfileCompletion = () => {
                                 </div>
                                 {username.length > 0 && (
                                     <p className={`text-sm mt-1 ${usernameAvailable === true ? 'text-green-500' : usernameAvailable === false ? 'text-destructive' : 'text-muted-foreground'}`}>
-                                        {usernameAvailable === true ? 'âœ“ Available' : usernameAvailable === false ? 'âœ— Not available or invalid format' : 'Use 3-20 lowercase letters, numbers, or underscores'}
+                                        {usernameAvailable === true ? '✓ Available' : usernameAvailable === false ? '✗ Not available or invalid format' : 'Use 3-20 lowercase letters, numbers, or underscores'}
                                     </p>
                                 )}
                             </div>
@@ -250,7 +250,7 @@ export const ProfileCompletion = () => {
                         </div>
                     )}
 
-                    {/* â”€â”€ STEP 2: Optional Details â”€â”€ */}
+                    {/* ── STEP 2: Optional Details ── */}
                     {step === 2 && (
                         <div className="space-y-6">
                             <div>

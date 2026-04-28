@@ -2,7 +2,17 @@ import { Link } from 'react-router-dom';
 import { Vendor } from '@/types/marketplace';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MapPin, Star, CheckCircle2, Phone, Mail } from 'lucide-react';
+import { MapPin, Star, CheckCircle2, Phone, Mail, MoreVertical, Trash2 } from 'lucide-react';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface VendorCardProps {
     vendor: Vendor;
@@ -10,8 +20,25 @@ interface VendorCardProps {
 
 export const VendorCard = ({ vendor }: VendorCardProps) => {
     const logoUrl = vendor.logo_url || undefined;
+    const { isAdmin } = useAppRole();
+    const { toast } = useToast();
     const averageRating = vendor.average_rating || 0;
     const reviewCount = vendor.review_count || 0;
+
+    const handleDelete = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!confirm('Are you sure you want to delete this vendor?')) return;
+        
+        try {
+            const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
+            if (error) throw error;
+            toast({ title: "Success", description: "Vendor deleted successfully" });
+        } catch (error: any) {
+            toast({ title: "Error", description: error.message, variant: "destructive" });
+        }
+    };
 
     return (
         <Link to={`/vendors/${vendor.id}`} className="no-underline block group h-full">
@@ -34,12 +61,32 @@ export const VendorCard = ({ vendor }: VendorCardProps) => {
                         )}
                     </div>
                     
-                    {reviewCount > 0 && (
-                        <div className="px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center gap-1.5 transition-all group-hover:bg-yellow-500/20">
-                            <Star size={12} className="text-yellow-500 fill-yellow-500" />
-                            <span className="text-[11px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {reviewCount > 0 && (
+                            <div className="px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center gap-1.5 transition-all group-hover:bg-yellow-500/20">
+                                <Star size={12} className="text-yellow-500 fill-yellow-500" />
+                                <span className="text-[11px] font-black text-yellow-600 dark:text-yellow-400">{averageRating.toFixed(1)}</span>
+                            </div>
+                        )}
+                        
+                        {isAdmin && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                            <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={handleDelete} className="text-red-600 focus:text-red-600">
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete Vendor
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* Info Section */}

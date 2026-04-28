@@ -28,7 +28,7 @@ export const useHomeFeed = () => {
             // Fallback to parallel fetching
             const postsPromise = supabase
                 .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft), company_pages:page_id(id, name, logo_url, slug)')
+                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug)')
                 .order('created_at', { ascending: false })
                 .limit(20);
 
@@ -65,7 +65,7 @@ export const useHomeFeed = () => {
             const connectionsPromise = user?.id
                 ? supabase
                     .from('profiles')
-                    .select('id, full_name, username, avatar_url, craft, bio')
+                    .select('id, full_name, username, avatar_url, craft, bio, is_verified')
                     .neq('id', user.id)
                     .order('updated_at', { ascending: false, nullsFirst: false })
                     .limit(6)

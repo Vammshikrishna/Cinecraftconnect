@@ -1,17 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { PortfolioItemData } from "@/types/portfolio";
 
-interface PortfolioItemData {
-  id: string;
-  title: string;
-  description?: string;
-  media_url?: string;
-  media_type?: string;
-  project_type?: string;
-  role?: string;
-  completion_date?: string;
-  tags?: string[];
-}
+// Type moved to @/types/portfolio.ts
 
 interface PortfolioItemDetailProps {
   item: PortfolioItemData | null;

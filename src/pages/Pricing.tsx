@@ -122,12 +122,12 @@ const PricingCard = ({ tier, billingCycle, index }: PricingCardProps) => {
 
       <div className="mb-6">
         <div className="flex items-baseline gap-1">
-          <span className="text-4xl font-black tracking-tight">â‚¹{price.toLocaleString()}</span>
+          <span className="text-4xl font-black tracking-tight">₹{price.toLocaleString()}</span>
           <span className="text-muted-foreground font-medium">{cycleText}</span>
         </div>
         {billingCycle === 'monthly' && tier.price.yearly > 0 && (
           <p className="text-xs text-muted-foreground mt-1">
-            â‚¹{(tier.price.yearly).toLocaleString()}/yr â€” <span className="text-primary font-bold">save 30%</span>
+            ₹{(tier.price.yearly).toLocaleString()}/yr — <span className="text-primary font-bold">save 30%</span>
           </p>
         )}
         {isStudio && (

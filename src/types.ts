@@ -17,6 +17,7 @@ export interface Post {
     username: string | null;
     avatar_url: string | null;
     craft: string | null;
+    is_verified: boolean | null;
   };
   page_id?: string;
   company_pages?: {
@@ -35,6 +36,7 @@ export interface Comment {
     full_name: string | null;
     username: string | null;
     avatar_url: string | null;
+    is_verified: boolean | null;
   };
   parent_id?: string | null;
 }
@@ -60,4 +62,6 @@ export interface Profile {
     twitter?: string;
     facebook?: string;
   } | null;
+  is_verified?: boolean | null;
+  is_banned?: boolean | null;
 }

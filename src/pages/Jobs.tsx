@@ -14,6 +14,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccountType } from "@/hooks/useAccountType";
+import { useAppRole } from "@/hooks/useAppRole";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +43,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const { isFan } = useAccountType();
+  const { isAdmin } = useAppRole();
   const navigate = useNavigate();
 
   const fetchJobs = async () => {
@@ -371,7 +373,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                         </div>
 
                         <div className="w-full md:w-auto min-w-[200px]">
-                          {isOwner ? (
+                          {(isOwner || isAdmin) ? (
                             <Button 
                               variant="ghost" 
                               onClick={(e) => { e.stopPropagation(); navigate("/jobs/manage"); }} 

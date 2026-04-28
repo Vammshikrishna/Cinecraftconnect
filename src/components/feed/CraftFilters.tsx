@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Film, Camera, PenTool, Music, Scissors } from "lucide-react";
 
@@ -25,13 +25,13 @@ interface CraftFiltersProps {
 
 const CraftFilters = ({ activeFilter, onFilterChange }: CraftFiltersProps) => {
   return (
-    <div className="mb-8 overflow-x-auto">
+    <div className="mb-4 lg:mb-5 overflow-x-auto">
       <div className="flex space-x-2 min-w-max">
         {craftFilters.map((filter) => (
           <Button
             key={filter.name}
             variant={filter.name === activeFilter ? "default" : "outline"}
-            className={`px-4 py-2 rounded-full ${
+            className={`h-8 lg:h-9 px-3 lg:px-4 text-[13px] lg:text-sm rounded-full ${
               filter.name === activeFilter 
                 ? "bg-gradient-to-r from-cinesphere-purple to-cinesphere-blue hover:from-cinesphere-purple/90 hover:to-cinesphere-blue/90" 
                 : "border-white/20 hover:bg-white/5"
@@ -39,7 +39,7 @@ const CraftFilters = ({ activeFilter, onFilterChange }: CraftFiltersProps) => {
             onClick={() => onFilterChange(filter.name)}
           >
             <div className="flex items-center">
-              {filter.icon && <span className="mr-2">{filter.icon}</span>}
+              {filter.icon && <span className="mr-1.5 lg:mr-2 scale-90 lg:scale-100">{filter.icon}</span>}
               <span>{filter.name}</span>
             </div>
           </Button>

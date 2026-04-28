@@ -5,9 +5,9 @@ import { Edit, Trash2, Eye } from "lucide-react";
 interface PortfolioItemProps {
   id: string;
   title: string;
-  description?: string;
-  mediaUrl?: string;
-  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  description?: string | null;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
   projectType?: string;
   role?: string;
   completionDate?: string;

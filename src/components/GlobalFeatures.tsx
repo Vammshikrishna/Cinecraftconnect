@@ -3,6 +3,7 @@ import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
 import { useGlobalNotifications } from '@/hooks/useGlobalNotifications';
+import DevAdminBypass from '@/components/dev/DevAdminBypass';
 
 /**
  * This component handles global features that should be active
@@ -28,6 +29,9 @@ const GlobalFeatures = () => {
             
             {/* Render the Back to Top button */}
             <BackToTop />
+
+            {/* Dev Tools - only rendered on localhost */}
+            <DevAdminBypass />
         </>
     );
 };

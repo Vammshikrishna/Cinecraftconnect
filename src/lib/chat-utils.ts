@@ -54,6 +54,7 @@ export const getNotificationIcon = (type: string) => {
         case 'mention': return '@';
         case 'system_announcement': return '📢';
         case 'network_suggestion': return '🤝';
+        case 'new_post': return '🎬';
         case 'generic': return '🔔';
         default: return '🔔';
     }

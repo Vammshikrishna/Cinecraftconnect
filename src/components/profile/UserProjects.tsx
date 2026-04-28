@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Calendar, MapPin, Users, Film, DollarSign, ExternalLink } from 'lucide-react';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Link } from 'react-router-dom';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Trash2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface Project {
   id: string;
@@ -46,6 +49,8 @@ const getStatusColor = (status: string | null) => {
 
 export const UserProjects = ({ userId }: UserProjectsProps) => {
   const { user } = useAuth();
+  const { isAdmin } = useAppRole();
+  const { toast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const targetUserId = userId || user?.id;
@@ -161,8 +166,29 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {projects.map((project) => (
-        <Link key={project.id} to={`/projects/${project.id}`}>
-          <Card className="group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:scale-[1.02] h-full">
+        <div key={project.id} className="relative group">
+          {isAdmin && (
+            <Button
+              variant="destructive"
+              size="icon"
+              className="absolute top-2 right-2 z-30 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!confirm('Are you sure you want to delete this project?')) return;
+                const { error } = await supabase.from('projects').delete().eq('id', project.id);
+                if (error) toast({ title: 'Error', description: error.message, variant: 'destructive' });
+                else {
+                  toast({ title: 'Success', description: 'Project deleted' });
+                  setProjects(prev => prev.filter(p => p.id !== project.id));
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+          <Link to={`/projects/${project.id}`} className="block h-full">
+            <Card className="group relative overflow-hidden border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:scale-[1.02] h-full">
             {/* Gradient overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
@@ -254,10 +280,10 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
                     <DollarSign className="h-4 w-4 text-primary/70 shrink-0" />
                     <span>
                       {project.budget_min && project.budget_max
-                        ? `â‚¹${project.budget_min.toLocaleString()} - â‚¹${project.budget_max.toLocaleString()}`
+                        ? `₹${project.budget_min.toLocaleString()} - ₹${project.budget_max.toLocaleString()}`
                         : project.budget_min
-                          ? `From â‚¹${project.budget_min.toLocaleString()}`
-                          : `Up to â‚¹${project.budget_max?.toLocaleString()}`
+                          ? `From ₹${project.budget_min.toLocaleString()}`
+                          : `Up to ₹${project.budget_max?.toLocaleString()}`
                       }
                     </span>
                   </div>
@@ -275,6 +301,7 @@ export const UserProjects = ({ userId }: UserProjectsProps) => {
             </CardContent>
           </Card>
         </Link>
+      </div>
       ))}
     </div>
   );
