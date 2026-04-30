@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -5,7 +6,7 @@ import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Megaphone, Film, Star,
-    ShoppingBag, Users
+    ShoppingBag, Users, X
 } from 'lucide-react';
 
 // Components
@@ -37,19 +38,29 @@ interface HomeTabProps {
 import { useHomeFeed, HomeFeedData } from '@/hooks/useHomeFeed';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } from '@/hooks/useCompanyPages';
+import { useToast } from '@/hooks/use-toast';
 
 const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user, profile } = useAuth();
     const navigate = useNavigate();
     const { isFan, accountType } = useAccountType();
     const queryClient = useQueryClient();
+    const { toast } = useToast();
 
     const { data, isLoading: loading, refetch } = useHomeFeed();
     const { data: myPages } = useMyPages();
     const { data: allPages } = useCompanyPages();
     const { data: followedPageIds } = useFollowedPageIds();
     const toggleFollowPage = useToggleFollowPage();
-    
+    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+    const handleDismiss = (id: string, type: string) => {
+        setDismissedIds((prev: Set<string>) => {
+            const next = new Set(prev);
+            next.add(id);
+            return next;
+        });
+    };
 
     // Default empty data structure to prevent crashes if data is undefined during loading
     const feedData: HomeFeedData = data || {
@@ -118,7 +129,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.announcements.length > 0,
             component: (
                 <FeedSection title="Announcements" icon={Megaphone} linkTo="/announcements">
-                    {feedData.announcements.map((item: any) => (
+                    {feedData.announcements
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[85vw] sm:w-[280px] md:w-[320px] flex-none snap-start mx-1 first:ml-0">
                             <FeedAnnouncementCard
                                 announcement={{
@@ -126,6 +139,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     created_at: item.posted_at || item.created_at,
                                     itemType: 'announcement'
                                 }}
+                                onDismiss={(id) => handleDismiss(id, 'Announcement')}
                             />
                         </div>
                     ))}
@@ -137,7 +151,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.projects.length > 0,
             component: (
                 <FeedSection title="Trending Projects" icon={Film} linkTo="/projects">
-                    {feedData.projects.map((item: any) => (
+                    {feedData.projects
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[240px] md:w-[280px] flex-none snap-start h-full">
                             <FeedProjectCard
                                 project={{
@@ -145,6 +161,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     name: item.title,
                                     itemType: 'project'
                                 }}
+                                onDismiss={(id) => handleDismiss(id, 'Project')}
                             />
                         </div>
                     ))}
@@ -158,6 +175,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 <FeedSection title="Connect with Creators" icon={Users} linkTo="/network">
                     {feedData.connections
                         .filter((profile: any) =>
+                            !dismissedIds.has(profile.id) &&
                             // Exclude if already connected
                             !existingConnections.some(c =>
                                 (c.follower_id === profile.id && c.status === 'accepted') ||
@@ -188,6 +206,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             const conn = existingConnections.find(c => c.follower_id === id || c.following_id === id);
                                             if (conn) removeConnection(conn.id);
                                         }}
+                                        onDismiss={(id) => handleDismiss(id, 'Suggestion')}
                                     />
                                 </div>
                             );
@@ -200,10 +219,13 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.discussions.length > 0,
             component: (
                 <FeedSection title="Active Discussions" icon={DiscussionRoomIcon} linkTo="/discussion-rooms">
-                    {feedData.discussions.map((item: any) => (
+                    {feedData.discussions
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[260px] md:w-[320px] flex-none snap-start h-full">
                             <FeedDiscussionCard
                                 discussion={{ ...item, itemType: 'discussion' }}
+                                onDismiss={(id) => handleDismiss(id, 'Discussion')}
                             />
                         </div>
                     ))}
@@ -215,9 +237,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.marketplace.length > 0,
             component: (
                 <FeedSection title="Marketplace Highlights" icon={ShoppingBag} linkTo="/marketplace">
-                    {feedData.marketplace.map((item: any) => (
+                    {feedData.marketplace
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[200px] md:w-[240px] flex-none snap-start h-full">
-                            <ListingCard listing={item} />
+                            <ListingCard 
+                                listing={item} 
+                                onDismiss={(id) => handleDismiss(id, 'Listing')}
+                            />
                         </div>
                     ))}
                 </FeedSection>
@@ -228,9 +255,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.vendors.length > 0,
             component: (
                 <FeedSection title="Featured Vendors" icon={VendorIcon} linkTo="/vendors">
-                    {feedData.vendors.map((item: any) => (
+                    {feedData.vendors
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[240px] md:w-[300px] flex-none snap-start h-full">
-                            <VendorCard vendor={item} />
+                            <VendorCard 
+                                vendor={item} 
+                                onDismiss={(id) => handleDismiss(id, 'Vendor')}
+                            />
                         </div>
                     ))}
                 </FeedSection>
@@ -241,7 +273,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             hasData: feedData.ratings.length > 0,
             component: (
                 <FeedSection title="Latest Ratings" icon={Star} linkTo="/ratings">
-                    {feedData.ratings.map((item: any) => (
+                    {feedData.ratings
+                        .filter((item: any) => !dismissedIds.has(item.id.toString()))
+                        .map((item: any) => (
                         <div key={item.id} className="w-[180px] md:w-[220px] flex-none snap-start">
                             <FeedRatingCard
                                 rating={{
@@ -257,6 +291,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                 }}
                                 variant="vertical"
                                 contentType={item.title ? 'movie' : 'tv'}
+                                onDismiss={(id) => handleDismiss(id, 'Rating')}
                             />
                         </div>
                     ))}
@@ -460,6 +495,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         {feedData.connections.length > 0 ? (
                             feedData.connections
                                 .filter((profile: any) => 
+                                    !dismissedIds.has(profile.id) &&
                                     !existingConnections.some(c => 
                                         (c.follower_id === profile.id && c.status === 'accepted') || 
                                         (c.following_id === profile.id && c.status === 'accepted')
@@ -488,13 +524,24 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             </span>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={() => sendConnectionRequest(conn.id)}
-                                        disabled={sentRequests.some(r => r.following_id === conn.id)}
-                                        className="text-primary text-[11px] font-bold hover:opacity-80 disabled:text-muted-foreground"
-                                    >
-                                        {sentRequests.some(r => r.following_id === conn.id) ? 'Sent' : (isFan ? 'Follow' : 'Connect')}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => sendConnectionRequest(conn.id)}
+                                            disabled={sentRequests.some(r => r.following_id === conn.id)}
+                                            className="text-primary text-[11px] font-bold hover:opacity-80 disabled:text-muted-foreground"
+                                        >
+                                            {sentRequests.some(r => r.following_id === conn.id) ? 'Sent' : (isFan ? 'Follow' : 'Connect')}
+                                        </button>
+                                        {!sentRequests.some(r => r.following_id === conn.id) && (
+                                            <button 
+                                                onClick={() => handleDismiss(conn.id, 'Suggestion')}
+                                                className="text-muted-foreground/40 hover:text-foreground transition-colors p-1"
+                                                title="Dismiss"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))
                         ) : (

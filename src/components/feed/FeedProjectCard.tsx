@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, Film, MoreVertical, Trash2, ExternalLink, MessageSquare } from 'lucide-react';
+import { MapPin, Film, MoreVertical, Trash2, ExternalLink, MessageSquare, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import {
     DropdownMenu,
@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useUnreadMessages } from "@/hooks/useUnreadMessages";
+import { cn } from "@/lib/utils";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -40,9 +41,10 @@ interface FeedProjectCardProps {
             avatar_url: string | null;
         };
     };
+    onDismiss?: (id: string) => void;
 }
 
-const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
+const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
     const { unreadProjectIds } = useUnreadMessages();
@@ -85,11 +87,28 @@ const FeedProjectCard = ({ project }: FeedProjectCardProps) => {
         <div className="group bg-white dark:bg-card border border-border/50 rounded-[20px] overflow-hidden shadow-sm transition-all duration-300 hover:shadow-xl hover:-translate-y-1 relative">
             {/* Unread Message Indicator Overlay */}
             {hasUnread && (
-                <div className="absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500 text-white text-[10px] font-black uppercase tracking-tighter shadow-lg shadow-red-500/30 animate-in zoom-in slide-in-from-right-4 duration-500">
+                <div className={cn(
+                    "absolute top-4 right-4 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500 text-white text-[10px] font-black uppercase tracking-tighter shadow-lg shadow-red-500/30 animate-in zoom-in slide-in-from-right-4 duration-500",
+                    onDismiss && "right-12"
+                )}>
                     <MessageSquare className="h-3 w-3 fill-current" />
                     New Activity
                     <span className="flex h-2 w-2 rounded-full bg-white animate-pulse" />
                 </div>
+            )}
+
+            {onDismiss && (
+                <button 
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDismiss(project.id);
+                    }}
+                    className="absolute top-4 right-4 z-30 h-8 w-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                    title="Dismiss suggestion"
+                >
+                    <X size={14} strokeWidth={3} />
+                </button>
             )}
 
             <Link to={`/projects/${project.id}/space`} className="block relative aspect-[16/10] overflow-hidden">

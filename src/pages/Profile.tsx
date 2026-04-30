@@ -422,8 +422,8 @@ const ProfilePage = () => {
           className="w-full"
         >
           <div className="relative w-full mb-6">
-            <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide w-full md:justify-center" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-              <TabsList className="flex h-auto bg-transparent gap-2 p-0">
+            <div className="flex overflow-x-auto gap-2 pb-2 w-full" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              <TabsList className="flex h-auto bg-transparent gap-2 p-0 min-w-max">
                 {(isFan ? ['saved'] : isStudio ? ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience'] : ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience']).map((tab) => (
                   <TabsTrigger
                     key={tab}
@@ -436,8 +436,6 @@ const ProfilePage = () => {
               </TabsList>
               <div className="w-4 shrink-0" />
             </div>
-            <div className="absolute right-0 top-0 bottom-2 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
-            <div className="absolute left-0 top-0 bottom-2 w-4 bg-gradient-to-r from-background to-transparent pointer-events-none" />
           </div>
 
           <TabsContent value="saved" className="py-8"><SavedPosts /></TabsContent>

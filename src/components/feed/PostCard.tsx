@@ -1,4 +1,4 @@
-import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Share2, Bookmark, Flag } from "lucide-react";
+import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Share2, Bookmark, Flag, Plus } from "lucide-react";
 import ReportDialog from "../common/ReportDialog";
 import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,10 @@ import { useRealtimePostStats } from "@/hooks/useRealtimePostStats";
 import { useAppRole } from "@/hooks/useAppRole";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
+import { cn } from "@/lib/utils";
 import { getOptimizedImage } from "@/utils/image-optimization";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { StaffBadge } from "../internal/shared/StaffBadge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,11 +126,80 @@ const PostCard = ({
   const isTogglingBookmark = toggleBookmark.isPending;
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [editMediaItems, setEditMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
+      const filePath = `posts/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('portfolios')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('portfolios')
+        .getPublicUrl(filePath);
+
+      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+      
+      setEditMediaItems(prev => [...prev, { url: data.publicUrl, type: mediaType as 'image' | 'video' }]);
+      
+      toast({
+        title: "Success",
+        description: "Media uploaded successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   // Real-time metrics
   const { likeCount: displayLikeCount, commentCount: displayCommentCount } = useRealtimePostStats(id, like_count, comment_count);
+
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [shouldShowMore, setShouldShowMore] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (contentRef.current && !isExpanded) {
+        const hasMore = contentRef.current.scrollHeight > contentRef.current.clientHeight;
+        setShouldShowMore(hasMore);
+      }
+    };
+
+    // Delay slightly to ensure layout is done
+    const timer = setTimeout(checkTruncation, 100);
+    window.addEventListener('resize', checkTruncation);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkTruncation);
+    };
+  }, [content, isExpanded]);
+
+  // Reset expansion state when content changes (e.g. after edit)
+  useEffect(() => {
+    setIsExpanded(false);
+    setShouldShowMore(false);
+  }, [content]);
 
   // Initialize edit state when dialog opens
   useEffect(() => {
@@ -515,36 +586,58 @@ const PostCard = ({
               autoFocus
             />
 
-            {/* Media editing UI */}
-            {editMediaItems.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest px-1">Manage Media ({editMediaItems.length})</p>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-                  {editMediaItems.map((item: { url: string, type: 'image' | 'video' }, idx: number) => (
-                    <div key={idx} className="relative group/edit flex-shrink-0 w-24 aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-primary/50 transition-all duration-300">
-                      {item.type === 'image' ? (
-                        <img src={item.url} className="w-full h-full object-cover" alt="Edit thumbnail" />
-                      ) : (
-                        <div className="w-full h-full bg-black/40 flex items-center justify-center relative">
-                          <Play className="w-6 h-6 text-white fill-white opacity-50" />
-                          <video src={item.url} className="w-full h-full object-cover absolute inset-0 opacity-40" />
-                        </div>
-                      )}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest px-1">Manage Media ({editMediaItems.length})</p>
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+                {editMediaItems.map((item: { url: string, type: 'image' | 'video' }, idx: number) => (
+                  <div key={idx} className="relative group/edit flex-shrink-0 w-24 aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-primary/50 transition-all duration-300">
+                    {item.type === 'image' ? (
+                      <img src={item.url} className="w-full h-full object-cover" alt="Edit thumbnail" />
+                    ) : (
+                      <div className="w-full h-full bg-black/40 flex items-center justify-center relative">
+                        <Play className="w-6 h-6 text-white fill-white opacity-50" />
+                        <video src={item.url} className="w-full h-full object-cover absolute inset-0 opacity-40" />
+                      </div>
+                    )}
 
-                      {/* Delete button for individual media */}
-                      <button
-                        onClick={() => setEditMediaItems((prev: { url: string, type: 'image' | 'video' }[]) => prev.filter((_: any, i: number) => i !== idx))}
-                        className="absolute top-1 right-1 h-6 w-6 bg-red-500 rounded-full flex items-center justify-center text-white p-1 shadow-lg transform translate-x-8 group-hover/edit:translate-x-0 transition-transform duration-300 hover:bg-black"
-                      >
-                        <X size={14} strokeWidth={3} />
-                      </button>
+                    {/* Delete button for individual media */}
+                    <button
+                      onClick={() => setEditMediaItems((prev: { url: string, type: 'image' | 'video' }[]) => prev.filter((_: any, i: number) => i !== idx))}
+                      className="absolute top-1 right-1 h-6 w-6 bg-red-500 rounded-full flex items-center justify-center text-white p-1 shadow-lg transform translate-x-8 group-hover/edit:translate-x-0 transition-transform duration-300 hover:bg-black"
+                    >
+                      <X size={14} strokeWidth={3} />
+                    </button>
 
-                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors pointer-events-none" />
-                    </div>
-                  ))}
+                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors pointer-events-none" />
+                  </div>
+                ))}
+                
+                {/* Add Media Button */}
+                <div 
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                  className={cn(
+                    "w-24 aspect-square rounded-xl border-2 border-dashed border-white/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer transition-all group/add shrink-0 bg-white/5 hover:bg-primary/5",
+                    isUploading && "cursor-not-allowed opacity-70"
+                  )}
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                  ) : (
+                    <>
+                      <Plus className="h-6 w-6 text-muted-foreground group-hover/add:text-primary transition-colors" />
+                      <span className="text-[9px] font-black text-muted-foreground group-hover/add:text-primary mt-1 uppercase tracking-[0.2em]">Add</span>
+                    </>
+                  )}
                 </div>
               </div>
-            )}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+                className="hidden" 
+                accept="image/*,video/*" 
+              />
+            </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="ghost" onClick={() => setIsEditOpen(false)} className="rounded-xl hover:bg-white/5">
@@ -600,10 +693,13 @@ const PostCard = ({
                       </Link>
                     </div>
                   ) : author.id ? (
-                    <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
-                      <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
-                      {author.isVerified && <VerificationBadge size="sm" />}
-                    </Link>
+                      <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
+                        <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
+                        {author.isVerified && <VerificationBadge size="sm" />}
+                        {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
+                          <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
+                        )}
+                      </Link>
                   ) : (
                     <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
                   )}
@@ -664,29 +760,95 @@ const PostCard = ({
                       const shareData = JSON.parse(jsonStr);
                       return (
                         <div className="flex flex-col gap-3">
-                          <div className="flex items-start">
-                             {caption && <FormattedText text={caption} className="text-foreground/90" />}
-                          </div>
+                            <div 
+                              ref={contentRef}
+                              className={cn(
+                                "block",
+                                !isExpanded && "line-clamp-3 overflow-hidden"
+                              )}
+                            >
+                               {caption && <FormattedText text={caption} className="text-foreground/90" />}
+                            </div>
+                            {shouldShowMore && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsExpanded(!isExpanded);
+                                }} 
+                                className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                              >
+                                {isExpanded ? "see less" : "...more"}
+                              </button>
+                            )}
                           <div className="w-full">
                             <JobShareCard {...shareData} />
                           </div>
                         </div>
                       );
                     } catch (e) {
-                      return <FormattedText text={content} className="text-foreground/90" />;
+                      return (
+                        <div className="block">
+                          <div 
+                            ref={contentRef}
+                            className={cn(
+                              "block text-foreground/90",
+                              !isExpanded && "line-clamp-3 overflow-hidden"
+                            )}
+                          >
+                            <FormattedText text={content} />
+                          </div>
+                          {shouldShowMore && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsExpanded(!isExpanded);
+                              }} 
+                              className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                            >
+                              {isExpanded ? "see less" : "...more"}
+                            </button>
+                          )}
+                        </div>
+                      );
                     }
                   })()
                 ) : (
-                  <FormattedText text={content} className="text-foreground/90" />
+                  <div className="block">
+                    <div 
+                      ref={contentRef}
+                      className={cn(
+                        "block text-foreground/90",
+                        !isExpanded && "line-clamp-3 overflow-hidden"
+                      )}
+                    >
+                      <FormattedText text={content} />
+                    </div>
+                    {shouldShowMore && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsExpanded(!isExpanded);
+                        }} 
+                        className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                      >
+                        {isExpanded ? "see less" : "...more"}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
               {tags && tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pb-1">
                   {tags.map((tag) => (
-                    <span key={tag} className="text-[11px] lg:text-[12px] font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full">
+                    <Link 
+                      key={tag} 
+                      to={`/search?q=${encodeURIComponent(tag)}`}
+                      className="text-[11px] lg:text-[12px] font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full relative z-10"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       #{tag}
-                    </span>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -760,7 +922,7 @@ const PostCard = ({
 
         {/* Full-screen Media Viewer with Interaction Panel */}
         <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-          <DialogContent className="max-w-7xl w-full h-[95vh] lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
+          <DialogContent hideClose aria-describedby={undefined} className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-background border-none">
             <VisuallyHidden>
               <DialogTitle>Media Viewer for {author.name}'s Post</DialogTitle>
               <DialogDescription>
@@ -774,20 +936,61 @@ const PostCard = ({
               return (
                 <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
                   {/* Mobile Author Header (Hidden on Desktop) */}
-                  <div className="lg:hidden p-4 border-b border-border/10 bg-background flex items-center justify-between z-50 shrink-0">
+                  <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-background/95 backdrop-blur-2xl flex items-center justify-between z-[60] shrink-0">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-9 w-9 ring-1 ring-primary/20">
+                      <Avatar className="h-10 w-10 ring-2 ring-foreground/5 shadow-xl">
                         <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{author.initials}</AvatarFallback>
+                        <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
+                          {author.initials}
+                        </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <p className="font-bold text-sm tracking-tight">{author.name}</p>
-                        <p className="text-[10px] text-muted-foreground italic -mt-0.5 opacity-80">{author.craft || 'Artist'}</p>
+                      <div className="flex flex-col">
+                        <p className="font-black text-sm md:text-base tracking-tight text-foreground">{author.name}</p>
+                        <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-widest -mt-0.5">{author.craft || 'Artist'}</p>
                       </div>
                     </div>
-                    {/* Dialog Default Close will be in Top Right of DialogContent, 
-                      but we keep this simple for layout balance if needed. 
-                      Actually Radix Close is usually top right of DialogContent. */}
+                    <div className="flex items-center gap-1.5">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
+                            <MoreVertical className="h-5 w-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
+                          {user?.id === authorId || isAdmin ? (
+                            <>
+                              <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit Post</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete Post</span>
+                              </DropdownMenuItem>
+                            </>
+                          ) : (
+                            <>
+                              <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
+                                <Share2 className="mr-2 h-4 w-4" />
+                                <span>Share Link</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                                <Flag className="mr-2 h-4 w-4" />
+                                <span>Report Post</span>
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsViewOpen(false)}
+                        className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full"
+                      >
+                        <X className="h-5 w-5" />
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Media Section: Left panel (Flexible) */}
@@ -859,17 +1062,61 @@ const PostCard = ({
                   {/* Interaction Panel: Right panel (Fixed width on desktop, dynamic on mobile) */}
                   <div className="w-full lg:w-[420px] flex flex-col bg-card border-l border-border/10 shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden shadow-[-20px_0_40px_rgba(0,0,0,0.3)] order-2 lg:order-none z-10">
                     {/* Post Header (Desktop) */}
-                    <div className="hidden lg:flex p-5 border-b border-border/10 items-center justify-between shrink-0 bg-background/50 backdrop-blur-xl">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-11 w-11 ring-2 ring-primary/20 shadow-md">
+                    <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-background/95 backdrop-blur-3xl">
+                      <div className="flex items-center gap-3 font-outfit">
+                        <Avatar className="h-11 w-11 ring-2 ring-foreground/5 shadow-2xl">
                           <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                          <AvatarFallback className="bg-primary/10 text-primary font-bold">{author.initials}</AvatarFallback>
+                          <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">{author.initials}</AvatarFallback>
                         </Avatar>
-                        <div className="min-w-0">
-                          <p className="font-bold text-sm tracking-tight">{author.name}</p>
-                          <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Artist'}</p>
+                        <div className="min-w-0 flex flex-col">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-black text-[15px] tracking-tight text-foreground leading-tight uppercase font-outfit">{author.name}</p>
+                            {author.isVerified && <VerificationBadge size="xs" />}
+                          </div>
+                          <p className="text-[10px] text-foreground/40 font-black uppercase tracking-[0.25em] -mt-0.5">{author.craft || 'Artist'}</p>
                         </div>
                       </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
+                            <MoreVertical className="h-5 w-5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
+                          {user?.id === authorId || isAdmin ? (
+                            <>
+                              <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
+                                <Edit className="mr-2 h-4 w-4" />
+                                <span>Edit Post</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete Post</span>
+                              </DropdownMenuItem>
+                            </>
+                          ) : (
+                            <>
+                              <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
+                                <Share2 className="mr-2 h-4 w-4" />
+                                <span>Share Link</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
+                                <Flag size={16} className="mr-2 h-4 w-4" />
+                                <span>Report Post</span>
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsViewOpen(false)}
+                        className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full ml-1"
+                      >
+                        <X className="h-5 w-5" />
+                      </Button>
                     </div>
 
                     {/* Actions (Like, Comment, etc.) - ALWAYS AT TOP FOR MOBILE UNDER MEDIA, TOP OF RIGHT FOR DESKTOP */}
@@ -902,32 +1149,47 @@ const PostCard = ({
                           </Avatar>
                           <div className="flex-1">
                             <div className="text-[14px] leading-relaxed">
-                              <span className="font-bold text-foreground mr-2 tracking-tight">{author.name}</span>
-                              {content.includes('JOB_SHARE::') ? (
-                                (() => {
-                                  try {
-                                    const parts = content.split('JOB_SHARE::');
-                                    const caption = parts[0].trim();
-                                    const jsonStr = parts[parts.length - 1].trim();
-                                    const shareData = JSON.parse(jsonStr);
-                                    return (
-                                      <div className="inline space-y-3">
-                                        {caption && <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" />}
-                                        <div className="mt-3 block scale-90 origin-top-left">
-                                          <JobShareCard {...shareData} />
-                                        </div>
-                                      </div>
-                                    );
-                                  } catch (e) {
-                                    return <FormattedText text={content} className="inline text-foreground/90 leading-relaxed" />;
-                                  }
-                                })()
-                              ) : (
-                                <FormattedText text={content} className="inline text-foreground/90 leading-relaxed" />
-                              )}
+                              <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
+                                {author.name.toLowerCase().replace(/\s/g, '')}
+                              </span>
+                              <div className="block">
+                                <div 
+                                  ref={contentRef}
+                                  className={cn(
+                                    "block text-foreground/90 leading-relaxed",
+                                    !isExpanded && "line-clamp-3 overflow-hidden"
+                                  )}
+                                >
+                                  {content.includes('JOB_SHARE::') ? (
+                                    (() => {
+                                      try {
+                                        const parts = content.split('JOB_SHARE::');
+                                        const caption = parts[0].trim();
+                                        return caption ? <FormattedText text={caption} /> : null;
+                                      } catch (e) {
+                                        return <FormattedText text={content} />;
+                                      }
+                                    })()
+                                  ) : (
+                                    <FormattedText text={content} />
+                                  )}
+                                </div>
+                                {shouldShowMore && (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setIsExpanded(!isExpanded);
+                                    }} 
+                                    className="text-primary text-[11px] font-semibold hover:underline mt-1 block"
+                                  >
+                                    {isExpanded ? "see less" : "...more"}
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-[10px] text-muted-foreground/60 mt-2 flex items-center gap-1.5 uppercase tracking-widest font-medium">
+                            <p className="text-[10px] text-muted-foreground/60 mt-2.5 flex items-center gap-1.5 uppercase tracking-widest font-medium">
                               {timeAgo}
+                              <span className="opacity-40 ml-1.5 cursor-pointer hover:text-foreground transition-colors font-bold tracking-widest text-[9px]">See translation</span>
                             </p>
                           </div>
                         </div>

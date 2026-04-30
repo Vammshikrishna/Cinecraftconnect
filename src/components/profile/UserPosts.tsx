@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Post } from '@/types';
@@ -13,7 +13,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { FormattedText } from '@/components/ui/formatted-text';
 import { JobShareCard } from '@/components/chat/JobShareCard';
 import VerificationBadge from '@/components/common/VerificationBadge';
-import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers, Plus, Loader2 } from 'lucide-react';
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,14 +63,79 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
   const { toast } = useToast();
   const { isAdmin } = useAppRole();
 
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [shouldShowMore, setShouldShowMore] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setIsExpanded(false);
+  }, [selectedPost]);
+
+  useEffect(() => {
+    const checkTruncation = () => {
+      if (contentRef.current && !isExpanded) {
+        const hasMore = contentRef.current.scrollHeight > contentRef.current.clientHeight;
+        setShouldShowMore(hasMore);
+      }
+    };
+
+    const timer = setTimeout(checkTruncation, 100);
+    window.addEventListener('resize', checkTruncation);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkTruncation);
+    };
+  }, [selectedPost, isExpanded]);
+
   // State for editing and deleting
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [editMediaItems, setEditMediaItems] = useState<{ url: string; type: 'image' | 'video' }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
+      const filePath = `posts/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('portfolios')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('portfolios')
+        .getPublicUrl(filePath);
+
+      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+      
+      setEditMediaItems(prev => [...prev, { url: data.publicUrl, type: mediaType as 'image' | 'video' }]);
+      
+      toast({
+        title: "Success",
+        description: "Media uploaded successfully",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleShare = () => {
     setShowShareSheet(true);
@@ -430,9 +496,8 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
         })}
       </div>
 
-      {/* Instagram-style Post Modal */}
       <Dialog open={!!selectedPost} onOpenChange={() => setSelectedPost(null)}>
-        <DialogContent aria-describedby={undefined} className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-black border-none">
+        <DialogContent hideClose aria-describedby={undefined} className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-background border-none">
           <VisuallyHidden>
             <DialogTitle>Post by {selectedPost?.profiles.full_name}</DialogTitle>
             <DialogDescription>
@@ -482,30 +547,30 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                 )}
 
                 {/* Mobile Author Header (Hidden on Desktop) */}
-                <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-white/95 backdrop-blur-2xl flex items-center justify-between z-[60] shrink-0">
+                <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-background/95 backdrop-blur-2xl flex items-center justify-between z-[60] shrink-0">
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-10 w-10 ring-2 ring-black/5 shadow-xl">
+                    <Avatar className="h-10 w-10 ring-2 ring-foreground/5 shadow-xl">
                       <AvatarImage src={selectedPost.profiles.avatar_url} />
                       <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
                         {selectedPost.profiles.full_name?.charAt(0)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">
-                      <p className="font-black text-sm md:text-base tracking-tight text-black">{selectedPost.profiles.full_name}</p>
-                      <p className="text-[10px] text-black/40 font-bold uppercase tracking-widest -mt-0.5">{selectedPost.profiles.craft || 'Artist'}</p>
+                      <p className="font-black text-sm md:text-base tracking-tight text-foreground">{selectedPost.profiles.full_name}</p>
+                      <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-widest -mt-0.5">{selectedPost.profiles.craft || 'Artist'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-black hover:bg-black/5 rounded-full">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
                           <MoreVertical className="h-5 w-5" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
+                      <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
                         {user?.id === selectedPost.author_id || isAdmin ? (
                           <>
-                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
                               <Edit2 className="mr-2 h-4 w-4" />
                               <span>Edit Post</span>
                             </DropdownMenuItem>
@@ -516,7 +581,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                           </>
                         ) : (
                           <>
-                            <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                            <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
                               <Share2 className="mr-2 h-4 w-4" />
                               <span>Share Link</span>
                             </DropdownMenuItem>
@@ -532,7 +597,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       variant="ghost"
                       size="icon"
                       onClick={() => setSelectedPost(null)}
-                      className="h-8 w-8 text-black hover:bg-black/5 rounded-full"
+                      className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full"
                     >
                       <X className="h-5 w-5" />
                     </Button>
@@ -657,9 +722,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   : 'w-[95vw] lg:w-[500px] lg:rounded-[2.5rem] border border-border/10 shadow-2xl m-4 md:m-8'
                   }`}>
                   {/* Desktop Only Header */}
-                  <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-white/95 backdrop-blur-3xl">
+                  <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-background/95 backdrop-blur-3xl">
                     <div className="flex items-center gap-3 font-outfit">
-                      <Avatar className="h-11 w-11 ring-2 ring-black/5 shadow-2xl">
+                      <Avatar className="h-11 w-11 ring-2 ring-foreground/5 shadow-2xl">
                         <AvatarImage src={selectedPost?.profiles.avatar_url} />
                         <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
                           {selectedPost?.profiles.full_name?.charAt(0) || 'U'}
@@ -667,23 +732,23 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       </Avatar>
                       <div className="min-w-0 flex flex-col">
                         <div className="flex items-center gap-1.5">
-                          <p className="font-black text-[15px] tracking-tight text-black leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
+                          <p className="font-black text-[15px] tracking-tight text-foreground leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
                           {selectedPost?.profiles.is_verified && <VerificationBadge size="xs" />}
                         </div>
-                        <p className="text-[10px] text-black/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
+                        <p className="text-[10px] text-foreground/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
                       </div>
                     </div>
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-black hover:bg-black/5 rounded-full">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
                           <MoreVertical className="h-5 w-5" />
                         </Button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-[180px] bg-black/95 backdrop-blur-xl border-white/10 text-white">
+                      <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
                         {user?.id === selectedPost.author_id || isAdmin ? (
                           <>
-                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                            <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
                               <Edit2 className="mr-2 h-4 w-4" />
                               <span>Edit Post</span>
                             </DropdownMenuItem>
@@ -694,7 +759,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                           </>
                         ) : (
                           <>
-                            <DropdownMenuItem className="focus:bg-white/10 focus:text-white cursor-pointer py-2.5">
+                            <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
                               <Share2 className="mr-2 h-4 w-4" />
                               <span>Share Link</span>
                             </DropdownMenuItem>
@@ -710,7 +775,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       variant="ghost"
                       size="icon"
                       onClick={() => setSelectedPost(null)}
-                      className="h-8 w-8 text-black hover:bg-black/5 rounded-full ml-1"
+                      className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full ml-1"
                     >
                       <X className="h-5 w-5" />
                     </Button>
@@ -751,19 +816,37 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                             <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
                               {(selectedPost.profiles.username || selectedPost.profiles.full_name || "").toLowerCase().replace(/\s/g, '')}
                             </span>
-                            {selectedPost.content.includes('JOB_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const parts = selectedPost.content.split('JOB_SHARE::');
-                                  const caption = parts[0].trim();
-                                  return caption ? <FormattedText text={caption} className="inline text-foreground/90 leading-relaxed" /> : null;
-                                } catch (e) {
-                                  return <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />;
-                                }
-                              })()
-                            ) : (
-                              <FormattedText text={selectedPost.content} className="inline text-foreground/90 leading-relaxed" />
-                            )}
+                            <div className="block">
+                              <div 
+                                ref={contentRef}
+                                className={cn(
+                                  "block text-foreground/90 leading-relaxed",
+                                  !isExpanded && "line-clamp-3 overflow-hidden"
+                                )}
+                              >
+                                {selectedPost.content.includes('JOB_SHARE::') ? (
+                                  (() => {
+                                    try {
+                                      const parts = selectedPost.content.split('JOB_SHARE::');
+                                      const caption = parts[0].trim();
+                                      return caption ? <FormattedText text={caption} /> : null;
+                                    } catch (e) {
+                                      return <FormattedText text={selectedPost.content} />;
+                                    }
+                                  })()
+                                ) : (
+                                  <FormattedText text={selectedPost.content} />
+                                )}
+                              </div>
+                              {shouldShowMore && (
+                                <button 
+                                  onClick={() => setIsExpanded(!isExpanded)} 
+                                  className="text-primary text-[11px] font-semibold hover:underline mt-1 block"
+                                >
+                                  {isExpanded ? "see less" : "...more"}
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <p className="text-[10px] text-muted-foreground/60 mt-2.5 flex items-center gap-1.5 uppercase tracking-widest font-medium">
                             {formatDistanceToNow(new Date(selectedPost.created_at), { addSuffix: false }).replace('about ', '')}
@@ -801,7 +884,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       )}
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent aria-describedby={undefined} className="max-w-2xl w-[95vw] bg-black/95 backdrop-blur-xl border-white/10 text-white p-0 overflow-hidden rounded-2xl">
+        <DialogContent aria-describedby={undefined} className="max-w-2xl w-[95vw] bg-card/95 backdrop-blur-xl border-border/10 p-0 overflow-hidden rounded-2xl">
           <VisuallyHidden>
             <DialogDescription>Edit your portfolio post content and media assets.</DialogDescription>
           </VisuallyHidden>
@@ -825,32 +908,55 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                 />
               </div>
 
-              {editMediaItems.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-muted-foreground opacity-60">Media Assets ({editMediaItems.length})</label>
-                  <ScrollArea className="h-[140px] w-full bg-white/5 rounded-xl border border-white/10 p-3">
-                    <div className="flex gap-3">
-                      {editMediaItems.map((item, idx) => (
-                        <div key={idx} className="relative group/edit flex-shrink-0">
-                          <div className="w-24 h-24 rounded-lg overflow-hidden ring-1 ring-white/10 shadow-lg">
-                            {item.type === 'video' ? (
-                              <video src={item.url} className="w-full h-full object-cover" />
-                            ) : (
-                              <img src={item.url} alt="" className="w-full h-full object-cover" />
-                            )}
-                          </div>
-                          <button
-                            onClick={() => setEditMediaItems(prev => prev.filter((_, i) => i !== idx))}
-                            className="absolute -top-1.5 -right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-xl transition-all hover:scale-110 z-20"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
+              <div className="space-y-2">
+                <label className="text-xs font-black uppercase tracking-widest text-muted-foreground opacity-60">Media Assets ({editMediaItems.length})</label>
+                <ScrollArea className="h-[140px] w-full bg-white/5 rounded-xl border border-white/10 p-3">
+                  <div className="flex gap-3">
+                    {editMediaItems.map((item, idx) => (
+                      <div key={idx} className="relative group/edit flex-shrink-0">
+                        <div className="w-24 h-24 rounded-lg overflow-hidden ring-1 ring-white/10 shadow-lg bg-black/40">
+                          {item.type === 'video' ? (
+                            <video src={item.url} className="w-full h-full object-cover" />
+                          ) : (
+                            <img src={item.url} alt="" className="w-full h-full object-cover" />
+                          )}
                         </div>
-                      ))}
+                        <button
+                          onClick={() => setEditMediaItems(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute -top-1.5 -right-1.5 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 shadow-xl transition-all hover:scale-110 z-20"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Add Media Button */}
+                    <div 
+                      onClick={() => !isUploading && fileInputRef.current?.click()}
+                      className={cn(
+                        "w-24 h-24 rounded-lg border-2 border-dashed border-white/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer transition-all group/add shrink-0 bg-white/5 hover:bg-primary/5",
+                        isUploading && "cursor-not-allowed opacity-70"
+                      )}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                      ) : (
+                        <>
+                          <Plus className="h-6 w-6 text-muted-foreground group-hover/add:text-primary transition-colors" />
+                          <span className="text-[10px] font-black text-muted-foreground group-hover/add:text-primary mt-1 uppercase tracking-widest">Add</span>
+                        </>
+                      )}
                     </div>
-                  </ScrollArea>
-                </div>
-              )}
+                  </div>
+                </ScrollArea>
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                  accept="image/*,video/*" 
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-4">

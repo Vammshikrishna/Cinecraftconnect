@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { Vendor } from '@/types/marketplace';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { MapPin, Star, CheckCircle2, Phone, Mail, MoreVertical, Trash2 } from 'lucide-react';
+import { MapPin, Star, CheckCircle2, Phone, Mail, MoreVertical, Trash2, X } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,9 +16,10 @@ import { useToast } from '@/hooks/use-toast';
 
 interface VendorCardProps {
     vendor: Vendor;
+    onDismiss?: (id: string) => void;
 }
 
-export const VendorCard = ({ vendor }: VendorCardProps) => {
+export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
     const logoUrl = vendor.logo_url || undefined;
     const { isAdmin } = useAppRole();
     const { toast } = useToast();
@@ -41,8 +42,21 @@ export const VendorCard = ({ vendor }: VendorCardProps) => {
     };
 
     return (
-        <Link to={`/vendors/${vendor.id}`} className="no-underline block group h-full">
+        <Link to={`/vendors/${vendor.id}`} className="no-underline block group h-full relative">
             <div className="glass-card-premium h-full p-6 flex flex-col gap-5 transition-transform duration-500 hover:-translate-y-2">
+                {onDismiss && (
+                    <button 
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDismiss(vendor.id);
+                        }}
+                        className="absolute top-3 right-3 z-30 h-7 w-7 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-black/5 dark:border-white/5"
+                        title="Dismiss suggestion"
+                    >
+                        <X size={14} strokeWidth={3} />
+                    </button>
+                )}
                 {/* Header: Logo and Verified */}
                 <div className="flex items-start justify-between">
                     <div className="relative">

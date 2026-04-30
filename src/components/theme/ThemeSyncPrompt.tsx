@@ -22,39 +22,50 @@ const ThemeSyncPrompt = () => {
   const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    // Only run this if the user is logged in, settings are loaded, and we haven't prompted this session
-    const hasPrompted = sessionStorage.getItem('theme_sync_prompted');
+    if (!user || loading || !settings) return;
+
+    const sessionKey = `theme_sync_prompted_${user.id}`;
+    const hasPrompted = sessionStorage.getItem(sessionKey);
     
-    if (user && !loading && settings && !hasPrompted) {
-      // Check if local theme differs from saved setting
-      // Local theme is what they chose on the landing page
-      // settings.theme is what's in the DB (usually 'system' by default for new users)
+    if (!hasPrompted) {
       if (theme !== settings.theme) {
         setShowPrompt(true);
+      } else {
+        // Already matching, no need to prompt this session
+        sessionStorage.setItem(sessionKey, 'true');
       }
     }
-  }, [user, loading, settings, theme]);
+  }, [user, loading, settings]); // Theme removed from deps to prevent re-triggering on manual changes
 
   const handleKeepCurrent = async () => {
+    if (!user) return;
     // Update DB to match local choice
     await updateSetting('theme', theme);
-    sessionStorage.setItem('theme_sync_prompted', 'true');
+    sessionStorage.setItem(`theme_sync_prompted_${user.id}`, 'true');
     setShowPrompt(false);
   };
 
   const handleSwitchToSaved = () => {
+    if (!user) return;
     // Update local to match DB
     if (settings?.theme) {
       setTheme(settings.theme);
     }
-    sessionStorage.setItem('theme_sync_prompted', 'true');
+    sessionStorage.setItem(`theme_sync_prompted_${user.id}`, 'true');
     setShowPrompt(false);
+  };
+
+  const handleOpenChange = (open: boolean) => {
+    setShowPrompt(open);
+    if (!open && user) {
+      sessionStorage.setItem(`theme_sync_prompted_${user.id}`, 'true');
+    }
   };
 
   if (!showPrompt) return null;
 
   return (
-    <AlertDialog open={showPrompt} onOpenChange={setShowPrompt}>
+    <AlertDialog open={showPrompt} onOpenChange={handleOpenChange}>
       <AlertDialogContent className="glass-card-premium border-white/10 max-w-md">
         <AlertDialogHeader>
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-4">

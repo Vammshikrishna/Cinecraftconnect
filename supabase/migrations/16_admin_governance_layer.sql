@@ -100,6 +100,12 @@ CREATE TABLE IF NOT EXISTS public.platform_flags (
 );
 
 -- Seed default flags
+INSERT INTO public.platform_flags (key, value, description)
+VALUES 
+  ('global_lock', false, 'Emergency lockdown: Disables all write operations across the platform.'),
+  ('maintenance_mode', false, 'Maintenance mode: Only staff can access the application.')
+ON CONFLICT (key) DO NOTHING;
+
 INSERT INTO public.platform_flags (key, value, description) VALUES
   ('user_registration_enabled', true, 'Allow new users to register on the platform'),
   ('marketplace_enabled', true, 'Enable the Equipment & Location Marketplace'),

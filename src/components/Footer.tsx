@@ -18,9 +18,9 @@ const Footer = () => {
           {/* Brand Section */}
           <div className="col-span-full md:col-span-4 lg:col-span-5">
             <AppLogo size="md" className="mb-8" />
-            
+
             <p className="text-muted-foreground text-lg max-w-md mb-10 leading-relaxed">
-              The premier ecosystem for the entire entertainment community. 
+              The premier ecosystem for the entire entertainment community.
               Built for film, television, and digital creators to simplify production and collaboration.
             </p>
 
@@ -58,6 +58,7 @@ const Footer = () => {
                 { label: 'Features', path: '/features' },
                 { label: 'Marketplace', path: '/features#marketplace' },
                 { label: 'Pricing', path: '/features#pricing' },
+                { label: 'Documentation', path: '/documentation' },
               ].map((link) => (
                 <li key={link.label}>
                   <Link 
@@ -86,6 +87,7 @@ const Footer = () => {
                 { label: 'Network', path: '/features#network' },
                 { label: 'Projects', path: '/features#projects' },
                 { label: 'Job Board', path: '/features#jobs' },
+                { label: 'Support Hub', path: '/support' },
               ].map((link) => (
                 <li key={link.label}>
                   <Link 
@@ -112,6 +114,8 @@ const Footer = () => {
               {[
                 { label: 'Terms', path: '/terms' },
                 { label: 'Privacy', path: '/privacy' },
+                { label: 'Guidelines', path: '/community-guidelines' },
+                { label: 'Safety', path: '/safety-center' },
                 { label: 'Cookie', path: '/cookie' },
               ].map((link) => (
                 <li key={link.label}>
@@ -133,7 +137,7 @@ const Footer = () => {
           <p className="text-muted-foreground text-sm">
             &copy; {currentYear} CineCraft Connect. All rights reserved.
           </p>
-          
+
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2 text-muted-foreground text-xs">
               <Globe className="h-3.5 w-3.5" />

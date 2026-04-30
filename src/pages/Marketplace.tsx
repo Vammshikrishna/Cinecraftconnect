@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMarketplaceListings } from '@/hooks/useMarketplace';
 import { useQueryClient } from '@tanstack/react-query';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -10,6 +10,8 @@ import { ListingType } from '@/types/marketplace';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { MarketplaceFilters } from '@/components/marketplace/MarketplaceFilters';
+import { usePlatformFlags } from '@/hooks/usePlatformFlags';
+import { ShieldAlert, Lock } from 'lucide-react';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 
@@ -28,13 +30,34 @@ const Marketplace = () => {
     const [activeTab, setActiveTab] = useState<ListingType | 'all'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
 
+    const { isEnabled, loading: flagsLoading } = usePlatformFlags();
+
     // Redirect fans
-    useState(() => {
+    useEffect(() => {
         if (isFan) {
             navigate('/pricing');
         }
-    });
+    }, [isFan, navigate]);
 
+    if (!flagsLoading && !isEnabled('marketplace_enabled')) {
+        return (
+            <div className="min-h-screen bg-background flex flex-col pt-20">
+                <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-20 h-20 bg-amber-500/10 rounded-3xl flex items-center justify-center mb-6 animate-pulse">
+                        <Lock className="w-10 h-10 text-amber-600" />
+                    </div>
+                    <h2 className="text-2xl font-black uppercase tracking-tight mb-2">Marketplace Restricted</h2>
+                    <p className="text-muted-foreground text-sm max-w-md mx-auto mb-8">
+                        The Equipment & Location Marketplace is currently disabled by platform administrators for scheduled maintenance or security review.
+                    </p>
+                    <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-xl border border-border/50">
+                        <ShieldAlert className="w-4 h-4 text-amber-600" />
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Admin Protocol 72-B Enforced</span>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     const [filters, setFilters] = useState<{
         minPrice?: number;

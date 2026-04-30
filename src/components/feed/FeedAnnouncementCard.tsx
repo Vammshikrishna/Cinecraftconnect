@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Megaphone, Clock, Share2, MoreVertical, Edit, Trash2, Loader2 } from 'lucide-react';
+import { Megaphone, Clock, Share2, MoreVertical, Edit, Trash2, Loader2, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,9 +44,10 @@ interface FeedAnnouncementCardProps {
             username: string | null;
         } | null;
     };
+    onDismiss?: (id: string) => void;
 }
 
-const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
+const FeedAnnouncementCard = ({ announcement, onDismiss }: FeedAnnouncementCardProps) => {
     const [isShareOpen, setIsShareOpen] = useState(false);
     const { user } = useAuth();
     const { toast } = useToast();
@@ -150,7 +151,7 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                             )}
                         </div>
 
-                        <div className="flex-1 min-w-0">
+                        <div className="flex-1 min-w-0 pr-16">
                             <h3 className="text-lg font-bold tracking-tight text-foreground group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors line-clamp-2 leading-tight mb-1">
                                 {announcement.title}
                             </h3>
@@ -194,25 +195,40 @@ const FeedAnnouncementCard = ({ announcement }: FeedAnnouncementCardProps) => {
                         />
                     )}
 
-                    {canManage && (
-                        <div className="absolute top-4 right-4 z-20">
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                                        <MoreVertical className="h-4 w-4" />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => setIsEditOpen(true)}>
-                                        <Edit className="mr-2 h-4 w-4" />
-                                        Edit
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="text-red-600 focus:text-red-600">
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Delete
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
+                    {(canManage || onDismiss) && (
+                        <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
+                            {canManage && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                            <MoreVertical className="h-4 w-4" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => setIsEditOpen(true)}>
+                                            <Edit className="mr-2 h-4 w-4" />
+                                            Edit
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="text-red-600 focus:text-red-600">
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Delete
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
+                            {onDismiss && (
+                                <button 
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        onDismiss(announcement.id);
+                                    }}
+                                    className="h-8 w-8 rounded-full hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all"
+                                    title="Dismiss suggestion"
+                                >
+                                    <X size={14} strokeWidth={2.5} />
+                                </button>
+                            )}
                         </div>
                     )}
 
