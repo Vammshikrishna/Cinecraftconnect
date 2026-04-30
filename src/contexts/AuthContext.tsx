@@ -5,6 +5,7 @@ import { Tables } from '@/integrations/supabase/database.types';
 
 type Profile = Tables<'profiles'> & {
   onboarding_completed?: boolean;
+  role?: 'user' | 'moderator' | 'admin' | 'super_admin';
 };
 type AuthContextType = {
   user: User | null;
@@ -82,18 +83,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const fetchProfile = async () => {
         const { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, user_roles(role)')
           .eq('id', user.id)
           .single();
         if (error) {
           console.error('Error fetching profile:', error);
         } else {
-          setProfile(data as any);
+          const profileWithRole = {
+            ...data,
+            role: (data as any).user_roles?.role || 'user'
+          };
+          setProfile(profileWithRole as any);
         }
         setIsLoading(false);
         initializedRef.current = true;
       };
+
       fetchProfile();
+
+      // Real-time profile updates (e.g. for suspension)
+      const channel = supabase
+        .channel(`profile_realtime_${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+          (payload) => {
+            setProfile(prev => prev ? { ...prev, ...payload.new } : null);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     } else {
       setProfile(null);
     }

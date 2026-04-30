@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import Footer from '@/components/Footer';
 
@@ -13,6 +13,8 @@ interface LegalPageLayoutProps {
 }
 
 const LegalPageLayout = ({ children, title, subtitle, icon, lastUpdated }: LegalPageLayoutProps) => {
+  const navigate = useNavigate();
+
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden pt-20">
       {/* Cinematic ambient light orbs - matching Index.tsx style */}
@@ -43,12 +45,14 @@ const LegalPageLayout = ({ children, title, subtitle, icon, lastUpdated }: Legal
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         >
-          <Link to="/">
-            <Button variant="ghost" className="mb-10 group hover:bg-primary/5">
-              <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-              Back to Home
-            </Button>
-          </Link>
+          <Button 
+            variant="ghost" 
+            onClick={() => navigate(-1)}
+            className="mb-10 group hover:bg-primary/5"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+            Back
+          </Button>
 
           <header className="mb-16">
             <div className="flex items-center gap-4 mb-6">

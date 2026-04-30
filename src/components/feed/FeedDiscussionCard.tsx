@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Share2, Users, Hash, Bell } from 'lucide-react';
+import { Share2, Users, Hash, Bell, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
@@ -15,9 +15,10 @@ interface FeedDiscussionCardProps {
         category?: { name: string } | null;
         tags?: string[] | null;
     };
+    onDismiss?: (id: string) => void;
 }
 
-const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
+const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) => {
     const navigate = useNavigate();
     const { unreadDiscussionIds } = useUnreadMessages();
     const hasUnread = unreadDiscussionIds.includes(discussion.id);
@@ -71,12 +72,26 @@ const FeedDiscussionCard = ({ discussion }: FeedDiscussionCardProps) => {
                         <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 shadow-sm shadow-red-500/50 mt-1 animate-bounce" />
                     )}
                 </div>
-                <button 
-                    onClick={handleShare}
-                    className="text-muted-foreground hover:text-foreground transition-colors p-1 relative z-10"
-                >
-                    <Share2 className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={handleShare}
+                        className="text-muted-foreground hover:text-foreground transition-colors p-1 relative z-10"
+                    >
+                        <Share2 className="h-5 w-5" />
+                    </button>
+                    {onDismiss && (
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDismiss(discussion.id);
+                            }}
+                            className="text-muted-foreground hover:text-red-500 transition-colors p-1 relative z-10"
+                            title="Dismiss suggestion"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Category & Time */}

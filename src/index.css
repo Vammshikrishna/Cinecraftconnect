@@ -1,4 +1,4 @@
-﻿@import url("https://fonts.googleapis.com/css2?family=Work+Sans&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Lora&display=swap");
 @import url("https://fonts.googleapis.com/css2?family=Inconsolata&display=swap");
 @tailwind base;
@@ -100,6 +100,13 @@
 
   * {
     @apply border-border selection:bg-primary/20 selection:text-foreground;
+    /* Hide scrollbar for all elements but keep scrolling */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Safari and Opera */
   }
 
   body {
@@ -397,6 +404,38 @@
   /* ============================================
      ANIMATIONS
      ============================================ */
+  
+  @keyframes logo-motion-rotation {
+    0% {
+      transform: rotate(0deg) scale(0.95);
+    }
+    50% {
+      transform: rotate(180deg) scale(1.05);
+    }
+    100% {
+      transform: rotate(360deg) scale(0.95);
+    }
+  }
+
+  .animate-logo-motion {
+    animation: logo-motion-rotation 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+
+  /* Global Loading Spinner Override */
+  .animate-spin:not(img):not(.no-logo-override) {
+    position: relative !important;
+    background-image: url('/logo.png') !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    border-color: transparent !important;
+    color: transparent !important;
+    background-color: white !important; /* Ensure logo background is consistent */
+    border-radius: 9999px !important;
+    padding: 1px !important;
+    box-shadow: var(--shadow-sm) !important;
+    animation: logo-motion-rotation 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+  }
 
   @keyframes shimmer {
     0% {

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { MessageCircle, UserPlus, UserCheck, Clock, Users, Briefcase, Sparkles, MapPin, Globe } from 'lucide-react';
+import { MessageCircle, UserPlus, UserCheck, Clock, Users, Briefcase, Sparkles, MapPin, Globe, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import VerificationBadge from '../common/VerificationBadge';
 
@@ -24,9 +24,10 @@ interface UserCardProps {
   onAccept: (userId: string) => void;
   onCancelRequest?: (userId: string) => void;
   onRemoveConnection?: (userId: string) => void;
+  onDismiss?: (userId: string) => void;
 }
 
-const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancelRequest, onRemoveConnection }) => {
+const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancelRequest, onRemoveConnection, onDismiss }) => {
   const { user: currentUser } = useAuth();
   const status = user.connection_status || 'none';
 
@@ -85,7 +86,20 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
   };
 
   return (
-    <div className="group glass-card-premium flex flex-col items-center text-center p-0 transition-transform duration-500 hover:-translate-y-2">
+    <div className="group relative glass-card-premium flex flex-col items-center text-center p-0 transition-transform duration-500 hover:-translate-y-2">
+      {onDismiss && (
+        <button 
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onDismiss(user.id);
+          }}
+          className="absolute top-3 right-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+          title="Remove suggestion"
+        >
+          <X size={14} strokeWidth={3} />
+        </button>
+      )}
       {/* Decorative Background Header */}
       <div className="w-full h-20 bg-gradient-to-br from-primary/20 via-primary/5 to-transparent border-b border-border/20 group-hover:from-primary/30 transition-all duration-500" />
       

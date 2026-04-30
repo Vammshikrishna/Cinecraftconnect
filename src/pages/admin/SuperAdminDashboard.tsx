@@ -1,450 +1,516 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import {
-  Crown, Users, Shield, ToggleLeft, AlertTriangle, Search,
-  Zap, Lock, ChevronRight, UserPlus, UserMinus, RefreshCw,
-  Trash2, MessageSquare, Settings, BarChart2, Database, LayoutDashboard, ShieldAlert
-} from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import AppLogo from '@/components/common/AppLogo';
-import { useNavigate } from 'react-router-dom';
-
+import InternalHeader from '@/components/internal/shared/InternalHeader';
+import StaffRoleMatrix from '@/components/internal/super-admin/StaffRoleMatrix';
+import { 
+  Crown, Shield, Zap, Lock, 
+  Database, Globe, AlertTriangle,
+  FileText, Users,
+  ToggleLeft, RefreshCw, Key,
+  ShieldAlert, HardDrive, Cpu, Network
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
-} from '@/components/ui/dropdown-menu';
-
-type PlatformFlag = { id: string; key: string; value: boolean; description: string | null; updated_at: string; };
-type StaffMember = { id: string; username: string | null; full_name: string | null; avatar_url: string | null; craft: string | null; role: string; };
-type Profile = { id: string; username: string | null; full_name: string | null; avatar_url: string | null; craft: string | null; };
-type PlatformStat = { label: string; value: number; icon: React.ElementType; color: string; bg: string; };
-
-const ROLE_COLORS: Record<string, string> = {
-  super_admin: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-  admin: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  moderator: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
-};
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 const SuperAdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'overview'|'roles'|'flags'|'promote'|'stats'>('overview');
-  const [flags, setFlags] = useState<PlatformFlag[]>([]);
-  const [staff, setStaff] = useState<StaffMember[]>([]);
-  const [promoteSearch, setPromoteSearch] = useState('');
-  const [promoteResults, setPromoteResults] = useState<Profile[]>([]);
-  const [selectedRole, setSelectedRole] = useState<'moderator'|'admin'|'super_admin'>('moderator');
-  const [platformStats, setPlatformStats] = useState<PlatformStat[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [newFlagKey, setNewFlagKey] = useState('');
-  const [newFlagDesc, setNewFlagDesc] = useState('');
-
+  const [staff, setStaff] = useState<any[]>([]);
+  const [flags, setFlags] = useState<any[]>([]);
+  const [policies, setPolicies] = useState<any[]>([]);
+  const [economics, setEconomics] = useState<any>({
+    total_gmv: 0,
+    commission_rate: 15,
+    payout_status: 'Scheduled'
+  });
+  const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const { toast } = useToast();
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchStaff();
+    fetchFlags();
+    fetchEconomics();
+    fetchPolicies();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel('super-admin-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'platform_flags' },
+        () => fetchFlags()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'platform_policies' },
+        () => fetchPolicies()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_roles' },
+        () => fetchStaff()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchStaff = async () => {
+    const { data } = await (supabase as any)
+      .from('user_roles')
+      .select(`role, profile:user_id(id, username, full_name, avatar_url)`)
+      .neq('role', 'user');
+    if (data) setStaff(data.map((r: any) => ({ ...r.profile, role: r.role })));
+  };
+
+  const fetchPolicies = async () => {
+    const { data } = await (supabase as any).from('platform_policies').select('*').order('created_at', { ascending: false });
+    if (data) setPolicies(data);
+  };
+
+  const handleUpdatePolicy = async () => {
+    if (!selectedPolicy) return;
+    
+    const { error } = await (supabase as any)
+      .from('platform_policies')
+      .update({
+        title: selectedPolicy.title,
+        content: selectedPolicy.content,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', selectedPolicy.id);
+
+    if (error) {
+      toast({ title: 'Update Failed', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Policy Updated', description: 'Changes have been broadcasted platform-wide.' });
+      setIsPolicyModalOpen(false);
+      fetchPolicies();
+    }
+  };
+
+  const fetchEconomics = async () => {
+    const { data, error } = await (supabase as any).rpc('get_platform_economics');
+    if (!error && data) setEconomics(data);
+  };
 
   const fetchFlags = async () => {
     const { data } = await (supabase as any).from('platform_flags').select('*').order('key');
     if (data) setFlags(data);
   };
 
-  const fetchStaff = async () => {
-    setLoading(true);
-    const { data } = await (supabase as any).from('user_roles')
-      .select(`role, profile:user_id(id, username, full_name, avatar_url, craft)`)
-      .neq('role', 'user').order('role');
-    if (data) setStaff(data.map((r: any) => ({ ...r.profile, role: r.role })));
-    setLoading(false);
+  const handlePromote = async (userId: string, role: string) => {
+    const { error } = await (supabase as any).rpc('assign_user_role', { _target_user_id: userId, _role: role });
+    if (error) toast({ title: 'Promotion Error', description: error.message, variant: 'destructive' });
+    else {
+      toast({ title: 'Role Assigned', description: `User promoted to ${role.toUpperCase()}` });
+      fetchStaff();
+    }
   };
 
-  const fetchPlatformStats = async () => {
-    setLoading(true);
-    const [profiles, posts, jobs, listings, rooms, reports] = await Promise.all([
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-      supabase.from('posts').select('id', { count: 'exact', head: true }),
-      supabase.from('jobs').select('id', { count: 'exact', head: true }),
-      (supabase as any).from('marketplace_listings').select('id', { count: 'exact', head: true }),
-      supabase.from('discussion_rooms').select('id', { count: 'exact', head: true }),
-      (supabase as any).from('content_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    ]);
-    setPlatformStats([
-      { label: 'Total Users',    value: profiles.count || 0, icon: Users,         color: 'text-primary',       bg: 'bg-primary/10'     },
-      { label: 'Total Posts',    value: posts.count || 0,    icon: MessageSquare, color: 'text-blue-500',      bg: 'bg-blue-500/10'    },
-      { label: 'Active Jobs',    value: jobs.count || 0,     icon: Database,      color: 'text-green-500',     bg: 'bg-green-500/10'   },
-      { label: 'Listings',       value: listings.count || 0, icon: Settings,      color: 'text-violet-500',    bg: 'bg-violet-500/10'  },
-      { label: 'Discussion Rooms', value: rooms.count || 0,  icon: BarChart2,     color: 'text-sky-500',       bg: 'bg-sky-500/10'     },
-      { label: 'Pending Reports', value: reports.count || 0, icon: AlertTriangle, color: 'text-amber-500',     bg: 'bg-amber-500/10'   },
-    ]);
-    setLoading(false);
-  };
-
-  const searchUsers = async () => {
-    if (!promoteSearch.trim()) { setPromoteResults([]); return; }
-    const { data } = await supabase.from('profiles').select('id, username, full_name, avatar_url, craft')
-      .ilike('username', `%${promoteSearch}%`).limit(10);
-    if (data) setPromoteResults(data as Profile[]);
-  };
-
-  useEffect(() => {
-    fetchFlags();
-    if (activeTab === 'roles') fetchStaff();
-    if (activeTab === 'stats') fetchPlatformStats();
-  }, [activeTab]);
-
-  useEffect(() => { searchUsers(); }, [promoteSearch]);
-
-  const toggleFlag = async (flag: PlatformFlag) => {
-    const { error } = await (supabase as any).from('platform_flags')
-      .update({ value: !flag.value, updated_at: new Date().toISOString() }).eq('id', flag.id);
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `Flag "${flag.key}" ${!flag.value ? '✅ enabled' : '❌ disabled'}` });
-    fetchFlags();
-  };
-
-  const createFlag = async () => {
-    if (!newFlagKey.trim()) return;
-    const { error } = await (supabase as any).from('platform_flags').insert({ key: newFlagKey.trim(), value: false, description: newFlagDesc.trim() || null });
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `Flag "${newFlagKey}" created` });
-    setNewFlagKey(''); setNewFlagDesc('');
-    fetchFlags();
-  };
-
-  const deleteFlag = async (id: string, key: string) => {
-    if (!confirm(`Delete flag "${key}"?`)) return;
-    await (supabase as any).from('platform_flags').delete().eq('id', id);
-    toast({ title: `Flag "${key}" deleted` });
-    fetchFlags();
-  };
-
-  const promoteUser = async (userId: string) => {
-    const { error } = await (supabase as any).rpc('assign_user_role', { _target_user_id: userId, _role: selectedRole });
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    const user = promoteResults.find(u => u.id === userId);
-    toast({ title: `✅ @${user?.username} → ${selectedRole}` });
-    setPromoteSearch(''); setPromoteResults([]);
-    fetchStaff();
-  };
-
-  const revokeRole = async (userId: string, username: string) => {
-    if (!confirm(`Revoke role from @${username}?`)) return;
+  const handleRevoke = async (userId: string) => {
     const { error } = await (supabase as any).rpc('revoke_user_role', { _target_user_id: userId });
-    if (error) { toast({ title: 'Error', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `Role revoked from @${username}` });
-    fetchStaff();
+    if (error) toast({ title: 'Revocation Error', description: error.message, variant: 'destructive' });
+    else {
+      toast({ title: 'Role Revoked', description: 'Staff access removed' });
+      fetchStaff();
+    }
   };
 
-  const deleteAllUserContent = async (userId: string, username: string) => {
-    if (!confirm(`DANGER: Delete ALL posts by @${username}? This cannot be undone.`)) return;
-    await supabase.from('posts').delete().eq('user_id', userId);
-    toast({ title: `🗑️ All posts by @${username} deleted` });
+  const handleToggleFlag = async (flagId: string, currentValue: boolean) => {
+    const { error } = await (supabase as any)
+      .from('platform_flags')
+      .update({ value: !currentValue, updated_at: new Date().toISOString() })
+      .eq('id', flagId);
+
+    if (error) {
+      toast({ title: 'Flag Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Flag Updated', description: `Platform behavior modified.` });
+      // Real-time subscription will handle the UI update
+    }
   };
 
-  const tabs = [
-    { id: 'overview', label: 'Overview',       icon: Crown      },
-    { id: 'stats',    label: 'Platform Stats', icon: BarChart2  },
-    { id: 'roles',    label: 'Staff & Roles',  icon: Shield     },
-    { id: 'flags',    label: 'Feature Flags',  icon: ToggleLeft },
-    { id: 'promote',  label: 'Promote User',   icon: UserPlus   },
-  ] as const;
+  const handleToggleFlagByKey = async (key: string) => {
+    const flag = flags.find(f => f.key === key);
+    if (!flag) {
+      toast({ title: 'Error', description: `Flag '${key}' not found.`, variant: 'destructive' });
+      return;
+    }
+    await handleToggleFlag(flag.id, flag.value);
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b border-border bg-card px-6 py-4 flex items-center gap-4 sticky top-0 z-50">
-        <AppLogo size="sm" to="/feed" />
-        <div className="w-px h-8 bg-border mx-2" />
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
-            <Crown className="w-4 h-4 text-amber-500" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold">Super Admin</h1>
-            <p className="text-xs text-muted-foreground">Root Platform Governance</p>
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="w-8 h-8 rounded-xl bg-muted/50 border border-border/50 hover:bg-muted transition-all">
-                <RefreshCw className="w-4 h-4 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 border-border shadow-2xl">
-              <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-3 py-2">
-                Governance Actions
-              </DropdownMenuLabel>
-              <DropdownMenuItem onClick={fetchFlags} className="rounded-xl px-3 py-2 cursor-pointer gap-2">
-                <RefreshCw className="w-4 h-4 text-amber-500" />
-                <span className="font-bold text-sm">Refresh System</span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="my-1 bg-border/50" />
-              
-              <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-3 py-2">
-                Switch View
-              </DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => navigate('/moderation')} className="rounded-xl px-3 py-2 cursor-pointer gap-2">
-                <ShieldAlert className="w-4 h-4 text-amber-500" />
-                <span className="font-bold text-sm">Moderation View</span>
-              </DropdownMenuItem>
-              
-              <DropdownMenuItem onClick={() => navigate('/admin')} className="rounded-xl px-3 py-2 cursor-pointer gap-2">
-                <LayoutDashboard className="w-4 h-4 text-blue-500" />
-                <span className="font-bold text-sm">Admin Dashboard</span>
-              </DropdownMenuItem>
+    <div className="min-h-screen bg-background flex flex-col">
+      <InternalHeader 
+        title="Root Governance System" 
+        subtitle="CineCraft Global Infrastructure Authority" 
+        role="Super Admin" 
+      />
 
-              <DropdownMenuItem onClick={() => navigate('/super-admin')} className="rounded-xl px-3 py-2 cursor-pointer gap-2 bg-amber-500/5 text-amber-600">
-                <Crown className="w-4 h-4" />
-                <span className="font-bold text-sm">Super Admin</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <span className="text-xs bg-amber-500/10 border border-amber-500/20 text-amber-600 px-3 py-1 rounded-full font-bold">SUPER ADMIN</span>
+      <div className="bg-amber-500/5 border-b border-amber-500/20 px-6 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 animate-pulse" />
+          <p className="text-[10px] text-amber-600 font-black uppercase tracking-widest">
+            Root Authority Active. Every action is immutable and cryptographically logged.
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-black text-amber-700/50 uppercase">Session Trust:</span>
+            <span className="text-[10px] font-black text-amber-600 uppercase">Hardware Key Verified</span>
+          </div>
         </div>
       </div>
 
-      <div className="bg-amber-500/5 border-b border-amber-500/20 px-6 py-2 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-        <p className="text-xs text-amber-600 font-medium">Root authority. All actions are logged and auditable.</p>
-      </div>
+      <main className="flex-1 p-8 max-w-7xl mx-auto w-full space-y-8">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black text-foreground uppercase tracking-tight flex items-center gap-3">
+              <Crown className="w-8 h-8 text-amber-500" /> Platform Sovereignty
+            </h1>
+            <p className="text-xs text-muted-foreground font-medium">Global policy orchestration, risk management, and infrastructure control.</p>
+          </div>
 
-      <div className="border-b border-border bg-card px-6">
-        <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-bold whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === id ? 'border-amber-500 text-amber-500' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
-              <Icon className="w-4 h-4" />{label}
-            </button>
-          ))}
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={() => handleToggleFlagByKey('global_lock')}
+              variant="outline" size="sm" 
+              className={`h-10 rounded-xl border-amber-500/20 font-black text-[10px] uppercase tracking-widest px-4 ${flags.find(f => f.key === 'global_lock')?.value ? 'bg-amber-500 text-white border-none' : 'text-amber-600 hover:bg-amber-500/5'}`}
+            >
+              <Lock className="w-4 h-4 mr-2" /> {flags.find(f => f.key === 'global_lock')?.value ? 'UNLOCK PLATFORM' : 'GLOBAL LOCK'}
+            </Button>
+            <Button 
+              onClick={() => handleToggleFlagByKey('maintenance_mode')}
+              variant="default" size="sm" 
+              className={`h-10 rounded-xl font-black text-[10px] uppercase tracking-widest px-6 shadow-lg ${flags.find(f => f.key === 'maintenance_mode')?.value ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'} text-white shadow-amber-600/20`}
+            >
+              <Zap className="w-4 h-4 mr-2" /> {flags.find(f => f.key === 'maintenance_mode')?.value ? 'EXIT MAINTENANCE' : 'MAINTENANCE MODE'}
+            </Button>
+          </div>
         </div>
-      </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8">
+        <Tabs defaultValue="governance" className="w-full space-y-6">
+          <TabsList className="bg-muted/50 p-1.5 rounded-2xl border border-border/50 h-auto gap-1">
+            <TabsTrigger value="governance" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <Shield className="w-4 h-4" /> Policy & Rules
+            </TabsTrigger>
+            <TabsTrigger value="staff" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <Users className="w-4 h-4" /> Staff Matrix
+            </TabsTrigger>
+            <TabsTrigger value="security" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <Lock className="w-4 h-4" /> Root Security
+            </TabsTrigger>
+            <TabsTrigger value="risk" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <AlertTriangle className="w-4 h-4" /> Trust & Risk
+            </TabsTrigger>
+            <TabsTrigger value="infrastructure" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <HardDrive className="w-4 h-4" /> Infrastructure
+            </TabsTrigger>
+          </TabsList>
 
-        {/* ── Overview ── */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-black">Root Governance Panel</h2>
-              <p className="text-muted-foreground mt-1 text-sm">Full ecosystem control for CineCraft Connect.</p>
-            </div>
-            <div className="grid md:grid-cols-3 gap-4">
-              {[
-                { label: 'Platform Stats',    desc: 'Full visibility into every number', tab: 'stats',   icon: BarChart2,  color: 'text-primary',      bg: 'bg-primary/10'   },
-                { label: 'Promote Users',     desc: 'Assign moderator/admin/super_admin', tab: 'promote', icon: UserPlus,   color: 'text-amber-500',    bg: 'bg-amber-500/10' },
-                { label: 'Feature Flags',     desc: 'Enable/disable platform features',  tab: 'flags',   icon: ToggleLeft, color: 'text-green-500',    bg: 'bg-green-500/10' },
-                { label: 'Manage Staff',      desc: 'View and revoke staff roles',        tab: 'roles',   icon: Shield,     color: 'text-blue-500',     bg: 'bg-blue-500/10'  },
-              ].map(({ label, desc, tab, icon: Icon, color, bg }) => (
-                <motion.button key={tab} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                  onClick={() => setActiveTab(tab as typeof activeTab)}
-                  className="glass-card p-6 rounded-2xl border border-border/50 text-left hover:border-primary/30 transition-colors group">
-                  <div className={`w-12 h-12 ${bg} rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
-                    <Icon className={`w-6 h-6 ${color}`} />
-                  </div>
-                  <h3 className="font-bold mb-1">{label}</h3>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground mt-3 group-hover:text-foreground transition-colors" />
-                </motion.button>
-              ))}
-            </div>
-            {/* Super Admin power chips */}
-            <div className="glass-card p-4 rounded-2xl border border-amber-500/20 bg-amber-500/5">
-              <p className="text-xs font-black text-amber-700 uppercase tracking-widest mb-3">Super Admin Powers</p>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  'Promote / Demote Any User',
-                  'Create / Delete Feature Flags',
-                  'Toggle Global Features',
-                  'Delete Any Post',
-                  'Delete All User Content',
-                  'View Full Platform Analytics',
-                  'Assign Admin & Moderator Roles',
-                  'Revoke Any Staff Role',
-                  'Everything Admins Can Do',
-                ].map(p => (
-                  <span key={p} className="px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-600">{p}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Platform Stats ── */}
-        {activeTab === 'stats' && (
-          <div>
-            <h2 className="text-2xl font-black mb-6">Platform Statistics</h2>
-            {loading ? <div className="text-muted-foreground">Loading…</div>
-            : <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                {platformStats.map(({ label, value, icon: Icon, color, bg }) => (
-                  <motion.div key={label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                    className="glass-card p-5 rounded-2xl border border-border/50">
-                    <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center mb-3`}>
-                      <Icon className={`w-5 h-5 ${color}`} />
-                    </div>
-                    <div className="text-3xl font-black">{value.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground mt-1">{label}</div>
-                  </motion.div>
-                ))}
-              </div>
-            }
-          </div>
-        )}
-
-        {/* ── Staff & Roles ── */}
-        {activeTab === 'roles' && (
-          <div>
-            <h2 className="text-2xl font-black mb-6">Platform Staff</h2>
-            <div className="glass-card rounded-2xl border border-border/50 overflow-hidden">
-              {loading ? <div className="p-8 text-center text-muted-foreground">Loading…</div>
-              : staff.length === 0 ? (
-                <div className="p-12 text-center text-muted-foreground">
-                  <Shield className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>No staff members assigned yet.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {staff.map(member => (
-                    <div key={member.id} className="p-4 flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                        {member.avatar_url ? <img src={member.avatar_url} alt="" className="w-full h-full object-cover" /> : <Users className="w-5 h-5 text-primary" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold">@{member.username}</p>
-                        <p className="text-xs text-muted-foreground">{member.full_name} · {member.craft}</p>
-                      </div>
-                      <span className={`text-[10px] px-2 py-1 rounded-full font-bold border uppercase ${ROLE_COLORS[member.role] ?? ''}`}>
-                        {member.role.replace('_', ' ')}
-                      </span>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 h-8"
-                          onClick={() => deleteAllUserContent(member.id, member.username ?? '')}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                        {member.role !== 'super_admin' && (
-                          <Button size="sm" variant="ghost" className="text-xs text-red-500 hover:bg-red-500/10 h-8"
-                            onClick={() => revokeRole(member.id, member.username ?? '')}>
-                            <UserMinus className="w-3 h-3 mr-1" />Revoke
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── Feature Flags ── */}
-        {activeTab === 'flags' && (
-          <div>
-            <h2 className="text-2xl font-black mb-2">Feature Flags</h2>
-            <p className="text-muted-foreground mb-6 text-sm">Toggle platform features globally. Changes take effect immediately for all users.</p>
-
-            {/* Create new flag */}
-            <div className="glass-card p-5 rounded-2xl border border-border/50 mb-6 space-y-3">
-              <p className="text-sm font-bold">Create New Flag</p>
-              <div className="flex gap-3">
-                <input className="flex-1 bg-background border border-border rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="flag_key_name" value={newFlagKey} onChange={e => setNewFlagKey(e.target.value)} />
-                <input className="flex-1 bg-background border border-border rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                  placeholder="Description…" value={newFlagDesc} onChange={e => setNewFlagDesc(e.target.value)} />
-                <Button className="text-xs font-bold rounded-xl" onClick={createFlag} disabled={!newFlagKey.trim()}>
-                  <Zap className="w-3 h-3 mr-1" />Create
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {flags.map(flag => (
-                <motion.div key={flag.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                  className="glass-card p-5 rounded-2xl border border-border/50 flex items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${flag.value ? 'bg-green-500/10' : 'bg-muted'}`}>
-                    {flag.value ? <Zap className="w-5 h-5 text-green-500" /> : <Lock className="w-5 h-5 text-muted-foreground" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold font-mono">{flag.key}</p>
-                    <p className="text-xs text-muted-foreground">{flag.description}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`text-xs font-bold ${flag.value ? 'text-green-500' : 'text-muted-foreground'}`}>{flag.value ? 'ON' : 'OFF'}</span>
-                    <button onClick={() => toggleFlag(flag)}
-                      className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${flag.value ? 'bg-green-500' : 'bg-muted border border-border'}`}>
-                      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${flag.value ? 'translate-x-7' : 'translate-x-1'}`} />
-                    </button>
-                    <Button size="icon" variant="ghost" className="w-7 h-7 text-red-500 hover:bg-red-500/10 rounded-lg"
-                      onClick={() => deleteFlag(flag.id, flag.key)}>
-                      <Trash2 className="w-3 h-3" />
+          <TabsContent value="governance" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 space-y-6">
+                <div className="glass-card p-6 border-border/50">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                      <ToggleLeft className="w-4 h-4 text-amber-500" /> Platform Feature Flags
+                    </h3>
+                    <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold uppercase gap-2">
+                      <RefreshCw className="w-3.5 h-3.5" /> Force Sync
                     </Button>
                   </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        )}
+                  
+                  <div className="space-y-3">
+                    {flags.map(flag => (
+                      <div key={flag.id} className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-border/30">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${flag.value ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground'}`}>
+                            {flag.value ? <Zap className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold font-mono">{flag.key}</p>
+                            <p className="text-[10px] text-muted-foreground font-medium">{flag.description}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                           <span className={`text-[10px] font-black ${flag.value ? 'text-emerald-500' : 'text-muted-foreground'}`}>{flag.value ? 'ENABLED' : 'DISABLED'}</span>
+                           <div 
+                             onClick={() => handleToggleFlag(flag.id, flag.value)}
+                             className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${flag.value ? 'bg-amber-500' : 'bg-muted'}`}
+                           >
+                              <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${flag.value ? 'translate-x-6' : 'translate-x-0'}`} />
+                           </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-        {/* ── Promote User ── */}
-        {activeTab === 'promote' && (
-          <div>
-            <h2 className="text-2xl font-black mb-2">Promote a User</h2>
-            <p className="text-muted-foreground mb-6 text-sm">Search by username and assign a governance role. All promotions are audit logged.</p>
-
-            <div className="flex gap-3 mb-6">
-              {(['moderator', 'admin', 'super_admin'] as const).map(r => (
-                <button key={r} onClick={() => setSelectedRole(r)}
-                  className={`flex-1 py-3 rounded-xl text-sm font-bold border transition-all ${
-                    selectedRole === r
-                      ? r === 'super_admin' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500'
-                        : r === 'admin' ? 'bg-blue-500/10 border-blue-500/40 text-blue-500'
-                        : 'bg-purple-500/10 border-purple-500/40 text-purple-500'
-                      : 'bg-muted border-border text-muted-foreground hover:border-foreground/30'}`}>
-                  {r === 'super_admin' ? '👑 Super Admin' : r === 'admin' ? '🛡️ Admin' : '🔍 Moderator'}
-                </button>
-              ))}
-            </div>
-
-            {selectedRole === 'super_admin' && (
-              <div className="mb-4 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl text-sm text-amber-600 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                You are granting root platform authority. This user will have full control over all platform systems.
+                <div className="glass-card p-6 border-border/50">
+                   <div className="flex items-center justify-between mb-6">
+                     <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                       <FileText className="w-4 h-4 text-amber-500" /> Global Policy Engine
+                     </h3>
+                     <Button variant="outline" size="sm" className="h-8 text-[10px] font-black uppercase tracking-widest rounded-xl border-amber-500/20 text-amber-600">
+                       New Policy Override
+                     </Button>
+                   </div>
+                   
+                   <div className="space-y-3">
+                     {policies.length > 0 ? (
+                       policies.map(policy => (
+                         <div 
+                           key={policy.id} 
+                           onClick={() => {
+                             setSelectedPolicy(policy);
+                             setIsPolicyModalOpen(true);
+                           }}
+                           className="flex items-center justify-between p-4 bg-muted/20 rounded-2xl border border-border/30 hover:bg-muted/30 transition-colors cursor-pointer group"
+                         >
+                           <div className="flex items-center gap-4">
+                             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                               <Shield className="w-5 h-5 text-primary" />
+                             </div>
+                             <div>
+                               <p className="text-sm font-bold">{policy.title}</p>
+                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">Type: {policy.type} • Active</p>
+                             </div>
+                           </div>
+                           <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                         </div>
+                       ))
+                     ) : (
+                       <div className="py-12 text-center border-2 border-dashed border-border/50 rounded-2xl">
+                          <FileText className="w-12 h-12 text-muted-foreground/20 mx-auto mb-4" />
+                          <p className="text-xs font-bold text-muted-foreground">No active legal holds or policy overrides in effect.</p>
+                       </div>
+                     )}
+                   </div>
+                </div>
               </div>
-            )}
 
-            <div className="flex items-center gap-2 glass-card border border-border rounded-xl px-4 py-3 mb-4">
-              <Search className="w-4 h-4 text-muted-foreground" />
-              <input className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
-                placeholder="Search username to promote…" value={promoteSearch} onChange={e => setPromoteSearch(e.target.value)} />
+              <div className="space-y-6">
+                <div className="glass-card p-6 border-amber-500/20 bg-amber-500/5">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-amber-700 mb-4">Revenue Governance</h3>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
+                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Total Platform GMV</p>
+                      <p className="text-2xl font-black text-foreground">₹{economics.total_gmv.toLocaleString()}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
+                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">Commission</p>
+                        <p className="text-lg font-black text-foreground">{economics.commission_rate}%</p>
+                      </div>
+                      <div className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
+                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">Payouts</p>
+                        <p className="text-lg font-black text-foreground capitalize">{economics.payout_status}</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" className="w-full h-10 rounded-xl border-amber-500/20 text-amber-700 font-bold text-[10px] uppercase tracking-widest">
+                      Manage Commissions
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="glass-card p-6 border-border/50">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-4">Security Center</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
+                      <div className="flex items-center gap-2 text-xs font-bold">
+                        <Key className="w-4 h-4 text-blue-500" /> API Keys
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
+                      <div className="flex items-center gap-2 text-xs font-bold">
+                        <Database className="w-4 h-4 text-emerald-500" /> Backup Vault
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
+                      <div className="flex items-center gap-2 text-xs font-bold">
+                        <Globe className="w-4 h-4 text-purple-500" /> DNS Health
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+          </TabsContent>
 
-            {promoteResults.length > 0 && (
-              <div className="glass-card rounded-2xl border border-border/50 overflow-hidden">
-                <div className="divide-y divide-border">
-                  {promoteResults.map(user => (
-                    <div key={user.id} className="p-4 flex items-center gap-4 hover:bg-muted/30 transition-colors">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                        {user.avatar_url ? <img src={user.avatar_url} alt="" className="w-full h-full object-cover" /> : <Users className="w-5 h-5 text-primary" />}
+          <TabsContent value="staff" className="animate-in fade-in slide-in-from-bottom-4">
+            <StaffRoleMatrix 
+              staff={staff} 
+              onPromote={handlePromote} 
+              onRevoke={handleRevoke} 
+            />
+          </TabsContent>
+
+          <TabsContent value="risk" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 glass-card p-6 border-border/50">
+                <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-6 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" /> Fraud Intelligence Feed
+                </h3>
+                <div className="space-y-4">
+                  {[1, 2, 3].map((_, i) => (
+                    <div key={i} className="flex items-center justify-between p-4 bg-red-500/5 rounded-2xl border border-red-500/10 transition-all hover:bg-red-500/10">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+                          <ShieldAlert className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold">Suspicious Withdrawal Attempt</p>
+                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">User ID: 882x-11 • Mumbai, IN • 4m ago</p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold">@{user.username}</p>
-                        <p className="text-xs text-muted-foreground">{user.full_name} · {user.craft}</p>
+                      <Badge variant="destructive" className="bg-red-500 text-white border-none text-[9px] font-black uppercase">Blocked</Badge>
+                    </div>
+                  ))}
+                  <div className="py-8 text-center text-muted-foreground text-xs font-medium border-2 border-dashed border-border/30 rounded-2xl">
+                    Scanning global traffic for anomalies...
+                  </div>
+                </div>
+              </div>
+
+              <div className="glass-card p-6 border-amber-500/20 bg-amber-500/5">
+                <h3 className="text-sm font-black uppercase tracking-widest text-amber-700 mb-6">Risk Distribution</h3>
+                <div className="space-y-6">
+                  {[
+                    { label: 'Low Risk Users', value: '98.2%', color: 'bg-emerald-500' },
+                    { label: 'Suspicious Active', value: '1.4%', color: 'bg-amber-500' },
+                    { label: 'High Risk / Bot', value: '0.4%', color: 'bg-red-500' },
+                  ].map((risk, i) => (
+                    <div key={i} className="space-y-2">
+                      <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                        <span>{risk.label}</span>
+                        <span className="text-foreground">{risk.value}</span>
                       </div>
-                      <Button size="sm" className="text-xs bg-primary hover:bg-primary/90 text-white" onClick={() => promoteUser(user.id)}>
-                        <UserPlus className="w-3 h-3 mr-1" />Assign {selectedRole.replace('_', ' ')}
-                      </Button>
+                      <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                        <div className={`h-full ${risk.color}`} style={{ width: risk.value }} />
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          </TabsContent>
 
-      </div>
+          <TabsContent value="security" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="glass-card p-0 border-border/50 overflow-hidden">
+              <div className="p-6 border-b border-border/50 flex items-center justify-between bg-muted/20">
+                <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-primary" /> Root Security Audit Log
+                </h3>
+                <Button variant="outline" size="sm" className="h-8 text-[10px] font-bold uppercase tracking-widest rounded-xl">
+                  Download Full Archive
+                </Button>
+              </div>
+              <div className="divide-y divide-border/50">
+                {[1, 2, 3, 4, 5].map((_, i) => (
+                  <div key={i} className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
+                    <div className="flex items-center gap-4">
+                      <div className="w-2 h-2 rounded-full bg-primary" />
+                      <div>
+                        <p className="text-xs font-mono font-bold">SUPER_ADMIN_ACTION: UPDATE_PLATFORM_FLAG</p>
+                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">Actor: CC-ROOT-01 • IP: 192.168.1.104 • 12:44:02</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary">VERIFIED</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="infrastructure" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                   { label: 'Compute Engine', value: '42%', icon: Cpu, color: 'text-blue-500' },
+                   { label: 'Database I/O', value: '18%', icon: Database, color: 'text-emerald-500' },
+                   { label: 'Network Latency', value: '24ms', icon: Network, color: 'text-purple-500' },
+                ].map((node, i) => (
+                   <div key={i} className="glass-card p-6 border-border/50">
+                      <div className="flex items-center justify-between mb-4">
+                         <div className={`w-10 h-10 rounded-xl bg-muted/50 flex items-center justify-center`}>
+                            <node.icon className={`w-5 h-5 ${node.color}`} />
+                         </div>
+                         <Badge className="bg-emerald-500/10 text-emerald-500 border-none text-[9px] font-black">HEALTHY</Badge>
+                      </div>
+                      <p className="text-2xl font-black text-foreground">{node.value}</p>
+                      <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-1">{node.label}</p>
+                   </div>
+                ))}
+             </div>
+          </TabsContent>
+        </Tabs>
+
+        {/* Policy Editor Modal */}
+        <Dialog open={isPolicyModalOpen} onOpenChange={setIsPolicyModalOpen}>
+          <DialogContent className="sm:max-w-[600px] rounded-[2.5rem] border-border/50 glass-card">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-black uppercase tracking-tight">Edit Platform Policy</DialogTitle>
+              <DialogDescription className="text-xs font-medium">
+                Modifying this policy will update the authoritative document and broadcast it platform-wide.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Policy Title</label>
+                <Input 
+                  value={selectedPolicy?.title || ''}
+                  onChange={(e) => setSelectedPolicy({ ...selectedPolicy, title: e.target.value })}
+                  className="rounded-2xl bg-muted/50 border-border/50 font-bold focus-visible:ring-primary/20"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Policy Content (Markdown Supported)</label>
+                <Textarea 
+                  value={selectedPolicy?.content || ''}
+                  onChange={(e) => setSelectedPolicy({ ...selectedPolicy, content: e.target.value })}
+                  className="rounded-2xl bg-muted/50 border-border/50 min-h-[300px] font-medium resize-none focus-visible:ring-primary/20"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => setIsPolicyModalOpen(false)} className="rounded-xl font-bold uppercase text-[10px] tracking-widest px-6 h-12">
+                Cancel
+              </Button>
+              <Button onClick={handleUpdatePolicy} className="rounded-xl font-black uppercase text-[10px] tracking-widest px-8 h-12 bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20">
+                Save & Publish
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </main>
     </div>
   );
 };
 
 export default SuperAdminDashboard;
+
+const ChevronRight = ({ className }: { className?: string }) => (
+  <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);

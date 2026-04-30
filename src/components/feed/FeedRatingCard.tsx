@@ -1,4 +1,4 @@
-import { Star, Users } from 'lucide-react';
+import { Star, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ interface FeedRatingCardProps {
     onRate?: (rating: number) => void;
     variant?: 'horizontal' | 'vertical';
     contentType?: 'movie' | 'tv';
+    onDismiss?: (id: string) => void;
 }
 
 const languageNames: Record<string, string> = {
@@ -33,7 +34,7 @@ const languageNames: Record<string, string> = {
     ko: "Korean",
 };
 
-const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 'movie' }: FeedRatingCardProps) => {
+const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 'movie', onDismiss }: FeedRatingCardProps) => {
     const [hoverRating, setHoverRating] = useState<number | null>(null);
     const navigate = useNavigate();
 
@@ -72,6 +73,20 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                             </div>
                         )}
                     </div>
+
+                    {onDismiss && (
+                        <button 
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onDismiss(rating.id);
+                            }}
+                            className="absolute top-2 right-2 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                            title="Dismiss suggestion"
+                        >
+                            <X size={14} strokeWidth={3} />
+                        </button>
+                    )}
                 </div>
 
                 <div className="p-4 flex flex-col gap-3 flex-1 bg-gradient-to-b from-background/50 to-background">
@@ -153,6 +168,20 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                         )}
                     </div>
                 </div>
+
+                {onDismiss && (
+                    <button 
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDismiss(rating.id);
+                        }}
+                        className="absolute top-3 right-3 z-30 h-7 w-7 rounded-full bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-black/5 dark:border-white/5"
+                        title="Dismiss suggestion"
+                    >
+                        <X size={14} strokeWidth={3} />
+                    </button>
+                )}
 
                 <div className="flex-1 p-4 flex flex-col justify-between relative z-10">
                     <div className="space-y-2">

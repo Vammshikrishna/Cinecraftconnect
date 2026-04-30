@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MarketplaceListing } from '@/types/marketplace';
-import { MapPin, Star, User, MoreVertical, Trash2 } from 'lucide-react';
+import { MapPin, Star, User, MoreVertical, Trash2, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Button } from '@/components/ui/button';
@@ -16,9 +16,10 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface ListingCardProps {
     listing: MarketplaceListing;
+    onDismiss?: (id: string) => void;
 }
 
-export const ListingCard = ({ listing }: ListingCardProps) => {
+export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     const { user } = useAuth();
     const { isAdmin } = useAppRole();
     const { toast } = useToast();
@@ -72,6 +73,20 @@ export const ListingCard = ({ listing }: ListingCardProps) => {
                         <div className="w-full h-full bg-gradient-to-br from-primary/10 via-background to-primary/5 flex items-center justify-center">
                             <div className="text-muted-foreground/30 font-black uppercase tracking-widest text-[10px]">No Image</div>
                         </div>
+                    )}
+
+                    {onDismiss && (
+                        <button 
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onDismiss(listing.id);
+                            }}
+                            className="absolute top-3 left-3 z-30 h-7 w-7 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white/60 hover:text-white transition-all opacity-0 group-hover:opacity-100 backdrop-blur-md border border-white/10 hover:border-white/20"
+                            title="Dismiss suggestion"
+                        >
+                            <X size={14} strokeWidth={3} />
+                        </button>
                     )}
                     
                     {/* Category Badge overlaying image */}

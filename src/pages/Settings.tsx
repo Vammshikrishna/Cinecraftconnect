@@ -1,11 +1,11 @@
-﻿
+
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Bell, Shield, Eye, Download,
   User, Lock, Volume2, Palette,
-  Settings as SettingsIcon, ChevronRight, ArrowLeft
+  Settings as SettingsIcon, ChevronRight, ArrowLeft, LifeBuoy
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 
@@ -84,6 +84,15 @@ const SettingsPage = () => {
       color: 'text-indigo-500',
       bgColor: 'bg-indigo-500/10',
       path: '/settings/account'
+    },
+    {
+      id: 'support',
+      title: 'Support & Help',
+      description: 'Get assistance or appeal a decision',
+      icon: LifeBuoy,
+      color: 'text-amber-500',
+      bgColor: 'bg-amber-500/10',
+      path: '/support'
     }
   ];
 
