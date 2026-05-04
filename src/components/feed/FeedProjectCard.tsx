@@ -13,6 +13,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import { cn } from "@/lib/utils";
+import { getOptimizedImage } from '@/utils/image-optimization';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -113,7 +114,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
 
             <Link to={`/projects/${project.id}/space`} className="block relative aspect-[16/10] overflow-hidden">
                 <img 
-                    src={displayImage} 
+                    src={getOptimizedImage(displayImage, { width: 800, quality: 85 })} 
                     alt={project.title} 
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />

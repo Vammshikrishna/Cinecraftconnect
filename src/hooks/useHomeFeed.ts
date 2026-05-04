@@ -1,9 +1,8 @@
-
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchLatestRatings } from '@/services/tmdb';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 export interface HomeFeedData {
     posts: any[];
@@ -15,23 +14,19 @@ export interface HomeFeedData {
     vendors: any[];
     connections: any[];
     likedPostIds: Set<string>;
+    hasNextPage?: boolean;
+    isFetchingNextPage?: boolean;
+    fetchNextPage?: () => void;
 }
 
 export const useHomeFeed = () => {
     const { user } = useAuth();
     const queryClient = useQueryClient();
 
-    // 1. Critical App Data (Supabase)
-    const supabaseQuery = useQuery({
-        queryKey: ['home-feed-data', user?.id],
-        queryFn: async (): Promise<Omit<HomeFeedData, 'ratings'>> => {
-            // Fallback to parallel fetching
-            const postsPromise = supabase
-                .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug)')
-                .order('created_at', { ascending: false })
-                .limit(20);
-
+    // 1. Static Feed Data (Announcements, Projects, etc.)
+    const staticDataQuery = useQuery({
+        queryKey: ['home-feed-static', user?.id],
+        queryFn: async () => {
             const announcementsPromise = supabase
                 .from('announcements')
                 .select('*, company_pages:publisher_page_id(id, name, logo_url, slug), profiles:author_id(full_name, username)')
@@ -50,7 +45,7 @@ export const useHomeFeed = () => {
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            const conceptsPromise = supabase
+            const marketplacePromise = supabase
                 .from('marketplace_listings')
                 .select('*')
                 .order('created_at', { ascending: false })
@@ -71,134 +66,135 @@ export const useHomeFeed = () => {
                     .limit(6)
                 : Promise.resolve({ data: [], error: null });
 
-            const likesPromise = user?.id
-                ? supabase
-                    .from('post_likes')
-                    .select('post_id')
-                    .eq('user_id', user.id)
-                : Promise.resolve({ data: [], error: null });
-
             const [
-                postsRes, announcementsRes, projectsRes, discussionsRes,
-                marketplaceRes, vendorsRes, connectionsRes, likesRes
+                announcementsRes, projectsRes, discussionsRes,
+                marketplaceRes, vendorsRes, connectionsRes
             ] = await Promise.all([
-                postsPromise, announcementsPromise, projectsPromise, discussionsPromise,
-                conceptsPromise, vendorsPromise, connectionsPromise, likesPromise
+                announcementsPromise, projectsPromise, discussionsPromise,
+                marketplacePromise, vendorsPromise, connectionsPromise
             ]);
 
             return {
-                posts: postsRes.data || [],
                 announcements: announcementsRes.data || [],
                 projects: projectsRes.data || [],
                 discussions: discussionsRes.data || [],
                 marketplace: marketplaceRes.data || [],
                 vendors: vendorsRes.data || [],
                 connections: connectionsRes.data || [],
-                likedPostIds: new Set((likesRes.data as any[] || []).map((l: any) => l.post_id))
             };
         },
         staleTime: 1000 * 60 * 5,
     });
 
-    // 2. Non-Critical External Data (TMDB) — with retry for mobile resilience
-    const ratingsQuery = useQuery({
-        queryKey: ['home-feed-ratings'],
-        queryFn: async () => {
-            const data = await fetchLatestRatings();
-            return data;
+    // 2. Infinite Posts Query (5 posts per load)
+    const infinitePostsQuery = useInfiniteQuery({
+        queryKey: ['home-feed-posts', user?.id],
+        queryFn: async ({ pageParam }: { pageParam: string | null }) => {
+            let query = supabase
+                .from('posts')
+                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug)')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            if (pageParam) {
+                query = query.lt('created_at', pageParam);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return data || [];
         },
-        staleTime: 1000 * 60 * 60, // 1 hour cache
-        retry: 3,
-        retryDelay: (attemptIndex) => Math.min(2000 * Math.pow(2, attemptIndex), 15000),
+        initialPageParam: null as string | null,
+        getNextPageParam: (lastPage: any[]) => {
+            if (lastPage.length < 5) return undefined;
+            return lastPage[lastPage.length - 1].created_at;
+        },
+        staleTime: 1000 * 60 * 2,
     });
 
-    // 3. Real-time subscription for post likes and updates
+    // 3. User Likes Query
+    const likesQuery = useQuery({
+        queryKey: ['user-likes', user?.id],
+        queryFn: async () => {
+            if (!user?.id) return new Set<string>();
+            const { data, error } = await supabase
+                .from('post_likes')
+                .select('post_id')
+                .eq('user_id', user.id);
+            if (error) throw error;
+            return new Set((data || []).map((l: any) => l.post_id));
+        },
+        enabled: !!user?.id,
+    });
+
+    // 4. TMDB Ratings
+    const ratingsQuery = useQuery({
+        queryKey: ['home-feed-ratings'],
+        queryFn: fetchLatestRatings,
+        staleTime: 1000 * 60 * 60,
+    });
+
+    // Real-time subscriptions
     useEffect(() => {
         if (!user?.id) return;
 
-        // Subscribe to post_likes changes to update the current user's liked posts
-        const likesChannel = supabase
-            .channel('user_post_likes')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'post_likes',
-                    filter: `user_id=eq.${user.id}`
-                },
-                () => {
-                    // Invalidate to refetch liked post IDs
-                    queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
-                }
-            )
-            .subscribe();
-
-        // Subscribe to posts table updates for like count changes
         const postsChannel = supabase
             .channel('posts_updates')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'posts'
-                },
-                (payload: any) => {
-                    // Update the specific post in the cache without full refetch
-                    queryClient.setQueryData(['home-feed-data', user.id], (old: any) => {
-                        if (!old) return old;
-
-                        const updatedPost = payload.new;
-                        return {
-                            ...old,
-                            posts: old.posts.map((post: any) =>
-                                post.id === updatedPost.id
-                                    ? { ...post, like_count: updatedPost.like_count, comment_count: updatedPost.comment_count, share_count: updatedPost.share_count }
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts' }, (payload: any) => {
+                queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
+                    if (!old) return old;
+                    return {
+                        ...old,
+                        pages: old.pages.map((page: any[]) =>
+                            page.map((post: any) =>
+                                post.id === payload.new.id
+                                    ? { ...post, ...payload.new }
                                     : post
                             )
-                        };
-                    });
-                }
-            )
+                        )
+                    };
+                });
+            })
             .subscribe();
 
-        // Subscribe to announcements updates
-        const announcementsChannel = supabase
-            .channel('announcements_updates')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'announcements'
-                },
-                () => {
-                    queryClient.invalidateQueries({ queryKey: ['home-feed-data', user.id] });
-                }
-            )
+        const likesChannel = supabase
+            .channel('user_post_likes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'post_likes', filter: `user_id=eq.${user.id}` }, () => {
+                queryClient.invalidateQueries({ queryKey: ['user-likes', user.id] });
+            })
             .subscribe();
 
         return () => {
-            supabase.removeChannel(likesChannel);
             supabase.removeChannel(postsChannel);
-            supabase.removeChannel(announcementsChannel);
+            supabase.removeChannel(likesChannel);
         };
     }, [user?.id, queryClient]);
 
-    // Merge Data
-    const combinedData: HomeFeedData | undefined = supabaseQuery.data ? {
-        ...supabaseQuery.data,
-        ratings: ratingsQuery.data || []
-    } : undefined;
+    // Flatten posts from infinite pages
+    const posts = useMemo(() => {
+        return infinitePostsQuery.data?.pages.flat() || [];
+    }, [infinitePostsQuery.data]);
+
+    const combinedData: HomeFeedData | undefined = useMemo(() => {
+        if (!staticDataQuery.data) return undefined;
+        return {
+            ...staticDataQuery.data,
+            posts,
+            ratings: ratingsQuery.data || [],
+            likedPostIds: likesQuery.data || new Set(),
+            hasNextPage: infinitePostsQuery.hasNextPage,
+            isFetchingNextPage: infinitePostsQuery.isFetchingNextPage,
+            fetchNextPage: infinitePostsQuery.fetchNextPage,
+        };
+    }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery]);
 
     return {
         data: combinedData,
-        isLoading: supabaseQuery.isLoading, // Only block UI for Supabase data
-        isError: supabaseQuery.isError,
-        error: supabaseQuery.error,
+        isLoading: staticDataQuery.isLoading || infinitePostsQuery.isLoading,
+        isError: staticDataQuery.isError || infinitePostsQuery.isError,
         refetch: () => {
-            supabaseQuery.refetch();
+            staticDataQuery.refetch();
+            infinitePostsQuery.refetch();
             ratingsQuery.refetch();
         }
     };

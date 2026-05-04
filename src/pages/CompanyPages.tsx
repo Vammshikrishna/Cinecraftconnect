@@ -1,12 +1,11 @@
-
 import { useState } from 'react';
 import { useCompanyPages } from '@/hooks/useCompanyPages';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Plus, TrendingUp, Filter } from 'lucide-react';
+import { Search, Building2, Plus, TrendingUp, Filter } from 'lucide-react';
 import { CompanyPageCard } from '@/components/pages/CompanyPageCard';
 import { CreatePageModal } from '@/components/pages/CreatePageModal';
-import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PageSkeleton } from '@/components/ui/enhanced-skeleton';
 import { PageHeader } from '@/components/common/PageHeader';
 import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -27,9 +26,10 @@ const CompanyPages = () => {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
-          title="Pages" 
-          subtitle="Discover production houses, studios, agencies, and organizations" 
-          Icon={StudioPageIcon}
+          title="Companies" 
+          subtitle="Explore film studios, production houses, and equipment rentals" 
+          Icon={Building2}
+          actionsAtTop={true}
           actions={
             !isFan && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
@@ -49,16 +49,16 @@ const CompanyPages = () => {
           className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-12 shadow-sm dark:shadow-none"
         >
           <div className="flex flex-row gap-2 md:gap-3">
-            <div className="relative flex-grow h-12 md:h-14">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
+            <div className="relative flex-grow h-10 md:h-11">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
               <Input
                 placeholder="Search pages by name, location, or industry..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-base transition-all font-medium placeholder:text-muted-foreground/50"
+                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-sm transition-all font-medium placeholder:text-muted-foreground/50"
               />
             </div>
-            <Button variant="ghost" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-xs">
+            <Button variant="ghost" className="shrink-0 h-10 md:h-11 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-[10px]">
               <Filter size={18} />
               <span>Filters</span>
             </Button>
@@ -94,7 +94,7 @@ const CompanyPages = () => {
           {isLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                <CardSkeleton key={i} className="h-64 rounded-[2rem]" />
+                <PageSkeleton key={i} />
               ))}
             </div>
           ) : pages.length === 0 ? (
@@ -116,7 +116,7 @@ const CompanyPages = () => {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {pages.map(page => (
                 <CompanyPageCard key={page.id} page={page} />
               ))}

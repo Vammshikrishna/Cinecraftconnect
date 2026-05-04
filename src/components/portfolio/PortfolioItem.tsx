@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Edit, Trash2, Eye } from "lucide-react";
+import { getOptimizedImage } from "@/utils/image-optimization";
 
 interface PortfolioItemProps {
   id: string;
@@ -32,7 +33,7 @@ export const PortfolioItem = ({
 
   const MediaPreview = () => {
     if (!mediaUrl) return <div className="h-48 w-full bg-muted flex items-center justify-center text-muted-foreground">No Preview</div>;
-    if (mediaType === 'image') return <img src={mediaUrl} alt={title} className="h-48 w-full object-cover" />;
+    if (mediaType === 'image') return <img src={getOptimizedImage(mediaUrl, { width: 400, height: 400 })} alt={title} className="h-48 w-full object-cover" />;
     if (mediaType === 'video') return <div className="h-48 w-full bg-black flex items-center justify-center"><video src={mediaUrl} className="max-h-full max-w-full" /></div>;
     return <div className="h-48 w-full bg-muted flex items-center justify-center text-muted-foreground">{mediaType}</div>;
   };

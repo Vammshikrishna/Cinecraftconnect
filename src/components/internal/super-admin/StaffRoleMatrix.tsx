@@ -1,10 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { 
   Shield, ShieldCheck, Crown, 
   User, UserPlus, UserMinus,
   Activity, Key, ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface StaffMember {
   id: string;
@@ -28,6 +40,82 @@ const ROLE_CONFIG = {
 };
 
 const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onRevoke }) => {
+  const [isProvisionOpen, setIsProvisionOpen] = useState(false);
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [provisionMethod, setProvisionMethod] = useState('new'); // 'new' | 'existing'
+  const [provisionId, setProvisionId] = useState('');
+  
+  // New user form state
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [provisionRole, setProvisionRole] = useState('moderator');
+
+  const handleProvisionSubmit = async () => {
+    setIsProvisioning(true);
+    try {
+      if (provisionMethod === 'existing') {
+        if (!provisionId.trim()) {
+          throw new Error('User ID is required');
+        }
+        // Promote existing user
+        onPromote(provisionId.trim(), provisionRole);
+      } else {
+        // Create new user
+        if (!email || !password || !username || !fullName) {
+          throw new Error('All fields are required');
+        }
+        
+        const tempClient = createClient(
+          import.meta.env.VITE_SUPABASE_URL,
+          import.meta.env.VITE_SUPABASE_ANON_KEY,
+          {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              detectSessionInUrl: false
+            }
+          }
+        );
+
+        const { data, error } = await tempClient.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              username,
+              full_name: fullName,
+            }
+          }
+        });
+
+        if (error) throw error;
+
+        if (data.user) {
+          // Wait briefly for triggers to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          // Promote the newly created user
+          onPromote(data.user.id, provisionRole);
+        }
+      }
+
+      // Reset form
+      setIsProvisionOpen(false);
+      setEmail('');
+      setPassword('');
+      setUsername('');
+      setFullName('');
+      setProvisionId('');
+      setProvisionRole('moderator');
+    } catch (e: any) {
+      console.error("Provisioning error:", e);
+      alert(e.message || "Failed to provision staff");
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -37,7 +125,10 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
             Global Permission & Access Governance
           </p>
         </div>
-        <Button className="h-9 rounded-xl gap-2 font-bold text-xs bg-primary hover:bg-primary/90 text-white px-6">
+        <Button 
+          onClick={() => setIsProvisionOpen(true)}
+          className="h-9 rounded-xl gap-2 font-bold text-xs bg-primary hover:bg-primary/90 text-white px-6"
+        >
           <UserPlus className="w-4 h-4" /> Provision New Staff
         </Button>
       </div>
@@ -144,6 +235,100 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
           </div>
         ))}
       </div>
+
+      <Dialog open={isProvisionOpen} onOpenChange={setIsProvisionOpen}>
+        <DialogContent className="sm:max-w-[500px] rounded-[2rem] border-border/50 glass-card">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black uppercase tracking-tight">Provision Staff</DialogTitle>
+            <DialogDescription className="text-xs font-medium">
+              Create a new internal user account or promote an existing platform user.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs value={provisionMethod} onValueChange={setProvisionMethod} className="w-full mt-2">
+            <TabsList className="grid w-full grid-cols-2 bg-muted/50 p-1 rounded-xl">
+              <TabsTrigger value="new" className="rounded-lg text-xs font-bold data-[state=active]:bg-primary data-[state=active]:text-white">Create Account</TabsTrigger>
+              <TabsTrigger value="existing" className="rounded-lg text-xs font-bold data-[state=active]:bg-primary data-[state=active]:text-white">Promote Existing</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="new" className="mt-4">
+              <div className="grid grid-cols-2 gap-4 py-2">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Email</label>
+                  <Input 
+                    type="email"
+                    placeholder="staff@cinecraft.com" 
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="rounded-2xl bg-muted/50 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Temporary Password</label>
+                  <Input 
+                    type="password"
+                    placeholder="••••••••" 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="rounded-2xl bg-muted/50 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
+                  <Input 
+                    placeholder="admin_john" 
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="rounded-2xl bg-muted/50 border-border/50"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Full Name</label>
+                  <Input 
+                    placeholder="John Doe" 
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="rounded-2xl bg-muted/50 border-border/50"
+                  />
+                </div>
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="existing" className="mt-4">
+              <div className="space-y-2 py-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">User ID (UUID)</label>
+                <Input 
+                  placeholder="e.g., a1b2c3d4-..." 
+                  value={provisionId}
+                  onChange={(e) => setProvisionId(e.target.value)}
+                  className="rounded-2xl bg-muted/50 border-border/50"
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <div className="space-y-2 mt-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Internal Role</label>
+            <Select value={provisionRole} onValueChange={setProvisionRole}>
+              <SelectTrigger className="w-full rounded-2xl bg-muted/50 border-border/50">
+                <SelectValue placeholder="Select a role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="moderator">Moderator</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button disabled={isProvisioning} variant="outline" onClick={() => setIsProvisionOpen(false)} className="rounded-xl font-bold text-xs px-6">Cancel</Button>
+            <Button disabled={isProvisioning} onClick={handleProvisionSubmit} className="rounded-xl font-bold text-xs bg-primary hover:bg-primary/90 text-white px-6">
+              {isProvisioning ? 'Processing...' : (provisionMethod === 'new' ? 'Create & Provision' : 'Promote')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

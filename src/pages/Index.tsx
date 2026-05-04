@@ -10,6 +10,7 @@ import { motion, useScroll, useTransform, useInView } from 'framer-motion';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import Footer from '@/components/Footer';
 import LandingNavbar from '@/components/landing/LandingNavbar';
+import SEO from '@/components/common/SEO';
 
 /* ─────────────────────────────────────────────
    Reusable: scroll-reveal wrapper
@@ -159,6 +160,10 @@ const Index = () => {
 
   return (
     <div className="relative min-h-screen bg-background overflow-x-hidden">
+      <SEO 
+        title="Welcome" 
+        description="Connect with the global entertainment community. Find jobs, build projects, and showcase your talent in a premium digital workspace." 
+      />
       <LandingNavbar />
 
       {/* ───────────── HERO ───────────── */}

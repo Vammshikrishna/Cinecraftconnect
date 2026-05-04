@@ -204,7 +204,7 @@ const DiscussionRoomsTab = () => {
           <p className="text-muted-foreground">No active discussion rooms. Create the first one!</p>
         </div>
       ) : (
-        <ResponsiveGrid cols={{ sm: 1, md: 2 }} gap={4}>
+        <ResponsiveGrid cols={{ sm: 2, md: 2 }} gap={4}>
           {rooms.map((room) => (
             <FeedDiscussionCard
               key={room.id}
@@ -214,7 +214,6 @@ const DiscussionRoomsTab = () => {
                 description: room.description,
                 member_count: room.member_count,
                 created_at: room.created_at,
-                room_type: 'public',
                 category: room.room_categories,
                 tags: room.tags
               }}

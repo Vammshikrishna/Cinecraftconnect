@@ -1,10 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import {
+    Truck,
     Search,
     Filter,
     Plus,
@@ -93,9 +93,10 @@ const Vendors = () => {
 
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
                 <PageHeader 
-                  title="Vendors Directory" 
-                  subtitle="Connect with verified industry businesses and service providers" 
-                  Icon={VendorIcon}
+                  title="Vendor Directory" 
+                  subtitle="Find film equipment rentals, studios, and production services" 
+                  Icon={Truck}
+                  actionsAtTop={true}
                   actions={
                     <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
                         <Plus size={18} strokeWidth={3} />

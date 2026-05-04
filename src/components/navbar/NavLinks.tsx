@@ -22,7 +22,7 @@ const NavLinks = () => {
 
   const creatorNavItems = [
     { path: '/feed', icon: Home, label: 'Home' },
-    { path: '/projects', icon: Film, label: 'Projects' },
+    { path: '/projects', icon: Film, label: 'ProjectSpace' },
     { path: '/discussion-rooms', icon: DiscussionRoomIcon, label: 'Discussions' },
     { path: '/jobs', icon: Briefcase, label: 'Jobs' },
     { path: '/network', icon: Users, label: 'Network' }
@@ -43,7 +43,7 @@ const NavLinks = () => {
 
   const hasNotification = (label: string) => {
     if (label === 'Discussions') return hasUnreadDiscussions;
-    if (label === 'Projects') return hasUnreadProjects;
+    if (label === 'ProjectSpace') return hasUnreadProjects;
     return false;
   };
 

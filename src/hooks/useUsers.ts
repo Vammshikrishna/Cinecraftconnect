@@ -8,10 +8,10 @@ export interface UserProfile {
   username: string;
   avatar_url: string;
   craft: string;
-  location: string;
-  bio: string;
-  website: string;
-  connection_status?: 'none' | 'pending_sent' | 'pending_received' | 'connected';
+  location?: string | null;
+  bio?: string | null;
+  cover_image_url?: string | null;
+  connection_status?: 'connected' | 'pending_sent' | 'pending_received' | 'none';
   connection_id?: string;
   is_verified?: boolean;
   suggestion_reason?: string;

@@ -15,6 +15,7 @@ import { JobShareCard } from '@/components/chat/JobShareCard';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers, Plus, Loader2 } from 'lucide-react';
 import { cn } from "@/lib/utils";
+import { getOptimizedImage } from '@/utils/image-optimization';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,7 +155,14 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
         .is('page_id', null)
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
+      if (error) {
+        console.error('Error fetching posts:', error);
+        toast({
+          title: "Error fetching posts",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else if (data) {
         setPosts(data as unknown as ExtendedPost[]);
       }
 
@@ -404,7 +412,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   />
                 ) : (
                   <img
-                    src={post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url}
+                    src={getOptimizedImage(post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url, { width: 400, height: 400 })}
                     alt="Post"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                   />
@@ -422,7 +430,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                           <div className="w-full h-full p-2.5 flex flex-col justify-between items-center text-center">
                             <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl border-4 border-background shadow-xl ring-1 ring-white/10 bg-background overflow-hidden shrink-0 mt-2">
                               <Avatar className="h-full w-full rounded-none">
-                                <AvatarImage src={shareData.logoUrl || undefined} className="object-cover" />
+                                <AvatarImage src={getOptimizedImage(shareData.logoUrl, { width: 200, height: 200 }) || undefined} className="object-cover" />
                                 <AvatarFallback className="bg-primary/20 text-primary font-black text-xl">
                                   {shareData.company?.[0]?.toUpperCase()}
                                 </AvatarFallback>
@@ -538,7 +546,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
                     <img
                       key={`bg-${currentMediaIndex}`}
-                      src={items[currentMediaIndex]?.url}
+                      src={getOptimizedImage(items[currentMediaIndex]?.url, { width: 100, quality: 10, format: 'webp' })}
                       alt=""
                       className="w-full h-full object-cover blur-3xl opacity-40 scale-110 transition-all duration-1000 animate-in fade-in"
                     />
@@ -661,7 +669,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                             />
                           ) : (
                             <img
-                              src={item.url}
+                              src={getOptimizedImage(item.url, { width: 1200, quality: 90 })}
                               alt={`Work ${i + 1}`}
                               className="w-full h-full object-contain transition-all duration-700 animate-in fade-in shadow-[0_0_80px_rgba(0,0,0,0.8)]"
                             />
@@ -686,7 +694,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                             {/* Rich Atmospheric Branding */}
                             <div className="absolute inset-0 z-0">
                               <img
-                                src={shareData.logoUrl || undefined}
+                                src={getOptimizedImage(shareData.logoUrl, { width: 100, quality: 10, format: 'webp' }) || undefined}
                                 alt=""
                                 className="w-full h-full object-cover blur-3xl opacity-30 scale-125"
                               />

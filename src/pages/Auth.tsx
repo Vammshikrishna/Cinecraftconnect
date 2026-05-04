@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext.tsx';
 import { useToast } from '@/hooks/use-toast.ts';
 import { z } from 'zod';
+import { supabase } from '@/integrations/supabase/client';
 
 // Schemas
 const loginSchema = z.object({
@@ -71,6 +72,33 @@ const Auth = () => {
       } else {
         if (action === 'signIn') {
           toast({ title: "Welcome back!", description: "You have successfully signed in." });
+          
+          try {
+            const { data: userData } = await supabase.auth.getUser();
+            if (userData.user) {
+              const { data: roleData } = await supabase
+                .from('user_roles')
+                .select('role')
+                .eq('user_id', userData.user.id)
+                .single();
+
+              const roleStr = roleData?.role as string | undefined;
+
+              if (roleStr === 'super_admin') {
+                navigate('/super-admin', { replace: true });
+                return;
+              } else if (roleStr === 'admin') {
+                navigate('/admin', { replace: true });
+                return;
+              } else if (roleStr === 'moderator') {
+                navigate('/moderation', { replace: true });
+                return;
+              }
+            }
+          } catch (e) {
+            console.error("Error checking role after sign in", e);
+          }
+          
           navigate('/feed', { replace: true });
         } else {
           toast({ title: "Account created!", description: "Please complete your profile." });

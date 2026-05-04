@@ -4,7 +4,7 @@ import { fetchContentDetails, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Star, Play, ThumbsUp, Calendar, Clock, Globe, ArrowLeft } from 'lucide-react';
+import { Star, Play, ThumbsUp, Calendar, Clock, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,7 @@ const ContentDetailPage = () => {
     const [reviews, setReviews] = useState<any[]>([]);
     const [isSpoiler, setIsSpoiler] = useState(false);
     const [submittingReview, setSubmittingReview] = useState(false);
+    const [isAnonymous, setIsAnonymous] = useState(false);
 
     useEffect(() => {
         loadContentDetails();
@@ -104,7 +105,8 @@ const ContentDetailPage = () => {
                     user_id: user.id,
                     tmdb_id: parseInt(id!),
                     review_text: reviewText.trim(),
-                    is_spoiler: isSpoiler
+                    is_spoiler: isSpoiler,
+                    is_anonymous: isAnonymous
                 }, { onConflict: 'user_id, tmdb_id' });
 
             if (error) throw error;
@@ -112,6 +114,7 @@ const ContentDetailPage = () => {
             toast({ title: 'Review submitted', description: 'Your review has been posted' });
             setReviewText('');
             setIsSpoiler(false);
+            setIsAnonymous(false);
             loadContentDetails(); // Reload to show new review
         } catch (error) {
             console.error('Error submitting review:', error);
@@ -166,41 +169,45 @@ const ContentDetailPage = () => {
 
     return (
         <div className="min-h-screen bg-background pb-40">
+            {/* Back Button - Fixed and separate from content */}
+            <div className="fixed top-20 left-4 md:left-8 z-50">
+                <Button
+                    variant="secondary"
+                    className="bg-background/90 hover:bg-background text-foreground shadow-xl backdrop-blur-xl rounded-full h-10 px-5 border border-border/50 group/back"
+                    onClick={() => navigate(-1)}
+                >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    <span className="text-sm font-bold uppercase tracking-wider">Back</span>
+                </Button>
+            </div>
+
             {/* Hero Section */}
-            <div className="relative w-full h-[60vh] md:h-[70vh]">
+            <div className="relative w-full aspect-video md:aspect-[21/9] min-h-[400px]">
                 <div className="absolute inset-0">
                     <img
                         src={`https://image.tmdb.org/t/p/original${content.backdrop_path || content.poster_path}`}
                         alt={title}
                         className="w-full h-full object-cover"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-background/90 via-background/40 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-background/20 via-transparent to-transparent" />
                 </div>
 
                 <div className="relative h-full max-w-7xl mx-auto px-4 md:px-8 flex flex-col justify-end pb-12">
-                    <Button
-                        variant="ghost"
-                        className="absolute top-20 left-4 md:left-8 bg-black/50 hover:bg-black/70 text-white backdrop-blur-sm z-50 rounded-full"
-                        onClick={() => navigate(-1)}
-                    >
-                        <ArrowLeft className="h-5 w-5 mr-2" />
-                        Back
-                    </Button>
 
                     <div className="flex flex-col md:flex-row gap-6 items-end">
                         <img
                             src={`${TMDB_IMAGE_BASE_URL}${content.poster_path}`}
                             alt={title}
-                            className="w-48 md:w-64 rounded-lg shadow-2xl hidden md:block"
+                            className="w-32 md:w-64 rounded-lg shadow-2xl border-2 border-white/10"
                         />
 
                         <div className="flex-1 space-y-4">
-                            <h1 className="text-4xl md:text-6xl font-extrabold text-white drop-shadow-lg">
+                            <h1 className="text-4xl md:text-6xl font-extrabold text-foreground drop-shadow-sm">
                                 {title}
                             </h1>
 
-                            <div className="flex flex-wrap items-center gap-4 text-white/90">
+                            <div className="flex flex-wrap items-center gap-4 text-muted-foreground font-medium">
                                 {releaseDate && (
                                     <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4" />
@@ -213,10 +220,6 @@ const ContentDetailPage = () => {
                                         <span>{runtime} min</span>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <Globe className="h-4 w-4 text-yellow-400" />
-                                    <span className="font-semibold">{content.vote_average?.toFixed(1)} TMDB</span>
-                                </div>
                             </div>
 
                             <div className="flex gap-3">
@@ -366,6 +369,15 @@ const ContentDetailPage = () => {
                                     />
                                     <span className="text-sm">Contains spoilers</span>
                                 </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={isAnonymous}
+                                        onChange={(e) => setIsAnonymous(e.target.checked)}
+                                        className="rounded"
+                                    />
+                                    <span className="text-sm">Post anonymously</span>
+                                </label>
                                 <Button
                                     onClick={handleSubmitReview}
                                     disabled={!reviewText.trim() || submittingReview}
@@ -386,11 +398,11 @@ const ContentDetailPage = () => {
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                                                {review.profiles?.full_name?.[0] || '?'}
+                                                {review.is_anonymous ? '?' : (review.profiles?.full_name?.[0] || '?')}
                                             </div>
                                             <div>
-                                                <p className="font-semibold">{review.profiles?.full_name || 'Anonymous'}</p>
-                                                <p className="text-xs text-muted-foreground">{review.profiles?.craft || 'Film Enthusiast'}</p>
+                                                <p className="font-semibold">{review.is_anonymous ? 'Anonymous Craftsman' : (review.profiles?.full_name || 'Anonymous')}</p>
+                                                <p className="text-xs text-muted-foreground">{review.is_anonymous ? 'Identity Protected' : (review.profiles?.craft || 'Film Enthusiast')}</p>
                                             </div>
                                         </div>
                                         <span className="text-xs text-muted-foreground">

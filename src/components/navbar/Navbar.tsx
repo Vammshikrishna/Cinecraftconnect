@@ -25,15 +25,16 @@ const Navbar = () => {
             <AppLogo size="md" to="/" />
 
             {/* Right side content */}
-            <div className="flex items-center gap-1 sm:gap-2 lg:gap-3 flex-shrink-0">
+            <div className="flex items-center gap-0 sm:gap-2 lg:gap-3 flex-shrink-0">
               {user ? (
                 <>
-                  {/* Desktop: Links and other icons */}
-                  <div className="hidden lg:flex items-center gap-2 xl:gap-4">
+                  {/* Group 2: Navigation (Links + More) */}
+                  <div className="hidden lg:flex items-center gap-1 xl:gap-2">
                     <NavLinks />
+                    <MoreMenu />
                   </div>
 
-                  {/* Fan badge — always visible when logged in as fan */}
+                  {/* Fan badge */}
                   {isFan && (
                     <Link to="/pricing" className="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-bold shrink-0 hover:bg-primary/20 transition-all hover:scale-105 active:scale-95 shadow-sm">
                       <Star className="h-3.5 w-3.5 fill-primary" />
@@ -41,31 +42,19 @@ const Navbar = () => {
                     </Link>
                   )}
 
-                  {/* Mobile: Show only search */}
-                  <div className="lg:hidden flex items-center flex-1">
-                    <div className="w-full px-2 flex justify-end">
-                      <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
-                        <Link to="/search">
-                          <Search className="h-5 w-5" />
-                        </Link>
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Icons for both mobile and desktop */}
-                  <div className="hidden lg:block">
-                    <MoreMenu />
-                  </div>
-                  <div className="hidden lg:block">
-                    <Button variant="ghost" size="icon" asChild className="text-muted-foreground hover:text-foreground">
+                  {/* Group 1: Utility & Account (Search, Chat, Notifs, Profile) */}
+                  <div className="flex items-center gap-0 sm:gap-1">
+                    {/* Search - now part of the utility group on all devices */}
+                    <Button variant="ghost" size="icon" asChild className="text-foreground/70 hover:text-primary transition-all duration-300">
                       <Link to="/search">
                         <Search className="h-5 w-5" />
                       </Link>
                     </Button>
+
+                    {!isFan && <ChatLink />}
+                    <NotificationsDropdown />
+                    <UserProfileMenu />
                   </div>
-                  {!isFan && <ChatLink />}
-                  <NotificationsDropdown />
-                  <UserProfileMenu />
                 </>
               ) : (
                 <>
@@ -92,9 +81,9 @@ const Navbar = () => {
 
 const ChatLink = () => {
   const { unreadCount } = useUnreadMessages();
-  
+
   return (
-    <Button variant="ghost" size="icon" asChild className="relative text-muted-foreground hover:text-foreground">
+    <Button variant="ghost" size="icon" asChild className="relative text-foreground/70 hover:text-primary hover:bg-primary/10 transition-all duration-300">
       <Link to="/messages">
         <MessageSquare className="h-5 w-5" />
         {unreadCount > 0 && (

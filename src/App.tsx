@@ -64,6 +64,7 @@ const JobDetail = lazy(() => import("@/pages/JobDetail"));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage"));
 const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
 const Support = lazy(() => import("./pages/Support"));
+const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
 
 // Legal Pages
 const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
@@ -171,6 +172,7 @@ const App = () => {
                 <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
                 <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
                 <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
+                <Route path="/support/ticket/:ticketId" element={<ProtectedRoute><SupportTicketDetail /></ProtectedRoute>} />
 
                 {/* Public Legal Routes */}
                 <Route path="/privacy" element={<PrivacyPolicy />} />

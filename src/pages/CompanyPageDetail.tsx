@@ -276,11 +276,11 @@ const CompanyPageDetail = () => {
           {/* Core Info */}
           <div className="flex-1 min-w-0 md:pb-2">
             <div className="flex items-center gap-2 mb-1.5">
-              <h1 className="text-3xl md:text-5xl font-black tracking-tight uppercase truncate">{page.name}</h1>
+              <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase truncate">{page.name}</h1>
               {page.is_verified && <CheckCircle2 className="h-6 w-6 md:h-8 md:w-8 text-primary fill-primary/10" />}
             </div>
             {page.tagline && (
-              <p className="text-muted-foreground text-base md:text-xl font-medium tracking-wide mb-4 line-clamp-2 md:line-clamp-none">
+              <p className="text-muted-foreground text-sm md:text-base font-medium tracking-wide mb-3 line-clamp-2 md:line-clamp-none -mt-1">
                 {page.tagline}
               </p>
             )}

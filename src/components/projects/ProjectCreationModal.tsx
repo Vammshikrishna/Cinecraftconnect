@@ -164,8 +164,8 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
         if (error) throw error;
 
         toast({
-          title: "Project Updated",
-          description: "Your project has been updated successfully!",
+          title: "ProjectSpace Updated",
+          description: "Your ProjectSpace has been updated successfully!",
         });
       } else {
         const { data: newProject, error } = await supabase
@@ -189,8 +189,8 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
         }
 
         toast({
-          title: "Project Created",
-          description: "Your project has been created successfully!",
+          title: "ProjectSpace Created",
+          description: "Your ProjectSpace has been created successfully!",
         });
 
         if (newProject) {
@@ -333,7 +333,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
           ) : (
             <div className="flex items-center gap-2">
               <Plus size={20} strokeWidth={3} />
-              <span>Create Project</span>
+              <span>Create ProjectSpace</span>
             </div>
           )}
         </Button>
@@ -341,7 +341,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-background border-border p-4 sm:p-6">
         <DialogHeader className="mb-4">
           <DialogTitle className="text-foreground text-xl sm:text-2xl">
-            {projectToEdit ? 'Edit Project' : 'Create New Project'}
+            {projectToEdit ? 'Edit ProjectSpace' : 'Create New ProjectSpace'}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Launch a new project, recruit your team, and manage your production workflow.

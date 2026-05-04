@@ -151,7 +151,7 @@ const NotificationsDropdown = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative text-foreground/70 hover:text-primary hover:bg-primary/10 transition-all duration-300">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs">

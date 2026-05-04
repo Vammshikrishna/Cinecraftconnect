@@ -12,6 +12,9 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useGovernance } from '@/hooks/useGovernance';
+import { GovernanceService } from '@/services/governance/GovernanceService';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -32,6 +35,8 @@ const CaseDetailView: React.FC<CaseDetailViewProps> = ({ caseId, onClose }) => {
   const [targetContent, setTargetContent] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'history' | 'evidence' | 'actions'>('details');
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { hasPermission, requiresApproval } = useGovernance();
 
   useEffect(() => {
     fetchCaseDetails();
@@ -59,16 +64,39 @@ const CaseDetailView: React.FC<CaseDetailViewProps> = ({ caseId, onClose }) => {
   };
 
   const fetchNotes = async () => {
-    const { data: notesData } = await (supabase as any)
+    // 1. Fetch the notes first
+    const { data: notesData, error: notesError } = await (supabase as any)
       .from('moderation_notes')
-      .select(`
-        *,
-        author:moderator_id(username, avatar_url)
-      `)
+      .select('*')
       .eq('report_id', caseId)
       .order('created_at', { ascending: false });
     
-    if (notesData) setNotes(notesData);
+    if (notesError) {
+      console.error('Error fetching moderation notes:', notesError);
+      return;
+    }
+    
+    if (!notesData || notesData.length === 0) {
+      setNotes([]);
+      return;
+    }
+
+    // 2. Fetch the moderator profiles manually since FK constraint is missing
+    const moderatorIds = Array.from(new Set(notesData.map((n: any) => n.moderator_id))) as string[];
+    
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, username, avatar_url')
+      .in('id', moderatorIds);
+
+    // 3. Merge profile data into notes
+    const profilesMap = new Map(profilesData?.map(p => [p.id, p]));
+    const notesWithAuthors = notesData.map((n: any) => ({
+      ...n,
+      author: profilesMap.get(n.moderator_id)
+    }));
+
+    setNotes(notesWithAuthors);
   };
 
   const fetchTargetContent = async (reportData: any) => {
@@ -106,8 +134,8 @@ const CaseDetailView: React.FC<CaseDetailViewProps> = ({ caseId, onClose }) => {
     switch (reportData.target_type) {
       case 'post': table = 'posts'; break;
       case 'comment': table = 'comments'; authorIdField = 'user_id'; break;
-      case 'job': table = 'jobs'; authorIdField = 'creator_id'; break;
-      case 'listing': table = 'marketplace_listings'; authorIdField = 'creator_id'; break;
+      case 'job': table = 'jobs'; authorIdField = 'posted_by'; break;
+      case 'listing': table = 'marketplace_listings'; authorIdField = 'user_id'; break;
       default: return;
     }
 
@@ -119,38 +147,70 @@ const CaseDetailView: React.FC<CaseDetailViewProps> = ({ caseId, onClose }) => {
   };
 
   const handleClaimCase = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-
-    const { error } = await (supabase as any)
-      .from('content_reports')
-      .update({ assigned_to: user.id, status: 'in_review' })
-      .eq('id', caseId);
     
-    if (!error) {
-      toast({ title: 'Case Claimed', description: 'You are now assigned to this case.' });
-      fetchCaseDetails();
+    if (!hasPermission('report.claim')) {
+      toast({ title: 'Access Denied', description: 'Insufficient permissions to claim cases.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const result = await GovernanceService.executeAction({
+        action: 'report.claim',
+        targetId: caseId,
+        targetType: 'content_reports',
+        reason: 'Staff claiming case for review',
+        payload: { status: 'in_review', assigned_to: user.id },
+        actorId: user.id,
+        requiresApproval: requiresApproval('report.claim')
+      }) as { success: boolean; pending?: boolean };
+
+      if (result.pending) {
+        toast({ title: 'Request Staged', description: 'Action sent for administrative approval.' });
+      } else {
+        toast({ title: 'Case Claimed', description: 'You are now assigned to this case.' });
+        fetchCaseDetails();
+      }
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   };
 
   const handleAction = async (action: 'dismiss' | 'warn' | 'mute' | 'delete' | 'ban') => {
-    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    const { error } = await (supabase as any).rpc('handle_moderation_action', {
-      p_report_id: caseId,
-      p_action: action,
-      p_moderator_id: user.id,
-      p_note: note,
-      p_notify_user: true,
-      p_disclosure_level: 'full'
-    });
+    const actionMap: Record<string, any> = {
+      dismiss: 'report.resolve',
+      warn: 'user.warn',
+      delete: 'content.delete',
+      ban: 'user.ban'
+    };
 
-    if (error) {
+    const govAction = actionMap[action];
+    if (!govAction || !hasPermission(govAction)) {
+      toast({ title: 'Access Denied', description: `Insufficient permissions for ${action}.`, variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const result = await GovernanceService.executeAction({
+        action: govAction,
+        targetId: caseId,
+        targetType: 'content_reports',
+        reason: note || `Standard moderation action: ${action}`,
+        payload: { action, p_notify_user: true },
+        actorId: user.id,
+        requiresApproval: requiresApproval(govAction)
+      }) as { success: boolean; pending?: boolean };
+
+      if (result.pending) {
+        toast({ title: 'Staged for Approval', description: `The ${action} action requires dual-control validation.` });
+      } else {
+        toast({ title: 'Success', description: `Action ${action} applied successfully.` });
+        onClose();
+      }
+    } catch (error: any) {
       toast({ title: 'Action Failed', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Success', description: `Action ${action} applied successfully.` });
-      onClose();
     }
   };
 
@@ -527,32 +587,52 @@ const CaseDetailView: React.FC<CaseDetailViewProps> = ({ caseId, onClose }) => {
                     <div className="space-y-4">
                       <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Enforcement Controls</h3>
                       <div className="grid grid-cols-1 gap-2">
-                        <Button variant="outline" className="justify-start h-12 rounded-xl border-green-500/20 text-green-600 hover:bg-green-500/5 px-4" onClick={() => handleAction('dismiss')}>
+                        <Button 
+                          variant="outline" 
+                          className="justify-start h-12 rounded-xl border-green-500/20 text-green-600 hover:bg-green-500/5 px-4" 
+                          onClick={() => handleAction('dismiss')}
+                          disabled={!hasPermission('report.resolve')}
+                        >
                           <ThumbsUp className="w-4 h-4 mr-3" />
                           <div className="text-left">
                             <p className="text-xs font-black uppercase tracking-tight">Dismiss Case</p>
                             <p className="text-[9px] font-medium opacity-70">No violation found</p>
                           </div>
                         </Button>
-                        <Button variant="outline" className="justify-start h-12 rounded-xl border-amber-500/20 text-amber-600 hover:bg-amber-500/5 px-4" onClick={() => handleAction('warn')}>
+                        <Button 
+                          variant="outline" 
+                          className="justify-start h-12 rounded-xl border-amber-500/20 text-amber-600 hover:bg-amber-500/5 px-4" 
+                          onClick={() => handleAction('warn')}
+                          disabled={!hasPermission('user.warn')}
+                        >
                           <AlertTriangle className="w-4 h-4 mr-3" />
                           <div className="text-left">
                             <p className="text-xs font-black uppercase tracking-tight">Issue Warning</p>
-                            <p className="text-[9px] font-medium opacity-70">Formal account notice</p>
+                            <p className="text-[9px] font-medium opacity-70">Formal account notice {requiresApproval('user.warn') && "• Needs Approval"}</p>
                           </div>
                         </Button>
-                        <Button variant="outline" className="justify-start h-12 rounded-xl border-red-500/20 text-red-500 hover:bg-red-500/5 px-4" onClick={() => handleAction('delete')}>
+                        <Button 
+                          variant="outline" 
+                          className="justify-start h-12 rounded-xl border-red-500/20 text-red-500 hover:bg-red-500/5 px-4" 
+                          onClick={() => handleAction('delete')}
+                          disabled={!hasPermission('content.delete')}
+                        >
                           <Trash2 className="w-4 h-4 mr-3" />
                           <div className="text-left">
                             <p className="text-xs font-black uppercase tracking-tight">Remove Content</p>
                             <p className="text-[9px] font-medium opacity-70">Hard delete from platform</p>
                           </div>
                         </Button>
-                        <Button variant="outline" className="justify-start h-12 rounded-xl border-red-700/20 text-red-700 hover:bg-red-700/5 px-4" onClick={() => handleAction('ban')}>
+                        <Button 
+                          variant="outline" 
+                          className="justify-start h-12 rounded-xl border-red-700/20 text-red-700 hover:bg-red-700/5 px-4" 
+                          onClick={() => handleAction('ban')}
+                          disabled={!hasPermission('user.ban')}
+                        >
                           <Ban className="w-4 h-4 mr-3" />
                           <div className="text-left">
                             <p className="text-xs font-black uppercase tracking-tight">Account Suspension</p>
-                            <p className="text-[9px] font-medium opacity-70">Immediate lockout</p>
+                            <p className="text-[9px] font-medium opacity-70">Immediate lockout {requiresApproval('user.ban') && "• Needs Approval"}</p>
                           </div>
                         </Button>
                       </div>

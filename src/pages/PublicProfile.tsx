@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
@@ -25,6 +24,7 @@ import {
   Building2,
   Zap,
   Flag,
+  Briefcase,
 } from 'lucide-react';
 import ReportDialog from '@/components/common/ReportDialog';
 import VerificationBadge from '@/components/common/VerificationBadge';
@@ -37,6 +37,8 @@ import { useAccountType } from '@/hooks/useAccountType';
 import { useRecordView } from '@/hooks/useRecordView';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Pencil } from 'lucide-react';
+import SEO from '@/components/common/SEO';
+import { getOptimizedImage } from '@/utils/image-optimization';
 
 interface Profile {
   id: string;
@@ -265,6 +267,10 @@ const PublicProfile = () => {
 
   return (
     <div className="bg-background text-foreground min-h-screen flex justify-center pt-20 pb-40 relative overflow-hidden">
+      <SEO 
+        title={profile ? `${profile.full_name || profile.username} | ${profile.craft || 'Creator'}` : 'Professional Profile'} 
+        description={profile?.bio || `View the professional portfolio and credits of ${profile?.full_name || 'this creator'} on CineCraft Connect.`} 
+      />
       {/* Background ambient effects */}
       <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
@@ -280,206 +286,207 @@ const PublicProfile = () => {
           <span>Go Back</span>
         </Button>
 
-        <header className="glass-card mb-8 relative overflow-hidden group pb-8">
-          <div className="h-32 md:h-44 w-full relative overflow-hidden">
+        <header className="glass-card mb-10 relative overflow-hidden group">
+          {/* Cover Photo - Balanced height */}
+          <div className="relative w-full h-[clamp(120px,20vh,220px)] overflow-hidden">
             {profile.cover_image_url ? (
-              <img src={profile.cover_image_url} alt="Cover" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+              <img 
+                src={getOptimizedImage(profile.cover_image_url, { height: 400 })} 
+                alt="Cover" 
+                className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" 
+              />
             ) : (
-              <div className="w-full h-full bg-gradient-to-br from-primary/20 via-primary/5 to-secondary/10" />
+              <div className="w-full h-full bg-gradient-to-br from-primary/10 via-primary/5 to-secondary/5" />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
           </div>
 
-          <div className="relative z-10 flex flex-col items-start px-6 md:px-12 py-8">
-            {/* Expanded Avatar and Identity Block */}
-            <div className="flex items-start gap-6 md:gap-10 mb-8 -mt-20 md:-mt-28 w-full">
-              <div className="shrink-0 flex flex-col items-center gap-4 -ml-2 md:-ml-4">
-                <Avatar className="w-40 h-40 md:w-56 md:h-56 border-4 border-border shadow-2xl">
-                  <AvatarImage src={profile.avatar_url || ''} alt={profile.username || 'User'} className="object-cover" />
-                  <AvatarFallback className="bg-muted text-4xl font-black text-muted-foreground">
-                    {profile.username?.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-
-                {/* Craft and Location Badges stay in left column */}
-                <div className="flex flex-col items-center gap-2 mt-2 w-full">
-                  {profile.craft && (
-                    <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20 px-3 py-1 rounded-full text-[10px] w-full justify-center">
-                      {profile.craft}
-                    </Badge>
-                  )}
-                  {profile.location && (
-                    <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary/10 border border-secondary/20 text-[10px] w-full justify-center text-muted-foreground whitespace-nowrap font-medium">
-                      <MapPin size={12} />
-                      {profile.location}
-                    </span>
-                  )}
+          <div className="relative z-10 px-6 md:px-10 pb-8">
+            {/* Main Content Row: 2 Zones on Desktop (Avatar & Info) */}
+            <div className="flex flex-col lg:flex-row items-center lg:items-center gap-6 lg:gap-10 -mt-[clamp(60px,11vw,90px)]">
+              
+              {/* Zone 1: Avatar + Professional Tags */}
+              <div className="shrink-0 flex flex-col items-center gap-3">
+                <div className="relative group/avatar">
+                  <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-700" />
+                  <Avatar className="w-[clamp(130px,22vw,180px)] h-[clamp(130px,22vw,180px)] border-[5px] border-background shadow-xl relative z-10">
+                    <AvatarImage 
+                      src={getOptimizedImage(profile.avatar_url, { width: 400, height: 400 })} 
+                      alt={profile.username || 'User'} 
+                      className="object-cover" 
+                    />
+                    <AvatarFallback className="bg-muted text-3xl font-black text-muted-foreground">
+                      {profile.username?.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 pt-16 md:pt-24 flex-1">
-                <div className="flex flex-col gap-2">
-                  {profile.account_type === 'fan' ? (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-full text-[10px] font-black uppercase tracking-wider w-fit">
-                      <Star size={12} className="fill-amber-500" />
-                      <span>Fan Account</span>
-                    </div>
-                  ) : profile.account_type === 'studio' ? (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-[10px] font-black uppercase tracking-wider w-fit">
-                      <Building2 size={12} />
-                      <span>Studio / Company</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 border border-primary/30 text-primary rounded-full text-[10px] font-black uppercase tracking-wider w-fit">
-                      <Zap size={12} className="fill-primary" />
-                      <span>Creator Pro</span>
-                    </div>
-                  )}
-                  <h1 className="text-xl md:text-3xl font-black text-foreground tracking-tight leading-tight flex items-center gap-2">
-                    {profile.full_name || profile.username}
-                    {profile.is_verified && <VerificationBadge size="lg" />}
-                  </h1>
-                </div>
+              {/* Zone 2: Name, Handle, Bio, Socials - The heart of the profile */}
+              <div className="flex-1 flex flex-col items-center lg:items-start min-w-0 lg:pt-24 w-full">
+                <div className="flex flex-col items-center lg:items-start gap-3 w-full">
+                  <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
+                    {profile.account_type === 'fan' ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider">
+                        <Star size={10} className="fill-amber-500" />
+                        <span>Fan Account</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-[9px] font-black uppercase tracking-wider text-primary">
+                        {profile.account_type === 'studio' ? <Building2 size={10} /> : <Zap size={10} className="fill-primary" />}
+                        <span>{profile.account_type === 'studio' ? 'Studio' : 'Pro'}</span>
+                      </div>
+                    )}
 
-                {profile.bio && (
-                  <p className="text-muted-foreground text-sm md:text-base max-w-prose leading-relaxed mt-2 font-medium">
-                    {profile.bio}
-                  </p>
-                )}
-
-                {/* Social Icons moved to below bio */}
-                <div className="flex items-center gap-2 mt-2">
-                  {(profile.social_links?.instagram || profile.instagram_url) && (
-                    <a href={formatURL((profile.social_links?.instagram || profile.instagram_url) as string)} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-all hover:scale-110">
-                        <Instagram size={18} />
-                      </Button>
-                    </a>
-                  )}
-
-                  {profile.social_links?.linkedin && (
-                    <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-all hover:scale-110">
-                        <Linkedin size={18} />
-                      </Button>
-                    </a>
-                  )}
-
-                  {profile.social_links?.twitter && (
-                    <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-all hover:scale-110">
-                        <Twitter size={18} />
-                      </Button>
-                    </a>
-                  )}
-
-                  {profile.social_links?.facebook && (
-                    <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-all hover:scale-110">
-                        <Facebook size={18} />
-                      </Button>
-                    </a>
-                  )}
-
-                  {((profile.social_links?.youtube || profile.youtube_url) as string) && (
-                    <a href={formatURL((profile.social_links?.youtube || profile.youtube_url) as string)} target="_blank" rel="noopener noreferrer">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-600 hover:bg-red-600/10 transition-all hover:scale-110">
-                        <Youtube size={18} />
-                      </Button>
-                    </a>
-                  )}
-                </div>
-
-                {profile.website && (
-                  <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-primary transition-colors text-xs text-muted-foreground mt-2">
-                    <Globe size={12} />
-                    <span>{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
-                  </a>
-                )}
-
-
-                {profile.skills && profile.skills.length > 0 && (
-                  <div className="mt-2">
-                    <div className="flex flex-wrap gap-2 justify-start">
-                      {profile.skills.map((skill: string) => <Badge key={skill} variant="secondary" className="bg-secondary/20">{skill}</Badge>)}
-                    </div>
+                    {profile.craft && (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted/30 border border-border/50 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                        <Briefcase size={10} />
+                        <span>{profile.craft}</span>
+                      </div>
+                    )}
+                    {profile.location && (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted/20 border border-border/30 text-[9px] font-medium text-muted-foreground">
+                        <MapPin size={10} />
+                        <span>{profile.location}</span>
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  <div className="flex flex-col items-center lg:items-start leading-tight w-full">
+                    <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-foreground tracking-tight text-center lg:text-left">
+                      <span className="inline-block">
+                        {profile.full_name || profile.username}
+                        {profile.is_verified && (
+                          <VerificationBadge size="sm" className="ml-1.5 align-middle" />
+                        )}
+                      </span>
+                    </h1>
+                    <p className="text-primary font-bold text-xs uppercase tracking-[0.15em] mt-0.5">
+                      @{profile.username}
+                    </p>
+                  </div>
+
+                  {profile.bio && (
+                    <p className="text-muted-foreground text-sm md:text-base max-w-xl leading-relaxed font-medium text-center lg:text-left mt-2 opacity-90">
+                      {profile.bio}
+                    </p>
+                  )}
+                </div>
+
+                {/* Social & Website - Tighter grouping */}
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 mt-4">
+                  <div className="flex items-center gap-0.5 bg-muted/5 p-0.5 rounded-full border border-border/5">
+                    {(profile.social_links?.instagram || profile.instagram_url) && (
+                      <a href={formatURL((profile.social_links?.instagram || profile.instagram_url) as string)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-pink-500 hover:bg-pink-500/10 transition-colors">
+                          <Instagram size={16} />
+                        </Button>
+                      </a>
+                    )}
+                    {profile.social_links?.linkedin && (
+                      <a href={formatURL(profile.social_links.linkedin)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-600 hover:bg-blue-600/10 transition-colors">
+                          <Linkedin size={16} />
+                        </Button>
+                      </a>
+                    )}
+                    {profile.social_links?.twitter && (
+                      <a href={formatURL(profile.social_links.twitter)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-sky-500 hover:bg-sky-500/10 transition-colors">
+                          <Twitter size={16} />
+                        </Button>
+                      </a>
+                    )}
+                    {profile.social_links?.facebook && (
+                      <a href={formatURL(profile.social_links.facebook)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-blue-500 hover:bg-blue-500/10 transition-colors">
+                          <Facebook size={16} />
+                        </Button>
+                      </a>
+                    )}
+                    {((profile.social_links?.youtube || profile.youtube_url) as string) && (
+                      <a href={formatURL((profile.social_links?.youtube || profile.youtube_url) as string)} target="_blank" rel="noopener noreferrer">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:text-red-600 hover:bg-red-600/10 transition-colors">
+                          <Youtube size={16} />
+                        </Button>
+                      </a>
+                    )}
+                  </div>
+
+                  {profile.website && (
+                    <a href={formatURL(profile.website)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-primary transition-all text-xs font-bold text-muted-foreground bg-muted/20 px-3 py-1.5 rounded-lg border border-border/50">
+                      <Globe size={12} />
+                      <span className="truncate max-w-[120px] md:max-w-[180px]">{profile.website.replace(/^(https?|ftp):\/\//, '')}</span>
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* New Compact Stats Row */}
-            <div className="flex flex-wrap items-center gap-8 mt-4 w-full px-2">
-              <div className="flex items-center gap-6 py-2">
+            {/* Stats Section & Actions - Integrated in one row */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-t border-border/10 pt-6 mt-8">
+              <div className="flex items-center gap-8 md:gap-12">
                 {profile.account_type !== 'fan' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-foreground">{postCount}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Posts</span>
+                  <div className="flex flex-col items-center lg:items-start">
+                    <span className="text-xl md:text-2xl font-black text-foreground">{postCount}</span>
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Posts</span>
                   </div>
                 )}
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-foreground">{followersCount}</span>
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Followers</span>
+                <div className="flex flex-col items-center lg:items-start">
+                  <span className="text-xl md:text-2xl font-black text-foreground">{followersCount}</span>
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Followers</span>
                 </div>
+                <div className="flex flex-col items-center lg:items-start">
+                  <span className="text-xl md:text-2xl font-black text-foreground">{profile.account_type === 'fan' ? followingCount : connectionsCount}</span>
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">
+                    {profile.account_type === 'fan' ? 'Following' : 'Connections'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions - Beside stats */}
+              <div className="flex items-center gap-3">
                 {profile.account_type === 'fan' ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-foreground">{followingCount}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Following</span>
+                    {connectionStatus === 'connected' ? (
+                      <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Following</Button>
+                    ) : (
+                      <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Follow</Button>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-lg font-bold text-foreground">{connectionsCount}</span>
-                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Connections</span>
+                    {connectionStatus === 'connected' ? (
+                      <Button disabled variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Connected</Button>
+                    ) : connectionStatus === 'pending_sent' ? (
+                      <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[120px] border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 rounded-lg text-[10px] font-bold uppercase tracking-wider"><Clock className="mr-2 h-3 w-3" />Request Sent</Button>
+                    ) : (
+                      <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Connect</Button>
+                    )}
+                    {connectionStatus === 'connected' && (
+                      <Button asChild className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                        <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-3 w-3" />Message</Link>
+                      </Button>
+                    )}
                   </div>
                 )}
+                
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    className="h-9 w-9 p-0 border-primary/20 hover:bg-primary/10 hover:text-primary rounded-lg"
+                    onClick={() => navigate(`/admin/users?id=${profile.id}`)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                
+                {user && (
+                  <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
+                    <Flag className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-            </div>
-
-            {/* Action Buttons Row */}
-            <div className="w-full md:w-auto mt-6">
-              {isFan ? (
-                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
-                  {connectionStatus === 'connected' ? (
-                    <Button onClick={handleCancelRequest} variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50"><UserCheck className="mr-2 h-4 w-4" />Following</Button>
-                  ) : (
-                    <Button onClick={handleConnect} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"><UserPlus className="mr-2 h-4 w-4" />Follow</Button>
-                  )}
-                  {isAdmin && (
-                    <Button
-                      variant="outline"
-                      className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-primary/10 hover:text-primary"
-                      onClick={() => navigate(`/admin/users?id=${profile.id}`)} // Or wherever user editing is
-                    >
-                      <Pencil className="mr-2 h-4 w-4" />Admin Edit
-                    </Button>
-                  )}
-                  {user && (
-                    <Button variant="ghost" size="icon" className="rounded-full hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
-                      <Flag className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col sm:flex-row gap-3 w-full max-w-md">
-                  {connectionStatus === 'connected' ? (
-                    <Button disabled variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm"><UserCheck className="mr-2 h-4 w-4" />Connected</Button>
-                  ) : connectionStatus === 'pending_sent' ? (
-                    <Button onClick={handleCancelRequest} variant="outline" className="flex-1 border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10"><Clock className="mr-2 h-4 w-4" />Request Sent</Button>
-                  ) : (
-                    <Button onClick={handleConnect} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"><UserPlus className="mr-2 h-4 w-4" />Connect</Button>
-                  )}
-                  {connectionStatus === 'connected' && (
-                    <Button asChild className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/80">
-                      <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-4 w-4" />Message</Link>
-                    </Button>
-                  )}
-                  {user && (
-                    <Button variant="ghost" size="icon" className="rounded-full hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
-                      <Flag className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              )}
             </div>
           </div>
         </header>

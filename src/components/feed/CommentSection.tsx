@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Comment } from "@/types";
+import { getOptimizedImage } from "@/utils/image-optimization";
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
@@ -170,7 +171,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
           <form onSubmit={handleAddComment} className="flex items-center space-x-3">
              <Avatar className="h-9 w-9 ring-1 ring-white/5 shadow-sm">
                {(currentUserProfile?.avatar_url || user.user_metadata?.avatar_url) && (
-                 <AvatarImage src={currentUserProfile?.avatar_url || user.user_metadata.avatar_url} />
+                 <AvatarImage src={getOptimizedImage(currentUserProfile?.avatar_url || user.user_metadata.avatar_url, { width: 96, height: 96 })} />
                )}
                <AvatarFallback className="bg-muted text-[10px] uppercase">
                  {getInitials(currentUserProfile?.full_name || user.user_metadata?.full_name || 'U')}
@@ -244,7 +245,7 @@ const CommentItem = ({
       <div className="flex items-start space-x-3 relative">
         <Link to={`/profile/${comment.user_id}`} className="shrink-0 pt-0.5">
           <Avatar className={`${isReply ? 'h-6 w-6' : 'h-8 w-8'} hover:opacity-80 transition-opacity ring-1 ring-white/5`}>
-            {avatarUrl && <AvatarImage src={avatarUrl} />}
+            {avatarUrl && <AvatarImage src={getOptimizedImage(avatarUrl, { width: 64, height: 64 })} />}
             <AvatarFallback className={`${isReply ? 'text-[8px]' : 'text-[10px]'} bg-muted/50`}>{initials}</AvatarFallback>
           </Avatar>
         </Link>

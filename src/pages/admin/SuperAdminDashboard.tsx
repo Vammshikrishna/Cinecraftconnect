@@ -3,12 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import InternalHeader from '@/components/internal/shared/InternalHeader';
 import StaffRoleMatrix from '@/components/internal/super-admin/StaffRoleMatrix';
+import AuditLedger from '@/components/internal/admin/AuditLedger';
+import ApprovalQueue from '@/components/internal/admin/ApprovalQueue';
+import { GovernanceService } from '@/services/governance/GovernanceService';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGovernance } from '@/hooks/useGovernance';
 import { 
   Crown, Shield, Zap, Lock, 
   Database, Globe, AlertTriangle,
   FileText, Users,
   ToggleLeft, RefreshCw, Key,
-  ShieldAlert, HardDrive, Cpu, Network
+  ShieldAlert, HardDrive, Cpu, Network,
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,6 +42,8 @@ const SuperAdminDashboard = () => {
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const { hasPermission, requiresApproval } = useGovernance();
 
   useEffect(() => {
     fetchStaff();
@@ -82,23 +90,33 @@ const SuperAdminDashboard = () => {
   };
 
   const handleUpdatePolicy = async () => {
-    if (!selectedPolicy) return;
+    if (!selectedPolicy || !user) return;
     
-    const { error } = await (supabase as any)
-      .from('platform_policies')
-      .update({
-        title: selectedPolicy.title,
-        content: selectedPolicy.content,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', selectedPolicy.id);
+    if (!hasPermission('system.config')) {
+      toast({ title: 'Access Denied', description: 'Insufficient permissions to update global policies.', variant: 'destructive' });
+      return;
+    }
 
-    if (error) {
+    try {
+      const result = await GovernanceService.executeAction({
+        action: 'system.config',
+        targetId: selectedPolicy.id,
+        targetType: 'platform_policies',
+        reason: 'Policy document update via Root Governance',
+        payload: { title: selectedPolicy.title, content: selectedPolicy.content },
+        actorId: user.id,
+        requiresApproval: requiresApproval('system.config')
+      }) as { success: boolean; pending?: boolean };
+
+      if (result.pending) {
+        toast({ title: 'Staged for Approval', description: 'Policy update requires dual-control verification.' });
+      } else {
+        toast({ title: 'Policy Updated', description: 'Changes have been broadcasted platform-wide.' });
+        setIsPolicyModalOpen(false);
+        fetchPolicies();
+      }
+    } catch (error: any) {
       toast({ title: 'Update Failed', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Policy Updated', description: 'Changes have been broadcasted platform-wide.' });
-      setIsPolicyModalOpen(false);
-      fetchPolicies();
     }
   };
 
@@ -113,11 +131,32 @@ const SuperAdminDashboard = () => {
   };
 
   const handlePromote = async (userId: string, role: string) => {
-    const { error } = await (supabase as any).rpc('assign_user_role', { _target_user_id: userId, _role: role });
-    if (error) toast({ title: 'Promotion Error', description: error.message, variant: 'destructive' });
-    else {
-      toast({ title: 'Role Assigned', description: `User promoted to ${role.toUpperCase()}` });
-      fetchStaff();
+    if (!user) return;
+
+    if (!hasPermission('user.manage_roles')) {
+      toast({ title: 'Access Denied', description: 'Insufficient permissions for role management.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const result = await GovernanceService.executeAction({
+        action: 'user.manage_roles',
+        targetId: userId,
+        targetType: 'user_roles',
+        reason: `Promoting user to ${role.toUpperCase()}`,
+        payload: { role },
+        actorId: user.id,
+        requiresApproval: requiresApproval('user.manage_roles')
+      }) as { success: boolean; pending?: boolean };
+
+      if (result.pending) {
+        toast({ title: 'Staged for Approval', description: 'Staff promotions require dual-control verification.' });
+      } else {
+        toast({ title: 'Role Assigned', description: `User promoted to ${role.toUpperCase()}` });
+        fetchStaff();
+      }
+    } catch (error: any) {
+      toast({ title: 'Promotion Error', description: error.message, variant: 'destructive' });
     }
   };
 
@@ -131,16 +170,31 @@ const SuperAdminDashboard = () => {
   };
 
   const handleToggleFlag = async (flagId: string, currentValue: boolean) => {
-    const { error } = await (supabase as any)
-      .from('platform_flags')
-      .update({ value: !currentValue, updated_at: new Date().toISOString() })
-      .eq('id', flagId);
+    if (!user) return;
 
-    if (error) {
+    if (!hasPermission('system.config')) {
+      toast({ title: 'Access Denied', description: 'Insufficient permissions to modify feature flags.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const result = await GovernanceService.executeAction({
+        action: 'system.config',
+        targetId: flagId,
+        targetType: 'platform_flags',
+        reason: `Toggling flag state to ${!currentValue}`,
+        payload: { value: !currentValue },
+        actorId: user.id,
+        requiresApproval: requiresApproval('system.config')
+      }) as { success: boolean; pending?: boolean };
+
+      if (result.pending) {
+        toast({ title: 'Staged for Approval', description: 'Flag modification requires administrative approval.' });
+      } else {
+        toast({ title: 'Flag Updated', description: `Platform behavior modified.` });
+      }
+    } catch (error: any) {
       toast({ title: 'Flag Error', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: 'Flag Updated', description: `Platform behavior modified.` });
-      // Real-time subscription will handle the UI update
     }
   };
 
@@ -205,6 +259,9 @@ const SuperAdminDashboard = () => {
 
         <Tabs defaultValue="governance" className="w-full space-y-6">
           <TabsList className="bg-muted/50 p-1.5 rounded-2xl border border-border/50 h-auto gap-1">
+            <TabsTrigger value="approvals" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <ShieldCheck className="w-4 h-4" /> Verification Queue
+            </TabsTrigger>
             <TabsTrigger value="governance" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
               <Shield className="w-4 h-4" /> Policy & Rules
             </TabsTrigger>
@@ -221,6 +278,10 @@ const SuperAdminDashboard = () => {
               <HardDrive className="w-4 h-4" /> Infrastructure
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="approvals" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <ApprovalQueue />
+          </TabsContent>
 
           <TabsContent value="governance" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -414,30 +475,7 @@ const SuperAdminDashboard = () => {
           </TabsContent>
 
           <TabsContent value="security" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="glass-card p-0 border-border/50 overflow-hidden">
-              <div className="p-6 border-b border-border/50 flex items-center justify-between bg-muted/20">
-                <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                  <Lock className="w-4 h-4 text-primary" /> Root Security Audit Log
-                </h3>
-                <Button variant="outline" size="sm" className="h-8 text-[10px] font-bold uppercase tracking-widest rounded-xl">
-                  Download Full Archive
-                </Button>
-              </div>
-              <div className="divide-y divide-border/50">
-                {[1, 2, 3, 4, 5].map((_, i) => (
-                  <div key={i} className="p-4 flex items-center justify-between hover:bg-muted/10 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="w-2 h-2 rounded-full bg-primary" />
-                      <div>
-                        <p className="text-xs font-mono font-bold">SUPER_ADMIN_ACTION: UPDATE_PLATFORM_FLAG</p>
-                        <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">Actor: CC-ROOT-01 • IP: 192.168.1.104 • 12:44:02</p>
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="text-[9px] font-black border-primary/20 text-primary">VERIFIED</Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <AuditLedger />
           </TabsContent>
 
           <TabsContent value="infrastructure" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">

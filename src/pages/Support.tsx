@@ -14,7 +14,9 @@ import {
   AlertCircle,
   HelpCircle,
   BookOpen,
-  Shield
+  Shield,
+  ImageIcon,
+  X
 } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Button } from '@/components/ui/button';
@@ -37,6 +39,7 @@ interface SupportTicket {
   priority: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   created_at: string;
+  attachment_url?: string;
 }
 
 const SupportPage = () => {
@@ -55,8 +58,10 @@ const SupportPage = () => {
     subject: '',
     message: '',
     category: 'general',
-    priority: 'medium'
+    priority: 'medium',
+    attachment_url: ''
   });
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -69,12 +74,54 @@ const SupportPage = () => {
     const { data, error } = await (supabase as any)
       .from('support_tickets')
       .select('*')
+      .eq('user_id', user?.id)
       .order('created_at', { ascending: false });
 
     if (!error && data) {
       setTickets(data as SupportTicket[]);
     }
     setLoading(false);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    // Validate file type (images only)
+    if (!file.type.startsWith('image/')) {
+      toast({ title: "Invalid File", description: "Please upload an image (PNG, JPG, etc.)", variant: "destructive" });
+      return;
+    }
+
+    // Validate size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 5MB.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `support-attachments/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('support')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('support')
+        .getPublicUrl(filePath);
+
+      setNewTicket({ ...newTicket, attachment_url: publicUrl });
+      toast({ title: "Attachment Uploaded", description: "Screenshot attached successfully." });
+    } catch (error: any) {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleCreateTicket = async () => {
@@ -94,7 +141,8 @@ const SupportPage = () => {
         subject: newTicket.subject,
         message: newTicket.message,
         category: newTicket.category,
-        priority: newTicket.priority
+        priority: newTicket.priority,
+        attachment_url: newTicket.attachment_url
       });
 
     if (error) {
@@ -109,7 +157,7 @@ const SupportPage = () => {
         description: "Your support ticket has been submitted. Our team will get back to you soon.",
       });
       setIsCreateOpen(false);
-      setNewTicket({ subject: '', message: '', category: 'general', priority: 'medium' });
+      setNewTicket({ subject: '', message: '', category: 'general', priority: 'medium', attachment_url: '' });
       fetchTickets();
     }
   };
@@ -230,10 +278,59 @@ const SupportPage = () => {
                           <Textarea
                             id="message"
                             placeholder="Describe your issue in detail..."
-                            className="rounded-2xl min-h-[150px] resize-none"
+                            className="rounded-2xl min-h-[120px] resize-none"
                             value={newTicket.message}
                             onChange={(e) => setNewTicket({ ...newTicket, message: e.target.value })}
                           />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Attachment (Optional)</Label>
+                          {newTicket.attachment_url ? (
+                            <div className="relative w-full h-32 rounded-2xl overflow-hidden border border-border/50 group">
+                              <img src={newTicket.attachment_url} alt="Attachment" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <Button 
+                                  variant="destructive" 
+                                  size="sm" 
+                                  className="rounded-full h-8 w-8 p-0"
+                                  onClick={() => setNewTicket({ ...newTicket, attachment_url: '' })}
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <input
+                                type="file"
+                                id="attachment"
+                                className="hidden"
+                                accept="image/*"
+                                onChange={handleFileUpload}
+                                disabled={isUploading}
+                              />
+                              <label
+                                htmlFor="attachment"
+                                className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/50 rounded-2xl cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+                              >
+                                {isUploading ? (
+                                  <div className="flex flex-col items-center gap-2">
+                                    <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Uploading...</span>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-2">
+                                      <ImageIcon className="w-5 h-5 text-primary" />
+                                    </div>
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Click to upload screenshot</span>
+                                    <span className="text-[9px] text-muted-foreground/60 mt-1 uppercase">PNG, JPG up to 5MB</span>
+                                  </>
+                                )}
+                              </label>
+                            </div>
+                          )}
                         </div>
                         <Button
                           onClick={handleCreateTicket}

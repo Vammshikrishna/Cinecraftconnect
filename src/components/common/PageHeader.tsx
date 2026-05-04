@@ -2,6 +2,7 @@
 import React from 'react';
 import { LucideIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
   title: string;
@@ -11,6 +12,7 @@ interface PageHeaderProps {
   onBack?: () => void;
   titleClassName?: string;
   iconClassName?: string;
+  actionsAtTop?: boolean;
 }
 
 export const PageHeader: React.FC<PageHeaderProps> = ({ 
@@ -20,11 +22,15 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   actions,
   onBack,
   titleClassName = "text-foreground",
-  iconClassName = "text-primary"
+  iconClassName = "text-primary",
+  actionsAtTop = false
 }) => {
   return (
-    <div className="flex flex-col gap-1.5 mb-8">
-      <div className="flex items-start justify-between gap-4">
+    <div className="flex flex-col gap-4 md:gap-6 mb-8 md:mb-12">
+      <div className={cn(
+        "flex flex-col lg:flex-row lg:items-center justify-between gap-6",
+        actionsAtTop && "flex-row items-start"
+      )}>
         <div className="flex items-start gap-4 flex-1 min-w-0">
           {onBack && (
             <motion.button
@@ -45,9 +51,9 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             transition={{ duration: 0.5 }}
             className="flex-1 min-w-0 flex flex-col"
           >
-            <h1 className={`text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2.5 ${titleClassName} leading-tight`}>
-              {Icon && <Icon className={`h-6 w-6 md:h-8 md:w-8 ${iconClassName} shrink-0`} />}
-              <span className="truncate">{title}</span>
+            <h1 className={`text-xl md:text-2xl font-black tracking-tight flex items-center gap-3 md:gap-4 ${titleClassName} leading-tight`}>
+              {Icon && <Icon className={`h-5 w-5 md:h-7 md:w-7 ${iconClassName} shrink-0`} />}
+              <span className="block overflow-visible">{title}</span>
             </h1>
 
             {subtitle && (
@@ -55,7 +61,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.1 }}
-                className="text-sm md:text-base text-muted-foreground font-medium leading-relaxed max-w-2xl mt-1"
+                className="text-xs md:text-sm text-muted-foreground font-medium leading-relaxed max-w-3xl mt-0 md:mt-0.5"
               >
                 {subtitle}
               </motion.p>
@@ -68,7 +74,10 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            className="flex shrink-0"
+            className={cn(
+              "flex shrink-0 justify-end",
+              actionsAtTop && "lg:order-last"
+            )}
           >
             {actions}
           </motion.div>
