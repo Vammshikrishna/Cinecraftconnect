@@ -150,7 +150,7 @@ const ProjectDetailPage = () => {
               <Badge variant={getStatusVariant(project.status)} className="capitalize px-4 py-1 text-sm font-medium">
                 {project.status}
               </Badge>
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gradient">
+              <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-gradient leading-tight">
                 {project.title}
               </h1>
             </div>

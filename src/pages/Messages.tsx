@@ -1,4 +1,4 @@
-﻿
+
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -156,7 +156,7 @@ const Messages = () => {
           {/* Sidebar Header */}
           <div className="p-6 border-b border-border space-y-6">
             <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-black tracking-tight">Messages</h1>
+              <h1 className="text-xl font-black tracking-tight">Messages</h1>
               <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
                 <DialogTrigger asChild>
                   <Button size="icon" variant="ghost" className="h-10 w-10 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
@@ -286,7 +286,7 @@ const Messages = () => {
                <div className="w-32 h-32 bg-primary/5 rounded-[3rem] flex items-center justify-center mb-8 border border-primary/10 rotate-6 shadow-2xl shadow-primary/5">
                   <MessageSquare size={56} className="text-primary opacity-40" />
                </div>
-               <h2 className="text-3xl font-black tracking-tight mb-3">Your Inbox</h2>
+               <h2 className="text-2xl font-black tracking-tight mb-3">Your Inbox</h2>
                <p className="text-muted-foreground text-sm max-w-sm mx-auto leading-relaxed font-medium">
                   Send private photos and messages to a friend or filmmaker. Select a conversation to start.
                </p>

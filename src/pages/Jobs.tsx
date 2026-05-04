@@ -29,6 +29,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { PageHeader } from '@/components/common/PageHeader';
+import { JobSkeleton } from "@/components/ui/enhanced-skeleton";
+import SEO from "@/components/common/SEO";
 
 
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
@@ -140,6 +142,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 pb-36">
+      <SEO 
+        title="Jobs" 
+        description="Find your next production role or hire top film talent on CineCraft Connect. Browse job listings for directors, actors, editors, and crew." 
+      />
       {/* Background Orbs aligned with global theme */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
@@ -148,22 +154,25 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
         <PageHeader 
           title="Jobs" 
-          subtitle="Explore unique roles in film and creative production" 
+          subtitle="Find your next production role or hire top film talent" 
           Icon={Briefcase}
           actions={
             !isFan && (
-              <div className="flex flex-wrap gap-3">
-                <Link to="/jobs/applications">
-                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-10 px-4 text-sm font-bold">My Applications</Button>
-                </Link>
-                <Link to="/jobs/manage">
-                  <Button variant="ghost" className="rounded-xl border border-border/50 hover:bg-muted/50 h-10 px-4 text-sm font-bold">Manage Postings</Button>
-                </Link>
-                <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                <div className="flex items-center gap-3 flex-1 sm:flex-none">
+                  <Link to="/jobs/applications" className="flex-1 sm:flex-none">
+                    <Button variant="ghost" className="w-full sm:w-auto rounded-xl border border-border/50 hover:bg-muted/50 h-11 px-4 text-xs font-bold whitespace-nowrap">My Applications</Button>
+                  </Link>
+                  <Link to="/jobs/manage" className="flex-1 sm:flex-none">
+                    <Button variant="ghost" className="w-full sm:w-auto rounded-xl border border-border/50 hover:bg-muted/50 h-11 px-4 text-xs font-bold whitespace-nowrap">Manage Postings</Button>
+                  </Link>
+                </div>
+                <div className="w-full sm:w-auto">
+                  <JobCreationModal onJobCreated={fetchJobs} defaultOpen={openCreate} />
+                </div>
               </div>
             )
           }
-
         />
 
         {/* Search & Filter Bar using system glassmorphism */}
@@ -171,23 +180,23 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-card/40 border border-border/50 rounded-3xl p-3 md:p-4 mb-12 backdrop-blur-xl"
+          className="bg-card/40 border border-border/50 rounded-2xl md:rounded-3xl p-2 md:p-4 mb-8 md:mb-12 backdrop-blur-xl"
         >
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col md:flex-row gap-2 md:gap-4">
             <div className="relative flex-grow">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
               <Input
                 placeholder="Search for jobs, companies, or roles..."
-                className="h-14 pl-12 bg-transparent border-transparent focus:bg-muted/30 rounded-2xl transition-all font-medium placeholder:text-muted-foreground/50"
+                className="h-12 md:h-14 pl-12 bg-transparent border-transparent focus:bg-muted/30 rounded-xl md:rounded-2xl transition-all font-medium placeholder:text-muted-foreground/50 text-sm md:text-base"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2 w-full md:w-auto">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="ghost" className={`h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs transition-colors ${(filterType !== 'all' || filterExperience !== 'all') ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
-                    <Filter size={16} /> Filters
+                  <Button variant="ghost" className={`flex-1 md:flex-none h-12 md:h-14 px-4 md:px-6 rounded-xl md:rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors ${(filterType !== 'all' || filterExperience !== 'all') ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
+                    <Filter size={14} /> Filters
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-80 p-6 glass-card border-border/40 rounded-[2rem] shadow-2xl mr-4" align="end">
@@ -247,7 +256,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className={`h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-xs transition-colors ${sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
+                  <Button variant="ghost" className={`flex-1 md:flex-none h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors ${sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
                     <ArrowUpDown size={16} /> Sort
                   </Button>
                 </DropdownMenuTrigger>
@@ -273,7 +282,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           {loading ? (
             <div className="space-y-6">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="glass-card-premium p-8 h-48 animate-pulse" />
+                <JobSkeleton key={i} />
               ))}
             </div>
 
@@ -304,7 +313,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => navigate(`/jobs/${job.id}`)}
-                    className="group glass-card-premium p-6 md:p-8 cursor-pointer relative overflow-hidden"
+                    className="group glass-card-premium p-4 md:p-8 cursor-pointer relative overflow-hidden"
                   >
                     {/* Hover Glow */}
                     <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -312,33 +321,33 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     <div className="flex flex-col md:flex-row justify-between gap-6 relative z-10">
                       <div className="flex-grow space-y-4">
                         <div className="flex items-center gap-4">
-                          <motion.div whileHover={{ scale: 1.05 }} className="shrink-0 p-0.5 rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
-                            <Avatar className="h-16 w-16 md:h-20 md:w-20 rounded-[1.5rem] border-2 border-background">
+                          <motion.div whileHover={{ scale: 1.05 }} className="shrink-0 p-0.5 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
+                            <Avatar className="h-12 w-12 md:h-16 md:w-16 lg:h-20 lg:w-20 rounded-[0.8rem] md:rounded-[1.5rem] border-2 border-background">
                               <AvatarImage src={job.company_pages?.logo_url || ""} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-2xl">
+                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-lg md:text-2xl">
                                 {(job.company_pages?.name || job.company).charAt(0)}
                               </AvatarFallback>
                             </Avatar>
                           </motion.div>
-                          <div className="space-y-1">
-                            <h3 className="text-2xl md:text-3xl font-black tracking-tight group-hover:text-primary transition-colors leading-none">
+                          <div className="space-y-0.5 md:space-y-1">
+                            <h3 className="text-base md:text-xl lg:text-2xl font-black tracking-tight group-hover:text-primary transition-colors leading-tight line-clamp-1">
                               {job.title}
                             </h3>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               {job.company_pages ? (
-                                <span className="font-bold text-muted-foreground/60 text-sm md:text-base">{job.company_pages.name}</span>
+                                <span className="font-bold text-muted-foreground/60 text-[11px] md:text-base">{job.company_pages.name}</span>
                               ) : (
-                                <span className="font-bold text-muted-foreground/60 text-sm md:text-base">{job.company}</span>
+                                <span className="font-bold text-muted-foreground/60 text-[11px] md:text-base">{job.company}</span>
                               )}
-                              <span className="w-1 h-1 rounded-full bg-muted-foreground/20" />
-                              <span className="text-[10px] font-black uppercase tracking-widest text-primary/60">
+                              <span className="w-0.5 h-0.5 rounded-full bg-muted-foreground/20 hidden min-[400px]:block" />
+                              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-primary/60">
                                 {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
                               </span>
                             </div>
                           </div>
                         </div>
 
-                        <p className="text-muted-foreground text-base md:text-lg font-medium leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-3">
+                        <p className="text-sm md:text-base lg:text-lg text-muted-foreground font-medium leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-3">
                           {job.description}
                         </p>
 
@@ -356,12 +365,12 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-start md:items-end justify-between min-w-[240px]">
+                      <div className="shrink-0 flex flex-col items-start md:items-end justify-between md:min-w-[240px]">
                         <div className="text-left md:text-right w-full mb-6">
                           {(job.salary_min || job.salary_max) ? (
                             <div className="space-y-1">
                               <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Est. Salary Range</p>
-                              <p className="text-2xl md:text-3xl font-black text-primary tracking-tighter">
+                              <p className="text-lg md:text-xl lg:text-2xl font-black text-primary tracking-tighter">
                                 {job.salary_min ? `₹${job.salary_min.toLocaleString()}` : ''}
                                 {job.salary_min && job.salary_max ? ' - ' : ''}
                                 {job.salary_max ? `₹${job.salary_max.toLocaleString()}` : ''}

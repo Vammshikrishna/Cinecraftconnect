@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -99,10 +98,11 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
         <div className="min-h-screen bg-background pt-20 pb-36">
             <div className="max-w-7xl mx-auto px-4 md:px-8">
                 <PageHeader 
-                  title="Announcements" 
-                  subtitle="Stay updated with the latest news and updates from the platform" 
-                  Icon={Megaphone}
-                  actions={
+                    title="Announcements" 
+                    subtitle="Stay updated with the latest news and updates from the platform" 
+                    Icon={Megaphone}
+                    actionsAtTop={true}
+                    actions={
                     user && !isFan ? (
                         <div className="flex gap-2">
                             <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-10 px-4 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform text-sm">

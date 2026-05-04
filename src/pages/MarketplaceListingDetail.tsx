@@ -228,8 +228,8 @@ const MarketplaceListingDetail = () => {
                                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[80px] -mr-32 -mt-32 pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
                                 
                                 <div className="relative z-10 flex items-end gap-3 pb-6 border-b border-black/5 dark:border-white/10">
-                                    <span className="text-6xl tracking-tighter font-black text-primary flex items-start leading-[0.8]">
-                                        <span className="text-3xl mr-1.5 opacity-60 mt-1.5">₹</span>
+                                    <span className="text-4xl tracking-tighter font-black text-primary flex items-start leading-[0.8]">
+                                        <span className="text-2xl mr-1.5 opacity-60 mt-1.5">₹</span>
                                         {listing.price_per_day}
                                     </span>
                                     <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest pb-1 opacity-60">/ Day</span>

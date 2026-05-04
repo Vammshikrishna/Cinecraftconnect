@@ -1,6 +1,7 @@
 import { useState, Suspense, lazy } from 'react';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import UniversalCreateButton from '@/components/feed/UniversalCreateButton';
+import SEO from '@/components/common/SEO';
 
 // Lazy load tab components
 const HomeTab = lazy(() => import('@/components/feed/HomeTab'));
@@ -46,6 +47,10 @@ const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
 
     return (
         <div className="min-h-screen bg-background pt-20 relative">
+            <SEO 
+                title="Feed" 
+                description="Explore the latest updates from the entertainment world. Follow creators, filmmakers, and industry professionals in your CineCraft feed." 
+            />
             <div className="container mx-auto px-4 md:px-8 pb-36 animate-fade-in">
                 <div className="w-full">
                     <Suspense fallback={<FeedSkeleton />}>

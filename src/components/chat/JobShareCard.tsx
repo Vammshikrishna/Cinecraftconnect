@@ -1,7 +1,8 @@
-﻿import { Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { MapPin, Briefcase, Lock } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAccountType } from '@/hooks/useAccountType';
+import { getOptimizedImage } from '@/utils/image-optimization';
 
 interface JobShareCardProps {
     jobId: string;
@@ -28,7 +29,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                     className="relative w-full h-[40px] md:w-[75px] md:h-auto md:aspect-square overflow-hidden bg-muted group-hover:brightness-110 transition-all duration-500 shrink-0 border-b md:border-b-0 md:border-r border-black/5 dark:border-white/5"
                 >
                     {imageUrl ? (
-                        <img src={imageUrl} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                        <img src={getOptimizedImage(imageUrl, { width: 300, quality: 85 })} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
                     ) : (
                         <div className="w-full h-full bg-gradient-to-br from-primary/20 via-primary/10 to-blue-600/5 flex items-center justify-center relative overflow-hidden">
                             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/10 via-transparent to-transparent opacity-50" />
@@ -39,7 +40,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                     {/* Badge - Always Visible High-Fidelity */}
                     <div className="absolute top-2 left-3 md:top-1 md:left-1 flex items-center gap-0.5 p-0.5 bg-background/80 backdrop-blur-md rounded-md border border-black/5 dark:border-white/10 shadow-sm">
                         <Avatar className="h-2.5 w-2.5 rounded-sm">
-                            <AvatarImage src={logoUrl || undefined} />
+                            <AvatarImage src={getOptimizedImage(logoUrl, { width: 48, height: 48 }) || undefined} />
                             <AvatarFallback className="text-[4px] bg-primary/10 text-primary font-black uppercase">
                                 {company?.[0]?.toUpperCase()}
                             </AvatarFallback>
@@ -56,7 +57,7 @@ export const JobShareCard = ({ jobId, title, company, location, logoUrl, descrip
                         <div className="flex items-center justify-between gap-2 mb-0.5 md:mb-1">
                             <div className="flex-1 min-w-0 flex items-center gap-2">
                                 <Avatar className="h-4 w-4 md:h-5 md:w-5 rounded-md border border-white/5 shadow-sm">
-                                    <AvatarImage src={logoUrl || undefined} />
+                                    <AvatarImage src={getOptimizedImage(logoUrl, { width: 64, height: 64 }) || undefined} />
                                     <AvatarFallback className="text-[7px] md:text-[8px] bg-primary/10 text-primary font-black">
                                         {company?.[0]?.toUpperCase()}
                                     </AvatarFallback>

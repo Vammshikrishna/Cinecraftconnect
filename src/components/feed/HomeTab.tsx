@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -6,7 +6,7 @@ import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Megaphone, Film, Star,
-    ShoppingBag, Users, X
+    ShoppingBag, Users, X, Loader2
 } from 'lucide-react';
 
 // Components
@@ -19,7 +19,7 @@ import FeedRatingCard from './FeedRatingCard';
 import FeedAnnouncementCard from './FeedAnnouncementCard';
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { VendorCard } from '@/components/vendors/VendorCard';
-import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
+import { PostSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import VendorIcon from '@/components/icons/VendorIcon';
@@ -38,14 +38,13 @@ interface HomeTabProps {
 import { useHomeFeed, HomeFeedData } from '@/hooks/useHomeFeed';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } from '@/hooks/useCompanyPages';
-import { useToast } from '@/hooks/use-toast';
 
-const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
+    const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user, profile } = useAuth();
     const navigate = useNavigate();
     const { isFan, accountType } = useAccountType();
     const queryClient = useQueryClient();
-    const { toast } = useToast();
+    const observerTarget = useRef<HTMLDivElement>(null);
 
     const { data, isLoading: loading, refetch } = useHomeFeed();
     const { data: myPages } = useMyPages();
@@ -54,7 +53,24 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const toggleFollowPage = useToggleFollowPage();
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
 
-    const handleDismiss = (id: string, type: string) => {
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            entries => {
+                if (entries[0].isIntersecting && data?.hasNextPage && !data?.isFetchingNextPage) {
+                    data.fetchNextPage?.();
+                }
+            },
+            { threshold: 1.0 }
+        );
+
+        if (observerTarget.current) {
+            observer.observe(observerTarget.current);
+        }
+
+        return () => observer.disconnect();
+    }, [data?.hasNextPage, data?.isFetchingNextPage, data?.fetchNextPage]);
+
+    const handleDismiss = (id: string) => {
         setDismissedIds((prev: Set<string>) => {
             const next = new Set(prev);
             next.add(id);
@@ -89,22 +105,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
     const handleLikeToggle = (postId: string, isLiked: boolean) => {
         // Optimistic update
-        queryClient.setQueryData(['home-feed-data', user?.id], (old: HomeFeedData | undefined) => {
-            if (!old) return old;
-
-            const newLikedIds = new Set(old.likedPostIds);
-            if (isLiked) newLikedIds.add(postId);
-            else newLikedIds.delete(postId);
-
-            return {
-                ...old,
-                likedPostIds: newLikedIds,
-                posts: old.posts.map((p: any) =>
-                    p.id === postId
-                        ? { ...p, like_count: isLiked ? (p.like_count || 0) + 1 : Math.max(0, (p.like_count || 0) - 1) }
-                        : p
-                )
-            };
+        queryClient.setQueryData(['user-likes', user?.id], (old: Set<string> | undefined) => {
+            const next = new Set(old);
+            if (isLiked) next.add(postId);
+            else next.delete(postId);
+            return next;
         });
     };
 
@@ -113,12 +118,12 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
         return name.split(' ').map((word: string) => word[0]).join('').toUpperCase().slice(0, 2);
     };
 
-    if (loading) {
+    if (loading && feedData.posts.length === 0) {
         return (
             <div className="space-y-8 pt-4">
-                <div className="px-4"><CardSkeleton className="h-32" /></div>
-                <div className="px-4"><CardSkeleton className="h-48" /></div>
-                <div className="px-4"><CardSkeleton className="h-48" /></div>
+                <div className="px-4"><PostSkeleton /></div>
+                <div className="px-4"><PostSkeleton /></div>
+                <div className="px-4"><PostSkeleton /></div>
             </div>
         );
     }
@@ -139,7 +144,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     created_at: item.posted_at || item.created_at,
                                     itemType: 'announcement'
                                 }}
-                                onDismiss={(id) => handleDismiss(id, 'Announcement')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -161,7 +166,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     name: item.title,
                                     itemType: 'project'
                                 }}
-                                onDismiss={(id) => handleDismiss(id, 'Project')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -206,7 +211,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             const conn = existingConnections.find(c => c.follower_id === id || c.following_id === id);
                                             if (conn) removeConnection(conn.id);
                                         }}
-                                        onDismiss={(id) => handleDismiss(id, 'Suggestion')}
+                                        onDismiss={(id) => handleDismiss(id)}
                                     />
                                 </div>
                             );
@@ -225,7 +230,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         <div key={item.id} className="w-[260px] md:w-[320px] flex-none snap-start h-full">
                             <FeedDiscussionCard
                                 discussion={{ ...item, itemType: 'discussion' }}
-                                onDismiss={(id) => handleDismiss(id, 'Discussion')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -243,7 +248,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         <div key={item.id} className="w-[200px] md:w-[240px] flex-none snap-start h-full">
                             <ListingCard 
                                 listing={item} 
-                                onDismiss={(id) => handleDismiss(id, 'Listing')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -261,7 +266,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         <div key={item.id} className="w-[240px] md:w-[300px] flex-none snap-start h-full">
                             <VendorCard 
                                 vendor={item} 
-                                onDismiss={(id) => handleDismiss(id, 'Vendor')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -291,7 +296,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                 }}
                                 variant="vertical"
                                 contentType={item.title ? 'movie' : 'tv'}
-                                onDismiss={(id) => handleDismiss(id, 'Rating')}
+                                onDismiss={(id) => handleDismiss(id)}
                             />
                         </div>
                     ))}
@@ -366,11 +371,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         onLikeToggle={handleLikeToggle}
                                         pageInfo={post.company_pages}
                                         onDelete={(postId) => {
-                                            queryClient.setQueryData(['home-feed-data', user?.id], (old: HomeFeedData | undefined) => {
+                                            queryClient.setQueryData(['home-feed-posts', user?.id], (old: any) => {
                                                 if (!old) return old;
                                                 return {
                                                     ...old,
-                                                    posts: old.posts.filter((p: any) => p.id !== postId)
+                                                    pages: old.pages.map((page: any[]) => page.filter((p: any) => p.id !== postId))
                                                 };
                                             });
                                         }}
@@ -387,15 +392,26 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         );
                     })}
 
-                    {/* Render remaining sections that weren't interleaved */}
-                    {featureSections.slice(Math.floor(feedData.posts.length / 3)).map((section) => (
-                        <div key={section.id} className="mt-6 border-t border-b border-border/50 bg-card/30 backdrop-blur-sm py-2">
-                            {section.component}
-                        </div>
-                    ))}
+                    {/* Infinite Scroll Sentinel */}
+                    <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
+                        {feedData.isFetchingNextPage && (
+                            <div className="flex flex-col items-center gap-2 py-4">
+                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Loading more posts...</span>
+                            </div>
+                        )}
+                        {!feedData.hasNextPage && feedData.posts.length > 0 && (
+                            <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                                <div className="h-[1.5px] w-12 bg-primary/40 mx-auto mb-6 rounded-full" />
+                                <p className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-[0.4em] select-none">
+                                    YOU'VE REACHED THE END OF THE SET
+                                </p>
+                            </div>
+                        )}
+                    </div>
 
                     {/* Show empty state message only if absolutely no content */}
-                    {feedData.posts.length === 0 && featureSections.length === 0 && (
+                    {feedData.posts.length === 0 && !loading && featureSections.length === 0 && (
                         <div className="px-4 text-center py-8 text-muted-foreground">
                             No posts or content available yet.
                         </div>
@@ -534,7 +550,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         </button>
                                         {!sentRequests.some(r => r.following_id === conn.id) && (
                                             <button 
-                                                onClick={() => handleDismiss(conn.id, 'Suggestion')}
+                                                onClick={() => handleDismiss(conn.id)}
                                                 className="text-muted-foreground/40 hover:text-foreground transition-colors p-1"
                                                 title="Dismiss"
                                             >

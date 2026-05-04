@@ -23,7 +23,8 @@ import {
   Loader2,
   Share2,
   Bell,
-  Users
+  Users,
+  Flag
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
@@ -48,6 +49,8 @@ import { getGradientForString } from '@/utils/colors';
 import { useProjects, Project } from '@/hooks/useProjects';
 import { useAppRole } from '@/hooks/useAppRole';
 import { PageHeader } from '@/components/common/PageHeader';
+import { ReportDialog } from '@/components/governance/ReportDialog';
+import SEO from '@/components/common/SEO';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
@@ -67,6 +70,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [projectToShare, setProjectToShare] = useState<Project | null>(null);
   const [isShareSheetOpen, setIsShareSheetOpen] = useState(false);
+  const [reportData, setReportData] = useState<{ id: string, title: string } | null>(null);
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { projects, loading, toggleBookmark, deleteProject, refetch } = useProjects(activeTab);
@@ -191,6 +196,15 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
                   <DropdownMenuItem onClick={handleShareClick}>
                     <Share2 className="mr-2 h-4 w-4" /> Share
                   </DropdownMenuItem>
+                  <DropdownMenuItem 
+                    className="text-amber-500 focus:text-amber-500"
+                    onClick={() => {
+                      setReportData({ id: project.id, title: project.title });
+                      setIsReportOpen(true);
+                    }}
+                  >
+                    <Flag className="mr-2 h-4 w-4" /> Report
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -204,6 +218,16 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
                 className="p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 shadow-sm"
                >
                  <Share2 className="w-4 h-4 text-muted-foreground hover:text-primary transition-colors" />
+               </button>
+               <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setReportData({ id: project.id, title: project.title });
+                  setIsReportOpen(true);
+                }}
+                className="p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 shadow-sm"
+               >
+                 <Flag className="w-4 h-4 text-muted-foreground hover:text-red-500 transition-colors" />
                </button>
             </div>
           )}
@@ -280,11 +304,16 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   return (
     <div className="min-h-screen bg-background pt-20">
+      <SEO 
+        title="ProjectSpace" 
+        description="Discover and collaborate on professional film and digital media projects. Browse open roles and build your production crew." 
+      />
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36 animate-fade-in">
         <PageHeader 
-          title="Projects" 
+          title="ProjectSpace" 
           subtitle="Discover and collaborate on film projects" 
           Icon={Film}
+          actionsAtTop={true}
           actions={<ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />}
         />
 
@@ -292,23 +321,23 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           <div className="flex flex-row gap-2 sm:gap-4 mb-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 text-sm" />
             </div>
             <ProjectFilters onFiltersChange={setFilters} activeFilters={filters} />
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-card border border-border w-full flex overflow-x-auto overflow-y-hidden justify-start no-scrollbar">
-              <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All Projects</TabsTrigger>
-              {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
+              <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All ProjectSpace</TabsTrigger>
+              {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My ProjectSpace</TabsTrigger>}
               {user && <TabsTrigger value="bookmarked" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}
             </TabsList>
           </Tabs>
         </div>
 
-        {loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
+        {loading ? <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">{[...Array(6)].map((_, i) => <CardSkeleton key={i} />)}</div> : (
           filteredProjects.length > 0 ? (
-            <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3, xl: 4 }} gap={6} className="gap-3 sm:gap-6">
+            <ResponsiveGrid cols={{ sm: 2, md: 2, lg: 3, xl: 4 }} gap={6} className="gap-3 sm:gap-6">
               {filteredProjects.map((project) => <ProjectCard key={project.id} project={project} />)}
             </ResponsiveGrid>
           ) : (
@@ -377,6 +406,17 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
               status: projectToShare.status
             }}
            />
+        )}
+
+        {/* Report Dialog */}
+        {reportData && (
+          <ReportDialog 
+            isOpen={isReportOpen}
+            onOpenChange={setIsReportOpen}
+            targetType="project"
+            targetId={reportData.id}
+            targetTitle={reportData.title}
+          />
         )}
       </div>
     </div>

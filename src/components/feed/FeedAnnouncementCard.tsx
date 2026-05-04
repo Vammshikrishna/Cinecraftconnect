@@ -24,6 +24,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { AnnouncementShareSheet } from './AnnouncementShareSheet';
+import { getOptimizedImage } from '@/utils/image-optimization';
 
 interface FeedAnnouncementCardProps {
     announcement: {
@@ -145,7 +146,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss }: FeedAnnouncementCardP
                     <div className="flex items-start gap-4 mb-4">
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
                             {announcement.company_pages?.logo_url ? (
-                                <img src={announcement.company_pages.logo_url} alt={announcement.company_pages.name} className="w-full h-full object-cover" />
+                                <img src={getOptimizedImage(announcement.company_pages.logo_url, { width: 96, height: 96 })} alt={announcement.company_pages.name} className="w-full h-full object-cover" />
                             ) : (
                                 <Megaphone className="h-6 w-6 fill-white/20" />
                             )}

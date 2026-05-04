@@ -263,7 +263,7 @@ const JobDetail = () => {
                       Hiring Now
                     </span>
                   </div>
-                  <h1 className="text-4xl md:text-7xl font-black tracking-tighter text-foreground leading-[0.95]">
+                  <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-foreground leading-tight">
                     {job.title}
                   </h1>
                 </div>
@@ -371,7 +371,7 @@ const JobDetail = () => {
                   className="bg-card/20 border border-border/50 rounded-[2rem] overflow-hidden"
                 >
                   <div className="p-8 md:p-10">
-                    <h2 className="text-2xl font-black mb-8 flex items-center gap-3">
+                    <h2 className="text-lg font-black mb-8 flex items-center gap-3">
                       <span className="w-1 h-8 bg-primary rounded-full" />
                       Key Requirements
                     </h2>

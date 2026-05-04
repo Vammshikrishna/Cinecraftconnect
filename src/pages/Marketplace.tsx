@@ -5,20 +5,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Search, Camera, Home, Plus, LayoutGrid } from 'lucide-react';
+import { ShoppingBag, Search, Camera, Home, Plus, LayoutGrid } from 'lucide-react';
 import { ListingType } from '@/types/marketplace';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import { ListingCard } from '@/components/marketplace/ListingCard';
 import { MarketplaceFilters } from '@/components/marketplace/MarketplaceFilters';
 import { usePlatformFlags } from '@/hooks/usePlatformFlags';
 import { ShieldAlert, Lock } from 'lucide-react';
-import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { ListingSkeleton } from '@/components/ui/enhanced-skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
 
 import { PageHeader } from '@/components/common/PageHeader';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useNavigate } from 'react-router-dom';
+import SEO from '@/components/common/SEO';
 
 const Marketplace = () => {
     const { toast } = useToast();
@@ -83,13 +84,18 @@ const Marketplace = () => {
 
     return (
         <div className="min-h-screen bg-background">
+            <SEO 
+                title="Marketplace" 
+                description="Source high-end film gear and unique production locations. Rent or buy equipment from the CineCraft community." 
+            />
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-36 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Header */}
                 <PageHeader 
-                  title="Marketplace" 
-                  subtitle="Discover and rent professional equipment and cinematic locations from verified community members." 
-                  Icon={LayoutGrid}
-                  actions={
+                    title="Marketplace" 
+                    subtitle="Rent or buy equipment and locations from fellow creators" 
+                    Icon={ShoppingBag}
+                    actionsAtTop={true}
+                    actions={
                     <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
                         <Plus size={18} strokeWidth={3} />
                         <span>Create Listing</span>
@@ -100,16 +106,16 @@ const Marketplace = () => {
                 {/* Search & Filter Container */}
                 <div className="bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] p-2 md:p-3 mb-8 shadow-sm dark:shadow-none">
                     <div className="flex flex-row gap-2 md:gap-3">
-                        <div className="relative flex-grow h-12 md:h-14">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
+                        <div className="relative flex-grow h-10 md:h-11">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
                             <Input
                                 placeholder="Search marketplace..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-12 h-full bg-background/50 border-white/5 rounded-2xl text-base focus-visible:ring-primary/20 shadow-inner dark:shadow-none"
+                                className="pl-12 h-full bg-background/50 border-white/5 rounded-2xl text-sm focus-visible:ring-primary/20 shadow-inner dark:shadow-none"
                             />
                         </div>
-                        <div className="shrink-0 h-12 md:h-14 flex items-center">
+                        <div className="shrink-0 h-10 md:h-11 flex items-center">
                             <MarketplaceFilters filters={filters} onFiltersChange={setFilters} />
                         </div>
                     </div>
@@ -160,9 +166,9 @@ const Marketplace = () => {
 
                     <TabsContent value="all" className="mt-0 focus-visible:outline-none focus-visible:ring-0">
                         {loading ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {[1, 2, 3, 4, 5, 6].map((i) => (
-                                    <EnhancedSkeleton key={i} className="h-[400px] rounded-[28px]" />
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                    <ListingSkeleton key={i} />
                                 ))}
                             </div>
                         ) : listings.length === 0 ? (
@@ -175,7 +181,7 @@ const Marketplace = () => {
                                 />
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in overflow-hidden pb-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in overflow-hidden pb-4">
                                 {listings.map((listing) => (
                                     <div key={listing.id} className="animate-in zoom-in-95 fill-mode-both duration-500" style={{ animationDelay: `${Math.random() * 200}ms` }}>
                                         <ListingCard listing={listing} />
@@ -188,8 +194,8 @@ const Marketplace = () => {
                     <TabsContent value="equipment" className="mt-0 focus-visible:outline-none focus-visible:ring-0">
                          {loading ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {[1, 2, 3, 4, 5, 6].map((i) => (
-                                    <EnhancedSkeleton key={i} className="h-[400px] rounded-[28px]" />
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                    <ListingSkeleton key={i} />
                                 ))}
                             </div>
                         ) : listings.length === 0 ? (
@@ -215,8 +221,8 @@ const Marketplace = () => {
                     <TabsContent value="location" className="mt-0 focus-visible:outline-none focus-visible:ring-0">
                          {loading ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {[1, 2, 3, 4, 5, 6].map((i) => (
-                                    <EnhancedSkeleton key={i} className="h-[400px] rounded-[28px]" />
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                    <ListingSkeleton key={i} />
                                 ))}
                             </div>
                         ) : listings.length === 0 ? (

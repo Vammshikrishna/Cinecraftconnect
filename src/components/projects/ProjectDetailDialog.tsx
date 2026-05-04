@@ -120,7 +120,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <Button className="flex-1" onClick={() => { onOpenChange(false); navigate(`/projects/${project.id}/space`); }}>
                 <Briefcase className="mr-2 h-4 w-4" />
-                {isOwner ? 'Manage Project Space' : 'View Project Space'}
+                {isOwner ? 'Manage ProjectSpace' : 'View ProjectSpace'}
               </Button>
               {!isOwner && (
                 <Button variant="default" className="flex-1" onClick={() => setIsApplicationDialogOpen(true)} disabled={hasApplied}>

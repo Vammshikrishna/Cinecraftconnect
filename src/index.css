@@ -603,3 +603,36 @@
     scrollbar-width: none;
   }
 }
+
+@layer utilities {
+  .text-fluid-h1 {
+    font-size: clamp(1.5rem, 5vw, 2.5rem);
+    line-height: 1.1;
+  }
+  .text-fluid-h2 {
+    font-size: clamp(1.25rem, 4vw, 2rem);
+    line-height: 1.2;
+  }
+  .text-fluid-lg {
+    font-size: clamp(1rem, 2.5vw, 1.25rem);
+  }
+  .text-fluid-base {
+    font-size: clamp(0.875rem, 2vw, 1rem);
+  }
+  .text-fluid-sm {
+    font-size: clamp(0.75rem, 1.5vw, 0.875rem);
+  }
+  .p-fluid {
+    padding: clamp(1rem, 5vw, 5rem);
+  }
+  .px-fluid {
+    padding-left: clamp(1rem, 5vw, 5rem);
+    padding-right: clamp(1rem, 5vw, 5rem);
+  }
+  .gap-fluid {
+    gap: clamp(1rem, 3vw, 3rem);
+  }
+  .m-fluid-negative {
+    margin-top: calc(-1 * clamp(40px, 8.8vw, 72px));
+  }
+}

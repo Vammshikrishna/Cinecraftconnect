@@ -97,6 +97,153 @@ const CardSkeleton = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
       </div>
     </div>
   );
-  
 
-export { EnhancedSkeleton, CraftPageSkeleton, CardSkeleton };
+const PostSkeleton = () => (
+  <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md p-4 space-y-4">
+    <div className="flex items-center gap-3">
+      <EnhancedSkeleton className="h-9 w-9 rounded-full" />
+      <div className="space-y-2 flex-1">
+        <EnhancedSkeleton className="h-4 w-32" />
+        <EnhancedSkeleton className="h-3 w-24" />
+      </div>
+    </div>
+    <div className="space-y-2">
+      <EnhancedSkeleton className="h-4 w-full" />
+      <EnhancedSkeleton className="h-4 w-5/6" />
+    </div>
+    <EnhancedSkeleton className="h-[300px] w-full rounded-xl" />
+    <div className="flex items-center gap-4 pt-2">
+      <EnhancedSkeleton className="h-8 w-16 rounded-full" />
+      <EnhancedSkeleton className="h-8 w-16 rounded-full" />
+      <EnhancedSkeleton className="h-8 w-16 rounded-full" />
+    </div>
+  </div>
+);
+
+const JobSkeleton = () => (
+  <div className="glass-card-premium p-6 md:p-8 space-y-6">
+    <div className="flex flex-col md:flex-row justify-between gap-6">
+      <div className="flex-grow space-y-4">
+        <div className="flex items-center gap-4">
+          <EnhancedSkeleton className="h-16 w-16 lg:h-20 lg:w-20 rounded-2xl" />
+          <div className="space-y-2">
+            <EnhancedSkeleton className="h-8 w-64" />
+            <EnhancedSkeleton className="h-4 w-40" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <EnhancedSkeleton className="h-4 w-full" />
+          <EnhancedSkeleton className="h-4 w-full" />
+        </div>
+        <div className="flex gap-3">
+          <EnhancedSkeleton className="h-8 w-24 rounded-xl" />
+          <EnhancedSkeleton className="h-8 w-24 rounded-xl" />
+          <EnhancedSkeleton className="h-8 w-24 rounded-xl" />
+        </div>
+      </div>
+      <div className="shrink-0 flex flex-col items-start md:items-end justify-between md:min-w-[240px]">
+        <div className="space-y-2 w-full md:text-right">
+          <EnhancedSkeleton className="h-3 w-24 ml-auto" />
+          <EnhancedSkeleton className="h-8 w-48 ml-auto" />
+        </div>
+        <EnhancedSkeleton className="h-14 w-full md:w-56 rounded-2xl mt-6" />
+      </div>
+    </div>
+  </div>
+);
+
+const ProjectSkeleton = () => (
+  <div className="bg-white dark:bg-card border border-border/50 rounded-[20px] overflow-hidden">
+    <EnhancedSkeleton className="aspect-[16/10] w-full" />
+    <div className="p-6 space-y-4">
+      <div className="space-y-2">
+        <EnhancedSkeleton className="h-7 w-3/4" />
+        <EnhancedSkeleton className="h-4 w-full" />
+        <EnhancedSkeleton className="h-4 w-5/6" />
+      </div>
+      <div className="flex gap-6 py-1">
+        <EnhancedSkeleton className="h-4 w-20" />
+        <EnhancedSkeleton className="h-4 w-24" />
+      </div>
+      <div className="pt-4 border-t border-border/50 flex justify-between items-center">
+        <EnhancedSkeleton className="h-3 w-20" />
+        <EnhancedSkeleton className="h-8 w-8 rounded-full" />
+      </div>
+    </div>
+  </div>
+);
+
+const PageSkeleton = () => (
+  <div className="bg-card border border-border rounded-xl overflow-hidden">
+    <div className="h-24 bg-gradient-to-br from-primary/10 to-primary/5" />
+    <div className="pt-10 px-4 pb-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <EnhancedSkeleton className="h-6 w-3/4" />
+      </div>
+      <div className="space-y-2">
+        <EnhancedSkeleton className="h-3 w-full" />
+        <EnhancedSkeleton className="h-3 w-2/3" />
+      </div>
+      <div className="flex gap-3">
+        <EnhancedSkeleton className="h-4 w-16" />
+        <EnhancedSkeleton className="h-4 w-20" />
+      </div>
+      <EnhancedSkeleton className="h-9 w-full rounded-md" />
+    </div>
+  </div>
+);
+
+const ListingSkeleton = () => (
+  <div className="bg-card border border-border rounded-[28px] overflow-hidden">
+    <EnhancedSkeleton className="aspect-square w-full" />
+    <div className="p-4 space-y-4">
+      <div className="flex justify-between items-center">
+        <EnhancedSkeleton className="h-6 w-1/2" />
+        <EnhancedSkeleton className="h-6 w-1/4" />
+      </div>
+      <div className="space-y-2">
+        <EnhancedSkeleton className="h-3 w-full" />
+        <EnhancedSkeleton className="h-3 w-3/4" />
+      </div>
+      <div className="flex items-center gap-2">
+        <EnhancedSkeleton className="h-5 w-5 rounded-full" />
+        <EnhancedSkeleton className="h-3 w-24" />
+      </div>
+      <EnhancedSkeleton className="h-10 w-full rounded-xl" />
+    </div>
+  </div>
+);
+
+const AnnouncementSkeleton = () => (
+  <div className="glass-card-premium min-h-[220px] p-6 flex flex-col space-y-4">
+    <div className="flex items-start gap-4">
+      <EnhancedSkeleton className="h-12 w-12 rounded-2xl shrink-0" />
+      <div className="space-y-2 flex-1">
+        <EnhancedSkeleton className="h-5 w-3/4" />
+        <EnhancedSkeleton className="h-3 w-20" />
+      </div>
+    </div>
+    <div className="space-y-2 flex-1">
+      <EnhancedSkeleton className="h-3 w-full" />
+      <EnhancedSkeleton className="h-3 w-full" />
+      <EnhancedSkeleton className="h-3 w-2/3" />
+    </div>
+    <div className="pt-4 border-t border-black/5 dark:border-white/5 flex justify-between items-center mt-auto">
+      <EnhancedSkeleton className="h-6 w-32 rounded-md" />
+      <EnhancedSkeleton className="h-8 w-8 rounded-full" />
+    </div>
+  </div>
+);
+
+export { 
+  EnhancedSkeleton, 
+  CraftPageSkeleton, 
+  CardSkeleton, 
+  PostSkeleton, 
+  JobSkeleton, 
+  ProjectSkeleton,
+  PageSkeleton,
+  ListingSkeleton,
+  AnnouncementSkeleton
+};
+

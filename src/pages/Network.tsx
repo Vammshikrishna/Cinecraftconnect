@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageHeader } from '@/components/common/PageHeader';
+import SEO from '@/components/common/SEO';
 
 import { useAccountType } from "@/hooks/useAccountType";
 import { useNavigate } from "react-router-dom";
@@ -76,12 +77,17 @@ const Network = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEO 
+        title="Network" 
+        description="Connect with filmmakers, actors, directors, and other industry professionals. Build your professional network and find your next crew on CineCraft." 
+      />
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-36">
         
         <PageHeader 
-          title="My Network" 
-          subtitle="Grow your professional network in the film and television industry." 
+          title="Network" 
+          subtitle="Connect with cinematographers, directors, and other film professionals" 
           Icon={Users}
+          actionsAtTop={true}
         />
 
         <div className="flex flex-col lg:flex-row gap-8">
@@ -188,7 +194,7 @@ const Network = () => {
                     <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your search criteria</p>
                   </Card>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+                  <div className="grid grid-cols-1 min-[460px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 min-[460px]:gap-3 sm:gap-5">
                     {users.map((user) => {
                       const sentReq = sentRequests.find(r => r.following_id === user.id);
                       const connection = connections.find(c =>
@@ -201,6 +207,7 @@ const Network = () => {
                           key={user.id}
                           user={{
                             ...user,
+                            is_verified: user.is_verified || undefined,
                             connection_status: sentReq ? 'pending_sent' :
                               connection ? 'connected' :
                                 user.connection_status || 'none'

@@ -103,12 +103,25 @@ const CaseQueue: React.FC<CaseQueueProps> = ({ cases, onSelectCase, selectedCase
                       {item.reason.replace(/_/g, ' ').toUpperCase()}
                     </h3>
                     
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-medium">
-                      <span className="flex items-center gap-1">
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-medium">
+                      <span className="flex items-center gap-1.5">
                         <User className="w-3 h-3" /> @{item.reporter.username}
+                        <Badge variant="outline" className={`h-4 px-1 text-[8px] font-black border-none ${
+                          (item as any).reporter_trust_score > 80 ? 'bg-green-500/10 text-green-500' :
+                          (item as any).reporter_trust_score < 40 ? 'bg-red-500/10 text-red-500' :
+                          'bg-amber-500/10 text-amber-500'
+                        }`}>
+                          TRUST: {(item as any).reporter_trust_score || 100}
+                        </Badge>
                       </span>
                       <span>•</span>
                       <span className="capitalize">{item.target_type} Report</span>
+                      {item.priority === 'urgent' && (
+                        <>
+                          <span>•</span>
+                          <span className="text-red-500 font-black animate-pulse uppercase tracking-tighter">AI Prioritized</span>
+                        </>
+                      )}
                     </div>
                   </div>
 
