@@ -26,7 +26,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   actionsAtTop = false
 }) => {
   return (
-    <div className="flex flex-col gap-4 md:gap-6 mb-8 md:mb-12">
+    <div className={cn("flex flex-col mb-8 md:mb-12", actionsAtTop ? "gap-2" : "gap-4 md:gap-6")}>
       <div className={cn(
         "flex flex-col lg:flex-row lg:items-center justify-between gap-6",
         actionsAtTop && "flex-row items-start"
@@ -56,7 +56,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
               <span className="block overflow-visible">{title}</span>
             </h1>
 
-            {subtitle && (
+            {!actionsAtTop && subtitle && (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -75,7 +75,12 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
             className={cn(
-              "flex shrink-0 justify-end",
+              "flex shrink-0 justify-end items-center gap-2 md:gap-3 flex-wrap",
+              // Universal responsive button sizing for all header actions
+              "[&_button]:h-9 md:[&_button]:h-11",
+              "[&_button]:px-3 md:[&_button]:px-5",
+              "[&_button]:text-[10px] md:[&_button]:text-sm",
+              "[&_button]:rounded-xl",
               actionsAtTop && "lg:order-last"
             )}
           >
@@ -83,6 +88,17 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
           </motion.div>
         )}
       </div>
+
+      {actionsAtTop && subtitle && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="text-xs md:text-sm text-muted-foreground font-medium leading-relaxed max-w-4xl"
+        >
+          {subtitle}
+        </motion.div>
+      )}
     </div>
   );
 };

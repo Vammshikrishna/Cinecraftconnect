@@ -60,8 +60,9 @@ export const useHomeFeed = () => {
             const connectionsPromise = user?.id
                 ? supabase
                     .from('profiles')
-                    .select('id, full_name, username, avatar_url, craft, bio, is_verified')
+                    .select('id, full_name, username, avatar_url, craft, bio, is_verified, is_internal')
                     .neq('id', user.id)
+                    .eq('is_internal', false)
                     .order('updated_at', { ascending: false, nullsFirst: false })
                     .limit(6)
                 : Promise.resolve({ data: [], error: null });
@@ -92,7 +93,7 @@ export const useHomeFeed = () => {
         queryFn: async ({ pageParam }: { pageParam: string | null }) => {
             let query = supabase
                 .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug)')
+                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
                 .order('created_at', { ascending: false })
                 .limit(5);
 

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, Flag, Shield, Crown } from 'lucide-react';
+import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, Flag, Shield, Crown, Lightbulb } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -10,13 +10,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useUnreadPitchSubmissions } from '@/hooks/useUnreadPitchSubmissions';
 import VendorIcon from '@/components/icons/VendorIcon';
 import StudioPageIcon from '@/components/icons/StudioPageIcon';
 
 const MoreMenu = () => {
     const location = useLocation();
-    const { isFan } = useAccountType();
+    const { isFan, isCreator, isStudio } = useAccountType();
     const { isModerator, isAdmin, isSuperAdmin } = useAppRole();
+    const { unreadPitchCount, hasUnreadPitches } = useUnreadPitchSubmissions();
 
     // Items available to everyone (fans + creators)
     const commonItems = [
@@ -28,6 +30,7 @@ const MoreMenu = () => {
     // Creator-only items
     const creatorItems = [
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
+        { path: '/pitch', icon: Lightbulb, label: 'Pitch' },
         { path: '/vendors', icon: VendorIcon, label: 'Vendors' },
         { path: '/learn', icon: BookOpen, label: 'Learn' },
     ];
@@ -86,7 +89,13 @@ const MoreMenu = () => {
                                         }`}
                                 >
                                     <Icon size={18} />
-                                    <span>{label}</span>
+                                    <span className="flex-1">{label}</span>
+                                    {/* Notification badge for Pitch inbox */}
+                                    {path === '/pitch' && (isCreator || isStudio) && hasUnreadPitches && (
+                                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                                            {unreadPitchCount > 9 ? '9+' : unreadPitchCount}
+                                        </span>
+                                    )}
                                 </Link>
                             </DropdownMenuItem>
                         ))}

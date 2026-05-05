@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Search, Link as LinkIcon, Share2, Film, MessageSquare } from "lucide-re
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface VendorShareSheetProps {
     isOpen: boolean;
@@ -31,6 +32,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
     const [loading, setLoading] = useState(false);
     const [sending, setSending] = useState<string | null>(null);
     const [sentTo, setSentTo] = useState<Set<string>>(new Set());
+    const [activeTab, setActiveTab] = useState("connections");
     const { user } = useAuth();
     const { toast } = useToast();
     const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -47,8 +49,6 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
         setLoading(true);
 
         const newTargets: ShareTarget[] = [];
-        // Reuse similar logic to MarketplaceShareSheet for fetching targets
-        // Simplified here for brevity but ideally shared logic
         try {
             // 1. Add Connections
             if (connections) {
@@ -69,19 +69,15 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
             }
 
             // 2. Project Spaces
-            // Get spaces via membership
-            const { data: memberSpaces, error: memberError } = await supabase
+            const { data: memberSpaces } = await supabase
                 .from('project_space_members' as any)
                 .select('project_space_id')
                 .eq('user_id', user.id);
 
-            // Get projects owned by user
             const { data: ownedProjects } = await supabase
                 .from('projects')
                 .select('id')
                 .eq('creator_id', user.id);
-
-            if (memberError) console.error("Error fetching member spaces:", memberError);
 
             const knownSpaceIds = memberSpaces?.map((m: any) => m.project_space_id) || [];
             const ownedProjectIds = ownedProjects?.map((p: any) => p.id) || [];
@@ -117,6 +113,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                     });
                 }
             }
+
             // 3. Discussion Rooms
             const { data: rooms } = await supabase
                 .from('discussion_rooms')
@@ -147,7 +144,6 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
         setSending(target.id);
 
         try {
-            // Fetch vendor details
             const { data: vendor } = await supabase
                 .from('vendors')
                 .select('business_name, logo_url, category, location, description')
@@ -163,7 +159,10 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                 category: vendor.category,
                 location: vendor.location,
                 description: vendor.description,
-                type: 'VENDOR'
+                recipient_id: target.id,
+                recipient_type: target.type === 'user' ? 'connection' : target.type === 'room' ? 'discussion_room' : 'project_space',
+                shared_content_id: vendorId,
+                shared_content_type: 'vendor'
             };
 
             const messageContent = `VENDOR_SHARE::${JSON.stringify(shareData)}`;
@@ -178,7 +177,6 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                 });
 
                 if (sendError && sendError.message?.includes('receiver_id')) {
-                    // Fallback to legacy recipient_id
                     await supabase.from('direct_messages' as any).insert({
                         content: messageContent,
                         sender_id: user.id,
@@ -186,13 +184,6 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                         recipient_id: target.id
                     });
                 }
-            } else if (target.type === 'project') {
-                // Assuming project_messages exist
-                await supabase.from('project_messages' as any).insert({
-                    project_id: target.id,
-                    user_id: user.id,
-                    content: messageContent
-                });
             } else if (target.type === 'space') {
                 await supabase.from('project_space_messages' as any).insert({
                     project_space_id: target.id,
@@ -238,11 +229,10 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
         }
     };
 
-    // Search logic similar to MarketplaceShareSheet
     const [searchResults, setSearchResults] = useState<ShareTarget[]>([]);
     useEffect(() => {
         const searchProfiles = async () => {
-            if (!searchQuery.trim() || !user) {
+            if (!searchQuery.trim() || !user || activeTab !== "connections") {
                 setSearchResults([]);
                 return;
             }
@@ -275,42 +265,69 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
 
         const timeoutId = setTimeout(searchProfiles, 300);
         return () => clearTimeout(timeoutId);
-    }, [searchQuery, user]);
+    }, [searchQuery, user, activeTab]);
 
-    const displayTargets = searchQuery.trim() ? searchResults : targets; // Simplification
+    const filteredTargets = targets.filter(t => {
+        if (activeTab === "connections") return t.type === 'user';
+        if (activeTab === "discussions") return t.type === 'room';
+        if (activeTab === "projects") return t.type === 'space';
+        return false;
+    });
 
+    const displayTargets = searchQuery.trim()
+        ? [
+            ...(activeTab === "connections" ? searchResults : []),
+            ...filteredTargets.filter(t =>
+                t.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+                !searchResults.some(r => r.id === t.id && r.type === t.type)
+            )
+        ]
+        : filteredTargets;
 
     const Content = (
-        <div className="flex flex-col h-full max-h-[80vh]">
+        <div className="flex flex-col h-[500px] md:h-[600px] max-h-full">
             <div className="p-4 border-b border-border space-y-4">
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
                     <Input
                         autoFocus
-                        placeholder="Search..."
+                        placeholder={`Search ${activeTab}...`}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        className="pl-9 bg-muted/50 border-none"
+                        className="pl-9 bg-muted/50 border-none rounded-xl h-11"
                     />
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2" onClick={handleCopyLink}>
+                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2 rounded-xl" onClick={handleCopyLink}>
                         <LinkIcon className="h-4 w-4" /> Copy Link
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2" onClick={handleSystemShare}>
+                    <Button variant="outline" size="sm" className="flex-shrink-0 gap-2 rounded-xl" onClick={handleSystemShare}>
                         <Share2 className="h-4 w-4" /> Share via...
                     </Button>
                 </div>
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                    <TabsList className="w-full grid grid-cols-3 bg-muted/30 p-1 rounded-xl h-10">
+                        <TabsTrigger value="connections" className="text-[10px] font-black uppercase tracking-widest rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all">Connections</TabsTrigger>
+                        <TabsTrigger value="discussions" className="text-[10px] font-black uppercase tracking-widest rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all">Discussions</TabsTrigger>
+                        <TabsTrigger value="projects" className="text-[10px] font-black uppercase tracking-widest rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all">Projects</TabsTrigger>
+                    </TabsList>
+                </Tabs>
             </div>
-            <div className="flex-1 overflow-y-auto p-2">
+
+            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
                 {loading ? (
-                    <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                    <div className="flex flex-col items-center justify-center py-12 space-y-3 opacity-50">
+                        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <p className="text-[10px] font-black uppercase tracking-widest">Searching Recipients...</p>
+                    </div>
                 ) : displayTargets.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">No results found</div>
+                    <div className="text-center py-12">
+                        <p className="text-sm text-muted-foreground font-medium">No matching {activeTab} found</p>
+                    </div>
                 ) : (
-                    <div className="space-y-1">
-                        {displayTargets.map(target => (
-                            <div key={`${target.type}-${target.id}`} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors">
+                    <div className="space-y-1 pb-32 md:pb-6">
+                        {displayTargets.map((target: ShareTarget) => (
+                            <div key={`${target.type}-${target.id}`} className="flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg transition-colors group">
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     <Avatar className="h-12 w-12 border border-border">
                                         <AvatarImage src={target.avatar_url || undefined} />
@@ -328,7 +345,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
                                 <Button
                                     size="sm"
                                     variant={sentTo.has(target.id) ? "ghost" : "default"}
-                                    className={sentTo.has(target.id) ? "text-primary" : "bg-primary hover:bg-primary/90"}
+                                    className={sentTo.has(target.id) ? "text-primary" : "bg-primary hover:bg-primary/90 rounded-full px-5 h-8 text-xs font-bold"}
                                     disabled={sending === target.id || sentTo.has(target.id)}
                                     onClick={() => handleSend(target)}
                                 >
@@ -345,7 +362,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
     if (isDesktop) {
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[400px] p-0 gap-0 bg-card text-card-foreground">
+                <DialogContent className="sm:max-w-[400px] p-0 gap-0 bg-card text-card-foreground overflow-hidden flex flex-col">
                     <DialogHeader className="p-4 border-b border-border">
                         <DialogTitle className="text-center">Share Vendor</DialogTitle>
                         <DialogDescription className="sr-only">
@@ -360,7 +377,7 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
 
     return (
         <Drawer open={isOpen} onOpenChange={onOpenChange}>
-            <DrawerContent className="bg-card text-card-foreground max-h-[90vh]">
+            <DrawerContent className="bg-card text-card-foreground h-[65vh] flex flex-col">
                 <DrawerHeader className="border-b border-border">
                     <DrawerTitle className="text-center">Share Vendor</DrawerTitle>
                     <DrawerDescription className="sr-only">
@@ -372,4 +389,3 @@ export function VendorShareSheet({ isOpen, onOpenChange, vendorId }: VendorShare
         </Drawer>
     );
 }
-

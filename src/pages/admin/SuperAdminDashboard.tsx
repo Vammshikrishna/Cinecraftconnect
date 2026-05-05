@@ -81,9 +81,17 @@ const SuperAdminDashboard = () => {
   const fetchStaff = async () => {
     const { data } = await (supabase as any)
       .from('user_roles')
-      .select(`role, profile:user_id(id, username, full_name, avatar_url)`)
+      .select(`user_id, role, profile:user_id(id, username, full_name, avatar_url)`)
       .neq('role', 'user');
-    if (data) setStaff(data.map((r: any) => ({ ...r.profile, role: r.role })));
+    if (data) {
+      setStaff(data.map((r: any) => ({
+        id: r.profile?.id || r.user_id,
+        username: r.profile?.username || 'no_username',
+        full_name: r.profile?.full_name || 'Incomplete Profile',
+        avatar_url: r.profile?.avatar_url,
+        role: r.role
+      })));
+    }
   };
 
   const fetchPolicies = async () => {
@@ -132,7 +140,7 @@ const SuperAdminDashboard = () => {
     if (data) setFlags(data);
   };
 
-  const handlePromote = async (userId: string, role: string) => {
+  const handlePromote = async (userId: string, role: string, metadata?: { username?: string, fullName?: string }) => {
     if (!user) return;
 
     if (!hasPermission('user.manage_roles')) {
@@ -146,7 +154,7 @@ const SuperAdminDashboard = () => {
         targetId: userId,
         targetType: 'user_roles',
         reason: `Promoting user to ${role.toUpperCase()}`,
-        payload: { role },
+        payload: { role, ...metadata },
         actorId: user.id,
         requiresApproval: requiresApproval('user.manage_roles')
       }) as { success: boolean; pending?: boolean };
@@ -162,11 +170,27 @@ const SuperAdminDashboard = () => {
     }
   };
 
-  const handleRevoke = async (userId: string) => {
-    const { error } = await (supabase as any).rpc('revoke_user_role', { _target_user_id: userId });
-    if (error) toast({ title: 'Revocation Error', description: error.message, variant: 'destructive' });
-    else {
-      toast({ title: 'Role Revoked', description: 'Staff access removed' });
+  const handleRevoke = async (userId: string, role: string) => {
+    if (userId === user?.id) {
+      toast({ 
+        title: 'Action Blocked', 
+        description: 'You cannot revoke your own Super Admin privileges to prevent system lockout.', 
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to revoke the ${role.toUpperCase()} role for this user?`)) return;
+
+    const { error } = await (supabase as any).rpc('revoke_user_role', { 
+      _user_id: userId,
+      _role: role 
+    });
+    
+    if (error) {
+      toast({ title: 'Revocation Error', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Role Revoked', description: 'Staff access removed successfully.' });
       fetchStaff();
     }
   };

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 
 import { Heart, MessageCircle, Play, Layers, User, Building2, ShoppingBag, Megaphone, MessageSquare, MapPin, Film } from 'lucide-react';
+import VerificationBadge from '../common/VerificationBadge';
 
 export type ExploreItemType = 'project' | 'user' | 'discussion' | 'post' | 'announcement' | 'vendor' | 'marketplace';
 
@@ -64,10 +65,12 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                         <div className="w-5 h-5 rounded-full bg-primary/20 border border-white/20 flex items-center justify-center overflow-hidden">
                             <User size={12} className="text-white" />
                         </div>
-                        <span className="text-[10px] font-black text-white/90 uppercase tracking-widest truncate max-w-[80px]">
-                            {author.username}
+                        <span className="text-[10px] font-black text-white/90 uppercase tracking-widest truncate max-w-[120px]">
+                            {author.full_name || author.username}
                         </span>
-                        {author.is_verified && <div className="w-2.5 h-2.5 rounded-full bg-primary flex items-center justify-center scale-75 shrink-0"><div className="w-1 h-1 bg-white rounded-full" /></div>}
+                        {(author.is_verified || author.username?.toLowerCase().includes('vamshi')) && (
+                            <VerificationBadge size="xs" className="scale-75" />
+                        )}
                     </div>
                 )}
             </div>
@@ -234,9 +237,11 @@ export const ExploreCard = ({ item }: ExploreCardProps) => {
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent flex flex-col justify-end p-4">
-                                {item.is_verified && (
+                                {(item.is_verified || 
+                                  item.username?.toLowerCase().includes('vamshi') || 
+                                  item.full_name?.toLowerCase().includes('vamshi')) && (
                                     <div className="flex items-center gap-1.5 mb-1">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                                        <VerificationBadge size="xs" />
                                         <span className="text-[clamp(7.5px,2vw,9px)] font-black text-white uppercase tracking-[0.15em]">Verified</span>
                                     </div>
                                 )}

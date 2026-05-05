@@ -21,9 +21,11 @@ export interface Post {
   };
   page_id?: string;
   company_pages?: {
+    id: string;
     name: string;
     logo_url: string | null;
     slug: string;
+    is_verified: boolean | null;
   };
 }
 

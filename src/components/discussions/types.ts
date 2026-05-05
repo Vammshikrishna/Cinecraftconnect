@@ -12,6 +12,7 @@ export interface Message {
     username: string | null;
     full_name: string | null;
     avatar_url: string | null;
+    is_verified?: boolean | null;
   };
   deleted_for_users?: string[];
 }

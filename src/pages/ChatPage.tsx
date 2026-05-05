@@ -9,6 +9,7 @@ interface Profile {
   id: string;
   full_name: string;
   avatar_url: string;
+  is_verified?: boolean;
 }
 
 const ChatPage = () => {
@@ -30,7 +31,7 @@ const ChatPage = () => {
     const fetchPartnerProfile = async (partnerId: string) => {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url')
+        .select('id, full_name, avatar_url, is_verified')
         .eq('id', partnerId)
         .single();
 
@@ -72,6 +73,7 @@ const ChatPage = () => {
         partnerId={partner.id}
         partnerName={partner.full_name}
         partnerAvatarUrl={partner.avatar_url}
+        partnerIsVerified={partner.is_verified}
         onBackClick={() => navigate(-1)}
       />
     </div>

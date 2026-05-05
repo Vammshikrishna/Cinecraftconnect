@@ -354,7 +354,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     craft: author?.craft || undefined,
                     initials: getInitials(authorName),
                     avatar: author?.avatar_url || undefined,
-                    isVerified: author?.is_verified
+                    isVerified: !!author?.is_verified
                   }}
                   timeAgo={(() => {
                     try {
@@ -379,6 +379,13 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                   currentUserLiked={likedPostIds.has(post.id)}
                   onRate={onRate}
                   onLikeToggle={handleLikeToggle}
+                  pageInfo={post.company_pages ? {
+                    id: post.company_pages.id,
+                    name: post.company_pages.name,
+                    logo_url: post.company_pages.logo_url,
+                    slug: post.company_pages.slug,
+                    is_verified: !!post.company_pages.is_verified
+                  } : undefined}
                   mediaUrl={post.media_url}
                   mediaItems={post.media_items}
                   authorId={post.author_id}

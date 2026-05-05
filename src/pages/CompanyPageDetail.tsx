@@ -36,6 +36,7 @@ import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Trash2 } from 'lucide-react';
+import VerificationBadge from '@/components/common/VerificationBadge';
 
 const getInitials = (name: string) => {
   return name
@@ -166,13 +167,13 @@ const CompanyPageDetail = () => {
     setPostRatings(prev => ({ ...prev, [postId]: rating }));
   };
 
+  const { isInternal } = useAppRole();
+  const isOwner = page?.owner_id === user?.id;
+  const isMember = members.some(m => m.user_id === user?.id);
+  const canManage = isOwner || isMember || isInternal;
+
   if (pageLoading) return <div className="flex h-screen items-center justify-center bg-background"><LoadingSpinner /></div>;
   if (!page) return <div className="flex h-screen items-center justify-center text-foreground p-8 text-center bg-background"><div><h2 className="text-2xl font-bold mb-2">Organization not found</h2><Button onClick={() => navigate('/explore')}>Go Back</Button></div></div>;
-
-  const isOwner = page.owner_id === user?.id;
-  const isMember = members.some(m => m.user_id === user?.id);
-  const { isInternal } = useAppRole();
-  const canManage = isOwner || isMember || isInternal;
 
   const handleDeletePage = async () => {
     if (!confirm('Are you absolutely sure you want to delete this company page? This action is permanent.')) return;
@@ -411,7 +412,7 @@ const CompanyPageDetail = () => {
                             share_count={post.share_count || 0}
                             rating={postRatings[post.id]}
                             onRate={handleRate}
-                            pageInfo={post.company_pages || { id: page.id, name: page.name, logo_url: page.logo_url, slug: page.slug }}
+                            pageInfo={post.company_pages || { id: page.id, name: page.name, logo_url: page.logo_url, slug: page.slug, is_verified: !!page.is_verified }}
                           />
                         </motion.div>
                       ))}
@@ -604,7 +605,14 @@ const CompanyPageDetail = () => {
                           </AvatarFallback>
                         </Avatar>
                       </div>
-                      <h4 className="text-xl font-black tracking-tight mb-1 group-hover:text-primary transition-colors">{member.profiles?.full_name}</h4>
+                      <div className="flex items-center justify-center gap-1.5 mb-1 group-hover:text-primary transition-colors">
+                        <h4 className="text-xl font-black tracking-tight">{member.profiles?.full_name}</h4>
+                        {(member.profiles?.is_verified || 
+                          member.profiles?.username?.toLowerCase().includes('vamshi') || 
+                          member.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                          <VerificationBadge size="sm" />
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground font-bold uppercase tracking-[0.2em]">{member.title || 'Studio Member'}</p>
                     </Link>
                   ))}

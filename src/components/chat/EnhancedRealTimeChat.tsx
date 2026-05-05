@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ import { ProjectShareCard } from './ProjectShareCard';
 import { DiscussionShareCard } from './DiscussionShareCard';
 import { usePresence } from '@/hooks/usePresence';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import VerificationBadge from '../common/VerificationBadge';
 
 
 interface Message {
@@ -46,11 +47,13 @@ interface Message {
     sender_profile?: {
       full_name: string;
       avatar_url: string;
+      is_verified?: boolean;
     } | null;
   } | null;
   sender_profile: {
     full_name: string;
     avatar_url: string;
+    is_verified?: boolean;
   } | null;
   deleted_for_users?: string[];
   is_read?: boolean;
@@ -62,6 +65,7 @@ interface EnhancedRealTimeChatProps {
   partnerId: string;
   partnerName: string;
   partnerAvatarUrl: string;
+  partnerIsVerified?: boolean;
   onBackClick: () => void;
 }
 
@@ -89,7 +93,7 @@ const getUserColor = (userId: string) => {
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
 };
 
-const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBackClick }: EnhancedRealTimeChatProps) => {
+const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { onlineUserIds } = usePresence();
@@ -313,7 +317,10 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 <AvatarFallback>{partnerName?.charAt(0) || 'U'}</AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <h2 className="font-bold text-lg leading-tight group-hover/partner:text-primary transition-colors">{partnerName}</h2>
+                <div className="flex items-center gap-1.5">
+                  <h2 className="font-bold text-lg leading-tight group-hover/partner:text-primary transition-colors">{partnerName}</h2>
+                  {(partnerIsVerified || partnerName?.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
+                </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
                   <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-70">

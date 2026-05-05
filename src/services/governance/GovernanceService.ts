@@ -58,6 +58,18 @@ export class GovernanceService {
     let executionError = null;
     try {
       if (params.action === 'user.manage_roles') {
+        // First, ensure the profile has the correct metadata if provided
+        if (params.payload.username || params.payload.fullName) {
+          const profileUpdates: any = {};
+          if (params.payload.username) profileUpdates.username = params.payload.username;
+          if (params.payload.fullName) profileUpdates.full_name = params.payload.fullName;
+          
+          await supabase
+            .from('profiles')
+            .update(profileUpdates)
+            .eq('id', params.targetId);
+        }
+
         let retries = 3;
         let success = false;
         while (retries > 0 && !success) {
