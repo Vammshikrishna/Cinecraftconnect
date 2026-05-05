@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, FileText, Download, Trash2, Shield, Loader2, Calendar, Eye, FileCheck, Film } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface LegalDoc {
     id: string;
@@ -27,6 +28,7 @@ interface LegalDocsProps {
 }
 
 const LegalDocs = ({ project_id }: LegalDocsProps) => {
+    const { isInternal } = useAppRole();
     const { data: rawDocs, error } = useRealtimeData<LegalDoc>('legal_docs', 'project_id', project_id);
     const [docs, setDocs] = useState<LegalDoc[]>([]);
     const [previewId, setPreviewId] = useState<string | null>(null);
@@ -282,54 +284,60 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                     <p className="text-2xl font-bold text-foreground text-gradient">Archived Documents</p>
                 </div>
                 
-                <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-                    <DialogTrigger asChild>
-                        <Button className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-full px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
-                            <Plus className="h-5 w-5 mr-2" /> 
-                            New Document
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
-                        <DialogHeader className="p-6 border-b border-border">
-                            <DialogTitle className="text-xl font-bold text-foreground">Upload Legal Asset</DialogTitle>
-                            <DialogDescription className="text-muted-foreground mt-1">Archive contracts, NDAs, and permits for this production.</DialogDescription>
-                        </DialogHeader>
-                        <div className="p-6 space-y-6">
-                            <div className="space-y-2">
-                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document Title</Label>
-                                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Cast Contract - Lead" className="bg-background border-border rounded-xl h-12" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Type</Label>
-                                <Select value={documentType} onValueChange={setDocumentType}>
-                                    <SelectTrigger className="bg-background border-border rounded-xl h-12">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl backdrop-blur-3xl">
-                                        <SelectItem value="contract" className="cursor-pointer text-foreground py-2.5">Contract</SelectItem>
-                                        <SelectItem value="release" className="cursor-pointer text-foreground py-2.5">Release Form</SelectItem>
-                                        <SelectItem value="nda" className="cursor-pointer text-foreground py-2.5">NDA</SelectItem>
-                                        <SelectItem value="permit" className="cursor-pointer text-foreground py-2.5">Permit</SelectItem>
-                                        <SelectItem value="media" className="cursor-pointer text-foreground py-2.5">Media / Video</SelectItem>
-                                        <SelectItem value="insurance" className="cursor-pointer text-foreground py-2.5">Insurance</SelectItem>
-                                        <SelectItem value="other" className="cursor-pointer text-foreground py-2.5">Other Document</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">File Asset</Label>
-                                <div className="relative group">
-                                    <Input type="file" onChange={handleFileSelect} className="bg-background border-border rounded-xl h-12 py-3 file:bg-transparent file:text-primary file:font-bold file:border-0" />
-                                </div>
-                                {selectedFile && <p className="text-[10px] text-primary/80 font-bold ml-1">{selectedFile.name}</p>}
-                            </div>
-                            <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
-                                {uploading ? <Loader2 className="animate-spin" /> : 'Confirm Upload'}
+                {!isInternal ? (
+                    <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+                        <DialogTrigger asChild>
+                            <Button className="bg-primary hover:bg-primary/80 text-primary-foreground rounded-full px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                <Plus className="h-5 w-5 mr-2" /> 
+                                New Document
                             </Button>
-                        </div>
-                    </DialogContent>
-                </Dialog>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                            <DialogHeader className="p-6 border-b border-border">
+                                <DialogTitle className="text-xl font-bold text-foreground">Upload Legal Asset</DialogTitle>
+                                <DialogDescription className="text-muted-foreground mt-1">Archive contracts, NDAs, and permits for this production.</DialogDescription>
+                            </DialogHeader>
+                            <div className="p-6 space-y-6">
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document Title</Label>
+                                    <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Cast Contract - Lead" className="bg-background border-border rounded-xl h-12" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Type</Label>
+                                    <Select value={documentType} onValueChange={setDocumentType}>
+                                        <SelectTrigger className="bg-background border-border rounded-xl h-12">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-popover border border-border rounded-xl shadow-2xl backdrop-blur-3xl">
+                                            <SelectItem value="contract" className="cursor-pointer text-foreground py-2.5">Contract</SelectItem>
+                                            <SelectItem value="release" className="cursor-pointer text-foreground py-2.5">Release Form</SelectItem>
+                                            <SelectItem value="nda" className="cursor-pointer text-foreground py-2.5">NDA</SelectItem>
+                                            <SelectItem value="permit" className="cursor-pointer text-foreground py-2.5">Permit</SelectItem>
+                                            <SelectItem value="media" className="cursor-pointer text-foreground py-2.5">Media / Video</SelectItem>
+                                            <SelectItem value="insurance" className="cursor-pointer text-foreground py-2.5">Insurance</SelectItem>
+                                            <SelectItem value="other" className="cursor-pointer text-foreground py-2.5">Other Document</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+    
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">File Asset</Label>
+                                    <div className="relative group">
+                                        <Input type="file" onChange={handleFileSelect} className="bg-background border-border rounded-xl h-12 py-3 file:bg-transparent file:text-primary file:font-bold file:border-0" />
+                                    </div>
+                                    {selectedFile && <p className="text-[10px] text-primary/80 font-bold ml-1">{selectedFile.name}</p>}
+                                </div>
+                                <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                    {uploading ? <Loader2 className="animate-spin" /> : 'Confirm Upload'}
+                                </Button>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                ) : (
+                    <div className="bg-muted/30 border border-border/50 px-6 py-2.5 rounded-full text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
+                        <Shield className="w-4 h-4" /> Observation Mode
+                    </div>
+                )}
             </div>
 
             {docs && docs.length > 0 ? (
@@ -351,14 +359,16 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                                         >
                                             <Eye className="h-4 w-4" />
                                         </Button>
-                                        <Button 
-                                            size="sm" 
-                                            variant="ghost" 
-                                            onClick={() => handleDelete(doc)}
-                                            className="h-9 w-9 rounded-full hover:text-red-400"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
+                                        {!isInternal && (
+                                            <Button 
+                                                size="sm" 
+                                                variant="ghost" 
+                                                onClick={() => handleDelete(doc)}
+                                                className="h-9 w-9 rounded-full hover:text-red-400"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        )}
                                     </div>
                                 </div>
 

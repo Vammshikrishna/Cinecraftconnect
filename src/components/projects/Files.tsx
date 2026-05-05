@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert, Video } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface ProjectFile {
     id: string;
@@ -21,6 +22,7 @@ interface FilesProps {
 }
 
 const Files = ({ project_id }: FilesProps) => {
+    const { isInternal } = useAppRole();
     const { data: rawFiles, error } = useRealtimeData<ProjectFile>('files', 'project_id', project_id);
     const [files, setFiles] = useState<ProjectFile[]>([]);
     const [uploading, setUploading] = useState(false);
@@ -245,22 +247,28 @@ const Files = ({ project_id }: FilesProps) => {
                     <p className="text-2xl font-bold text-foreground text-gradient">Project Files</p>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                    <div className="relative group overflow-hidden bg-card border border-border rounded-2xl p-1 flex-grow">
-                        <Input 
-                            type="file" 
-                            onChange={handleFileChange} 
-                            className="bg-transparent border-0 focus-visible:ring-0 cursor-pointer h-10 py-1" 
-                        />
+                {!isInternal ? (
+                    <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                        <div className="relative group overflow-hidden bg-card border border-border rounded-2xl p-1 flex-grow">
+                            <Input 
+                                type="file" 
+                                onChange={handleFileChange} 
+                                className="bg-transparent border-0 focus-visible:ring-0 cursor-pointer h-10 py-1" 
+                            />
+                        </div>
+                        <Button 
+                            onClick={handleUpload} 
+                            disabled={uploading || !selectedFile}
+                            className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-8 h-12 shadow-lg shadow-primary/20 transition-all font-bold"
+                        >
+                            {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload File'}
+                        </Button>
                     </div>
-                    <Button 
-                        onClick={handleUpload} 
-                        disabled={uploading || !selectedFile}
-                        className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-8 h-12 shadow-lg shadow-primary/20 transition-all font-bold"
-                    >
-                        {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Upload File'}
-                    </Button>
-                </div>
+                ) : (
+                    <div className="bg-muted/30 border border-border/50 px-6 py-2 rounded-2xl text-xs text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
+                        <FileText className="w-4 h-4" /> Observation Mode
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-24">
@@ -319,14 +327,16 @@ const Files = ({ project_id }: FilesProps) => {
                             </h3>
                             <div className="flex items-center justify-between mt-1">
                                 <span className="text-[10px] sm:text-xs text-muted-foreground font-medium">{formatBytes(file.size)}</span>
-                                <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    onClick={() => handleDelete(file.id, file.url)}
-                                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0 h-8 w-8 rounded-full"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </Button>
+                                {!isInternal && (
+                                    <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        onClick={() => handleDelete(file.id, file.url)}
+                                        className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all p-0 h-8 w-8 rounded-full"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     </div>

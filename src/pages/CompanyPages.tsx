@@ -10,12 +10,14 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
 import StudioPageIcon from '@/components/icons/StudioPageIcon';
+import { useAppRole } from '@/hooks/useAppRole';
 
 const CompanyPages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { data: pages = [], isLoading } = useCompanyPages(searchQuery);
   const { isFan } = useAccountType();
+  const { isInternal } = useAppRole();
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/30">
@@ -31,7 +33,7 @@ const CompanyPages = () => {
           Icon={Building2}
           actionsAtTop={true}
           actions={
-            !isFan && (
+            (!isFan && !isInternal) && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
                   <Plus size={18} strokeWidth={3} />
                   <span className="hidden xs:inline">Create a Page</span>
@@ -108,7 +110,7 @@ const CompanyPages = () => {
                   ? 'Try a different search term or explore all pages.'
                   : 'Establish your organization\'s presence in our production ecosystem!'}
               </p>
-              {!searchQuery && !isFan && (
+              {!searchQuery && (!isFan && !isInternal) && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-8">
                   <Plus size={20} strokeWidth={3} />
                   Create a Page

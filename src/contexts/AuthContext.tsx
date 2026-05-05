@@ -5,6 +5,7 @@ import { Tables } from '@/integrations/supabase/database.types';
 
 type Profile = Tables<'profiles'> & {
   onboarding_completed?: boolean;
+  is_internal?: boolean;
   role?: 'user' | 'moderator' | 'admin' | 'super_admin';
 };
 type AuthContextType = {
@@ -89,9 +90,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (error) {
           console.error('Error fetching profile:', error);
         } else {
+          const rawRole = (data as any).user_roles;
+          const role = Array.isArray(rawRole) 
+            ? (rawRole[0]?.role || 'user') 
+            : (rawRole?.role || 'user');
+
           const profileWithRole = {
             ...data,
-            role: (data as any).user_roles?.role || 'user'
+            role
           };
           setProfile(profileWithRole as any);
         }

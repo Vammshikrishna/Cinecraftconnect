@@ -21,12 +21,12 @@ interface ListingCardProps {
 
 export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     const { user } = useAuth();
-    const { isAdmin } = useAppRole();
+    const { isInternal } = useAppRole();
     const { toast } = useToast();
     const queryClient = useQueryClient();
     
     const isOwner = user?.id === listing.user_id;
-    const canManage = isOwner || isAdmin;
+    const canManage = isOwner || isInternal;
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.preventDefault();

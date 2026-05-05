@@ -33,6 +33,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface ProjectSpaceProps {
   projectId: string;
@@ -49,6 +50,7 @@ export const ProjectSpace = ({
 }: ProjectSpaceProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { isInternal, loading: roleLoading } = useAppRole();
   const { toast } = useToast();
   const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member' | 'guest'>('guest');
   const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(projectId);
@@ -204,10 +206,10 @@ export const ProjectSpace = ({
   }, [projectId, resolvedSpaceId, user]);
 
   useEffect(() => {
-    if (!checkingAccess && userRole === 'guest' && requestStatus !== 'approved') {
+    if (!checkingAccess && !roleLoading && userRole === 'guest' && requestStatus !== 'approved' && !isInternal) {
       navigate(`/projects/${projectId}`, { replace: true });
     }
-  }, [checkingAccess, userRole, requestStatus, projectId, navigate]);
+  }, [checkingAccess, roleLoading, userRole, requestStatus, projectId, navigate, isInternal]);
 
   const [requestNote, setRequestNote] = useState('');
 
@@ -264,7 +266,7 @@ export const ProjectSpace = ({
     { id: 'team' as ActiveSection, label: 'Team', icon: Users },
   ];
 
-  if (userRole === 'creator' || userRole === 'admin') {
+  if (userRole === 'creator' || userRole === 'admin' || isInternal) {
     teamNavItems.push({ id: 'applicants' as ActiveSection, label: 'Applicants', icon: UserPlus });
     teamNavItems.push({ id: 'settings' as ActiveSection, label: 'Settings', icon: Settings });
   }
@@ -276,7 +278,7 @@ export const ProjectSpace = ({
   ];
 
   const renderContent = () => {
-    if (userRole === 'guest') {
+    if (userRole === 'guest' && !isInternal) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
           <div className="bg-primary/10 p-6 rounded-full">
@@ -334,7 +336,7 @@ export const ProjectSpace = ({
     }
   };
 
-  if (checkingAccess) {
+  if (checkingAccess || roleLoading) {
     return (
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -342,7 +344,7 @@ export const ProjectSpace = ({
     );
   }
 
-  if (userRole === 'guest') {
+  if (userRole === 'guest' && !isInternal) {
     return (
       <div className="h-screen w-screen bg-background flex flex-col p-4">
         {/* Guest View Dialog */}

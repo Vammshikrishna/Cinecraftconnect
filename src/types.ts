@@ -51,6 +51,7 @@ export interface Profile {
   full_name: string | null;
   location: string | null;
   onboarding_completed: boolean | null;
+  is_internal: boolean | null;
   updated_at: string | null;
   username: string | null;
   website: string | null;

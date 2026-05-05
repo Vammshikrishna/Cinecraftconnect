@@ -171,8 +171,8 @@ const CompanyPageDetail = () => {
 
   const isOwner = page.owner_id === user?.id;
   const isMember = members.some(m => m.user_id === user?.id);
-  const { isAdmin } = useAppRole();
-  const canManage = isOwner || isMember || isAdmin;
+  const { isInternal } = useAppRole();
+  const canManage = isOwner || isMember || isInternal;
 
   const handleDeletePage = async () => {
     if (!confirm('Are you absolutely sure you want to delete this company page? This action is permanent.')) return;
@@ -219,7 +219,7 @@ const CompanyPageDetail = () => {
             >
               <Share2 className="h-4 w-4" />
             </Button>
-            {isOwner && (
+            {canManage && (
               <div className="flex gap-2">
                 <Button 
                   variant="ghost" 
@@ -237,7 +237,7 @@ const CompanyPageDetail = () => {
                 >
                   <Settings className="h-4 w-4" />
                 </Button>
-                {isAdmin && (
+                {isInternal && (
                   <Button 
                     variant="ghost" 
                     size="icon" 
@@ -278,6 +278,11 @@ const CompanyPageDetail = () => {
             <div className="flex items-center gap-2 mb-1.5">
               <h1 className="text-2xl md:text-3xl font-black tracking-tight uppercase truncate">{page.name}</h1>
               {page.is_verified && <CheckCircle2 className="h-6 w-6 md:h-8 md:w-8 text-primary fill-primary/10" />}
+              {isInternal && (
+                <Badge variant="outline" className="ml-2 border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                  Staff Observer
+                </Badge>
+              )}
             </div>
             {page.tagline && (
               <p className="text-muted-foreground text-sm md:text-base font-medium tracking-wide mb-3 line-clamp-2 md:line-clamp-none -mt-1">
@@ -286,7 +291,7 @@ const CompanyPageDetail = () => {
             )}
 
             <div className="flex flex-wrap items-center gap-4 md:gap-6">
-              {!isOwner && (
+              {!isOwner && !isInternal && (
                 <Button
                   onClick={() => toggleFollow.mutate({ pageId: page.id, isFollowing: !!isFollowing })}
                   disabled={toggleFollow.isPending}
@@ -512,7 +517,7 @@ const CompanyPageDetail = () => {
             <TabsContent value="jobs">
                <div className="flex justify-between items-center mb-10">
                   <h2 className="text-3xl md:text-4xl font-black uppercase tracking-tighter">Open Positions</h2>
-                  {canManage && (
+                  {canManage && !isInternal && (
                     <JobCreationModal 
                       defaultPageId={page?.id}
                       onJobCreated={() => queryClient.invalidateQueries({ queryKey: ['page-jobs', page?.id] })} 

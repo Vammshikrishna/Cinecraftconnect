@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { cacheManager } from '@/utils/caching';
 import { performanceMonitor } from '@/utils/monitoring';
 import { useMyPages } from '@/hooks/useCompanyPages';
+import { useAppRole } from '@/hooks/useAppRole';
 import { 
     Select, 
     SelectContent, 
@@ -44,6 +45,7 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
     const { user } = useAuth();
     const { toast } = useToast();
     const { data: myPages } = useMyPages();
+    const { isInternal } = useAppRole();
     const [showCreatePost, setShowCreatePost] = useState(defaultExpanded);
     const [newPostContent, setNewPostContent] = useState("");
     const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
@@ -57,6 +59,8 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
             setShowCreatePost(true);
         }
     }, [defaultExpanded]);
+
+    if (isInternal) return null;
 
     const handleMediaUpload = (items: MediaItem[]) => {
         setMediaItems(items);

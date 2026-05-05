@@ -71,7 +71,7 @@ const PublicProfile = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isFan } = useAccountType();
-  const { isAdmin } = useAppRole();
+  const { isAdmin, isInternal } = useAppRole();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
@@ -446,28 +446,36 @@ const PublicProfile = () => {
 
               {/* Actions - Beside stats */}
               <div className="flex items-center gap-3">
-                {profile.account_type === 'fan' ? (
-                  <div className="flex items-center gap-2">
-                    {connectionStatus === 'connected' ? (
-                      <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Following</Button>
+                {!isInternal ? (
+                  <>
+                    {profile.account_type === 'fan' ? (
+                      <div className="flex items-center gap-2">
+                        {connectionStatus === 'connected' ? (
+                          <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Following</Button>
+                        ) : (
+                          <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Follow</Button>
+                        )}
+                      </div>
                     ) : (
-                      <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Follow</Button>
+                      <div className="flex items-center gap-2">
+                        {connectionStatus === 'connected' ? (
+                          <Button disabled variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Connected</Button>
+                        ) : connectionStatus === 'pending_sent' ? (
+                          <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[120px] border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 rounded-lg text-[10px] font-bold uppercase tracking-wider"><Clock className="mr-2 h-3 w-3" />Request Sent</Button>
+                        ) : (
+                          <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Connect</Button>
+                        )}
+                        {connectionStatus === 'connected' && (
+                          <Button asChild className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                            <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-3 w-3" />Message</Link>
+                          </Button>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    {connectionStatus === 'connected' ? (
-                      <Button disabled variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Connected</Button>
-                    ) : connectionStatus === 'pending_sent' ? (
-                      <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[120px] border-primary/20 bg-background/50 backdrop-blur-sm text-yellow-500 hover:text-yellow-600 hover:bg-yellow-500/10 rounded-lg text-[10px] font-bold uppercase tracking-wider"><Clock className="mr-2 h-3 w-3" />Request Sent</Button>
-                    ) : (
-                      <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Connect</Button>
-                    )}
-                    {connectionStatus === 'connected' && (
-                      <Button asChild className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                        <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-3 w-3" />Message</Link>
-                      </Button>
-                    )}
+                  <div className="bg-muted/30 border border-border/50 px-4 py-1.5 rounded-lg text-[10px] text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-2">
+                    <Zap className="w-3 h-3" /> Observation Mode
                   </div>
                 )}
                 

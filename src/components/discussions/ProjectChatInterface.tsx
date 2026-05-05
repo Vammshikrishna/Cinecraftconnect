@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,6 +18,7 @@ import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Message {
   id: string;
@@ -75,6 +76,7 @@ const formatTimestamp = (timestamp: string) => {
 
 export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) => {
   const { user } = useAuth();
+  const { isInternal } = useAppRole();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
@@ -155,7 +157,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     if (!spaceId || !user) return;
 
     const ensureMembership = async () => {
-      if (!user || !spaceId) return;
+      if (!user || !spaceId || isInternal) return;
       
       // Check if already a member
       const { data: existing, error: fetchError } = await supabase
@@ -439,7 +441,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             <Button size="sm" variant="outline" className="text-green-500 border-primary/20 bg-primary/10 pointer-events-none">
               <Video className="h-4 w-4 mr-2" />In Call
             </Button>
-          ) : (
+          ) : !isInternal ? (
             <>
               <Button size="sm" variant="outline" onClick={handleStartCall} disabled={loading}>
                 <Phone className="h-4 w-4 mr-2" />Call
@@ -448,9 +450,11 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                 <Video className="h-4 w-4 mr-2" />Video
               </Button>
             </>
+          ) : (
+            <div className="flex items-center gap-1.5 text-muted-foreground/60 text-[10px] uppercase font-bold tracking-widest bg-muted/30 px-3 py-1 rounded-full border border-border/50">
+              <ShieldBan className="h-3 w-3" /> Staff Observation
+            </div>
           )}
-
-          {/* Chat history deletion moved to Project Settings */}
         </div>
       </div>
 
@@ -630,11 +634,17 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
           </div>
         )}
         <div className="pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-4">
-          <MessageComposer
-            onSend={handleSendMessage}
-            onAttach={handleAttach}
-            disabled={sending}
-          />
+          {isInternal ? (
+            <div className="p-4 bg-muted/30 text-center text-xs text-muted-foreground italic border-t border-border/50">
+              Internal staff cannot send messages in project spaces.
+            </div>
+          ) : (
+            <MessageComposer
+              onSend={handleSendMessage}
+              onAttach={handleAttach}
+              disabled={sending}
+            />
+          )}
         </div>
       </div>
     </div>

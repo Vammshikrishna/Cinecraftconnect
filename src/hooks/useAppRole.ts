@@ -10,6 +10,7 @@ interface UseAppRoleReturn {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   isPrivileged: boolean; // moderator | admin | super_admin
+  isInternal: boolean;   // Alias for isPrivileged
   loading: boolean;
 }
 
@@ -62,6 +63,7 @@ export const useAppRole = (): UseAppRoleReturn => {
     isAdmin: role === 'admin' || role === 'super_admin',
     isSuperAdmin: role === 'super_admin',
     isPrivileged: role !== 'user',
+    isInternal: role !== 'user',
     loading,
   };
 };

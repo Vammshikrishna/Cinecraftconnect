@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Globe, Edit } from 'lucide-react';
 
 import { Project } from '@/hooks/useProjects';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -24,6 +25,7 @@ interface ProjectCreationModalProps {
 
 export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, projectToEdit }: ProjectCreationModalProps) => {
   const { user } = useAuth();
+  const { isInternal } = useAppRole();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -59,13 +61,16 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
         end_date: projectToEdit.end_date || '',
         required_roles: projectToEdit.required_roles || [],
         status: projectToEdit.status || 'planning',
-        is_public: true, // Assuming public by default or needs DB field
+        is_public: true,
       });
       setIsOpen(true);
     }
   }, [projectToEdit]);
+
   const [projectImage, setProjectImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+
+  if (isInternal) return null;
 
   const availableGenres = [
     'Action', 'Drama', 'Comedy', 'Thriller', 'Horror', 'Sci-Fi', 'Romance',

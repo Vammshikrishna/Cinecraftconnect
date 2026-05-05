@@ -2,6 +2,7 @@ import { Star, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface FeedRatingCardProps {
     rating: {
@@ -37,6 +38,7 @@ const languageNames: Record<string, string> = {
 const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 'movie', onDismiss }: FeedRatingCardProps) => {
     const [hoverRating, setHoverRating] = useState<number | null>(null);
     const navigate = useNavigate();
+    const { isInternal } = useAppRole();
 
     const displayRating = hoverRating ?? rating.user_rating ?? 0;
     const language = rating.original_language ? (languageNames[rating.original_language] || rating.original_language.toUpperCase()) : null;
@@ -115,11 +117,14 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                 key={star}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    onRate?.(star);
+                                    if (!isInternal) onRate?.(star);
                                 }}
-                                onMouseEnter={() => setHoverRating(star)}
-                                className="focus:outline-none transition-transform hover:scale-125 p-0.5"
-                                disabled={!onRate}
+                                onMouseEnter={() => !isInternal && setHoverRating(star)}
+                                className={cn(
+                                    "focus:outline-none transition-transform p-0.5",
+                                    !isInternal ? "hover:scale-125 cursor-pointer" : "cursor-not-allowed opacity-50"
+                                )}
+                                disabled={!onRate || isInternal}
                             >
                                 <Star
                                     className={cn(
@@ -222,11 +227,14 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                                     key={star}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onRate?.(star);
+                                        if (!isInternal) onRate?.(star);
                                     }}
-                                    onMouseEnter={() => setHoverRating(star)}
-                                    className="focus:outline-none transition-transform hover:scale-110"
-                                    disabled={!onRate}
+                                    onMouseEnter={() => !isInternal && setHoverRating(star)}
+                                    className={cn(
+                                        "focus:outline-none transition-transform",
+                                        !isInternal ? "hover:scale-110 cursor-pointer" : "cursor-not-allowed opacity-50"
+                                    )}
+                                    disabled={!onRate || isInternal}
                                 >
                                     <Star
                                         className={cn(

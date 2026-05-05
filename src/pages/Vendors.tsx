@@ -20,12 +20,14 @@ import { PageHeader } from '@/components/common/PageHeader';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useNavigate } from 'react-router-dom';
+import { useAppRole } from '@/hooks/useAppRole';
 
 
 const Vendors = () => {
     const { toast } = useToast();
     const navigate = useNavigate();
     const { isFan } = useAccountType();
+    const { isInternal } = useAppRole();
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -98,10 +100,12 @@ const Vendors = () => {
                   Icon={Truck}
                   actionsAtTop={true}
                   actions={
-                    <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
-                        <Plus size={18} strokeWidth={3} />
-                        <span>Register Business</span>
-                    </Button>
+                    !isInternal && (
+                      <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+                          <Plus size={18} strokeWidth={3} />
+                          <span>Register Business</span>
+                      </Button>
+                    )
                   }
                 />
 
@@ -163,9 +167,11 @@ const Vendors = () => {
                             <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
                                 Be the first to establish a presence in this directory!
                             </p>
-                            <Button onClick={() => setShowRegistrationModal(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-8 font-bold">
-                                Register Your Business
-                            </Button>
+                            {!searchQuery && !isInternal && (
+                                <Button onClick={() => setShowRegistrationModal(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-8 font-bold">
+                                    Register Your Business
+                                </Button>
+                            )}
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">

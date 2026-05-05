@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Shield, ShieldCheck, Crown, 
   User, UserPlus, UserMinus,
@@ -57,10 +58,22 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
     try {
       if (provisionMethod === 'existing') {
         if (!provisionId.trim()) {
-          throw new Error('User ID is required');
+          throw new Error('Username is required');
         }
-        // Promote existing user
-        onPromote(provisionId.trim(), provisionRole);
+        
+        // Treat provisionId as username and lookup UUID
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', provisionId.trim())
+          .maybeSingle();
+          
+        if (profileError || !profileData) {
+          throw new Error(`Could not find a user with username or email: ${provisionId.trim()}`);
+        }
+        
+        // Promote existing user using the resolved UUID
+        onPromote(profileData.id, provisionRole);
       } else {
         // Create new user
         if (!email || !password || !username || !fullName) {
@@ -296,9 +309,9 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
             
             <TabsContent value="existing" className="mt-4">
               <div className="space-y-2 py-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">User ID (UUID)</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Username</label>
                 <Input 
-                  placeholder="e.g., a1b2c3d4-..." 
+                  placeholder="e.g., cinecraft_admin"  
                   value={provisionId}
                   onChange={(e) => setProvisionId(e.target.value)}
                   className="rounded-2xl bg-muted/50 border-border/50"

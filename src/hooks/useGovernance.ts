@@ -66,7 +66,6 @@ export const useGovernance = () => {
     const criticalActions: GovernanceAction[] = [
       'user.ban', 
       'user.delete', 
-      'user.manage_roles', 
       'system.config', 
       'system.maintenance', 
       'finance.manage'

@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -57,7 +57,9 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
         .select('user_id, role, profiles (*)')
         .eq('project_space_id', projectId);
       if (membersError) throw membersError;
-      setMembers(membersData as any);
+      
+      const filteredMembers = (membersData as any[])?.filter(m => !m.profiles?.is_internal) || [];
+      setMembers(filteredMembers);
 
     } catch (error: any) {
       toast({ title: 'Error loading team data', description: error.message, variant: 'destructive' });

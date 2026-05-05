@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, FileText, Download, Trash2, Upload, MapPin, User, Phone, Loader2, Info, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface CallSheet {
     id: string;
@@ -27,6 +28,7 @@ interface CallSheetProps {
 }
 
 const CallSheet = ({ project_id }: CallSheetProps) => {
+    const { isInternal } = useAppRole();
     const { data: rawCallSheets, error } = useRealtimeData<CallSheet>('call_sheets', 'project_id', project_id);
     const [callSheets, setCallSheets] = useState<CallSheet[]>([]);
     const { toast } = useToast();
@@ -239,95 +241,101 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                     <p className="text-2xl font-bold text-foreground text-gradient">Call Sheets</p>
                 </div>
                 
-                <div className="flex gap-3 w-full sm:w-auto">
-                    <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-                        <DialogTrigger asChild>
-                            <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
-                                <Plus className="h-5 w-5 mr-2" /> 
-                                Create New
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
-                            <DialogHeader className="p-6 border-b border-border">
-                                <DialogTitle className="text-xl font-bold text-foreground">Sheet Details</DialogTitle>
-                                <DialogDescription className="text-muted-foreground mt-1">Populate production requirements for the upcoming day.</DialogDescription>
-                            </DialogHeader>
-                            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {!isInternal ? (
+                    <div className="flex gap-3 w-full sm:w-auto">
+                        <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+                            <DialogTrigger asChild>
+                                <Button className="flex-1 sm:flex-none bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                    <Plus className="h-5 w-5 mr-2" /> 
+                                    Create New
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                                <DialogHeader className="p-6 border-b border-border">
+                                    <DialogTitle className="text-xl font-bold text-foreground">Sheet Details</DialogTitle>
+                                    <DialogDescription className="text-muted-foreground mt-1">Populate production requirements for the upcoming day.</DialogDescription>
+                                </DialogHeader>
+                                <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Production Date</Label>
+                                            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">General Call Time</Label>
+                                            <Input type="time" value={callTime} onChange={(e) => setCallTime(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                    </div>
                                     <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Production Date</Label>
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Location Details</Label>
+                                        <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio 42, Los Angeles" className="bg-background border-border rounded-xl h-12" />
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director</Label>
+                                            <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director Mobile</Label>
+                                            <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer</Label>
+                                            <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer Mobile</Label>
+                                            <Input value={producerPhone} onChange={(e) => setProducerPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Safety & Talent Notes</Label>
+                                        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions for cast and crew..." className="bg-background border-border rounded-xl min-h-[120px] resize-none" />
+                                    </div>
+                                    <Button onClick={handleCreate} disabled={creating} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                        {creating ? <Loader2 className="animate-spin" /> : 'Create Call Sheet'}
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+    
+                        <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetForm(); }}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent/50 text-foreground rounded-2xl px-6 h-12 font-bold backdrop-blur-xl transition-all">
+                                    <Upload className="h-5 w-5 mr-2" /> Upload PDF
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="w-[95vw] sm:max-w-md bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                                <DialogHeader className="p-6 border-b border-border">
+                                    <DialogTitle className="text-xl font-bold text-foreground">Upload Metadata</DialogTitle>
+                                    <DialogDescription className="text-muted-foreground mt-1">Link an existing PDF document to a production date.</DialogDescription>
+                                </DialogHeader>
+                                <div className="p-6 space-y-6">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Shoot Date</Label>
                                         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">General Call Time</Label>
-                                        <Input type="time" value={callTime} onChange={(e) => setCallTime(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document File</Label>
+                                        <div className="group relative">
+                                            <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="bg-background border-border rounded-xl h-12 py-3 cursor-pointer file:bg-transparent file:text-primary file:font-bold file:border-0" />
+                                        </div>
+                                        {selectedFile && <span className="text-xs text-primary font-medium mt-2 flex items-center gap-2"><Info className="w-3 h-3" /> {selectedFile.name}</span>}
                                     </div>
+                                    <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
+                                        {uploading ? <Loader2 className="animate-spin" /> : <><Upload className="h-5 w-5 mr-2" /> Confirm Upload</>}
+                                    </Button>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Location Details</Label>
-                                    <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g., Studio 42, Los Angeles" className="bg-background border-border rounded-xl h-12" />
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director</Label>
-                                        <Input value={director} onChange={(e) => setDirector(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Director Mobile</Label>
-                                        <Input value={directorPhone} onChange={(e) => setDirectorPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer</Label>
-                                        <Input value={producer} onChange={(e) => setProducer(e.target.value)} placeholder="Name" className="bg-background border-border rounded-xl h-12" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Producer Mobile</Label>
-                                        <Input value={producerPhone} onChange={(e) => setProducerPhone(e.target.value)} placeholder="+1 (555) 000-0000" className="bg-background border-border rounded-xl h-12" />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Safety & Talent Notes</Label>
-                                    <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Special instructions for cast and crew..." className="bg-background border-border rounded-xl min-h-[120px] resize-none" />
-                                </div>
-                                <Button onClick={handleCreate} disabled={creating} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
-                                    {creating ? <Loader2 className="animate-spin" /> : 'Create Call Sheet'}
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
-
-                    <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetForm(); }}>
-                        <DialogTrigger asChild>
-                            <Button variant="outline" className="flex-1 sm:flex-none border-border bg-card hover:bg-accent/50 text-foreground rounded-2xl px-6 h-12 font-bold backdrop-blur-xl transition-all">
-                                <Upload className="h-5 w-5 mr-2" /> Upload PDF
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent className="w-[95vw] sm:max-w-md bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
-                            <DialogHeader className="p-6 border-b border-border">
-                                <DialogTitle className="text-xl font-bold text-foreground">Upload Metadata</DialogTitle>
-                                <DialogDescription className="text-muted-foreground mt-1">Link an existing PDF document to a production date.</DialogDescription>
-                            </DialogHeader>
-                            <div className="p-6 space-y-6">
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Shoot Date</Label>
-                                    <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Document File</Label>
-                                    <div className="group relative">
-                                        <Input type="file" onChange={handleFileSelect} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="bg-background border-border rounded-xl h-12 py-3 cursor-pointer file:bg-transparent file:text-primary file:font-bold file:border-0" />
-                                    </div>
-                                    {selectedFile && <span className="text-xs text-primary font-medium mt-2 flex items-center gap-2"><Info className="w-3 h-3" /> {selectedFile.name}</span>}
-                                </div>
-                                <Button onClick={handleUpload} disabled={uploading} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
-                                    {uploading ? <Loader2 className="animate-spin" /> : <><Upload className="h-5 w-5 mr-2" /> Confirm Upload</>}
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
-                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                ) : (
+                    <div className="bg-muted/30 border border-border/50 px-6 py-3 rounded-2xl text-sm text-muted-foreground font-bold uppercase tracking-widest flex items-center gap-3">
+                        <Info className="w-4 h-4" /> Observation Mode
+                    </div>
+                )}
             </div>
 
             {callSheets && callSheets.length > 0 ? (
@@ -346,14 +354,16 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
                                     </div>
                                     <h2 className="text-3xl sm:text-5xl font-black text-foreground tracking-tighter">{formatDate(sheet.date)}</h2>
                                 </div>
-                                <Button 
-                                    size="sm" 
-                                    variant="ghost" 
-                                    onClick={() => handleDelete(sheet.id)}
-                                    className="bg-destructive/10 hover:bg-destructive text-destructive hover:text-white rounded-full p-2 h-10 w-10 transition-all opacity-40 hover:opacity-100 self-start sm:self-auto"
-                                >
-                                    <Trash2 className="h-5 w-5" />
-                                </Button>
+                                {!isInternal && (
+                                    <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        onClick={() => handleDelete(sheet.id)}
+                                        className="bg-destructive/10 hover:bg-destructive text-destructive hover:text-white rounded-full p-2 h-10 w-10 transition-all opacity-40 hover:opacity-100 self-start sm:self-auto"
+                                    >
+                                        <Trash2 className="h-5 w-5" />
+                                    </Button>
+                                )}
                             </div>
 
                             <div className="group bg-card/60 border border-border shadow-2xl rounded-[40px] p-6 sm:p-12 hover:bg-accent/40 active:scale-[0.99] transition-all duration-700 relative overflow-hidden backdrop-blur-xl">

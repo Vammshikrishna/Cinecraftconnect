@@ -44,7 +44,9 @@ export const CallParticipants = ({ participants, isInCall, onJoinCall }: CallPar
     fetchProfiles();
   }, [participants]);
 
-  if (participants.length === 0) {
+  const visibleParticipants = participants.filter(p => !p.isInternal);
+
+  if (visibleParticipants.length === 0) {
     return (
       <Card className="p-6 text-center">
         <p className="text-muted-foreground mb-4">No one is in the call yet</p>
@@ -62,7 +64,7 @@ export const CallParticipants = ({ participants, isInCall, onJoinCall }: CallPar
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold">
-          In Call ({participants.length})
+          In Call ({visibleParticipants.length})
         </h3>
         {!isInCall && (
           <Button onClick={onJoinCall} size="sm" className="gap-2">
@@ -73,7 +75,7 @@ export const CallParticipants = ({ participants, isInCall, onJoinCall }: CallPar
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {participants.map((participant) => {
+        {visibleParticipants.map((participant) => {
           const profile = profiles[participant.user_id];
           const name = profile?.full_name || 'Unknown User';
           

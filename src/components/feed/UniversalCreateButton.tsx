@@ -1,19 +1,21 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { Plus, PenTool, Film, MessageSquare, Briefcase, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppRole } from '@/hooks/useAppRole';
 
 const UniversalCreateButton = () => {
     const [isOpen, setIsOpen] = useState(false);
     const { isFan } = useAccountType();
+    const { isInternal } = useAppRole();
 
     const toggleOpen = () => setIsOpen(!isOpen);
 
-    // Fans cannot create content — hide the button entirely
-    if (isFan) return null;
+    // Fans and internal staff cannot create public content
+    if (isFan || isInternal) return null;
 
     interface Action {
         icon: any;

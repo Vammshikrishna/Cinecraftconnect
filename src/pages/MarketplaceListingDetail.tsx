@@ -17,8 +17,10 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MarketplaceShareSheet } from '@/components/marketplace/MarketplaceShareSheet';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
-import { PageHeader } from '@/components/common/PageHeader';
 import ReportDialog from '@/components/common/ReportDialog';
+import { useAppRole } from '@/hooks/useAppRole';
+import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/common/PageHeader';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -31,6 +33,7 @@ const MarketplaceListingDetail = () => {
     const [showShareSheet, setShowShareSheet] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isReportOpen, setIsReportOpen] = useState(false);
+    const { isInternal } = useAppRole();
 
     const isOwner = user && listing && user.id === listing.user_id;
 
@@ -155,11 +158,20 @@ const MarketplaceListingDetail = () => {
             <div className="max-w-6xl mx-auto px-4 md:px-8">
                 <PageHeader
                     title={listing.title}
-                    subtitle={`Marketplace Listing in ${listing.location}`}
+                    subtitle={
+                        <div className="flex items-center gap-2">
+                            <span>Marketplace Listing in {listing.location}</span>
+                            {isInternal && (
+                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                                    Staff Observer
+                                </Badge>
+                            )}
+                        </div>
+                    }
                     onBack={() => navigate(-1)}
                     actions={
                         <div className="flex gap-2">
-                            {isOwner ? (
+                            {(isOwner || isInternal) ? (
                                 <>
                                     <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setIsEditModalOpen(true)}>
                                         <Edit className="h-4 w-4" />
@@ -168,7 +180,7 @@ const MarketplaceListingDetail = () => {
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 </>
-                            ) : user && (
+                            ) : (user && !isInternal) && (
                                 <Button variant="ghost" size="icon" className="rounded-xl hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
                                     <Flag className="h-4 w-4" />
                                 </Button>
@@ -242,15 +254,13 @@ const MarketplaceListingDetail = () => {
                                     </div>
                                 )}
 
-                                <div className="pt-2 flex gap-4 relative z-10">
-                                    <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleContactSeller}>
-                                        <MessageSquare className="h-5 w-5" />
-                                        <span className="font-bold tracking-wide">Contact Seller</span>
-                                    </Button>
-                                    {/* <Button variant="outline" className="flex-1 gap-2.5 h-14 rounded-2xl border-white/10 text-base">
-                                        <Calendar className="h-5 w-5" />
-                                        <span className="font-bold tracking-wide">Availability</span>
-                                    </Button> */}
+                                 <div className="pt-2 flex gap-4 relative z-10">
+                                    {!isInternal && (
+                                        <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleContactSeller}>
+                                            <MessageSquare className="h-5 w-5" />
+                                            <span className="font-bold tracking-wide">Contact Seller</span>
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
 

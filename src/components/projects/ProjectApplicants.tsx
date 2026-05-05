@@ -1,10 +1,11 @@
-﻿import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { Check, X, UserPlus } from 'lucide-react';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Applicant {
   id: string;
@@ -23,6 +24,7 @@ interface ProjectApplicantsProps {
 }
 
 const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
+  const { isInternal } = useAppRole();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -65,7 +67,8 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
         profiles:user_id (
           full_name,
           avatar_url,
-          craft
+          craft,
+          is_internal
         )
       `)
       .eq('project_space_id', resolvedSpaceId)
@@ -80,7 +83,7 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
         .eq('project_space_id', resolvedSpaceId);
       
       const memberIds = new Set(members?.map(m => m.user_id) || []);
-      const pendingRequests = (requests || []).filter((req: any) => !memberIds.has(req.user_id));
+      const pendingRequests = (requests || []).filter((req: any) => !memberIds.has(req.user_id) && !req.profiles?.is_internal);
       
       setApplicants(pendingRequests as any);
     }
@@ -173,28 +176,34 @@ const ProjectApplicants = ({ projectId }: ProjectApplicantsProps) => {
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 {applicant.status === 'pending' ? (
-                  <>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
-                      disabled={processingId === applicant.id}
-                      className="flex-1 sm:flex-none border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl h-11 font-bold transition-all"
-                    >
-                      <Check className="h-4 w-4 mr-2" />
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
-                      disabled={processingId === applicant.id}
-                      className="flex-1 sm:flex-none rounded-xl h-11 font-bold"
-                    >
-                      <X className="h-4 w-4 mr-2" />
-                      Reject
-                    </Button>
-                  </>
+                  !isInternal ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleApplication(applicant.id, applicant.user_id, 'approved')}
+                        disabled={processingId === applicant.id}
+                        className="flex-1 sm:flex-none border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground rounded-xl h-11 font-bold transition-all"
+                      >
+                        <Check className="h-4 w-4 mr-2" />
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleApplication(applicant.id, applicant.user_id, 'rejected')}
+                        disabled={processingId === applicant.id}
+                        className="flex-1 sm:flex-none rounded-xl h-11 font-bold"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Reject
+                      </Button>
+                    </>
+                  ) : (
+                    <div className="bg-muted/30 border border-border/50 px-4 py-2 rounded-xl text-xs text-muted-foreground font-bold uppercase tracking-widest">
+                      Observation Mode
+                    </div>
+                  )
                 ) : (
                   <p className={`text-sm font-semibold w-full text-center sm:text-left ${applicant.status === 'approved' ? 'text-primary' : 'text-red-500'}`}>
                     {applicant.status.charAt(0).toUpperCase() + applicant.status.slice(1)}

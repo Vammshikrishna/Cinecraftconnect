@@ -54,7 +54,7 @@ import SEO from '@/components/common/SEO';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
-  const { isAdmin } = useAppRole();
+  const { isAdmin, isInternal } = useAppRole();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -99,7 +99,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
     const hasUnread = unreadProjectIds.includes(project.id);
 
     const handleCardClick = () => {
-      if (project.is_member) {
+      if (project.is_member || isInternal) {
         navigate(`/projects/${project.id}/space`);
       } else {
         navigate(`/projects/${project.id}`);

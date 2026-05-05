@@ -16,7 +16,7 @@ export const useAccountType = () => {
     const { profile } = useAuth();
 
     // Cast — account_type is now in the DB type but older profiles may be null
-    const raw = (profile as any)?.account_type as AccountType | null | undefined;
+    const raw = profile?.account_type as AccountType | null | undefined;
 
     // Default null/undefined → 'creator' so existing users are unaffected
     const accountType: AccountType = raw === 'fan' ? 'fan' : (raw === 'studio' ? 'studio' : 'creator');

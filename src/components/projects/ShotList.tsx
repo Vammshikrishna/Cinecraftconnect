@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil, Trash2, Film, Loader2, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Shot {
     id: string;
@@ -22,6 +23,7 @@ interface ShotListProps {
 }
 
 const ShotList = ({ project_id }: ShotListProps) => {
+    const { isInternal } = useAppRole();
     const { toast } = useToast();
     const { data: rawShots, error: fetchError } = useRealtimeData<Shot>('shot_list', 'project_id', project_id);
     const [shots, setShots] = useState<Shot[]>([]);
@@ -155,53 +157,59 @@ const ShotList = ({ project_id }: ShotListProps) => {
             </div>
 
             {/* Premium Input Bar */}
-            <div className="bg-card border border-border shadow-2xl p-4 sm:p-6 rounded-[28px] sm:rounded-[32px] mb-8 relative group snap-start">
-                <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-[32px]" />
-                
-                <div className="grid grid-cols-2 md:flex md:flex-row gap-4 relative z-10">
-                    <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
-                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Scene</p>
-                        <Input
-                            type="text"
-                            value={newScene}
-                            onChange={(e) => setNewScene(e.target.value)}
-                            placeholder="1"
-                            className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
-                        />
-                    </div>
-                    <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
-                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Shot</p>
-                        <Input
-                            type="text"
-                            value={newShot}
-                            onChange={(e) => setNewShot(e.target.value)}
-                            placeholder="1"
-                            className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
-                        />
-                    </div>
+            {!isInternal ? (
+                <div className="bg-card border border-border shadow-2xl p-4 sm:p-6 rounded-[28px] sm:rounded-[32px] mb-8 relative group snap-start">
+                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none rounded-[32px]" />
                     
-                    <div className="col-span-2 md:flex-grow space-y-1.5">
-                        <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Composition Description</p>
-                        <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="grid grid-cols-2 md:flex md:flex-row gap-4 relative z-10">
+                        <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
+                            <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Scene</p>
                             <Input
                                 type="text"
-                                value={newDescription}
-                                onChange={(e) => setNewDescription(e.target.value)}
-                                placeholder="e.g., Close-up shot with shallow focus..."
-                                className="bg-background/50 border-border rounded-xl h-11 sm:h-12 flex-grow focus:border-primary/50"
-                                onKeyPress={(e) => e.key === 'Enter' && handleAddShot()}
+                                value={newScene}
+                                onChange={(e) => setNewScene(e.target.value)}
+                                placeholder="1"
+                                className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
                             />
-                            <Button 
-                                onClick={handleAddShot} 
-                                disabled={isSubmitting} 
-                                className="w-full sm:w-auto bg-primary hover:bg-primary/80 h-11 sm:h-12 rounded-xl font-bold px-8 shadow-lg shadow-primary/20 whitespace-nowrap active:scale-95 transition-all"
-                            >
-                                {isSubmitting ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4 mr-2" /> Add Shot</>}
-                            </Button>
+                        </div>
+                        <div className="space-y-1.5 flex-1 md:w-20 lg:w-28 md:flex-none">
+                            <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Shot</p>
+                            <Input
+                                type="text"
+                                value={newShot}
+                                onChange={(e) => setNewShot(e.target.value)}
+                                placeholder="1"
+                                className="bg-background/50 border-border rounded-xl h-11 sm:h-12 text-center font-bold"
+                            />
+                        </div>
+                        
+                        <div className="col-span-2 md:flex-grow space-y-1.5">
+                            <p className="text-[9px] font-black text-primary uppercase tracking-[0.2em] ml-1">Composition Description</p>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <Input
+                                    type="text"
+                                    value={newDescription}
+                                    onChange={(e) => setNewDescription(e.target.value)}
+                                    placeholder="e.g., Close-up shot with shallow focus..."
+                                    className="bg-background/50 border-border rounded-xl h-11 sm:h-12 flex-grow focus:border-primary/50"
+                                    onKeyPress={(e) => e.key === 'Enter' && handleAddShot()}
+                                />
+                                <Button 
+                                    onClick={handleAddShot} 
+                                    disabled={isSubmitting} 
+                                    className="w-full sm:w-auto bg-primary hover:bg-primary/80 h-11 sm:h-12 rounded-xl font-bold px-8 shadow-lg shadow-primary/20 whitespace-nowrap active:scale-95 transition-all"
+                                >
+                                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4 mr-2" /> Add Shot</>}
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
+            ) : (
+                <div className="mb-8 p-4 bg-muted/30 border border-border/50 rounded-3xl text-center">
+                    <p className="text-sm text-muted-foreground italic font-medium">Internal staff are in observation mode and cannot modify the shot sequence.</p>
+                </div>
+            )}
 
             {/* Shots List Container - Unified scroll */}
             {loading ? (
@@ -285,14 +293,16 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                             <div className="w-1 h-1 rounded-full bg-border" />
                                                             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Composition {parseInt(shot.shot)}</p>
                                                         </div>
-                                                        <div className="flex opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                                                            <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
-                                                                <Pencil className="h-4 w-4" />
-                                                            </Button>
-                                                            <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </Button>
-                                                        </div>
+                                                        {!isInternal && (
+                                                            <div className="flex opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                                                                <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
+                                                                    <Pencil className="h-4 w-4" />
+                                                                </Button>
+                                                                <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                     
                                                     <div className="relative">
@@ -302,9 +312,9 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                         </p>
                                                     </div>
 
-                                                    <div className="flex items-center gap-6 pt-2">
-                                                        <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)}>
-                                                            <SelectTrigger className="w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl opacity-60 hover:opacity-100 transition-all hover:border-primary/30">
+                                                     <div className="flex items-center gap-6 pt-2">
+                                                        <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)} disabled={isInternal}>
+                                                            <SelectTrigger className={`w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl ${!isInternal ? 'opacity-60 hover:opacity-100 transition-all hover:border-primary/30' : 'opacity-40 cursor-default'}`}>
                                                                 <SelectValue />
                                                             </SelectTrigger>
                                                             <SelectContent className="bg-popover border-border rounded-2xl">

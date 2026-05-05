@@ -45,7 +45,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { toast } = useToast();
   const { user } = useAuth();
   const { isFan } = useAccountType();
-  const { isAdmin } = useAppRole();
+  const { isInternal } = useAppRole();
   const navigate = useNavigate();
 
   const fetchJobs = async () => {
@@ -157,7 +157,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           subtitle="Find your next production role or hire top film talent" 
           Icon={Briefcase}
           actions={
-            !isFan && (
+            (!isFan && !isInternal) && (
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
                 <div className="flex items-center gap-3 flex-1 sm:flex-none">
                   <Link to="/jobs/applications" className="flex-1 sm:flex-none">
@@ -296,7 +296,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               </div>
               <h3 className="text-2xl font-black mb-2">The set is quiet...</h3>
               <p className="text-muted-foreground mb-8 max-w-sm mx-auto">No job listings found matching your search. Be the one to start the next production!</p>
-              <JobCreationModal onJobCreated={fetchJobs} />
+              {!isInternal && <JobCreationModal onJobCreated={fetchJobs} />}
             </motion.div>
           ) : (
             <div className="space-y-6">
@@ -382,7 +382,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                         </div>
 
                         <div className="w-full md:w-auto min-w-[200px]">
-                          {(isOwner || isAdmin) ? (
+                          {(isOwner || isInternal) ? (
                             <Button 
                               variant="ghost" 
                               onClick={(e) => { e.stopPropagation(); navigate("/jobs/manage"); }} 

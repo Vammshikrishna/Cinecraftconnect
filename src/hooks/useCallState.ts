@@ -10,6 +10,7 @@ export interface CallParticipant {
   left_at: string | null;
   is_audio_enabled: boolean;
   is_video_enabled: boolean;
+  isInternal?: boolean;
 }
 
 export interface ActiveCall {
@@ -94,7 +95,28 @@ export const useCallState = (roomId: string) => {
         .eq('call_id', activeCall.id)
         .is('left_at', null);
 
-      setParticipants(data || []);
+      if (!data || data.length === 0) {
+        setParticipants([]);
+        return;
+      }
+
+      // Fetch user roles to identify internal staff
+      const userIds = data.map(p => p.user_id);
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', userIds);
+
+      const internalRoles = ['moderator', 'admin', 'super_admin'];
+      const mergedData = data.map(p => {
+        const userRole = rolesData?.find(r => r.user_id === p.user_id)?.role || 'user';
+        return {
+          ...p,
+          isInternal: internalRoles.includes(userRole)
+        };
+      });
+
+      setParticipants(mergedData);
     };
 
     fetchParticipants();

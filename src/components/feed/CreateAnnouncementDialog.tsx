@@ -18,6 +18,7 @@ import { Loader2, User } from 'lucide-react';
 import { useMyPages } from '@/hooks/useCompanyPages';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface CreateAnnouncementDialogProps {
     open: boolean;
@@ -32,6 +33,7 @@ export const CreateAnnouncementDialog = ({
 }: CreateAnnouncementDialogProps) => {
     const { user } = useAuth();
     const { toast } = useToast();
+    const { isInternal } = useAppRole();
     const [isLoading, setIsLoading] = useState(false);
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
@@ -42,7 +44,7 @@ export const CreateAnnouncementDialog = ({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user) return;
+        if (!user || isInternal) return;
 
         if (!title.trim() || !content.trim()) {
             toast({
@@ -111,11 +113,24 @@ export const CreateAnnouncementDialog = ({
                 <DialogHeader>
                     <DialogTitle>Create Announcement</DialogTitle>
                     <DialogDescription>
-                        Share an update with the community.
+                        {isInternal 
+                          ? "Internal staff accounts are restricted from publishing public announcements."
+                          : "Share an update with the community."}
                     </DialogDescription>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-6 pt-4">
+                {isInternal ? (
+                    <div className="py-8 flex flex-col items-center justify-center text-center space-y-4">
+                        <div className="p-4 bg-muted rounded-full">
+                            <Loader2 className="h-8 w-8 text-muted-foreground opacity-20" />
+                        </div>
+                        <p className="text-sm text-muted-foreground italic">
+                            Your account is in moderation-only mode.
+                        </p>
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSubmit} className="space-y-6 pt-4">
                     {myPages.length > 0 && (
                         <div className="space-y-2">
                             <Label className="text-sm font-semibold opacity-70">Post as...</Label>
@@ -193,6 +208,7 @@ export const CreateAnnouncementDialog = ({
                         </Button>
                     </DialogFooter>
                 </form>
+                )}
             </DialogContent>
         </Dialog>
     );

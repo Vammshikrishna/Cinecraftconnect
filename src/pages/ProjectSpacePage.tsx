@@ -8,6 +8,7 @@ import { ArrowLeft } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Project {
   id: string;
@@ -19,12 +20,13 @@ const ProjectSpacePage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { isFan } = useAccountType();
+  const { isInternal } = useAppRole();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isFan) {
+    if (isFan && !isInternal) {
       navigate('/pricing');
       return;
     }

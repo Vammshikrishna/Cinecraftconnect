@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,12 +27,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface ProjectSettingsProps {
     projectId: string;
 }
 
 const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
+    const { isInternal } = useAppRole();
     const { toast } = useToast();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
@@ -261,8 +263,8 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 {/* Profile-Header Style: Dynamic Image with Edit Capability */}
                 <div className="flex items-center gap-6 mb-12 group/header">
                     <div 
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`w-20 h-20 sm:w-24 sm:h-24 ${!imageUrl ? getGradient(projectId) : ''} rounded-3xl flex items-center justify-center border-4 border-background shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] cursor-pointer hover:scale-105 active:scale-95 transition-all duration-500 relative overflow-hidden shrink-0`}
+                        onClick={() => !isInternal && fileInputRef.current?.click()}
+                        className={`w-20 h-20 sm:w-24 sm:h-24 ${!imageUrl ? getGradient(projectId) : ''} rounded-3xl flex items-center justify-center border-4 border-background shadow-[0_20px_50px_-12px_rgba(0,0,0,0.5)] ${!isInternal ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'} transition-all duration-500 relative overflow-hidden shrink-0`}
                     >
                         {imageUrl ? (
                             <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
@@ -274,13 +276,15 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                         )}
                         
                         {/* Camera Overlay: Always show on hover or while uploading */}
-                        <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity duration-300 z-20`}>
-                            {imageUploading ? (
-                                <Loader2 className="w-6 h-6 text-white animate-spin" />
-                            ) : (
-                                <Camera className="w-6 h-6 text-white drop-shadow-lg" />
-                            )}
-                        </div>
+                        {!isInternal && (
+                            <div className={`absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity duration-300 z-20`}>
+                                {imageUploading ? (
+                                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                                ) : (
+                                    <Camera className="w-6 h-6 text-white drop-shadow-lg" />
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <input 
@@ -348,23 +352,27 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                         </button>
                     </div>
 
-                    <p className="text-[10px] font-black text-destructive/60 uppercase tracking-[0.2em] px-2 pt-4">Danger Zone</p>
-                    
-                    <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[32px] overflow-hidden">
-                        <button 
-                            onClick={() => openStep('danger')}
-                            className="w-full flex items-center gap-4 p-5 hover:bg-destructive/5 transition-colors group text-left"
-                        >
-                            <div className="w-10 h-10 bg-destructive/10 rounded-full flex items-center justify-center text-destructive group-hover:bg-destructive group-hover:text-white transition-all shadow-sm">
-                                <Trash2 className="w-5 h-5" />
+                    {!isInternal && (
+                        <>
+                            <p className="text-[10px] font-black text-destructive/60 uppercase tracking-[0.2em] px-2 pt-4">Danger Zone</p>
+                            
+                            <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[32px] overflow-hidden">
+                                <button 
+                                    onClick={() => openStep('danger')}
+                                    className="w-full flex items-center gap-4 p-5 hover:bg-destructive/5 transition-colors group text-left"
+                                >
+                                    <div className="w-10 h-10 bg-destructive/10 rounded-full flex items-center justify-center text-destructive group-hover:bg-destructive group-hover:text-white transition-all shadow-sm">
+                                        <Trash2 className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="font-black text-destructive tracking-tight uppercase text-xs">Security Actions</p>
+                                        <p className="text-xs text-muted-foreground">Terminate space or clear chat logs</p>
+                                    </div>
+                                    <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
+                                </button>
                             </div>
-                            <div className="flex-1">
-                                <p className="font-black text-destructive tracking-tight uppercase text-xs">Security Actions</p>
-                                <p className="text-xs text-muted-foreground">Terminate space or clear chat logs</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-muted-foreground/30" />
-                        </button>
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
         );
@@ -454,7 +462,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                             <div className="space-y-10">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-primary/80">Min Budget</Label>
+                                        <Label className="text-[10px] font-black uppercase ml-1 tracking-widest text-primary/80">Min Budget</Label>
                                         <Input
                                             type="number"
                                             value={budgetMin}
@@ -464,7 +472,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                                         />
                                     </div>
                                     <div className="space-y-3">
-                                        <Label className="text-[10px] font-black text-primary uppercase ml-1 tracking-widest text-primary/80">Max Budget</Label>
+                                        <Label className="text-[10px] font-black uppercase ml-1 tracking-widest text-primary/80">Max Budget</Label>
                                         <Input
                                             type="number"
                                             value={budgetMax}
@@ -619,32 +627,34 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             </div>
 
             {/* Persistent Action Bar */}
-            <div className="sticky bottom-4 left-0 right-0 z-50 animate-in slide-in-from-bottom-8 duration-700">
-                <Card className="bg-background/60 backdrop-blur-2xl border-t border-white/10 shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.5)] rounded-[40px] p-4 flex flex-col sm:flex-row items-center justify-between gap-6 px-10">
-                    <div className="hidden sm:block space-y-0.5">
-                        <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Editing Mode</p>
-                        <p className="text-sm font-bold text-foreground/70">Unsaved changes in <span className="text-primary font-black uppercase text-xs">{step}</span></p>
-                    </div>
-                    <div className="flex items-center gap-4 w-full sm:w-auto">
-                        <Button 
-                            variant="ghost" 
-                            onClick={fetchProjectDetails} 
-                            disabled={saving}
-                            className="flex-1 sm:flex-none h-14 rounded-2xl font-bold text-muted-foreground hover:bg-white/5"
-                        >
-                            Reset
-                        </Button>
-                        <Button 
-                            onClick={handleSave} 
-                            disabled={saving} 
-                            className="flex-1 sm:flex-none h-14 rounded-[24px] px-12 bg-primary hover:bg-primary/90 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-primary/40 transition-all active:scale-95 flex items-center gap-3"
-                        >
-                            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                            Sync Settings
-                        </Button>
-                    </div>
-                </Card>
-            </div>
+            {!isInternal && (
+                <div className="sticky bottom-4 left-0 right-0 z-50 animate-in slide-in-from-bottom-8 duration-700">
+                    <Card className="bg-background/60 backdrop-blur-2xl border-t border-white/10 shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.5)] rounded-[40px] p-4 flex flex-col sm:flex-row items-center justify-between gap-6 px-10">
+                        <div className="hidden sm:block space-y-0.5">
+                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Editing Mode</p>
+                            <p className="text-sm font-bold text-foreground/70">Unsaved changes in <span className="text-primary font-black uppercase text-xs">{step}</span></p>
+                        </div>
+                        <div className="flex items-center gap-4 w-full sm:w-auto">
+                            <Button 
+                                variant="ghost" 
+                                onClick={fetchProjectDetails} 
+                                disabled={saving}
+                                className="flex-1 sm:flex-none h-14 rounded-2xl font-bold text-muted-foreground hover:bg-white/5"
+                            >
+                                Reset
+                            </Button>
+                            <Button 
+                                onClick={handleSave} 
+                                disabled={saving} 
+                                className="flex-1 sm:flex-none h-14 rounded-[24px] px-12 bg-primary hover:bg-primary/90 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-primary/40 transition-all active:scale-95 flex items-center gap-3"
+                            >
+                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                Sync Settings
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </div>
     );
 };

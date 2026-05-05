@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import InternalHeader from '@/components/internal/shared/InternalHeader';
 import VerificationReview from '@/components/internal/admin/VerificationReview';
+import ReportTriageBoard from '@/components/internal/moderator/ReportTriageBoard';
 import { 
   Users, BadgeCheck, Activity, CreditCard, 
   LifeBuoy, ShieldAlert, BarChart3, Search,
@@ -191,6 +192,9 @@ const AdminDashboard = () => {
             <TabsTrigger value="support" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">
               <LifeBuoy className="w-4 h-4" /> Support & Appeals
             </TabsTrigger>
+            <TabsTrigger value="moderation" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-primary data-[state=active]:text-white transition-all">
+              <ShieldAlert className="w-4 h-4" /> Moderation
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="operations" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -341,6 +345,10 @@ const AdminDashboard = () => {
 
           <TabsContent value="support" className="animate-in fade-in slide-in-from-bottom-4">
             <SupportTicketManager />
+          </TabsContent>
+
+          <TabsContent value="moderation" className="animate-in fade-in slide-in-from-bottom-4">
+            <ReportTriageBoard />
           </TabsContent>
         </Tabs>
       </main>

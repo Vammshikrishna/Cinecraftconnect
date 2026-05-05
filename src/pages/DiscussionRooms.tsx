@@ -57,6 +57,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isFan } = useAccountType();
+  const { isInternal } = useAppRole();
   const { callState } = useGlobalCall();
   const { unreadDiscussionIds } = useUnreadMessages();
   const isInCall = callState.isActive && callState.roomId === roomId;
@@ -283,7 +284,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                     <ArrowLeft size={18} />
                     <h2 className="text-xl font-black tracking-tight">Discussions</h2>
                   </Link>
-                  {!isFan && (
+                  {!isFan && !isInternal && (
                     <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
                       <DialogTrigger asChild>
                         <Button size="icon" variant="ghost" className="h-8 w-8 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
@@ -474,7 +475,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           actionsAtTop={true}
           actions={
             // Only creators can create rooms
-            !isFan ? (
+            !isFan && !isInternal ? (
               <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-6 rounded-xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-105 transition-transform">
@@ -488,6 +489,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                   onRoomCreated={handleRoomCreated}
                 />
               </Dialog>
+            ) : isInternal ? (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/30 text-sm text-muted-foreground font-bold uppercase tracking-widest">
+                <span>👁️</span>
+                <span>Observation Mode</span>
+              </div>
             ) : (
               <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/30 text-sm text-muted-foreground">
                 <span>🎬</span>
@@ -597,11 +603,11 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive }: { roo
   const { user } = useAuth();
   const { toast } = useToast();
   const { unreadDiscussionIds } = useUnreadMessages();
-  const { isAdmin } = useAppRole();
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setDeleting] = useState(false);
   const isOwner = user?.id === room.creator_id;
-  const canManage = isOwner || isAdmin;
+  // Even if they are platform admins, they should not manage rooms from the public UI
+  const canManage = isOwner;
   const hasUnread = unreadDiscussionIds.includes(room.id);
 
   const handleDelete = async () => {

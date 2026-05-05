@@ -20,12 +20,14 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useNavigate } from 'react-router-dom';
 import SEO from '@/components/common/SEO';
+import { useAppRole } from '@/hooks/useAppRole';
 
 const Marketplace = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const navigate = useNavigate();
     const { isFan } = useAccountType();
+    const { isInternal } = useAppRole();
     
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<ListingType | 'all'>('all');
@@ -96,11 +98,13 @@ const Marketplace = () => {
                     Icon={ShoppingBag}
                     actionsAtTop={true}
                     actions={
-                    <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
-                        <Plus size={18} strokeWidth={3} />
-                        <span>Create Listing</span>
-                    </Button>
-                  }
+                      (!isFan && !isInternal) && (
+                        <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
+                            <Plus size={18} strokeWidth={3} />
+                            <span>Create Listing</span>
+                        </Button>
+                      )
+                    }
                 />
 
                 {/* Search & Filter Container */}

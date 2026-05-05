@@ -4,6 +4,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { MessageCircle, UserPlus, UserCheck, Clock, Users, Briefcase, Sparkles, MapPin, Globe, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAppRole } from '@/hooks/useAppRole';
 import VerificationBadge from '../common/VerificationBadge';
 import { getOptimizedImage } from '@/utils/image-optimization';
 
@@ -37,8 +38,10 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  const { isInternal } = useAppRole();
+
   const renderActionButton = () => {
-    if (user.id === currentUser?.id) return null;
+    if (user.id === currentUser?.id || isInternal) return null;
 
     switch (status) {
       case 'connected':
@@ -155,7 +158,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onCancel
         <div className="grid grid-cols-1 w-full gap-2 mt-2">
           {renderActionButton()}
           
-          {status === 'connected' && (
+          {status === 'connected' && !isInternal && (
             <Button
               size="sm"
               variant="secondary"
