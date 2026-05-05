@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2, RefreshCw, Layers, Search, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Task {
     id: string;
@@ -19,6 +20,7 @@ interface TasksProps {
 }
 
 const Tasks = ({ project_id }: TasksProps) => {
+    const { isInternal } = useAppRole();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
@@ -160,27 +162,33 @@ const Tasks = ({ project_id }: TasksProps) => {
                 </div>
             )}
 
-            <div className="bg-card border border-border p-4 sm:p-6 rounded-2xl mb-8 shadow-sm">
-                <div className="flex flex-col sm:flex-row items-end gap-4">
-                    <div className="flex-1 space-y-2 w-full">
-                        <label className="text-[10px] font-bold text-primary uppercase tracking-widest ml-1">New Production Step</label>
-                        <Input
-                            value={newTask}
-                            onChange={(e) => setNewTask(e.target.value)}
-                            placeholder="Enter task name..."
-                            className="h-14 bg-background border-border rounded-2xl placeholder:text-muted-foreground px-6 focus:border-primary/50 text-lg transition-all"
-                            onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
-                        />
+            {!isInternal ? (
+                <div className="bg-card border border-border p-4 sm:p-6 rounded-2xl mb-8 shadow-sm">
+                    <div className="flex flex-col sm:flex-row items-end gap-4">
+                        <div className="flex-1 space-y-2 w-full">
+                            <label className="text-[10px] font-bold text-primary uppercase tracking-widest ml-1">New Production Step</label>
+                            <Input
+                                value={newTask}
+                                onChange={(e) => setNewTask(e.target.value)}
+                                placeholder="Enter task name..."
+                                className="h-14 bg-background border-border rounded-2xl placeholder:text-muted-foreground px-6 focus:border-primary/50 text-lg transition-all"
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddTask()}
+                            />
+                        </div>
+                        <Button
+                            onClick={handleAddTask}
+                            disabled={loading || !newTask.trim()}
+                            className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/80 text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 transition-all w-full sm:w-auto"
+                        >
+                            {loading ? <Loader2 className="animate-spin h-6 w-6" /> : "Deploy Task"}
+                        </Button>
                     </div>
-                    <Button
-                        onClick={handleAddTask}
-                        disabled={loading || !newTask.trim()}
-                        className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/80 text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 transition-all w-full sm:w-auto"
-                    >
-                        {loading ? <Loader2 className="animate-spin h-6 w-6" /> : "Deploy Task"}
-                    </Button>
                 </div>
-            </div>
+            ) : (
+                <div className="mb-8 p-4 bg-muted/30 border border-border/50 rounded-2xl text-center">
+                    <p className="text-sm text-muted-foreground italic font-medium">Internal staff are in observation mode and cannot modify production tasks.</p>
+                </div>
+            )}
 
             <div className="space-y-3 pb-24">
                 {fetching && tasks.length === 0 ? (
@@ -194,7 +202,8 @@ const Tasks = ({ project_id }: TasksProps) => {
                             <Checkbox
                                 id={`task-${task.id}`}
                                 checked={task.is_completed}
-                                onCheckedChange={() => handleToggleTask(task.id, task.is_completed)}
+                                onCheckedChange={() => !isInternal && handleToggleTask(task.id, task.is_completed)}
+                                disabled={isInternal}
                                 className="h-6 w-6 border-2 border-primary/50 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                             />
                             <label

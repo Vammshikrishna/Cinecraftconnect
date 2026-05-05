@@ -5,6 +5,8 @@ import InternalHeader from '@/components/internal/shared/InternalHeader';
 import StaffRoleMatrix from '@/components/internal/super-admin/StaffRoleMatrix';
 import AuditLedger from '@/components/internal/admin/AuditLedger';
 import ApprovalQueue from '@/components/internal/admin/ApprovalQueue';
+import VIPInviteManager from '@/components/internal/admin/VIPInviteManager';
+import GlobalBroadcastPanel from '@/components/internal/super-admin/GlobalBroadcastPanel';
 import { GovernanceService } from '@/services/governance/GovernanceService';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGovernance } from '@/hooks/useGovernance';
@@ -277,6 +279,9 @@ const SuperAdminDashboard = () => {
             <TabsTrigger value="infrastructure" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
               <HardDrive className="w-4 h-4" /> Infrastructure
             </TabsTrigger>
+            <TabsTrigger value="growth" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
+              <Globe className="w-4 h-4" /> Growth
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="approvals" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -413,6 +418,13 @@ const SuperAdminDashboard = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="growth" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <GlobalBroadcastPanel />
+              <VIPInviteManager />
             </div>
           </TabsContent>
 

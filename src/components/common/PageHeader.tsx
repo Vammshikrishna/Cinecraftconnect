@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   Icon?: LucideIcon;
   actions?: React.ReactNode;
   onBack?: () => void;
@@ -57,14 +57,14 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             </h1>
 
             {subtitle && (
-              <motion.p 
+              <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.1 }}
                 className="text-xs md:text-sm text-muted-foreground font-medium leading-relaxed max-w-3xl mt-0 md:mt-0.5"
               >
                 {subtitle}
-              </motion.p>
+              </motion.div>
             )}
           </motion.div>
         </div>

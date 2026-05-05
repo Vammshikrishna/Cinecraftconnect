@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Pencil, Trash2, DollarSign, Calendar, Clock, TrendingUp, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface BudgetItem {
     id: string;
@@ -33,6 +34,7 @@ interface BudgetSchedProps {
 }
 
 const BudgetSched = ({ project_id }: BudgetSchedProps) => {
+    const { isInternal } = useAppRole();
     const { data: rawBudget, error: budgetError } = useRealtimeData<BudgetItem>('budget_items', 'project_id', project_id);
     const { data: rawSchedule, error: scheduleError } = useRealtimeData<ScheduleItem>('schedule_items', 'project_id', project_id);
     const { toast } = useToast();
@@ -247,36 +249,38 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                             </div>
                             <h2 className="text-xl font-bold text-foreground">Budget Tracking</h2>
                         </div>
-                        <Dialog open={budgetDialogOpen} onOpenChange={(open) => { setBudgetDialogOpen(open); if (!open) resetBudgetForm(); }}>
-                            <DialogTrigger asChild>
-                                <Button size="sm" className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
-                                    <Plus className="h-4 w-4 mr-2" /> Add Item
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
-                                <DialogHeader className="p-6 border-b border-border">
-                                    <DialogTitle className="text-xl font-bold text-foreground">{editingBudget ? 'Update' : 'New'} Allocation</DialogTitle>
-                                    <DialogDescription className="text-muted-foreground mt-1">Define financial constraints for this production asset.</DialogDescription>
-                                </DialogHeader>
-                                <div className="p-6 space-y-5">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Asset Category</Label>
-                                        <Input value={budgetCategory} onChange={(e) => setBudgetCategory(e.target.value)} placeholder="e.g., Equipment, Talent" className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Asset Name</Label>
-                                        <Input value={budgetItemName} onChange={(e) => setBudgetItemName(e.target.value)} placeholder="e.g., 4K Camera Rig" className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Amount ($)</Label>
-                                        <Input type="number" value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
-                                    </div>
-                                    <Button onClick={editingBudget ? handleUpdateBudgetItem : handleAddBudgetItem} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20" disabled={saving}>
-                                        {saving ? <Loader2 className="animate-spin" /> : (editingBudget ? 'Update Asset' : 'Add Allocation')}
+                        {!isInternal && (
+                            <Dialog open={budgetDialogOpen} onOpenChange={(open) => { setBudgetDialogOpen(open); if (!open) resetBudgetForm(); }}>
+                                <DialogTrigger asChild>
+                                    <Button size="sm" className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                        <Plus className="h-4 w-4 mr-2" /> Add Item
                                     </Button>
-                                </div>
-                            </DialogContent>
-                        </Dialog>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                                    <DialogHeader className="p-6 border-b border-border">
+                                        <DialogTitle className="text-xl font-bold text-foreground">{editingBudget ? 'Update' : 'New'} Allocation</DialogTitle>
+                                        <DialogDescription className="text-muted-foreground mt-1">Define financial constraints for this production asset.</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="p-6 space-y-5">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Asset Category</Label>
+                                            <Input value={budgetCategory} onChange={(e) => setBudgetCategory(e.target.value)} placeholder="e.g., Equipment, Talent" className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Asset Name</Label>
+                                            <Input value={budgetItemName} onChange={(e) => setBudgetItemName(e.target.value)} placeholder="e.g., 4K Camera Rig" className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Amount ($)</Label>
+                                            <Input type="number" value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} className="bg-background border-border rounded-xl h-12 focus:border-primary/50" />
+                                        </div>
+                                        <Button onClick={editingBudget ? handleUpdateBudgetItem : handleAddBudgetItem} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20" disabled={saving}>
+                                            {saving ? <Loader2 className="animate-spin" /> : (editingBudget ? 'Update Asset' : 'Add Allocation')}
+                                        </Button>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        )}
                     </div>
 
                     {budgetData.length > 0 ? (
@@ -299,14 +303,16 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                         </div>
                                         <div className="flex items-center justify-between w-full sm:w-auto gap-8">
                                             <p className="text-sm font-bold text-foreground">${item.estimated_cost?.toLocaleString()}</p>
-                                            <div className="flex gap-2">
-                                                <Button size="sm" variant="ghost" onClick={() => openEditBudget(item)} className="text-muted-foreground hover:text-primary transition-colors p-2 h-10 w-10 rounded-full">
-                                                    <Pencil className="h-5 w-5" />
-                                                </Button>
-                                                <Button size="sm" variant="ghost" onClick={() => handleDeleteBudgetItem(item.id)} className="text-muted-foreground hover:text-red-400 transition-colors p-2 h-10 w-10 rounded-full">
-                                                    <Trash2 className="h-5 w-5" />
-                                                </Button>
-                                            </div>
+                                            {!isInternal && (
+                                                <div className="flex gap-2">
+                                                    <Button size="sm" variant="ghost" onClick={() => openEditBudget(item)} className="text-muted-foreground hover:text-primary transition-colors p-2 h-10 w-10 rounded-full">
+                                                        <Pencil className="h-5 w-5" />
+                                                    </Button>
+                                                    <Button size="sm" variant="ghost" onClick={() => handleDeleteBudgetItem(item.id)} className="text-muted-foreground hover:text-red-400 transition-colors p-2 h-10 w-10 rounded-full">
+                                                        <Trash2 className="h-5 w-5" />
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -328,56 +334,58 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                             </div>
                             <h2 className="text-xl font-bold text-foreground">Production Roadmap</h2>
                         </div>
-                        <Dialog open={scheduleDialogOpen} onOpenChange={(open) => { setScheduleDialogOpen(open); if (!open) resetScheduleForm(); }}>
-                            <DialogTrigger asChild>
-                                <Button size="sm" className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
-                                    <Plus className="h-4 w-4 mr-2" /> Schedule Phase
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
-                                <DialogHeader className="p-6 border-b border-border">
-                                    <DialogTitle className="text-xl font-bold text-foreground">{editingSchedule ? 'Edit' : 'Create'} Milestone</DialogTitle>
-                                    <DialogDescription className="text-muted-foreground mt-1">Map out a critical phase of your film production.</DialogDescription>
-                                </DialogHeader>
-                                <div className="p-6 space-y-5">
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Phase Title</Label>
-                                        <Input value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)} placeholder="e.g., Principle Photography" className="bg-background border-border rounded-xl h-12" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Phase Description</Label>
-                                        <Textarea value={scheduleDescription} onChange={(e) => setScheduleDescription(e.target.value)} placeholder="Overview of goals..." className="bg-background border-border rounded-xl min-h-[80px] resize-none" />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Start</Label>
-                                            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Target End</Label>
-                                            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Current Status</Label>
-                                        <Select value={scheduleStatus} onValueChange={setScheduleStatus}>
-                                            <SelectTrigger className="bg-background border-border rounded-xl h-12">
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent className="bg-popover border-border rounded-2xl">
-                                                <SelectItem value="scheduled">Scheduled</SelectItem>
-                                                <SelectItem value="in-progress">In Progress</SelectItem>
-                                                <SelectItem value="completed">Completed</SelectItem>
-                                                <SelectItem value="delayed">Delayed</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-                                    <Button onClick={editingSchedule ? handleUpdateScheduleItem : handleAddScheduleItem} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20" disabled={saving}>
-                                        {saving ? <Loader2 className="animate-spin" /> : (editingSchedule ? 'Update Milestone' : 'Lock Phase')}
+                        {!isInternal && (
+                            <Dialog open={scheduleDialogOpen} onOpenChange={(open) => { setScheduleDialogOpen(open); if (!open) resetScheduleForm(); }}>
+                                <DialogTrigger asChild>
+                                    <Button size="sm" className="bg-primary hover:bg-primary/80 text-white rounded-2xl px-6 h-12 font-bold shadow-lg shadow-primary/20 transition-all">
+                                        <Plus className="h-4 w-4 mr-2" /> Schedule Phase
                                     </Button>
-                                </div>
-                            </DialogContent>
-                        </Dialog>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-md w-[95vw] bg-card border border-border p-0 rounded-[32px] overflow-hidden shadow-3xl">
+                                    <DialogHeader className="p-6 border-b border-border">
+                                        <DialogTitle className="text-xl font-bold text-foreground">{editingSchedule ? 'Edit' : 'Create'} Milestone</DialogTitle>
+                                        <DialogDescription className="text-muted-foreground mt-1">Map out a critical phase of your film production.</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="p-6 space-y-5">
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Phase Title</Label>
+                                            <Input value={scheduleTitle} onChange={(e) => setScheduleTitle(e.target.value)} placeholder="e.g., Principle Photography" className="bg-background border-border rounded-xl h-12" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Phase Description</Label>
+                                            <Textarea value={scheduleDescription} onChange={(e) => setScheduleDescription(e.target.value)} placeholder="Overview of goals..." className="bg-background border-border rounded-xl min-h-[80px] resize-none" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Start</Label>
+                                                <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Target End</Label>
+                                                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-background border-border rounded-xl h-12" />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-xs font-bold text-primary tracking-wider uppercase ml-1">Current Status</Label>
+                                            <Select value={scheduleStatus} onValueChange={setScheduleStatus}>
+                                                <SelectTrigger className="bg-background border-border rounded-xl h-12">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-popover border-border rounded-2xl">
+                                                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                                                    <SelectItem value="in-progress">In Progress</SelectItem>
+                                                    <SelectItem value="completed">Completed</SelectItem>
+                                                    <SelectItem value="delayed">Delayed</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <Button onClick={editingSchedule ? handleUpdateScheduleItem : handleAddScheduleItem} className="w-full bg-primary hover:bg-primary/80 h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20" disabled={saving}>
+                                            {saving ? <Loader2 className="animate-spin" /> : (editingSchedule ? 'Update Milestone' : 'Lock Phase')}
+                                        </Button>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
+                        )}
                     </div>
 
                     {scheduleData.length > 0 ? (
@@ -408,14 +416,16 @@ const BudgetSched = ({ project_id }: BudgetSchedProps) => {
                                             </p>
                                         )}
                                         
-                                        <div className="mt-auto flex justify-end gap-2">
-                                            <Button size="sm" variant="ghost" onClick={() => openEditSchedule(item)} className="text-muted-foreground hover:text-white p-2 h-9 w-9 rounded-full">
-                                                <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            <Button size="sm" variant="ghost" onClick={() => handleDeleteScheduleItem(item.id)} className="text-muted-foreground hover:text-red-400 p-2 h-9 w-9 rounded-full">
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                        </div>
+                                        {!isInternal && (
+                                            <div className="mt-auto flex justify-end gap-2">
+                                                <Button size="sm" variant="ghost" onClick={() => openEditSchedule(item)} className="text-muted-foreground hover:text-white p-2 h-9 w-9 rounded-full">
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button size="sm" variant="ghost" onClick={() => handleDeleteScheduleItem(item.id)} className="text-muted-foreground hover:text-red-400 p-2 h-9 w-9 rounded-full">
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}

@@ -106,7 +106,11 @@ const App = () => {
           <Toaster />
           <GlobalFeatures />
           <ThemeSyncPrompt />
-        {!isLoading && (user && profile?.onboarding_completed ? <Navbar /> : <LandingNavbar />)}
+        {!isLoading && (() => {
+          const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+          const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
+          return showFullNavbar ? <Navbar /> : <LandingNavbar />;
+        })()}
         <MaintenanceGuard>
           <ErrorBoundary>
             <Suspense

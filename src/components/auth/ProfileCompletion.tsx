@@ -1,4 +1,5 @@
-﻿import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,11 +20,23 @@ const CRAFT_OPTIONS = [
 type AccountType = 'fan' | 'creator' | 'studio';
 
 export const ProfileCompletion = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const { toast } = useToast();
+    const navigate = useNavigate();
 
     // Step 0 = choose account type, 1 = basic info, 2 = optional details
     const [step, setStep] = useState(0);
+
+    // Redirect internal users who shouldn't be here
+    useEffect(() => {
+        const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+        if (isInternal) {
+            const destination = profile?.role === 'super_admin' ? '/super-admin' : 
+                               profile?.role === 'admin' ? '/admin' : 
+                               profile?.role === 'moderator' ? '/moderation' : '/feed';
+            navigate(destination, { replace: true });
+        }
+    }, [profile, navigate]);
     const [loading, setLoading] = useState(false);
     const [checkingUsername, setCheckingUsername] = useState(false);
     const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);

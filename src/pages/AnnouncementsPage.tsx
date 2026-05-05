@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { useAccountType } from '@/hooks/useAccountType';
 import { ResponsiveGrid } from '@/components/ui/mobile-responsive-grid';
 
+import { useAppRole } from '@/hooks/useAppRole';
+
 interface Announcement {
     id: string;
     title: string;
@@ -38,6 +40,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
     const { toast } = useToast();
     const { user } = useAuth();
     const { isFan } = useAccountType();
+    const { isInternal } = useAppRole();
 
     useEffect(() => {
         if (openCreate && !isFan) setIsCreateOpen(true);
@@ -103,7 +106,7 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                     Icon={Megaphone}
                     actionsAtTop={true}
                     actions={
-                    user && !isFan ? (
+                    user && !isFan && !isInternal ? (
                         <div className="flex gap-2">
                             <Button onClick={() => setIsCreateOpen(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-10 px-4 font-bold shadow-lg shadow-primary/20 hover:scale-105 transition-transform text-sm">
                                 <Plus className="mr-2 h-4 w-4" />

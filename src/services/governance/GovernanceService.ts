@@ -54,11 +54,32 @@ export class GovernanceService {
     // 2. Capture "Before" state
     const beforeState = await this.captureSnapshot(params.targetType, params.targetId);
 
-    // 3. Execute the actual action (Placeholder logic - would be specific per action type)
+    // 3. Execute the actual action
     let executionError = null;
     try {
-      // Action implementation...
-      // Example: if (params.action === 'user.ban') { ... }
+      if (params.action === 'user.manage_roles') {
+        let retries = 3;
+        let success = false;
+        while (retries > 0 && !success) {
+          // Use direct upsert since Super Admins have RLS permissions for user_roles
+          const { error } = await supabase
+            .from('user_roles')
+            .upsert({
+              user_id: params.targetId,
+              role: params.payload.role
+            }, { onConflict: 'user_id' });
+            
+          if (!error) {
+            success = true;
+          } else {
+            console.warn(`Role assignment failed, retrying... (${retries} left)`, error);
+            retries--;
+            if (retries > 0) await new Promise(r => setTimeout(r, 1000));
+            else throw error;
+          }
+        }
+      }
+      // Add other actions here as needed...
     } catch (e: any) {
       executionError = e;
     }

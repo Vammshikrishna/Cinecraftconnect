@@ -9,6 +9,7 @@ import { Send, ArrowLeft, MoreVertical, Reply, Trash2, ShieldBan, X } from 'luci
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import { usePresence } from '@/hooks/usePresence';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Message {
   id: string;
@@ -30,6 +31,7 @@ interface ChatWindowProps {
 
 export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
   const { user } = useAuth();
+  const { isInternal } = useAppRole();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -220,10 +222,16 @@ export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
             </button>
           </div>
         )}
-        <form onSubmit={handleSendMessage} className="flex items-center gap-3">
-          <Input value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type a message..." className="bg-muted/50" />
-          <Button type="submit" size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
-        </form>
+        {isInternal ? (
+          <div className="text-center p-3 text-muted-foreground text-sm bg-muted/50 rounded-lg border border-border italic flex items-center justify-center gap-2">
+            <ShieldBan className="h-4 w-4" /> Internal staff cannot send direct messages
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="flex items-center gap-3">
+            <Input value={newMessage} onChange={e => setNewMessage(e.target.value)} placeholder="Type a message..." className="bg-muted/50" />
+            <Button type="submit" size="icon" className="shrink-0"><Send className="h-4 w-4" /></Button>
+          </form>
+        )}
       </div>
     </div>
   );

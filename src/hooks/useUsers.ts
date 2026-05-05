@@ -29,7 +29,8 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
       let profilesQuery = supabase
         .from('profiles')
         .select('*')
-        .neq('id', user.id);
+        .neq('id', user.id)
+        .eq('is_internal', false);
 
       if (searchQuery) {
         profilesQuery = profilesQuery.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%`);

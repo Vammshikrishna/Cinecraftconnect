@@ -25,10 +25,11 @@ export class TrustEngine {
     // 2. Check for account age (positive impact)
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
     if (profile) {
-      const ageInDays = (Date.now() - new Date((profile as any).created_at).getTime()) / (1000 * 60 * 60 * 24);
+      const createdAt = profile.created_at ? new Date(profile.created_at).getTime() : Date.now();
+      const ageInDays = (Date.now() - createdAt) / (1000 * 60 * 60 * 24);
       baseScore += Math.min(20, Math.floor(ageInDays / 30) * 2); // +2 points per month, max 20
       
-      if ((profile as any).is_verified) baseScore += 25; // Massive boost for verified pros
+      if (profile.is_verified) baseScore += 25; // Massive boost for verified pros
     }
 
     // 3. Ensure bounds

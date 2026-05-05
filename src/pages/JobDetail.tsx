@@ -21,6 +21,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ReportDialog from "@/components/common/ReportDialog";
+import { useAppRole } from "@/hooks/useAppRole";
 
 const JobDetail = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -32,6 +33,7 @@ const JobDetail = () => {
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [applicationCount, setApplicationCount] = useState(0);
   const { user } = useAuth();
+  const { isInternal } = useAppRole();
   const { toast } = useToast();
   const navigate = useNavigate();
   const isOwner = user?.id === job?.posted_by;
@@ -290,8 +292,8 @@ const JobDetail = () => {
                         </Button>
                     </div>
                   ) : (
-                    <Button onClick={handleApplyClick} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all text-lg">
-                      Apply Now <ExternalLink size={20} className="ml-2" />
+                    <Button onClick={handleApplyClick} disabled={isInternal} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all text-lg">
+                      {isInternal ? "Staff Cannot Apply" : "Apply Now"} <ExternalLink size={20} className="ml-2" />
                     </Button>
                   )}
                   
@@ -511,8 +513,8 @@ const JobDetail = () => {
                 </Button>
             </div>
           ) : (
-            <Button onClick={handleApplyClick} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20">
-              Apply Now
+            <Button onClick={handleApplyClick} disabled={isInternal} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20">
+              {isInternal ? "Staff Only" : "Apply Now"}
             </Button>
           )}
           <Button variant="outline" className="h-12 w-12 p-0 rounded-2xl border-primary text-primary">

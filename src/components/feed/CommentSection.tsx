@@ -23,7 +23,7 @@ import { getOptimizedImage } from "@/utils/image-optimization";
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
-  const { isAdmin } = useAppRole();
+  const { isAdmin, isInternal } = useAppRole();
   const { toast } = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
@@ -153,7 +153,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
   return (
     <div className="mt-4">
-      {user && (
+      {user && !isInternal && (
         <div className="mb-6 space-y-4">
           {replyTo && (
             <div className="flex items-center justify-between px-4 py-2 bg-primary/5 rounded-xl border border-primary/10 transition-all duration-300">
@@ -204,6 +204,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
             isReply={false}
             user={{ id: user?.id }}
             isAdmin={isAdmin}
+            isInternal={isInternal}
             getInitials={getInitials}
           />
         ))}
@@ -221,6 +222,7 @@ const CommentItem = ({
   isReply, 
   user,
   isAdmin,
+  isInternal,
   getInitials
 }: { 
   comment: Comment, 
@@ -230,6 +232,7 @@ const CommentItem = ({
   isReply: boolean,
   user: { id?: string },
   isAdmin: boolean,
+  isInternal: boolean,
   getInitials: (name: string) => string
 }) => {
   const [showReplies, setShowReplies] = useState(false);
@@ -287,12 +290,15 @@ const CommentItem = ({
               })()}
             </span>
             
-            <button 
-              onClick={() => onReply(comment)}
-              className="text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-tight"
-            >
-              Reply
-            </button>
+            {/* Show reply button only if not internal */}
+            {!isInternal && (
+              <button 
+                onClick={() => onReply(comment)}
+                className="text-[11px] font-bold text-muted-foreground hover:text-foreground transition-colors uppercase tracking-tight"
+              >
+                Reply
+              </button>
+            )}
             
             <button 
               onClick={() => setIsTranslated(!isTranslated)}
@@ -360,6 +366,7 @@ const CommentItem = ({
                   isReply={true}
                   user={user}
                   isAdmin={isAdmin}
+                  isInternal={isInternal}
                   getInitials={getInitials}
                 />
               ))}

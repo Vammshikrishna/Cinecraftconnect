@@ -4,6 +4,8 @@ import { Star, StarOff } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+import { useAppRole } from "@/hooks/useAppRole";
+
 interface StarRatingProps {
   title: string;
   type: 'Movie' | 'Short Film';
@@ -31,9 +33,10 @@ const StarRating = ({
 }: StarRatingProps) => {
   const [rating, setRating] = useState(initialRating);
   const [hovered, setHovered] = useState<number | null>(null);
+  const { isInternal } = useAppRole();
 
   const handleRate = async (selectedRating: number) => {
-    if (readOnly) return;
+    if (readOnly || isInternal) return;
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -84,11 +87,11 @@ const StarRating = ({
           <button
             key={star}
             type="button"
-            className={`p-0 bg-transparent border-0 focus:outline-none`}
-            disabled={readOnly}
+            className={`p-0 bg-transparent border-0 focus:outline-none ${isInternal ? 'cursor-not-allowed opacity-50' : ''}`}
+            disabled={readOnly || isInternal}
             aria-label={`Rate ${star} star${star > 1 ? "s" : ""}`}
             onClick={() => handleRate(star)}
-            onMouseEnter={() => !readOnly && setHovered(star)}
+            onMouseEnter={() => !readOnly && !isInternal && setHovered(star)}
             onMouseLeave={() => setHovered(null)}
           >
             {((hovered ?? rating) >= star) ? (

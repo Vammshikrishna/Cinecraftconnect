@@ -31,7 +31,7 @@ const VendorDetail = () => {
     const [loading, setLoading] = useState(true);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [showShareSheet, setShowShareSheet] = useState(false);
-    const { isAdmin } = useAppRole();
+    const { isInternal } = useAppRole();
 
     useEffect(() => {
         if (id) {
@@ -131,14 +131,23 @@ const VendorDetail = () => {
             <div className="max-w-6xl mx-auto px-4 md:px-8">
                 <PageHeader
                     title={vendor.business_name}
-                    subtitle="Industry Vendor Profile"
+                    subtitle={
+                        <div className="flex items-center gap-2">
+                            <span>Industry Vendor Profile</span>
+                            {isInternal && (
+                                <Badge variant="outline" className="border-orange-500/50 text-orange-500 font-black uppercase tracking-widest text-[10px] py-0.5 px-2 bg-orange-500/5">
+                                    Staff Observer
+                                </Badge>
+                            )}
+                        </div>
+                    }
                     onBack={() => navigate(-1)}
                     actions={
                         <div className="flex gap-2">
                             <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
                                 <Share2 className="h-4 w-4" />
                             </Button>
-                            {isAdmin && (
+                            {isInternal && (
                                 <Button variant="ghost" size="icon" className="rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white border-none" onClick={handleDeleteVendor}>
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -234,10 +243,12 @@ const VendorDetail = () => {
 
                             {/* Contact Actions */}
                             <div className="grid grid-cols-1 gap-3">
-                                <Button className="w-full gap-2" onClick={handleContactVendor}>
-                                    <MessageSquare className="h-4 w-4" />
-                                    Chat with Vendor
-                                </Button>
+                             {!isInternal && (
+                                 <Button className="w-full gap-2" onClick={handleContactVendor}>
+                                     <MessageSquare className="h-4 w-4" />
+                                     Chat with Vendor
+                                 </Button>
+                             )}
                                 {/* Future: Add booking/request quote button */}
                             </div>
 

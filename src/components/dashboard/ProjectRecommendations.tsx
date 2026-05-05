@@ -24,7 +24,7 @@ interface Project {
 }
 
 export const ProjectRecommendations = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [recommendations, setRecommendations] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -37,11 +37,12 @@ export const ProjectRecommendations = () => {
   }, [user]);
 
   const fetchUserProfile = async () => {
+    if (!user) return;
     try {
       const { data } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user?.id)
+        .eq('id', user.id)
         .single();
 
       setUserProfile(data);
@@ -259,12 +260,21 @@ export const ProjectRecommendations = () => {
           <div className="text-center py-8">
             <Film className="mx-auto h-12 w-12 text-gray-400 mb-4" />
             <p className="text-gray-400 mb-2">No recommendations available</p>
-            <p className="text-gray-500 text-sm mb-4">
-              Complete your profile to get personalized project recommendations
-            </p>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/profile">Complete Profile</Link>
-            </Button>
+            {!profile?.is_internal && (
+              <>
+                <p className="text-gray-500 text-sm mb-4">
+                  Complete your profile to get personalized project recommendations
+                </p>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/profile">Complete Profile</Link>
+                </Button>
+              </>
+            )}
+            {profile?.is_internal && (
+              <p className="text-gray-500 text-sm">
+                No public projects currently available for review.
+              </p>
+            )}
           </div>
         )}
       </CardContent>

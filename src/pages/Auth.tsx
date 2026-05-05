@@ -80,7 +80,7 @@ const Auth = () => {
                 .from('user_roles')
                 .select('role')
                 .eq('user_id', userData.user.id)
-                .single();
+                .maybeSingle();
 
               const roleStr = roleData?.role as string | undefined;
 

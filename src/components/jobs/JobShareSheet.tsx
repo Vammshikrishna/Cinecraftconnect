@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAppRole } from "@/hooks/useAppRole";
 
 interface JobShareSheetProps {
     isOpen: boolean;
@@ -35,6 +36,7 @@ export function JobShareSheet({ isOpen, onOpenChange, jobId }: JobShareSheetProp
     const [sentTo, setSentTo] = useState<Set<string>>(new Set());
     const [isJobOwner, setIsJobOwner] = useState(false);
     const { user } = useAuth();
+    const { isInternal } = useAppRole();
     const { toast } = useToast();
     const isDesktop = useMediaQuery("(min-width: 768px)");
     const { connections } = useConnections();
@@ -373,7 +375,17 @@ export function JobShareSheet({ isOpen, onOpenChange, jobId }: JobShareSheetProp
         ]
         : targets;
 
-    const Content = (
+    const Content = isInternal ? (
+        <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 h-full">
+            <div className="p-4 bg-muted rounded-full">
+                <Share2 className="h-8 w-8 text-muted-foreground opacity-20" />
+            </div>
+            <p className="text-sm text-muted-foreground italic max-w-[250px]">
+                Internal staff accounts are in observation mode and cannot share job listings.
+            </p>
+            <Button variant="outline" className="rounded-2xl" onClick={() => onOpenChange(false)}>Close</Button>
+        </div>
+    ) : (
         <div className="flex flex-col h-full max-h-[80vh] w-full overflow-hidden">
             <div className="p-4 border-b border-border space-y-4">
                 <div className="relative">

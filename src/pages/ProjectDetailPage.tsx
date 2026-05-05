@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { useAppRole } from '@/hooks/useAppRole';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -38,6 +39,7 @@ const ProjectDetailPage = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isInternal } = useAppRole();
   
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,7 +89,7 @@ const ProjectDetailPage = () => {
             setIsMember(isMemberRes);
 
             // Auto-redirect if member or owner
-            if (isMemberRes || isOwner) {
+            if (isMemberRes || isOwner || isInternal) {
               navigate(`/projects/${projectId}/space`, { replace: true });
               return; // Exit early
             }
@@ -156,13 +158,13 @@ const ProjectDetailPage = () => {
             </div>
             
             <div className="flex flex-wrap gap-3">
-              {(isOwner || isMember) ? (
+              {(isOwner || isMember || isInternal) ? (
                 <Button 
                   className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
                   onClick={() => navigate(`/projects/${project.id}/space`)}
                 >
                   <Briefcase className="mr-2 h-4 w-4" />
-                  {isOwner ? 'Manage Workspace' : 'Enter Workspace'}
+                  {isOwner ? 'Manage Workspace' : isInternal ? 'Enter Workspace (Staff)' : 'Enter Workspace'}
                 </Button>
               ) : (
                 <Button 

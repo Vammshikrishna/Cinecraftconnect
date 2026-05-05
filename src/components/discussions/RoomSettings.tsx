@@ -110,11 +110,24 @@ export const RoomSettings = ({ roomId, currentTitle, currentDescription, current
 
       if (profilesError) throw profilesError;
 
-      // 3. Merge data
-      const mergedMembers = membersData.map(member => ({
-        ...member,
-        profiles: profilesData?.find(p => p.id === member.user_id) || null
-      }));
+      // 3. Fetch user roles to identify internal staff
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', userIds);
+
+      // 4. Merge data and filter out internal staff
+      const internalRoles = ['moderator', 'admin', 'super_admin'];
+      const mergedMembers = membersData
+        .map(member => {
+          const userRole = rolesData?.find(r => r.user_id === member.user_id)?.role || 'user';
+          return {
+            ...member,
+            profiles: profilesData?.find(p => p.id === member.user_id) || null,
+            isInternal: internalRoles.includes(userRole)
+          };
+        })
+        .filter(m => !m.isInternal); // Gate guard: hide staff from public participant lists
 
       setMembers(mergedMembers);
     } catch (err) {

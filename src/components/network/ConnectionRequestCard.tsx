@@ -6,6 +6,8 @@ import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 
+import { useAppRole } from '@/hooks/useAppRole';
+
 interface ConnectionRequestCardProps {
   connection: Connection;
   onAccept: (connectionId: string) => void;
@@ -18,6 +20,7 @@ export const ConnectionRequestCard = ({
   onReject,
 }: ConnectionRequestCardProps) => {
   const profile = connection.follower_profile;
+  const { isInternal } = useAppRole();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleAccept = async () => {
@@ -72,25 +75,31 @@ export const ConnectionRequestCard = ({
             {formatDistanceToNow(new Date(connection.created_at), { addSuffix: true })}
           </p>
 
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={handleAccept}
-              className="flex-1 btn-primary"
-              disabled={isProcessing}
-            >
-              <Check size={14} className="mr-1" /> Accept
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleReject}
-              className="flex-1 border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
-              disabled={isProcessing}
-            >
-              <X size={14} className="mr-1" /> Reject
-            </Button>
-          </div>
+          {!isInternal ? (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleAccept}
+                className="flex-1 btn-primary"
+                disabled={isProcessing}
+              >
+                <Check size={14} className="mr-1" /> Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleReject}
+                className="flex-1 border-border hover:bg-destructive/10 hover:text-destructive hover:border-destructive"
+                disabled={isProcessing}
+              >
+                <X size={14} className="mr-1" /> Reject
+              </Button>
+            </div>
+          ) : (
+            <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest bg-muted/30 px-3 py-1.5 rounded-lg text-center">
+              Observation Mode
+            </div>
+          )}
         </div>
       </div>
     </div>

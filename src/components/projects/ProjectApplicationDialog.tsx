@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface Project {
   id: string;
@@ -23,10 +24,13 @@ interface ProjectApplicationDialogProps {
 
 export const ProjectApplicationDialog = ({ project, open, onOpenChange, onApplicationSent }: ProjectApplicationDialogProps) => {
   const { user } = useAuth();
+  const { isInternal } = useAppRole();
   const { toast } = useToast();
   const [selectedRole, setSelectedRole] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  if (isInternal) return null;
 
   const handleSubmit = async () => {
     if (!user || !project) return;

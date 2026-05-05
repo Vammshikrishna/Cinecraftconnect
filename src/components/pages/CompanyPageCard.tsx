@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Building2, CheckCircle2, Users, MapPin } from 'lucide-react';
 import { useIsFollowingPage, useToggleFollowPage } from '@/hooks/useCompanyPages';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppRole } from '@/hooks/useAppRole';
 
 interface CompanyPageCardProps {
   page: CompanyPage;
@@ -15,7 +16,8 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
   const { user } = useAuth();
   const { data: isFollowing } = useIsFollowingPage(page.id);
   const toggleFollow = useToggleFollowPage();
-  const isOwner = user?.id === page.owner_id;
+  const { isInternal } = useAppRole();
+  const isOwner = user?.id === page.owner_id || isInternal;
 
   return (
     <div className="group bg-card border border-border rounded-xl overflow-hidden hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 hover:-translate-y-0.5">
@@ -82,7 +84,7 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
         )}
 
         {/* Follow Button */}
-        {!isOwner && (
+        {!isOwner && !isInternal && (
           <Button
             variant={isFollowing ? 'outline' : 'default'}
             size="sm"

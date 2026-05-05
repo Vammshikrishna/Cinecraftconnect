@@ -222,7 +222,7 @@ const PostCard = ({
 
   const [isReportOpen, setIsReportOpen] = useState(false);
 
-  const { isAdmin } = useAppRole();
+  const { isAdmin, isInternal } = useAppRole();
   const isOwner = user?.id === author.id || user?.id === authorId;
   const canManage = isOwner || isAdmin;
 
@@ -864,16 +864,25 @@ const PostCard = ({
           <div className="px-3 lg:px-4 py-2 lg:py-3">
             <div className="flex items-center justify-between mb-2 lg:mb-3">
               <div className="flex items-center gap-5">
-                <button
-                  onClick={handleLike}
-                  disabled={isLiking}
-                  className={`flex items-center gap-1.5 transition-all duration-300 group/like ${isLiked ? 'text-red-500' : 'text-foreground/80 hover:text-red-500'}`}
-                >
-                  <div className="p-2 -m-2 rounded-full group-hover/like:bg-red-500/10 transition-colors">
-                    <Heart size={24} className={`transition-transform duration-300 group-active/like:scale-125 ${isLiked ? 'fill-current' : ''}`} />
+                {!isInternal ? (
+                  <button
+                    onClick={handleLike}
+                    disabled={isLiking}
+                    className={`flex items-center gap-1.5 transition-all duration-300 group/like ${isLiked ? 'text-red-500' : 'text-foreground/80 hover:text-red-500'}`}
+                  >
+                    <div className="p-2 -m-2 rounded-full group-hover/like:bg-red-500/10 transition-colors">
+                      <Heart size={24} className={`transition-transform duration-300 group-active/like:scale-125 ${isLiked ? 'fill-current' : ''}`} />
+                    </div>
+                    <span className="text-[13px] font-semibold">{displayLikeCount}</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-foreground/50 cursor-not-allowed" title="Staff accounts cannot like posts">
+                    <div className="p-2 -m-2 rounded-full">
+                      <Heart size={24} />
+                    </div>
+                    <span className="text-[13px] font-semibold">{displayLikeCount}</span>
                   </div>
-                  <span className="text-[13px] font-semibold">{displayLikeCount}</span>
-                </button>
+                )}
                 
                 <button
                   onClick={handleComment}
@@ -885,18 +894,21 @@ const PostCard = ({
                   <span className="text-[13px] font-semibold">{displayCommentCount}</span>
                 </button>
 
-                <ShareButton postId={id} shareCount={share_count} />
+                {!isInternal && <ShareButton postId={id} shareCount={share_count} />}
               </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleBookmark.mutate({ postId: id, isBookmarked });
-                }}
-                disabled={isTogglingBookmark}
-                className={`transition-all duration-300 ${isBookmarked ? 'text-primary' : 'text-foreground hover:text-muted-foreground'}`}
-              >
-                <Bookmark size={22} className={isBookmarked ? 'fill-current' : ''} />
-              </button>
+              
+              {!isInternal && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleBookmark.mutate({ postId: id, isBookmarked });
+                  }}
+                  disabled={isTogglingBookmark}
+                  className={`transition-all duration-300 ${isBookmarked ? 'text-primary' : 'text-foreground hover:text-muted-foreground'}`}
+                >
+                  <Bookmark size={22} className={isBookmarked ? 'fill-current' : ''} />
+                </button>
+              )}
             </div>
 
               <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
