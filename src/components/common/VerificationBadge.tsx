@@ -19,7 +19,7 @@ const VerificationBadge = ({ size = 'md', className = '' }: VerificationBadgePro
       <Tooltip>
         <TooltipTrigger asChild>
           <span className={`inline-flex items-center shrink-0 ${className}`}>
-            <BadgeCheck className={`${SIZE_MAP[size]} text-primary fill-primary/20 stroke-primary`} />
+            <BadgeCheck className={`${SIZE_MAP[size]} text-primary fill-primary stroke-white`} strokeWidth={2.5} />
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs font-bold">

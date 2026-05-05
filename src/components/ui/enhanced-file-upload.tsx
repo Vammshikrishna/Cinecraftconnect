@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Upload, X, Image, Video, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -10,6 +10,7 @@ interface FileUploadProps {
   accept?: string;
   maxSize?: number; // in MB
   multiple?: boolean;
+  disabled?: boolean;
   className?: string;
   children?: React.ReactNode;
 }
@@ -27,6 +28,7 @@ export const EnhancedFileUpload: React.FC<FileUploadProps> = ({
   accept = "image/*,video/*",
   maxSize = 10,
   multiple = false,
+  disabled = false,
   className,
   children
 }) => {
@@ -155,12 +157,12 @@ export const EnhancedFileUpload: React.FC<FileUploadProps> = ({
           isDragOver 
             ? "border-primary bg-primary/10" 
             : "border-border hover:border-primary/50",
-          "hover:bg-muted/20"
+          disabled ? "opacity-50 cursor-not-allowed pointer-events-none" : "hover:bg-muted/20"
         )}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onDragOver={disabled ? undefined : handleDragOver}
+        onDragLeave={disabled ? undefined : handleDragLeave}
+        onDrop={disabled ? undefined : handleDrop}
+        onClick={() => !disabled && fileInputRef.current?.click()}
       >
         <input
           ref={fileInputRef}

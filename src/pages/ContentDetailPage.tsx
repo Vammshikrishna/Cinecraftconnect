@@ -4,16 +4,20 @@ import { fetchContentDetails, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Star, Play, ThumbsUp, Calendar, Clock, ArrowLeft } from 'lucide-react';
+import { Star, Play, ThumbsUp, Calendar, Clock, ArrowLeft, AlertTriangle, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useTheme } from 'next-themes';
 
 const ContentDetailPage = () => {
     const { id, type } = useParams<{ id: string; type: 'movie' | 'tv' }>();
     const navigate = useNavigate();
     const { user } = useAuth();
     const { toast } = useToast();
+    const { theme } = useTheme();
 
     const [content, setContent] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -223,10 +227,24 @@ const ContentDetailPage = () => {
                             </div>
 
                             <div className="flex gap-3">
-                                <Button className="bg-white text-black hover:bg-white/90">
-                                    <Play className="h-4 w-4 mr-2 fill-current" />
-                                    Watch Trailer
-                                </Button>
+                                {(() => {
+                                    const trailer = content.videos?.results?.find(
+                                        (v: any) => v.type === 'Trailer' && v.site === 'YouTube'
+                                    ) || content.videos?.results?.find((v: any) => v.site === 'YouTube');
+
+                                    const trailerUrl = trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null;
+
+                                    return (
+                                        <Button 
+                                            className="bg-white text-black hover:bg-white/90"
+                                            onClick={() => trailerUrl && window.open(trailerUrl, '_blank')}
+                                            disabled={!trailerUrl}
+                                        >
+                                            <Play className="h-4 w-4 mr-2 fill-current" />
+                                            {trailerUrl ? 'Watch Trailer' : 'Trailer Unavailable'}
+                                        </Button>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>
@@ -352,13 +370,33 @@ const ContentDetailPage = () => {
                     {user && (
                         <div className="bg-card p-6 rounded-xl border space-y-4">
                             <h3 className="font-semibold text-lg">Write a Review (Optional)</h3>
-                            <Textarea
-                                placeholder="Share your thoughts about this film..."
-                                value={reviewText}
-                                onChange={(e) => setReviewText(e.target.value)}
-                                rows={4}
-                                className="resize-none"
-                            />
+                            <div className="relative">
+                                <Textarea
+                                    placeholder="Share your thoughts about this film..."
+                                    value={reviewText}
+                                    onChange={(e) => setReviewText(e.target.value)}
+                                    rows={4}
+                                    className="resize-none"
+                                />
+                                <div className="absolute bottom-2 right-2">
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
+                                                <Smile className="h-5 w-5 text-muted-foreground" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="end" side="top">
+                                            <EmojiPicker 
+                                                onEmojiClick={(emojiData) => setReviewText(prev => prev + emojiData.emoji)}
+                                                autoFocusSearch={false}
+                                                theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
+                                                width={320}
+                                                height={400}
+                                            />
+                                        </PopoverContent>
+                                    </Popover>
+                                </div>
+                            </div>
                             <div className="flex items-center justify-between">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
@@ -394,45 +432,92 @@ const ContentDetailPage = () => {
                             <p className="text-center text-muted-foreground py-8">No reviews yet. Be the first to review!</p>
                         ) : (
                             reviews.map((review) => (
-                                <div key={review.id} className="bg-card p-6 rounded-xl border space-y-3">
-                                    <div className="flex items-start justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary">
-                                                {review.is_anonymous ? '?' : (review.profiles?.full_name?.[0] || '?')}
-                                            </div>
-                                            <div>
-                                                <p className="font-semibold">{review.is_anonymous ? 'Anonymous Craftsman' : (review.profiles?.full_name || 'Anonymous')}</p>
-                                                <p className="text-xs text-muted-foreground">{review.is_anonymous ? 'Identity Protected' : (review.profiles?.craft || 'Film Enthusiast')}</p>
-                                            </div>
-                                        </div>
-                                        <span className="text-xs text-muted-foreground">
-                                            {new Date(review.created_at).toLocaleDateString()}
-                                        </span>
-                                    </div>
-
-                                    {review.is_spoiler && (
-                                        <span className="inline-block px-2 py-1 bg-destructive/10 text-destructive text-xs rounded">
-                                            ⚠️ Spoiler Warning
-                                        </span>
-                                    )}
-
-                                    <p className="text-muted-foreground leading-relaxed">{review.review_text}</p>
-
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleMarkHelpful(review.id)}
-                                        className="gap-2"
-                                    >
-                                        <ThumbsUp className="h-4 w-4" />
-                                        Helpful ({review.helpful_count || 0})
-                                    </Button>
-                                </div>
+                                <ReviewItem 
+                                    key={review.id} 
+                                    review={review} 
+                                    onMarkHelpful={handleMarkHelpful} 
+                                />
                             ))
                         )}
                     </div>
                 </section>
             </div>
+        </div>
+    );
+};
+
+const ReviewItem = ({ review, onMarkHelpful }: { review: any, onMarkHelpful: (id: string) => void }) => {
+    const [showSpoiler, setShowSpoiler] = useState(false);
+    const isSpoiler = review.is_spoiler;
+
+    return (
+        <div className="bg-card p-6 rounded-xl border space-y-3">
+            <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                    {/* Avatar Logic */}
+                    {!review.is_anonymous && review.profiles?.avatar_url ? (
+                        <img 
+                            src={review.profiles.avatar_url} 
+                            alt={review.profiles.full_name}
+                            className="w-10 h-10 rounded-full object-cover border"
+                        />
+                    ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary border">
+                            {review.is_anonymous ? '?' : (review.profiles?.full_name?.[0] || '?')}
+                        </div>
+                    )}
+                    <div>
+                        <p className="font-semibold">{review.is_anonymous ? 'Anonymous Craftsman' : (review.profiles?.full_name || 'Anonymous')}</p>
+                        <p className="text-xs text-muted-foreground">{review.is_anonymous ? 'Identity Protected' : (review.profiles?.craft || 'Film Enthusiast')}</p>
+                    </div>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                    {new Date(review.created_at).toLocaleDateString()}
+                </span>
+            </div>
+
+            {isSpoiler && (
+                <div className="flex items-center justify-between bg-destructive/5 p-3 rounded-lg border border-destructive/20">
+                    <span className="text-destructive text-sm font-medium flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        Spoiler Warning
+                    </span>
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        onClick={() => setShowSpoiler(!showSpoiler)}
+                        className="text-xs h-8 hover:bg-destructive/10"
+                    >
+                        {showSpoiler ? 'Hide' : 'Show Review'}
+                    </Button>
+                </div>
+            )}
+
+            <div className="relative">
+                <p className={cn(
+                    "text-muted-foreground leading-relaxed transition-all duration-300",
+                    isSpoiler && !showSpoiler && "blur-md select-none opacity-40 pointer-events-none"
+                )}>
+                    {review.review_text}
+                </p>
+                {isSpoiler && !showSpoiler && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest bg-background/50 px-2 py-1 rounded backdrop-blur-sm">
+                            Spoiler Hidden
+                        </span>
+                    </div>
+                )}
+            </div>
+
+            <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onMarkHelpful(review.id)}
+                className="gap-2"
+            >
+                <ThumbsUp className="h-4 w-4" />
+                Helpful ({review.helpful_count || 0})
+            </Button>
         </div>
     );
 };

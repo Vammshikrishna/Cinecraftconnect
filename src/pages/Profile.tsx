@@ -314,11 +314,13 @@ const ProfilePage = () => {
                   </div>
 
                   <div className="flex flex-col items-center lg:items-start leading-tight w-full">
-                    <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-foreground tracking-tight text-center lg:text-left">
+                    <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-foreground tracking-tight text-center lg:text-left uppercase">
                       <span className="inline-block">
                         {profile.full_name || profile.username}
-                        {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi')) && (
-                          <VerificationBadge size="sm" className="ml-1.5 align-middle" />
+                        {(profile.is_verified || 
+                          profile.username?.toLowerCase().includes('vamshi') || 
+                          profile.full_name?.toLowerCase().includes('vamshi')) && (
+                          <VerificationBadge size="sm" className="ml-2 inline-flex" />
                         )}
                       </span>
                     </h1>

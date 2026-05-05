@@ -180,6 +180,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Connect with Creators" icon={Users} linkTo="/network">
                     {feedData.connections
                         .filter((profile: any) =>
+                            !profile.is_internal &&
                             !dismissedIds.has(profile.id) &&
                             // Exclude if already connected
                             !existingConnections.some(c =>
@@ -511,6 +512,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                         {feedData.connections.length > 0 ? (
                             feedData.connections
                                 .filter((profile: any) => 
+                                    !profile.is_internal &&
                                     !dismissedIds.has(profile.id) &&
                                     !existingConnections.some(c => 
                                         (c.follower_id === profile.id && c.status === 'accepted') || 

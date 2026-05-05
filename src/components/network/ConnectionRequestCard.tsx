@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { MapPin, Check, X } from 'lucide-react';
+import VerificationBadge from '../common/VerificationBadge';
 import { Connection } from '@/hooks/useConnections';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
@@ -60,8 +61,9 @@ export const ConnectionRequestCard = ({
 
         <div className="flex-1 min-w-0">
           <Link to={`/profile/${profile.id}`}>
-            <h3 className="text-lg font-semibold text-foreground hover:text-primary transition-colors truncate">
+            <h3 className="text-lg font-semibold text-foreground hover:text-primary transition-colors truncate flex items-center gap-1.5 uppercase">
               {profile.full_name || profile.username}
+              {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
             </h3>
           </Link>
           <p className="text-primary text-sm mb-1">{profile.craft || 'Filmmaker'}</p>

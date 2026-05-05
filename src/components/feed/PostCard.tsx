@@ -84,6 +84,7 @@ interface PostProps {
     name: string;
     logo_url: string | null;
     slug: string;
+    is_verified?: boolean;
   };
   authorId?: string;
 }
@@ -688,20 +689,21 @@ const PostCard = ({
                 <div className="truncate">
                   {pageInfo ? (
                     <div className="flex items-center gap-1.5 truncate">
-                      <Link to={`/pages/${pageInfo.slug}`} className="hover:text-primary transition-colors relative z-10 truncate">
+                      <Link to={`/pages/${pageInfo.slug}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{pageInfo.name}</p>
+                        {pageInfo.is_verified && <VerificationBadge size="sm" />}
                       </Link>
                     </div>
                   ) : author.id ? (
                       <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
-                        {author.isVerified && <VerificationBadge size="sm" />}
+                        {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
                         {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
                           <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
                         )}
                       </Link>
                   ) : (
-                    <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
+                    <p className="font-semibold truncate text-[13px] lg:text-[14px] uppercase">{author.name}</p>
                   )}
                   <p className="text-[11px] lg:text-[12px] text-muted-foreground truncate">
                     {pageInfo ? "Company Page" : author.role} • {timeAgo}
@@ -957,7 +959,10 @@ const PostCard = ({
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
-                        <p className="font-black text-sm md:text-base tracking-tight text-foreground">{author.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-black text-sm md:text-base tracking-tight text-foreground">{author.name}</p>
+                          {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                        </div>
                         <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-widest -mt-0.5">{author.craft || 'Artist'}</p>
                       </div>
                     </div>
@@ -1083,7 +1088,7 @@ const PostCard = ({
                         <div className="min-w-0 flex flex-col">
                           <div className="flex items-center gap-1.5">
                             <p className="font-black text-[15px] tracking-tight text-foreground leading-tight uppercase font-outfit">{author.name}</p>
-                            {author.isVerified && <VerificationBadge size="xs" />}
+                            {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
                           </div>
                           <p className="text-[10px] text-foreground/40 font-black uppercase tracking-[0.25em] -mt-0.5">{author.craft || 'Artist'}</p>
                         </div>
@@ -1161,9 +1166,12 @@ const PostCard = ({
                           </Avatar>
                           <div className="flex-1">
                             <div className="text-[14px] leading-relaxed">
-                              <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
-                                {author.name.toLowerCase().replace(/\s/g, '')}
-                              </span>
+                              <div className="flex items-center gap-1">
+                                  <span className="font-bold text-foreground tracking-tight hover:underline cursor-pointer uppercase">
+                                    {author.name}
+                                  </span>
+                                {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                              </div>
                               <div className="block">
                                 <div 
                                   ref={contentRef}

@@ -89,7 +89,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
         const [postsRes, projectsRes, discussionsRes, announcementsRes] = await Promise.all([
           supabase
             .from('posts')
-            .select('*, profiles:author_id(id, full_name, username, avatar_url, craft)')
+            .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
             .order('created_at', { ascending: false })
             .limit(20),
           supabase
@@ -233,8 +233,16 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
                 role: authorRole,
                 craft: author?.craft || undefined,
                 initials: getInitials(authorName),
-                avatar: item.profiles?.avatar_url || undefined
+                avatar: item.profiles?.avatar_url || undefined,
+                isVerified: !!item.profiles?.is_verified
               }}
+              pageInfo={item.company_pages ? {
+                id: item.company_pages.id,
+                name: item.company_pages.name,
+                logo_url: item.company_pages.logo_url,
+                slug: item.company_pages.slug,
+                is_verified: !!item.company_pages.is_verified
+              } : undefined}
               timeAgo={formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
               createdAt={item.created_at}
               content={item.content}

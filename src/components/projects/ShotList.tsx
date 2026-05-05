@@ -294,12 +294,12 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                             <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Composition {parseInt(shot.shot)}</p>
                                                         </div>
                                                         {!isInternal && (
-                                                            <div className="flex opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                                                                <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
-                                                                    <Pencil className="h-4 w-4" />
+                                                            <div className="flex opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all lg:translate-x-4 lg:group-hover:translate-x-0 shrink-0">
+                                                                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
+                                                                    <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                                                 </Button>
-                                                                <Button size="icon" variant="ghost" className="h-10 w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
-                                                                    <Trash2 className="h-4 w-4" />
+                                                                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
+                                                                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                                                 </Button>
                                                             </div>
                                                         )}
@@ -307,14 +307,14 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                     
                                                     <div className="relative">
                                                         <Film className="absolute -left-2 -top-2 w-12 h-12 text-primary/5 -rotate-12 pointer-events-none" />
-                                                        <p className="text-lg font-bold text-foreground/90 leading-relaxed italic border-l-3 border-primary/30 pl-6 py-1">
+                                                        <p className="text-base sm:text-lg font-bold text-foreground/90 leading-relaxed italic border-l-4 border-primary/30 pl-4 sm:pl-6 py-1 break-words">
                                                             "{shot.description}"
                                                         </p>
                                                     </div>
 
                                                      <div className="flex items-center gap-6 pt-2">
                                                         <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)} disabled={isInternal}>
-                                                            <SelectTrigger className={`w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl ${!isInternal ? 'opacity-60 hover:opacity-100 transition-all hover:border-primary/30' : 'opacity-40 cursor-default'}`}>
+                                                            <SelectTrigger className={`w-full sm:w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl ${!isInternal ? 'opacity-60 hover:opacity-100 transition-all hover:border-primary/30' : 'opacity-40 cursor-default'}`}>
                                                                 <SelectValue />
                                                             </SelectTrigger>
                                                             <SelectContent className="bg-popover border-border rounded-2xl">

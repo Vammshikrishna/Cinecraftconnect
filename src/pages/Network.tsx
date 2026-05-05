@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageHeader } from '@/components/common/PageHeader';
 import SEO from '@/components/common/SEO';
+import VerificationBadge from '@/components/common/VerificationBadge';
 
 import { useAccountType } from "@/hooks/useAccountType";
 import { useNavigate } from "react-router-dom";
@@ -306,8 +307,9 @@ const Network = () => {
                                   </Link>
                                   <div className="flex flex-col">
                                     <Link to={`/profile/${profile.id}`} className="hover:underline hover:text-primary transition-colors">
-                                      <p className="font-semibold text-foreground text-base">
+                                      <p className="font-semibold text-foreground text-base flex items-center gap-1">
                                         {profile.full_name || profile.username}
+                                        {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
                                       </p>
                                     </Link>
                                     <p className="text-sm text-muted-foreground line-clamp-1">{profile.craft}</p>
@@ -386,8 +388,9 @@ const Network = () => {
                                 </Link>
                                 <div className="flex-1 min-w-0">
                                   <Link to={`/profile/${profile.id}`} className="group-hover:text-primary transition-colors">
-                                    <p className="font-semibold text-foreground text-base truncate">
+                                    <p className="font-semibold text-foreground text-base truncate flex items-center gap-1">
                                       {profile.full_name || profile.username}
+                                      {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
                                     </p>
                                   </Link>
                                   <p className="text-sm text-primary/80 truncate mb-1">{profile.craft}</p>

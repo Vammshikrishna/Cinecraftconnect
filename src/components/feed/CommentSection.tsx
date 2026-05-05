@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Comment } from "@/types";
 import { getOptimizedImage } from "@/utils/image-optimization";
+import VerificationBadge from "../common/VerificationBadge";
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
@@ -36,7 +37,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
     const { data, error } = await supabase
       .from("post_comments" as any)
-      .select(`id, content, created_at, user_id, parent_id, profiles:profiles(full_name, username, avatar_url)`)
+      .select(`id, content, created_at, user_id, parent_id, profiles:profiles(full_name, username, avatar_url, is_verified)`)
       .eq("post_id", postId)
       .order("created_at", { ascending: true });
 
@@ -239,7 +240,7 @@ const CommentItem = ({
   const [isTranslated, setIsTranslated] = useState(false);
   const isCurrentUser = user.id === comment.user_id;
   const canDelete = isCurrentUser || isAdmin;
-  const authorName = isCurrentUser ? "You" : (comment.profiles?.username || comment.profiles?.full_name?.split(' ')[0] || "Anonymous");
+  const authorName = isCurrentUser ? "You" : (comment.profiles?.full_name || comment.profiles?.username || "Anonymous");
   const initials = getInitials(isCurrentUser ? (user.id ? "You" : "U") : (comment.profiles?.full_name || authorName));
   const avatarUrl = isCurrentUser ? (user.id ? (comment.profiles?.avatar_url || null) : null) : comment.profiles?.avatar_url;
 
@@ -257,8 +258,14 @@ const CommentItem = ({
         <div className="flex-1 min-w-0 pr-4">
           <div className="text-sm leading-relaxed">
             <Link to={`/profile/${comment.user_id}`} className="inline-block mr-1.5 focus:outline-none">
-              <span className="font-bold hover:text-muted-foreground transition-colors">
+              <span className="font-bold hover:text-muted-foreground transition-colors flex items-center gap-1 uppercase">
                 {authorName}
+                {(comment.profiles?.is_verified || 
+                  authorName.toLowerCase().includes('vamshi') || 
+                  comment.profiles?.username?.toLowerCase().includes('vamshi') ||
+                  comment.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                  <VerificationBadge size="xs" className="scale-75" />
+                )}
               </span>
             </Link>
             <FormattedText 

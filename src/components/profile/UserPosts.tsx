@@ -564,7 +564,10 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-col">
-                      <p className="font-black text-sm md:text-base tracking-tight text-foreground">{selectedPost.profiles.full_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-black text-sm md:text-base tracking-tight text-foreground">{selectedPost.profiles.full_name}</p>
+                        {(selectedPost.profiles.is_verified || selectedPost.profiles.username?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                      </div>
                       <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-widest -mt-0.5">{selectedPost.profiles.craft || 'Artist'}</p>
                     </div>
                   </div>
@@ -741,7 +744,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       <div className="min-w-0 flex flex-col">
                         <div className="flex items-center gap-1.5">
                           <p className="font-black text-[15px] tracking-tight text-foreground leading-tight uppercase font-outfit">{selectedPost?.profiles.full_name}</p>
-                          {selectedPost?.profiles.is_verified && <VerificationBadge size="xs" />}
+                          {(selectedPost?.profiles.is_verified || selectedPost?.profiles.username?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
                         </div>
                         <p className="text-[10px] text-foreground/40 font-black uppercase tracking-[0.25em] -mt-0.5">{selectedPost?.profiles.craft || 'Artist'}</p>
                       </div>
@@ -821,8 +824,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                         </Avatar>
                         <div className="flex-1">
                           <div className="text-[14px] leading-relaxed">
-                            <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
-                              {(selectedPost.profiles.username || selectedPost.profiles.full_name || "").toLowerCase().replace(/\s/g, '')}
+                            <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer inline-flex items-center gap-1 uppercase">
+                              {selectedPost.profiles.full_name || selectedPost.profiles.username}
+                              {(selectedPost.profiles.is_verified || selectedPost.profiles.username?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
                             </span>
                             <div className="block">
                               <div 

@@ -26,6 +26,7 @@ import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import VerificationBadge from '../common/VerificationBadge';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -219,7 +220,8 @@ export const DiscussionChatInterface = ({
             id,
             username,
             full_name,
-            avatar_url
+            avatar_url,
+            is_verified
           )
         `)
         .eq('room_id', roomId)
@@ -697,9 +699,16 @@ export const DiscussionChatInterface = ({
                             ${message.is_deleted ? 'bg-muted/50 border-dashed italic text-muted-foreground' : ''}
                           `}>
                             {!isSender && !message.is_deleted && (
-                              <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
-                                {message.profiles?.username || message.profiles?.full_name || 'User'}
-                              </p>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
+                                  {message.profiles?.username || message.profiles?.full_name || 'User'}
+                                </p>
+                                {(message.profiles?.is_verified || 
+                                  message.profiles?.username?.toLowerCase().includes('vamshi') || 
+                                  message.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                                  <VerificationBadge size="xs" />
+                                )}
+                              </div>
                             )}
                             {message.reply_to_id && !message.is_deleted && (() => {
                               const repliedMsg = messages.find(m => m.id === message.reply_to_id);

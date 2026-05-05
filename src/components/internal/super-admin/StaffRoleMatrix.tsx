@@ -30,8 +30,8 @@ interface StaffMember {
 
 interface StaffRoleMatrixProps {
   staff: StaffMember[];
-  onPromote: (userId: string, newRole: string) => void;
-  onRevoke: (userId: string) => void;
+  onPromote: (userId: string, role: string, metadata?: { username: string; fullName: string }) => void;
+  onRevoke: (userId: string, role: string) => void;
 }
 
 const ROLE_CONFIG = {
@@ -98,7 +98,9 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
           options: {
             data: {
               username,
+              user_name: username, // Redundant key for trigger compatibility
               full_name: fullName,
+              display_name: fullName, // Redundant key for trigger compatibility
             }
           }
         });
@@ -108,8 +110,8 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
         if (data.user) {
           // Wait briefly for triggers to complete
           await new Promise(resolve => setTimeout(resolve, 1000));
-          // Promote the newly created user
-          onPromote(data.user.id, provisionRole);
+          // Promote the newly created user with explicit metadata to ensure sync
+          onPromote(data.user.id, provisionRole, { username, fullName });
         }
       }
 
@@ -170,9 +172,13 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                           <User className="w-5 h-5 text-muted-foreground" />
                         )}
                       </div>
-                      <div>
-                        <p className="text-sm font-bold text-foreground">@{member.username}</p>
-                        <p className="text-[10px] text-muted-foreground font-medium">{member.full_name}</p>
+                      <div className="flex flex-col min-w-0">
+                        <p className="text-sm font-bold text-foreground truncate">
+                          {member.username && member.username !== 'no_username' ? `@${member.username}` : (member.full_name || 'Staff Member')}
+                        </p>
+                        {member.username && member.username !== 'no_username' && (
+                          <p className="text-[10px] text-muted-foreground font-medium truncate">{member.full_name || 'Internal Staff'}</p>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -208,8 +214,7 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                       </Button>
                       <Separator orientation="vertical" className="h-4 mx-1" />
                       <Button variant="outline" size="sm" className="h-8 rounded-lg text-[10px] font-bold border-red-500/20 text-red-500 hover:bg-red-500/5 px-3"
-                        onClick={() => onRevoke(member.id)}
-                        disabled={member.role === 'super_admin'}
+                        onClick={() => onRevoke(member.id, member.role)}
                       >
                         <UserMinus className="w-3.5 h-3.5 mr-2" /> Revoke
                       </Button>

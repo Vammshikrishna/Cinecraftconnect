@@ -328,8 +328,8 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-card border border-border w-full flex overflow-x-auto overflow-y-hidden justify-start no-scrollbar">
-              <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All ProjectSpace</TabsTrigger>
-              {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My ProjectSpace</TabsTrigger>}
+              <TabsTrigger value="all" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">All</TabsTrigger>
+              {user && <TabsTrigger value="my" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">My Projects</TabsTrigger>}
               {user && <TabsTrigger value="bookmarked" className="flex-1 min-w-[100px] data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Bookmarked</TabsTrigger>}
             </TabsList>
           </Tabs>

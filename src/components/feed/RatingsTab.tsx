@@ -145,6 +145,7 @@ const RatingsTab = () => {
   const [scifi, setSciFi] = useState<RatingItem[]>([]);
   const [romance, setRomance] = useState<RatingItem[]>([]);
   const [tvSeries, setTvSeries] = useState<RatingItem[]>([]);
+  const [platformCinema, setPlatformCinema] = useState<RatingItem[]>([]);
   const [searchResults, setSearchResults] = useState<RatingItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -180,6 +181,7 @@ const RatingsTab = () => {
     war: true,
     musicals: true,
     indianFamily: true,
+    platformCinema: true,
     search: false
   });
 
@@ -254,6 +256,38 @@ const RatingsTab = () => {
   // because each request gets the full available bandwidth
   // ---------------------------------------------------------------
   const loadAllDataSequentially = async () => {
+    // Phase 0: Native Platform Cinema (Highest Priority)
+    try {
+      const { data: internalCinema } = await supabase
+        .from('platform_cinema')
+        .select(`
+          *,
+          profiles(full_name)
+        `)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (internalCinema) {
+        setPlatformCinema(internalCinema.map(item => ({
+          id: item.id as any, // UUID
+          title: item.title,
+          overview: item.overview || '',
+          poster_path: item.poster_url || null,
+          backdrop_path: item.backdrop_url || null,
+          vote_average: 0, // Will be enriched or calculated
+          release_date: item.release_date,
+          original_language: 'en',
+          user_rating: null,
+          app_rating: item.view_count as any
+        })));
+      }
+      setLoadingStates(prev => ({ ...prev, platformCinema: false }));
+    } catch (err) {
+      console.error("Error loading platform cinema:", err);
+      setLoadingStates(prev => ({ ...prev, platformCinema: false }));
+    }
+
     // Phase 1: High Priority (what user sees first)
     await fetchCategoryData(fetchTrending, setTrending, 'trending');
     await fetchCategoryData(fetchNowPlaying, setNowPlaying, 'nowPlaying');
@@ -404,6 +438,7 @@ const RatingsTab = () => {
 
         {/* Discovery Grid — each row appears as soon as it loads */}
         <div className={`${searchQuery.trim() !== "" ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'} transition-all duration-700 space-y-2`}>
+          {loadingStates.platformCinema ? <CategorySkeleton /> : <CategoryRow title="Native Cinema & Originals" items={platformCinema} onRate={handleRate} />}
           {loadingStates.trending ? <CategorySkeleton /> : <CategoryRow title="Trending Now" items={trending} onRate={handleRate} />}
           {loadingStates.nowPlaying ? <CategorySkeleton /> : <CategoryRow title="In Cinemas & Streaming Now" items={nowPlaying} onRate={handleRate} />}
           {loadingStates.upcoming ? <CategorySkeleton /> : <CategoryRow title="Upcoming Masterpieces" items={upcoming} onRate={handleRate} />}

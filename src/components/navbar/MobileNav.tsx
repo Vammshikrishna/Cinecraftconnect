@@ -1,6 +1,6 @@
 // Mobile navigation bar for mobile view
 import { Link, useLocation } from "react-router-dom";
-import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star } from "lucide-react";
+import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star, Lightbulb } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -57,7 +57,7 @@ export function MobileNav() {
   };
 
   // More-menu paths used for active-state detection
-  const commonMorePaths = ["/ratings", "/announcements", "/learn", "/marketplace", "/vendors", "/pages", "/messages", "/dm"];
+  const commonMorePaths = ["/ratings", "/announcements", "/learn", "/marketplace", "/vendors", "/pages", "/messages", "/dm", "/pitch"];
   const allMorePaths = commonMorePaths;
   const isMoreActive = allMorePaths.some(p => location.pathname.startsWith(p));
 
@@ -98,6 +98,12 @@ export function MobileNav() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
 
+                <DropdownMenuItem asChild>
+                  <Link to="/pitch" className="flex items-center gap-3 cursor-pointer">
+                    <Lightbulb size={18} />
+                    <span>Pitch</span>
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
                     <Star size={18} />

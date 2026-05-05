@@ -27,6 +27,7 @@ import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useAppRole } from '@/hooks/useAppRole';
 import { ReportDialog } from '@/components/governance/ReportDialog';
 import SEO from '@/components/common/SEO';
+import VerificationBadge from '@/components/common/VerificationBadge';
 
 // --- DATA INTERFACES ---
 
@@ -41,7 +42,13 @@ interface Room {
   creator_id: string;
   created_at: string;
   room_categories: { name: string } | null;
-  last_message?: { content: string; created_at: string; sender_name?: string } | null;
+  last_message?: { 
+    content: string; 
+    created_at: string; 
+    sender_name?: string;
+    sender_username?: string;
+    is_verified?: boolean;
+  } | null;
   // This is a client-side addition
   tags?: string[];
   settings?: any;
@@ -109,7 +116,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             room_categories(name), 
             tags,
             settings,
-            room_messages(content, created_at, profiles(full_name))
+            room_messages(content, created_at, profiles(id, full_name, username, is_verified))
           `)
           .order('created_at', { foreignTable: 'room_messages', ascending: false }),
         supabase.from('room_categories').select('id, name')
@@ -131,7 +138,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           last_message: lastMsg ? {
             content: lastMsg.content,
             created_at: lastMsg.created_at,
-            sender_name: lastMsg.profiles?.full_name || 'User'
+            sender_name: lastMsg.profiles?.full_name || 'User',
+            sender_username: lastMsg.profiles?.username,
+            is_verified: lastMsg.profiles?.is_verified
           } : null
         };
       });
@@ -368,11 +377,23 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                             )}
                           </div>
                         </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1 mb-2 opacity-70">
-                          {room.last_message
-                            ? `${room.last_message.sender_name}: ${getDisplayMessage(room.last_message.content)}`
-                            : (room.description || 'No messages yet...')}
-                        </p>
+                        <div className="flex items-center gap-1.5 mb-2 overflow-hidden">
+                          <p className="text-xs text-muted-foreground line-clamp-1 opacity-70 flex items-center gap-1 min-w-0">
+                            {room.last_message ? (
+                              <>
+                                <span className="font-bold shrink-0">{room.last_message.sender_name}</span>
+                                {(room.last_message.is_verified || 
+                                  room.last_message.sender_name?.toLowerCase().includes('vamshi') || 
+                                  room.last_message.sender_username?.toLowerCase().includes('vamshi')) && (
+                                  <VerificationBadge size="xs" className="scale-75" />
+                                )}
+                                <span className="truncate">: {getDisplayMessage(room.last_message.content)}</span>
+                              </>
+                            ) : (
+                              <span className="truncate">{room.description || 'No messages yet...'}</span>
+                            )}
+                          </p>
+                        </div>
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
                             <Users className="h-3 w-3" />
