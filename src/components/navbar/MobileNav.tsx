@@ -13,15 +13,17 @@ import { useUnreadMessages } from "@/hooks/useUnreadMessages";
 import DiscussionRoomIcon from "@/components/icons/DiscussionRoomIcon";
 import VendorIcon from "@/components/icons/VendorIcon";
 import StudioPageIcon from "@/components/icons/StudioPageIcon";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 export function MobileNav() {
   const location = useLocation();
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { hasUnreadDiscussions, hasUnreadProjects } = useUnreadMessages();
+  const isKeyboardVisible = useKeyboardVisible();
 
-  // Don't render mobile nav for unauthenticated users
-  if (!user) {
+  // Don't render mobile nav for unauthenticated users or when keyboard is open
+  if (!user || isKeyboardVisible) {
     return null;
   }
 
