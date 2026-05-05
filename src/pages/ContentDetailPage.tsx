@@ -177,16 +177,16 @@ const ContentDetailPage = () => {
             <div className="fixed top-20 left-4 md:left-8 z-50">
                 <Button
                     variant="secondary"
-                    className="bg-background/90 hover:bg-background text-foreground shadow-xl backdrop-blur-xl rounded-full h-10 px-5 border border-border/50 group/back"
+                    className="bg-background/80 hover:bg-background text-foreground shadow-xl backdrop-blur-xl rounded-full h-10 px-5 border border-border/50 group/back transition-all duration-300"
                     onClick={() => navigate(-1)}
                 >
-                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    <ArrowLeft className="h-4 w-4 mr-2 group-hover/back:-translate-x-1 transition-transform" />
                     <span className="text-sm font-bold uppercase tracking-wider">Back</span>
                 </Button>
             </div>
 
             {/* Hero Section */}
-            <div className="relative w-full aspect-video md:aspect-[21/9] min-h-[400px]">
+            <div className="relative w-full aspect-video md:aspect-[21/9] min-h-[500px] md:min-h-[600px] lg:min-h-[650px]">
                 <div className="absolute inset-0">
                     <img
                         src={`https://image.tmdb.org/t/p/original${content.backdrop_path || content.poster_path}`}
@@ -194,39 +194,43 @@ const ContentDetailPage = () => {
                         className="w-full h-full object-cover"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-transparent to-transparent" />
                     <div className="absolute inset-0 bg-gradient-to-r from-background/20 via-transparent to-transparent" />
                 </div>
 
-                <div className="relative h-full max-w-7xl mx-auto px-4 md:px-8 flex flex-col justify-end pb-12">
+                <div className="relative h-full max-w-7xl mx-auto px-4 md:px-8 flex flex-col justify-end pb-10 md:pb-16">
 
-                    <div className="flex flex-col md:flex-row gap-6 items-end">
-                        <img
-                            src={`${TMDB_IMAGE_BASE_URL}${content.poster_path}`}
-                            alt={title}
-                            className="w-32 md:w-64 rounded-lg shadow-2xl border-2 border-white/10"
-                        />
+                    <div className="flex flex-row gap-4 md:gap-8 items-end text-left">
+                        <div className="relative group flex-shrink-0">
+                            <img
+                                src={`${TMDB_IMAGE_BASE_URL}${content.poster_path}`}
+                                alt={title}
+                                className="w-36 sm:w-44 md:w-52 lg:w-64 rounded-xl shadow-2xl border-2 border-white/10 transition-transform duration-500 group-hover:scale-105"
+                            />
+                            <div className="absolute inset-0 rounded-xl shadow-[inset_0_0_40px_rgba(0,0,0,0.3)] pointer-events-none" />
+                        </div>
 
-                        <div className="flex-1 space-y-4">
-                            <h1 className="text-4xl md:text-6xl font-extrabold text-foreground drop-shadow-sm">
+                        <div className="flex-1 space-y-3 md:space-y-6 pb-2 md:pb-0 min-w-0">
+                            <h1 className="text-2xl md:text-6xl font-extrabold text-foreground drop-shadow-xl tracking-tight line-clamp-3">
                                 {title}
                             </h1>
 
-                            <div className="flex flex-wrap items-center gap-4 text-muted-foreground font-medium">
+                            <div className="flex flex-wrap items-center justify-start gap-2 md:gap-4 text-muted-foreground font-medium">
                                 {releaseDate && (
-                                    <div className="flex items-center gap-2">
-                                        <Calendar className="h-4 w-4" />
+                                    <div className="flex items-center gap-2 bg-muted/30 px-2 md:px-3 py-0.5 md:py-1 rounded-full backdrop-blur-sm border border-white/5 text-xs md:text-sm">
+                                        <Calendar className="h-3 w-3 md:h-4 md:w-4 text-primary" />
                                         <span>{new Date(releaseDate).getFullYear()}</span>
                                     </div>
                                 )}
                                 {runtime && (
-                                    <div className="flex items-center gap-2">
-                                        <Clock className="h-4 w-4" />
+                                    <div className="flex items-center gap-2 bg-muted/30 px-2 md:px-3 py-0.5 md:py-1 rounded-full backdrop-blur-sm border border-white/5 text-xs md:text-sm">
+                                        <Clock className="h-3 w-3 md:h-4 md:w-4 text-primary" />
                                         <span>{runtime} min</span>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="flex gap-3">
+                            <div className="flex flex-col sm:flex-row justify-start gap-3">
                                 {(() => {
                                     const trailer = content.videos?.results?.find(
                                         (v: any) => v.type === 'Trailer' && v.site === 'YouTube'
@@ -236,7 +240,7 @@ const ContentDetailPage = () => {
 
                                     return (
                                         <Button 
-                                            className="bg-white text-black hover:bg-white/90"
+                                            className="bg-white text-black hover:bg-white/90 w-full sm:w-auto shadow-xl"
                                             onClick={() => trailerUrl && window.open(trailerUrl, '_blank')}
                                             disabled={!trailerUrl}
                                         >
@@ -397,28 +401,31 @@ const ContentDetailPage = () => {
                                     </Popover>
                                 </div>
                             </div>
-                            <div className="flex items-center justify-between">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={isSpoiler}
-                                        onChange={(e) => setIsSpoiler(e.target.checked)}
-                                        className="rounded"
-                                    />
-                                    <span className="text-sm">Contains spoilers</span>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={isAnonymous}
-                                        onChange={(e) => setIsAnonymous(e.target.checked)}
-                                        className="rounded"
-                                    />
-                                    <span className="text-sm">Post anonymously</span>
-                                </label>
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer group">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSpoiler}
+                                            onChange={(e) => setIsSpoiler(e.target.checked)}
+                                            className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
+                                        />
+                                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Contains spoilers</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer group">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAnonymous}
+                                            onChange={(e) => setIsAnonymous(e.target.checked)}
+                                            className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
+                                        />
+                                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Post anonymously</span>
+                                    </label>
+                                </div>
                                 <Button
                                     onClick={handleSubmitReview}
                                     disabled={!reviewText.trim() || submittingReview}
+                                    className="w-full sm:w-auto shadow-lg shadow-primary/20"
                                 >
                                     {submittingReview ? 'Submitting...' : 'Submit Review'}
                                 </Button>

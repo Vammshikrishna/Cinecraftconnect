@@ -598,7 +598,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             })}
           <div ref={messagesEndRef} />
         </div>
-          <div className="border-t border-border flex flex-col relative bg-background">
+          <div className="border-t border-border flex flex-col relative bg-background pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-0">
             {showEmojiPicker && (
               <div className="absolute bottom-full mb-2 z-10 left-2">
                 <EmojiPicker onEmojiClick={onEmojiClick} />

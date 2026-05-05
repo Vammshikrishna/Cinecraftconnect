@@ -314,7 +314,7 @@ const ProfilePage = () => {
                   </div>
 
                   <div className="flex flex-col items-center lg:items-start leading-tight w-full">
-                    <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-foreground tracking-tight text-center lg:text-left uppercase">
+                    <h1 className="text-lg sm:text-xl md:text-2xl font-black text-foreground tracking-tight text-center lg:text-left uppercase">
                       <span className="inline-block">
                         {profile.full_name || profile.username}
                         {(profile.is_verified || 

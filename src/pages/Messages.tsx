@@ -140,7 +140,7 @@ const Messages = () => {
   };
 
   return (
-    <div className="h-screen w-full flex flex-col pt-16 bg-background overflow-hidden relative">
+    <div className="h-screen w-full flex flex-col pt-16 pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-0 bg-background overflow-hidden relative">
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />

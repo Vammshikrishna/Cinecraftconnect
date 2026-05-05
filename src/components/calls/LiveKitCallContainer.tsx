@@ -11,6 +11,7 @@ import {
   useParticipants,
   LayoutContextProvider,
   useMediaDeviceSelect,
+  TrackToggle,
 } from '@livekit/components-react';
 import { Track, setLogLevel, LogLevel } from 'livekit-client';
 import '@livekit/components-styles';
@@ -95,7 +96,7 @@ const CallImplementation = ({
         </div>
 
         {/* Glossy Overlay for Controls */}
-        <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/60 via-transparent to-black/40 p-3 flex flex-col justify-between opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-300">
+        <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-black/20 to-black/60 p-3 flex flex-col justify-between opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-300">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
               <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
@@ -113,13 +114,21 @@ const CallImplementation = ({
             </div>
           </div>
 
-          {/* Mini Speaking Badge */}
-          {participants.some(p => p.isSpeaking) && (
-            <div className="self-end px-2 py-1 bg-green-500/80 backdrop-blur-md rounded-full flex items-center gap-1.5 shadow-lg border border-white/20">
-              <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-              <span className="text-[9px] text-white font-black uppercase tracking-tighter">Speaking</span>
-            </div>
-          )}
+          <div className="flex flex-col items-center gap-2">
+             {/* Mini Media Controls */}
+             <div className="bg-black/60 backdrop-blur-xl px-2 py-1 rounded-full border border-white/10 flex items-center gap-2">
+                <TrackToggle source={Track.Source.Microphone} className="lk-pip-toggle-btn" />
+                <TrackToggle source={Track.Source.Camera} className="lk-pip-toggle-btn" />
+             </div>
+
+            {/* Mini Speaking Badge */}
+            {participants.some(p => p.isSpeaking) && (
+              <div className="px-2 py-0.5 bg-green-500/80 backdrop-blur-md rounded-full flex items-center gap-1 shadow-lg border border-white/20">
+                <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                <span className="text-[8px] text-white font-black uppercase tracking-tighter">Speaking</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -518,6 +527,24 @@ const CallImplementation = ({
         .lk-pip-tile .lk-focus-toggle-button {
           display: none !important;
         }
+        .lk-pip-toggle-btn {
+          width: 32px !important;
+          height: 32px !important;
+          background: transparent !important;
+          border: none !important;
+          color: white !important;
+          border-radius: 9999px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          transition: all 0.2s ease !important;
+        }
+        .lk-pip-toggle-btn:hover {
+          background: rgba(255, 255, 255, 0.1) !important;
+        }
+        .lk-pip-toggle-btn[data-lk-enabled="false"] {
+          color: #f87171 !important;
+        }
         @media (max-width: 640px) {
           .modern-control-bar .lk-button-leave {
              width: 34px !important;
@@ -564,6 +591,23 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   const { callState, toggleMinimize: toggleGlobalMinimize } = useGlobalCall();
   const location = useLocation();
   const prevPathname = useRef(location.pathname);
+  
+  // Initialize LiveKit user choices to prevent "Item with key lk-user-choices does not exist" error
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('lk-user-choices')) {
+      try {
+        localStorage.setItem('lk-user-choices', JSON.stringify({
+          videoEnabled: false,
+          audioEnabled: false,
+          videoDeviceId: '',
+          audioDeviceId: '',
+          audioOutputDeviceId: ''
+        }));
+      } catch (e) {
+        console.warn('Failed to initialize lk-user-choices:', e);
+      }
+    }
+  }, []);
 
   const isMinimized = callState.isMinimized;
   const setIsMinimized = (val: boolean) => toggleGlobalMinimize(val);
@@ -571,6 +615,32 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   const isResizing = useRef(false);
   const [embeddedStyle, setEmbeddedStyle] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [pipPos, setPipPos] = useState({ x: 0, y: 0 });
+  const lastTap = useRef(0);
+
+  const togglePipSize = () => {
+    const presets = [
+      { width: 200, height: 150 },
+      { width: 280, height: 210 },
+      { width: 360, height: 270 }
+    ];
+    
+    setPipSize(prev => {
+      // Find current preset or use the first one
+      const currentIdx = presets.findIndex(p => Math.abs(p.width - prev.width) < 10);
+      const nextIdx = (currentIdx + 1) % presets.length;
+      return presets[nextIdx];
+    });
+  };
+
+  const handlePipClick = () => {
+    if (!isMinimized) return;
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      // Double tap detected
+      togglePipSize();
+    }
+    lastTap.current = now;
+  };
 
   const isEmbeddedView = location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/');
 
@@ -753,10 +823,11 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
           top: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.top) ? `${embeddedStyle.top}px` : undefined,
           left: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.left) ? `${embeddedStyle.left}px` : undefined,
         }}
+        onPointerDown={handlePipClick}
       >
         {isMinimized && (
           <div
-            className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize z-[100] flex items-center justify-center group/resize"
+            className="absolute bottom-0 right-0 w-16 h-16 cursor-nwse-resize z-[100] flex items-end justify-end p-2 group/resize"
             onPointerDown={(e) => {
               e.stopPropagation();
               isResizing.current = true;
@@ -771,22 +842,22 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
               dragElastic={0}
               onDrag={(_, info) => {
                 setPipSize(prev => ({
-                  width: Math.max(180, prev.width + info.delta.x),
-                  height: Math.max(140, prev.height + info.delta.y)
+                  width: Math.max(160, prev.width + info.delta.x),
+                  height: Math.max(120, prev.height + info.delta.y)
                 }));
               }}
               onDragEnd={() => {
                 isResizing.current = false;
               }}
-              className="w-4 h-4 rounded-full bg-white/10 group-hover/resize:bg-primary/40 flex items-center justify-center transition-colors shadow-inner"
+              className="w-8 h-8 rounded-full bg-white/10 group-hover/resize:bg-primary/40 flex items-center justify-center transition-all shadow-inner border border-white/5"
             >
-              <div className="w-1.5 h-1.5 border-r border-b border-white/50" />
+              <div className="w-3 h-3 border-r-2 border-b-2 border-white/50 rounded-br-sm" />
             </motion.div>
           </div>
         )}
         <LiveKitRoom
-          video={true}
-          audio={true}
+          video={false}
+          audio={false}
           token={token}
           serverUrl={serverUrl}
           connect={true}

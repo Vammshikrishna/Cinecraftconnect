@@ -788,7 +788,7 @@ export const DiscussionChatInterface = ({
             </div>
           )}
 
-          <div className="p-3 bg-background border-t border-border">
+          <div className="p-3 bg-background border-t border-border pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-3">
             {replyingTo && (
               <div className="mx-2 mb-2 p-2 bg-muted/50 rounded-lg flex items-center justify-between border-l-4 border-primary animate-in slide-in-from-bottom-2">
                 <div className="flex-1 min-w-0 pr-4">
