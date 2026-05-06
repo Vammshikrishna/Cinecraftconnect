@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, ArrowLeft, Bell, Flag } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, Bell, Flag } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
@@ -25,6 +25,9 @@ import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { BackButton } from '@/components/common/BackButton';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { ReportDialog } from '@/components/governance/ReportDialog';
 import SEO from '@/components/common/SEO';
 import VerificationBadge from '@/components/common/VerificationBadge';
@@ -69,6 +72,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const { unreadDiscussionIds } = useUnreadMessages();
   const isInCall = callState.isActive && callState.roomId === roomId;
   const isCallMinimized = callState.isMinimized;
+  const isKeyboardVisible = useKeyboardVisible();
 
   // Use URL as the source of truth for the selected room
   const activeRoom = useMemo(() => {
@@ -218,7 +222,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const handleRoomDelete = (roomId: string) => {
     setRooms(prevRooms => prevRooms.filter(r => r.id !== roomId));
     if (activeRoom?.id === roomId) {
-      navigate('/discussion-rooms');
+      navigate('/discussion-rooms', { state: { noScroll: true } });
     }
   }
 
@@ -289,10 +293,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             <div className="w-[350px] lg:w-[400px] border-r border-border flex flex-col bg-card/40 backdrop-blur-xl shrink-0 animate-in slide-in-from-left duration-300">
               <div className="p-6 border-b border-border space-y-4">
                 <div className="flex items-center justify-between">
-                  <Link to="/discussion-rooms" className="flex items-center gap-2 hover:text-primary transition-colors">
-                    <ArrowLeft size={18} />
-                    <h2 className="text-xl font-black tracking-tight">Discussions</h2>
-                  </Link>
+                  <BackButton label="DISCUSSIONS" to="/discussion-rooms" />
                   {!isFan && !isInternal && (
                     <Dialog open={isCreateModalOpen} onOpenChange={setCreateModalOpen}>
                       <DialogTrigger asChild>
@@ -422,6 +423,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           )}
 
           <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
+            <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
             <DiscussionChatInterface
               roomId={activeRoom.id}
               userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
@@ -432,7 +434,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               roomType={activeRoom.room_type}
               roomSettings={activeRoom.settings}
               onClose={() => {
-                navigate('/discussion-rooms');
+                navigate('/discussion-rooms', { state: { noScroll: true } });
               }}
               onRoomUpdated={handleRoomUpdated}
               showBackButton={isInCall && !isCallMinimized}
@@ -455,13 +457,17 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             </div>
             <h2 className="text-xl font-bold mb-2">Private Room</h2>
             <p className="text-muted-foreground text-sm mb-6">This is a private discussion room. You need an explicit invitation from the creator to join.</p>
-            <button onClick={() => navigate('/discussion-rooms')} className="text-primary text-sm font-medium hover:underline">← Back to all rooms</button>
+            <button onClick={() => navigate('/discussion-rooms', { state: { noScroll: true } })} className="text-primary text-sm font-medium hover:underline">← Back to all rooms</button>
           </div>
         </div>
       );
     }
     return (
-      <div className="fixed inset-x-0 top-14 md:top-16 bottom-[calc(env(safe-area-inset-bottom)+80px)] bg-background text-foreground flex flex-col z-40 lg:pb-0">
+      <div className={cn(
+        "fixed inset-x-0 top-14 md:top-16 bg-background text-foreground flex flex-col z-40 transition-all duration-300",
+        isKeyboardVisible ? "bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+80px)] lg:pb-0"
+      )}>
+        <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
         <DiscussionChatInterface
           roomId={activeRoom.id}
           userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
@@ -471,9 +477,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           categories={categories}
           roomType={activeRoom.room_type}
           roomSettings={activeRoom.settings}
-          onClose={() => {
-            navigate('/discussion-rooms');
-          }}
+          onClose={() => navigate('/discussion-rooms', { state: { noScroll: true } })}
           onRoomUpdated={handleRoomUpdated}
         />
       </div>

@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -128,7 +128,7 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
                                 </Label>
                                 <Textarea
                                     id="introduction"
-                                    placeholder="Tell the producer about your fit for this role..."
+                                    placeholder="Tell the call creator about your fit for this role..."
                                     value={introduction}
                                     onChange={(e) => setIntroduction(e.target.value)}
                                     className="min-h-[100px] sm:min-h-[140px] rounded-xl sm:rounded-2xl bg-card border-border hover:bg-muted/50 focus:bg-background transition-all text-sm sm:text-lg p-4 sm:p-6 resize-none shadow-sm leading-relaxed"

@@ -31,31 +31,31 @@ export const useHomeFeed = () => {
                 .from('announcements')
                 .select('*, company_pages:publisher_page_id(id, name, logo_url, slug), profiles:author_id(full_name, username)')
                 .order('posted_at', { ascending: false })
-                .limit(5);
+                .limit(25);
 
             const projectsPromise = supabase
                 .from('projects')
                 .select('*, creator:creator_id(full_name, avatar_url)')
                 .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(25);
 
             const discussionsPromise = supabase
                 .from('discussion_rooms')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(25);
 
             const marketplacePromise = supabase
                 .from('marketplace_listings')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(25);
 
             const vendorsPromise = supabase
                 .from('vendors')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(5);
+                .limit(25);
 
             const connectionsPromise = user?.id
                 ? supabase
@@ -64,7 +64,7 @@ export const useHomeFeed = () => {
                     .neq('id', user.id)
                     .eq('is_internal', false)
                     .order('updated_at', { ascending: false, nullsFirst: false })
-                    .limit(6)
+                    .limit(25)
                 : Promise.resolve({ data: [], error: null });
 
             const [

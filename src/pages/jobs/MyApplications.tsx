@@ -1,4 +1,4 @@
-﻿
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,10 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Calendar, MapPin, Building2, ArrowLeft, Trash2, FileText } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Loader2, Calendar, MapPin, Building2, Trash2, FileText } from "lucide-react";
+import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { PageHeader } from "@/components/common/PageHeader";
+import { BackButton } from "@/components/common/BackButton";
 
 interface Application {
     id: string;
@@ -28,7 +29,6 @@ const MyApplications = () => {
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
     const { toast } = useToast();
-    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchApplications = async () => {
@@ -111,14 +111,7 @@ const MyApplications = () => {
     return (
         <div className="min-h-screen bg-background pt-16 md:pt-20 pb-24 selection:bg-primary/30">
             <div className="max-w-4xl mx-auto px-4 md:px-8 relative z-10">
-                <Button 
-                    variant="ghost" 
-                    onClick={() => navigate('/jobs')} 
-                    className="mb-8 hover:bg-muted/50 rounded-xl px-4 h-10 border border-border/50 shadow-sm"
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Jobs
-                </Button>
+                <BackButton label="BACK TO JOBS" to="/jobs" className="mb-8" />
 
                 <PageHeader 
                   title="My Applications" 

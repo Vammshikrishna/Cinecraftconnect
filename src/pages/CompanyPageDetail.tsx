@@ -13,11 +13,11 @@ import {
   Edit,
   Share2, 
   CheckCircle2, 
-  ArrowLeft,
   Calendar,
   IndianRupee,
   Plus,
-  Mail
+  Mail,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -35,8 +35,8 @@ import { useToast } from '@/hooks/use-toast';
 import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
-import { Trash2 } from 'lucide-react';
 import VerificationBadge from '@/components/common/VerificationBadge';
+import { BackButton } from '@/components/common/BackButton';
 
 const getInitials = (name: string) => {
   return name
@@ -173,7 +173,14 @@ const CompanyPageDetail = () => {
   const canManage = isOwner || isMember || isInternal;
 
   if (pageLoading) return <div className="flex h-screen items-center justify-center bg-background"><LoadingSpinner /></div>;
-  if (!page) return <div className="flex h-screen items-center justify-center text-foreground p-8 text-center bg-background"><div><h2 className="text-2xl font-bold mb-2">Organization not found</h2><Button onClick={() => navigate('/explore')}>Go Back</Button></div></div>;
+  if (!page) return (
+    <div className="flex h-screen items-center justify-center text-foreground p-8 text-center bg-background">
+      <div className="flex flex-col items-center gap-6">
+        <h2 className="text-2xl font-bold">Organization not found</h2>
+        <BackButton label="GO BACK" to="/explore" />
+      </div>
+    </div>
+  );
 
   const handleDeletePage = async () => {
     if (!confirm('Are you absolutely sure you want to delete this company page? This action is permanent.')) return;
@@ -181,7 +188,7 @@ const CompanyPageDetail = () => {
       const { error } = await (supabase as any).from('company_pages').delete().eq('id', page.id);
       if (error) throw error;
       toast({ title: "Page deleted", description: "The company page has been removed successfully." });
-      navigate('/explore');
+      navigate('/explore', { state: { noScroll: true } });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -203,14 +210,7 @@ const CompanyPageDetail = () => {
         
         {/* Navigation Overlay */}
         <div className="absolute top-0 left-0 right-0 p-4 md:p-8 flex justify-between items-start z-30">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => navigate(-1)}
-            className="h-10 w-10 rounded-full bg-background/50 backdrop-blur-md border border-white/10 hover:bg-background transition-all shadow-xl"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+          <BackButton label="BACK" />
           <div className="flex gap-2">
             <Button 
               variant="ghost" 

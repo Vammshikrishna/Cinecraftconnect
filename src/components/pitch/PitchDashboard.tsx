@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useProducerSubmissions, useMyPitchSubmissions, PITCH_STATUS_LABELS } from '@/hooks/usePitch';
+import { useCallCreatorSubmissions, useMyPitchSubmissions, PITCH_STATUS_LABELS } from '@/hooks/usePitch';
 import { SubmissionReviewDialog } from './SubmissionReviewDialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -26,9 +26,9 @@ const STATUS_FILTERS = [
     { value: 'collaborating', label: 'Collaborating' },
 ];
 
-// ─── PRODUCER REVIEW DASHBOARD ───────────────────────────────────────────────
-export const ProducerPitchInbox = () => {
-    const { submissions, loading, updateStatus } = useProducerSubmissions();
+// ─── CALL CREATOR REVIEW DASHBOARD ───────────────────────────────────────────
+export const CallCreatorPitchInbox = () => {
+    const { submissions, loading, updateStatus } = useCallCreatorSubmissions();
     const [selectedSubmission, setSelectedSubmission] = useState<PitchSubmission | null>(null);
     const [statusFilter, setStatusFilter] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');

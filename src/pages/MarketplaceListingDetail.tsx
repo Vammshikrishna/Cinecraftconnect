@@ -83,7 +83,7 @@ const MarketplaceListingDetail = () => {
                 description: 'Failed to load listing details',
                 variant: 'destructive'
             });
-            navigate('/marketplace');
+            navigate('/marketplace', { state: { noScroll: true } });
         } finally {
             setLoading(false);
         }
@@ -120,7 +120,7 @@ const MarketplaceListingDetail = () => {
                 title: 'Listing deleted',
                 description: 'Your listing has been removed successfully.'
             });
-            navigate('/marketplace');
+            navigate('/marketplace', { state: { noScroll: true } });
         } catch (error) {
             console.error('Error deleting listing:', error);
             toast({
@@ -168,7 +168,7 @@ const MarketplaceListingDetail = () => {
                             )}
                         </div>
                     }
-                    onBack={() => navigate(-1)}
+                    onBack={() => navigate('/marketplace', { state: { noScroll: true } })}
                     actions={
                         <div className="flex gap-2">
                             {(isOwner || isInternal) ? (

@@ -1,13 +1,13 @@
 
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   Bell, Shield, Eye, Download,
   User, Lock, Volume2, Palette,
-  Settings as SettingsIcon, ChevronRight, ArrowLeft, LifeBuoy
+  Settings as SettingsIcon, ChevronRight, LifeBuoy
 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { BackButton } from '@/components/common/BackButton';
 
 const SettingsPage = () => {
   const navigate = useNavigate();
@@ -99,14 +99,7 @@ const SettingsPage = () => {
   return (
     <div className="min-h-screen bg-background pt-20 pb-32">
       <div className="max-w-6xl mx-auto px-4 md:px-8">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/profile')}
-          className="mb-6 hover:bg-muted/50 rounded-xl px-4 h-10 border border-border/50"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Profile
-        </Button>
+        <BackButton label="BACK TO PROFILE" to="/profile" className="mb-6" />
 
         <PageHeader 
           title="Settings" 

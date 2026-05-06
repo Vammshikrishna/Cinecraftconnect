@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Download, FileText, Database } from 'lucide-react';
+import { Download, FileText, Database } from 'lucide-react';
+import { BackButton } from '@/components/common/BackButton';
 
 const DataSettings = () => {
-    const navigate = useNavigate();
+
     const { toast } = useToast();
     const [isExporting, setIsExporting] = useState(false);
 
@@ -36,10 +37,7 @@ const DataSettings = () => {
         <div className="min-h-screen bg-background pt-20 pb-32">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
-                    <Button variant="ghost" onClick={() => navigate('/settings')} className="mb-4">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Back to Settings
-                    </Button>
+                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4" />
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                         <Database className="h-8 w-8 text-primary" />
                         Data & Privacy

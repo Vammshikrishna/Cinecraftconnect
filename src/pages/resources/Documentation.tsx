@@ -46,7 +46,7 @@ const Documentation = () => {
         <div className="space-y-8">
           <div>
             <h3 className="text-xl font-bold mb-3">1. Professional Portfolios</h3>
-            <p className="text-muted-foreground">Your profile is your digital resume. High-fidelity video embeds, credit lists, and gear lists allow you to stand out to producers and recruiters.</p>
+            <p className="text-muted-foreground">Your profile is your digital resume. High-fidelity video embeds, credit lists, and gear lists allow you to stand out to call creators and recruiters.</p>
           </div>
           
           <div>

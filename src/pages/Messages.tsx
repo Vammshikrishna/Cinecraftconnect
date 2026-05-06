@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { usePresence } from '@/hooks/usePresence';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ const Messages = () => {
   const [searchedUsers, setSearchedUsers] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const { onlineUserIds } = usePresence();
+  const isKeyboardVisible = useKeyboardVisible();
 
   // Partner data for the active chat
   const [activePartnerData, setActivePartnerData] = useState<{ id: string; name: string; avatar: string } | null>(null);
@@ -140,7 +142,10 @@ const Messages = () => {
   };
 
   return (
-    <div className="h-screen w-full flex flex-col pt-16 pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-0 bg-background overflow-hidden relative">
+    <div className={cn(
+      "h-screen w-full flex flex-col pt-16 bg-background overflow-hidden relative transition-all duration-300",
+      isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-0"
+    )}>
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
@@ -279,7 +284,7 @@ const Messages = () => {
               partnerId={activePartnerData.id}
               partnerName={activePartnerData.name}
               partnerAvatarUrl={activePartnerData.avatar}
-              onBackClick={() => navigate('/messages')}
+              onBackClick={() => navigate('/messages', { state: { noScroll: true } })}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000">

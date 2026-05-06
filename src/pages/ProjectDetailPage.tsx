@@ -16,6 +16,7 @@ import {
   DollarSign, 
   Briefcase
 } from 'lucide-react';
+import { BackButton } from '@/components/common/BackButton';
 import { ProjectApplicationDialog } from '@/components/projects/ProjectApplicationDialog';
 
 interface Project {
@@ -127,7 +128,7 @@ const ProjectDetailPage = () => {
     return (
       <div className="flex h-screen items-center justify-center flex-col gap-4">
         <h2 className="text-2xl font-bold">Project Not Found</h2>
-        <Button onClick={() => navigate('/projects')}>View All Projects</Button>
+        <Button onClick={() => navigate('/projects', { state: { noScroll: true } })}>View All Projects</Button>
       </div>
     );
   }
@@ -137,14 +138,7 @@ const ProjectDetailPage = () => {
   return (
     <div className="min-h-screen bg-background pt-24 pb-40">
       <div className="max-w-4xl mx-auto px-4 md:px-8">
-        <Button 
-          variant="ghost" 
-          onClick={() => navigate(-1)} 
-          className="mb-6 pl-0 hover:bg-transparent hover:text-primary transition-colors flex items-center gap-2 group"
-        >
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
-          <span>Back</span>
-        </Button>
+        <BackButton className="mb-6" to="/projects" />
 
         <div className="glass-card p-6 md:p-10 space-y-8">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">

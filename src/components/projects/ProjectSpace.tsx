@@ -12,7 +12,10 @@ import {
   ChevronRight,
   ArrowLeft,
   UserPlus,
-  Settings
+  Settings,
+  Phone,
+  Video,
+  ShieldBan
 } from 'lucide-react';
 
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
@@ -34,6 +37,7 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useToast } from '@/hooks/use-toast';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useGlobalCall } from '@/contexts/CallContext';
 
 interface ProjectSpaceProps {
   projectId: string;
@@ -41,7 +45,8 @@ interface ProjectSpaceProps {
   projectDescription: string;
 }
 
-type ActiveSection = 'chat' | 'tasks' | 'files' | 'team' | 'call-sheet' | 'shot-list' | 'legal-docs' | 'budget-sched' | 'applicants' | 'settings';
+const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
+type ActiveSection = typeof SECTIONS[number];
 
 export const ProjectSpace = ({
   projectId,
@@ -60,6 +65,11 @@ export const ProjectSpace = ({
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Global Call state
+  const { callState, startCall: startGlobalCall, toggleMinimize, togglePipHidden } = useGlobalCall();
+  const isInCall = callState.isActive && (callState.roomId === resolvedSpaceId || callState.roomId === projectId);
+  const isCallMinimized = callState.isMinimized;
 
   // Scroll active tab into view
   useEffect(() => {
@@ -99,6 +109,34 @@ export const ProjectSpace = ({
       container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
     }
   }, [activeSection]);
+
+  // Synchronize activeSection with call minimization and hidden state
+  useEffect(() => {
+    if (isInCall) {
+      if ((activeSection as string) === 'call') {
+        if (isCallMinimized) toggleMinimize(false);
+        if (callState.isPipHidden) togglePipHidden(false);
+      } else if ((activeSection as string) !== 'call' && !isCallMinimized) {
+        toggleMinimize(true);
+      }
+    }
+  }, [activeSection, isInCall, isCallMinimized, toggleMinimize, callState.isPipHidden, togglePipHidden]);
+
+  // Auto-switch away from 'call' section when call ends
+  useEffect(() => {
+    if (!isInCall && (activeSection as string) === 'call') {
+      setActiveSection('chat');
+    }
+  }, [isInCall, activeSection, setActiveSection]);
+
+  // Auto-switch to 'call' section when call starts for this space
+  const prevIsInCall = useRef(false);
+  useEffect(() => {
+    if (isInCall && !prevIsInCall.current) {
+      setActiveSection('call');
+    }
+    prevIsInCall.current = isInCall;
+  }, [isInCall, setActiveSection]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -249,6 +287,18 @@ export const ProjectSpace = ({
     }
   };
 
+  const handleStartCall = async () => {
+    if (!resolvedSpaceId) return;
+    const success = await startGlobalCall('project', resolvedSpaceId, projectTitle || 'Project Call');
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Failed to start call. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const collaborationNavItems = [
     { id: 'chat' as ActiveSection, label: 'Chat', icon: MessageCircle },
     { id: 'tasks' as ActiveSection, label: 'Tasks', icon: CheckSquare },
@@ -276,6 +326,10 @@ export const ProjectSpace = ({
     ...productionOfficeNavItems,
     ...teamNavItems
   ];
+
+  if (isInCall) {
+    allNavItems.unshift({ id: 'call' as ActiveSection, label: 'Live Call', icon: Video });
+  }
 
   const renderContent = () => {
     if (userRole === 'guest' && !isInternal) {
@@ -311,6 +365,12 @@ export const ProjectSpace = ({
 
     // ... (rest of renderContent switch)
     switch (activeSection) {
+      case 'call':
+        return (
+          <div id="project-call-container" className="flex-1 w-full bg-[#09090b] relative">
+             {/* LiveKitCallContainer portals here */}
+          </div>
+        );
       case 'chat':
         return <ProjectChatInterface projectId={projectId} />;
       case 'tasks':
@@ -348,7 +408,7 @@ export const ProjectSpace = ({
     return (
       <div className="h-screen w-screen bg-background flex flex-col p-4">
         {/* Guest View Dialog */}
-        <Dialog open={true} onOpenChange={(open) => { if (!open) navigate(-1); }}>
+        <Dialog open={true} onOpenChange={(open) => { if (!open) navigate('/projects', { state: { noScroll: true } }); }}>
           <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
             <DialogHeader className="sr-only">
               <DialogTitle>Access Restricted</DialogTitle>
@@ -399,7 +459,7 @@ export const ProjectSpace = ({
               )}
             </div>
             <div className="flex flex-row justify-end space-x-2 w-full">
-              <Button variant="outline" onClick={() => navigate(-1)} className="flex-1">
+              <Button variant="outline" onClick={() => navigate('/projects', { state: { noScroll: true } })} className="flex-1">
                 Cancel
               </Button>
               {requestStatus === 'none' ? (
@@ -428,28 +488,63 @@ export const ProjectSpace = ({
 
   return (
     <div className="flex flex-col h-full w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
+      {/* Invisible anchor for Call UI logic to recognize this space */}
+      <div id="active-project-anchor" data-project-id={projectId} data-space-id={resolvedSpaceId} className="hidden" />
+      
       {/* Mobile Header & Navigation */}
-      <div className="lg:hidden flex flex-col border-b border-white/10 bg-background z-[60] shrink-0 sticky top-0">
-        <div className="flex items-center justify-between p-3">
+      <div className="lg:hidden flex flex-col bg-background z-[60] shrink-0 sticky top-0">
+        <div className="flex items-center px-3 py-2 gap-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(-1)}
+            onClick={() => navigate('/projects', { state: { noScroll: true } })}
             className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="text-center overflow-hidden px-2">
-            <h2 className="text-sm font-semibold truncate leading-tight">{projectTitle}</h2>
-            <p className="text-[10px] text-muted-foreground truncate leading-tight opacity-70">Project Space</p>
+          <div className="flex flex-col min-w-0 flex-1 py-1">
+            <h2 className="text-base font-bold truncate leading-tight">{projectTitle}</h2>
           </div>
-          <div className="w-9 shrink-0" /> {/* Spacer for balance */}
+          <div className="flex items-center gap-1.5">
+            {isInCall ? (
+              <button 
+                onClick={() => setActiveSection('call')}
+                className="flex items-center gap-1.5 px-2 py-1 bg-primary/20 border border-primary/30 rounded-full animate-pulse hover:bg-primary/30 transition-all shrink-0"
+              >
+                <Video className="h-4 w-4 text-green-500" />
+                <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Live</span>
+              </button>
+            ) : !isInternal ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleStartCall}
+                  className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+                >
+                  <Phone className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleStartCall}
+                  className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+                >
+                  <Video className="h-4 w-4" />
+                </Button>
+              </>
+            ) : (
+              <div title="Staff Observation Only">
+                <ShieldBan className="h-4 w-4 text-muted-foreground/30" />
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="relative w-full">
           <div
             ref={scrollContainerRef}
-            className="flex overflow-x-auto gap-2 px-4 pb-3 no-scrollbar w-full"
+            className="flex overflow-x-auto gap-2 px-4 pb-2 no-scrollbar w-full"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {allNavItems.map((item) => {
@@ -490,7 +585,7 @@ export const ProjectSpace = ({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/projects', { state: { noScroll: true } })}
               className="h-8 w-8 rounded-full hover:bg-white/10 shrink-0 text-muted-foreground hover:text-primary transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -502,6 +597,43 @@ export const ProjectSpace = ({
               <p className="text-xs text-muted-foreground truncate">
                 {projectDescription}
               </p>
+            </div>
+            
+            <div className="flex items-center gap-1 ml-auto shrink-0">
+              {isInCall ? (
+                <button 
+                  onClick={() => setActiveSection('call')}
+                  className="flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full hover:bg-primary/20 transition-all"
+                >
+                  <Video className="h-3.5 w-3.5 text-green-500 animate-pulse" />
+                  <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Live</span>
+                </button>
+              ) : !isInternal ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartCall}
+                    className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+                    title="Start Voice Call"
+                  >
+                    <Phone className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartCall}
+                    className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+                    title="Start Video Call"
+                  >
+                    <Video className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <div className="bg-muted/30 p-1.5 rounded-full border border-border/50" title="Staff Observation Mode">
+                  <ShieldBan className="h-3.5 w-3.5 text-muted-foreground/40" />
+                </div>
+              )}
             </div>
           </div>
 

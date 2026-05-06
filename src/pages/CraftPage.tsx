@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Profile } from '@/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,12 +8,12 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
-import { Briefcase, MapPin, Globe, User, ArrowLeft, Camera, Film } from 'lucide-react';
+import { Briefcase, MapPin, Globe, User, Camera, Film } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
+import { BackButton } from '@/components/common/BackButton';
 
 const CraftPage = () => {
   const { craftName } = useParams<{ craftName: string }>();
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [professionals, setProfessionals] = useState<Profile[]>([]);
 
@@ -50,14 +50,7 @@ const CraftPage = () => {
         </div>
 
         <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-20 pb-24 relative z-10">
-            <Button 
-                variant="ghost" 
-                onClick={() => navigate(-1)} 
-                className="mb-8 hover:bg-muted/50 rounded-xl px-4 h-10 border border-border/50"
-            >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Back
-            </Button>
+            <BackButton label="BACK" className="mb-8" />
 
             <PageHeader 
                 title={formattedCraftName} 

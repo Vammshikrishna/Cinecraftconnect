@@ -1,4 +1,4 @@
-﻿
+
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowLeft, FileText, CheckCircle2, XCircle, Clock, Search, Eye, Building2, Edit2, MessageSquare, Briefcase } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Loader2, FileText, CheckCircle2, XCircle, Clock, Search, Eye, Building2, Edit2, MessageSquare, Briefcase } from "lucide-react";
+import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { JobCreationModal } from "@/components/jobs/JobCreationModal";
 import { PageHeader } from "@/components/common/PageHeader";
+import { BackButton } from "@/components/common/BackButton";
 
 interface JobWithApplications {
     id: string;
@@ -44,7 +45,6 @@ const ManageJobs = () => {
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
     const { toast } = useToast();
-    const navigate = useNavigate();
 
     const fetchJobsAndApplications = async () => {
         if (!user) return;
@@ -234,14 +234,7 @@ const ManageJobs = () => {
             </div>
 
             <div className="max-w-6xl mx-auto px-4 md:px-8 relative z-10 space-y-8">
-                <Button 
-                    variant="ghost" 
-                    onClick={() => navigate('/jobs')} 
-                    className="mb-2 hover:bg-muted/50 rounded-xl px-4 h-10 border border-border/50"
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Jobs
-                </Button>
+                <BackButton label="BACK TO JOBS" to="/jobs" className="mb-2" />
 
                 <PageHeader 
                   title="Manage Postings" 

@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { 
-  ArrowLeft, Clock, AlertCircle, 
+  Clock, AlertCircle, 
   MessageCircle, 
   User, Shield, Paperclip, ExternalLink
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { motion } from 'framer-motion';
+import { BackButton } from '@/components/common/BackButton';
 
 interface SupportTicket {
   id: string;
@@ -26,7 +27,7 @@ interface SupportTicket {
 
 const SupportTicketDetail = () => {
   const { ticketId } = useParams();
-  const navigate = useNavigate();
+
   const [ticket, setTicket] = useState<SupportTicket | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,9 +79,7 @@ const SupportTicketDetail = () => {
     <div className="h-screen w-full flex flex-col items-center justify-center space-y-4">
       <AlertCircle className="w-12 h-12 text-muted-foreground/30" />
       <h2 className="text-xl font-bold uppercase tracking-tight">Ticket Not Found</h2>
-      <Button onClick={() => navigate('/support')} variant="ghost" className="rounded-xl">
-        <ArrowLeft className="w-4 h-4 mr-2" /> Back to Support
-      </Button>
+      <BackButton label="BACK TO SUPPORT" to="/support" />
     </div>
   );
 
@@ -88,14 +87,7 @@ const SupportTicketDetail = () => {
     <div className="min-h-screen bg-background pt-20 pb-20">
       <div className="max-w-4xl mx-auto px-4">
         <div className="mb-6">
-          <Button 
-            onClick={() => navigate('/support')} 
-            variant="ghost" 
-            size="sm" 
-            className="rounded-xl text-muted-foreground hover:text-primary transition-colors pl-0"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" /> Back to Support History
-          </Button>
+            <BackButton label="BACK TO SUPPORT HISTORY" to="/support" />
         </div>
 
         <motion.div 

@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
-import { Home, Search, ArrowLeft } from 'lucide-react';
+import { Home, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { BackButton } from '@/components/common/BackButton';
 
 const NotFound = () => {
   const location = useLocation();
@@ -42,14 +43,7 @@ const NotFound = () => {
                 </Link>
               </Button>
               
-              <Button 
-                variant="ghost" 
-                onClick={() => window.history.back()}
-                className="w-full"
-              >
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Go Back
-              </Button>
+              <BackButton className="w-full" />
             </div>
           </div>
         </CardContent>

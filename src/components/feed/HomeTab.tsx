@@ -136,6 +136,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Announcements" icon={Megaphone} linkTo="/announcements">
                     {feedData.announcements
                         .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[85vw] sm:w-[280px] md:w-[320px] flex-none snap-start mx-1 first:ml-0">
                             <FeedAnnouncementCard
@@ -158,6 +159,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Trending Projects" icon={Film} linkTo="/projects">
                     {feedData.projects
                         .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[240px] md:w-[280px] flex-none snap-start h-full">
                             <FeedProjectCard
@@ -188,6 +190,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                                 (c.following_id === profile.id && c.status === 'accepted')
                             )
                         )
+                        .slice(0, 7)
                         .map((profile: any) => {
                             const isPending = sentRequests.some(r => r.following_id === profile.id);
 
@@ -227,6 +230,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Active Discussions" icon={DiscussionRoomIcon} linkTo="/discussion-rooms">
                     {feedData.discussions
                         .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[260px] md:w-[320px] flex-none snap-start h-full">
                             <FeedDiscussionCard
@@ -245,6 +249,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Marketplace Highlights" icon={ShoppingBag} linkTo="/marketplace">
                     {feedData.marketplace
                         .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[200px] md:w-[240px] flex-none snap-start h-full">
                             <ListingCard 
@@ -263,6 +268,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Featured Vendors" icon={VendorIcon} linkTo="/vendors">
                     {feedData.vendors
                         .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[240px] md:w-[300px] flex-none snap-start h-full">
                             <VendorCard 
@@ -281,6 +287,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                 <FeedSection title="Latest Ratings" icon={Star} linkTo="/ratings">
                     {feedData.ratings
                         .filter((item: any) => !dismissedIds.has(item.id.toString()))
+                        .slice(0, 7)
                         .map((item: any) => (
                         <div key={item.id} className="w-[180px] md:w-[220px] flex-none snap-start">
                             <FeedRatingCard

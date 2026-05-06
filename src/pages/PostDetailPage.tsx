@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { BackButton } from '@/components/common/BackButton';
 import PostCard from '@/components/feed/PostCard';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { formatDistanceToNow } from 'date-fns';
@@ -59,9 +58,7 @@ const PostDetailPage = () => {
         return (
             <div className="flex flex-col h-screen items-center justify-center bg-background text-center gap-4">
                 <h2 className="text-2xl font-bold">Post Not Found</h2>
-                <Button onClick={() => navigate(-1)} variant="outline">
-                    <ArrowLeft className="mr-2 h-4 w-4" /> Go Back
-                </Button>
+                <BackButton />
             </div>
         );
     }
@@ -73,14 +70,7 @@ const PostDetailPage = () => {
     return (
         <div className="min-h-screen bg-background pt-20">
             <div className="container mx-auto px-4 pb-24 max-w-2xl">
-                <Button
-                    variant="ghost"
-                    onClick={() => navigate(-1)}
-                    className="mb-6 pl-0 hover:bg-transparent hover:text-primary transition-colors"
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to Feed
-                </Button>
+                <BackButton label="BACK TO FEED" className="mb-6" />
 
                 <PostCard
                     id={post.id}
@@ -104,7 +94,7 @@ const PostDetailPage = () => {
                     share_count={post.share_count || 0}
                     createdAt={post.created_at}
                     tags={post.tags}
-                    onDelete={() => navigate(-1)}
+                    onDelete={() => navigate('/', { state: { noScroll: true } })}
                 />
             </div>
         </div>
