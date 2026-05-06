@@ -39,6 +39,7 @@ import { useAppRole } from '@/hooks/useAppRole';
 import { Pencil } from 'lucide-react';
 import SEO from '@/components/common/SEO';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { BackButton } from '@/components/common/BackButton';
 
 interface Profile {
   id: string;
@@ -85,7 +86,7 @@ const PublicProfile = () => {
   useEffect(() => {
     if (userId) {
       if (user && userId === user.id) {
-        navigate('/profile');
+        navigate('/profile', { state: { noScroll: true } });
         return;
       }
       fetchProfile();
@@ -114,7 +115,7 @@ const PublicProfile = () => {
       
       // Check if this is the user's own profile (resolved by username)
       if (user && data.id === user.id) {
-        navigate('/profile');
+        navigate('/profile', { state: { noScroll: true } });
         return;
       }
 
@@ -259,7 +260,7 @@ const PublicProfile = () => {
       <div className="flex h-screen items-center justify-center text-center">
         <div>
           <h2 className="text-2xl font-bold mb-4">Profile Not Found</h2>
-          <Button variant="outline" onClick={() => navigate(-1)}><ArrowLeft className="mr-2 h-4 w-4" />Go Back</Button>
+          <BackButton />
         </div>
       </div>
     );
@@ -275,16 +276,7 @@ const PublicProfile = () => {
       <div className="absolute top-20 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary/20 rounded-full blur-[100px] pointer-events-none opacity-50" />
 
       <div className="w-full max-w-4xl px-4 md:px-8 relative z-10">
-        <Button
-          variant="ghost"
-          onClick={() => navigate(-1)}
-          className="mb-6 pl-0 hover:bg-transparent hover:text-primary transition-colors flex items-center gap-2 group"
-        >
-          <div className="p-2 rounded-full group-hover:bg-primary/10 transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-          </div>
-          <span>Go Back</span>
-        </Button>
+        <BackButton className="mb-6" />
 
         <header className="glass-card mb-10 relative overflow-hidden group">
           {/* Cover Photo - Balanced height */}

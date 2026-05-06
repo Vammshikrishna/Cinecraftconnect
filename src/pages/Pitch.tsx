@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PitchCallCard } from '@/components/pitch/PitchCallCard';
 import { PitchCallCreationModal } from '@/components/pitch/PitchCallCreationModal';
-import { ProducerPitchInbox, WriterPitchTracker } from '@/components/pitch/PitchDashboard';
+import { CallCreatorPitchInbox, WriterPitchTracker } from '@/components/pitch/PitchDashboard';
 import { usePitchCalls, canCreatePitchCall, canSubmitPitch } from '@/hooks/usePitch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -68,7 +68,7 @@ const Pitch = () => {
         <div className="min-h-screen bg-background pb-36">
             <SEO
                 title="Pitch"
-                description="The professional story pitching marketplace for India's entertainment industry. Producers post pitch calls, writers submit scripts and concepts."
+                description="The professional story pitching marketplace for India's entertainment industry. Call creators post pitch calls, writers submit scripts and concepts."
             />
 
             {/* Background orb */}
@@ -270,14 +270,14 @@ const Pitch = () => {
                         </TabsContent>
                     )}
 
-                    {/* ─── Review Inbox Tab (Producers) ─── */}
+                    {/* ─── Review Inbox Tab (Call Creators) ─── */}
                     {user && userCanCreate && (
                         <TabsContent value="inbox">
                             <div className="mb-6">
                                 <h2 className="text-xl font-black">Pitch Review Inbox</h2>
                                 <p className="text-sm text-muted-foreground mt-1">Review all pitches submitted to your pitch calls</p>
                             </div>
-                            <ProducerPitchInbox />
+                            <CallCreatorPitchInbox />
                         </TabsContent>
                     )}
                 </Tabs>

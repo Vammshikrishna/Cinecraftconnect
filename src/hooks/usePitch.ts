@@ -32,11 +32,11 @@ export interface PitchCall {
     is_saved?: boolean;
     submission_count?: number;
     profiles?: {
-        full_name: string;
-        avatar_url?: string;
-        username?: string;
-        craft?: string;
-        account_type?: string;
+        full_name: string | null;
+        username: string | null;
+        avatar_url: string | null;
+        craft: string | null;
+        location: string | null;
     };
 }
 
@@ -109,7 +109,7 @@ export const usePitchCalls = (filters?: Partial<FilterState>, searchQuery?: stri
                         avatar_url,
                         username,
                         craft,
-                        account_type
+                        location
                     )
                 `)
                 .eq('status', 'open')
@@ -208,7 +208,7 @@ export const useMyPitchSubmissions = () => {
         fetchSubmissions();
     }, [fetchSubmissions]);
 
-    // ── Real-time: update status badge instantly when producer reviews ──
+    // ── Real-time: update status badge instantly when Call Creator reviews ──
     useEffect(() => {
         if (!user) return;
         const channel = supabase
@@ -229,8 +229,8 @@ export const useMyPitchSubmissions = () => {
     return { submissions, loading, refetch: fetchSubmissions };
 };
 
-// ─── PRODUCER REVIEW HOOK ───────────────────────────────────────────────────
-export const useProducerSubmissions = (pitchCallId?: string) => {
+// ─── CALL CREATOR REVIEW HOOK ───────────────────────────────────────────────
+export const useCallCreatorSubmissions = (pitchCallId?: string) => {
     const { user } = useAuth();
     const [submissions, setSubmissions] = useState<PitchSubmission[]>([]);
     const [loading, setLoading] = useState(true);
@@ -275,7 +275,7 @@ export const useProducerSubmissions = (pitchCallId?: string) => {
     useEffect(() => {
         if (!user) return;
         const channel = supabase
-            .channel(`producer_submissions_rt_${user.id}`)
+            .channel(`call_creator_submissions_rt_${user.id}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'pitch_submissions' },

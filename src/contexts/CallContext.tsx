@@ -10,6 +10,7 @@ interface CallState {
   roomName: string | null;          // Display Name
   roomType: 'discussion' | 'project' | 'direct' | null;
   isMinimized: boolean;
+  isPipHidden: boolean;
   userRole: 'creator' | 'admin' | 'member' | 'guest';
 }
 
@@ -19,6 +20,7 @@ interface CallContextType {
   joinCall: (roomType: 'discussion' | 'project' | 'direct', roomId: string, roomName: string, role?: string) => Promise<boolean>;
   leaveCall: () => void;
   toggleMinimize: (minimized?: boolean) => void;
+  togglePipHidden: (hidden?: boolean) => void;
 }
 
 const CallContext = createContext<CallContextType | undefined>(undefined);
@@ -32,6 +34,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     roomName: null,
     roomType: null,
     isMinimized: false,
+    isPipHidden: false,
     userRole: 'member',
   });
 
@@ -39,18 +42,28 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
     setCallState(prev => ({
       ...prev,
       isMinimized: minimized !== undefined ? minimized : !prev.isMinimized,
+      isPipHidden: false, // Always unhide when toggling minimize/maximize
+    }));
+  };
+
+  const togglePipHidden = (hidden?: boolean) => {
+    setCallState(prev => ({
+      ...prev,
+      isPipHidden: hidden !== undefined ? hidden : !prev.isPipHidden,
     }));
   };
 
   const leaveCall = () => {
-    setCallState(prev => ({
-      ...prev,
+    setCallState({
       isActive: false,
       roomId: null,
       connectionId: null,
       roomName: null,
       roomType: null,
-    }));
+      isMinimized: false,
+      isPipHidden: false,
+      userRole: 'member',
+    });
   };
 
   // Cleanup on logout
@@ -81,6 +94,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
           roomName,
           roomType,
           isMinimized: false,
+          isPipHidden: false,
           userRole: role as any,
         });
         return true;
@@ -120,6 +134,7 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
         roomName,
         roomType,
         isMinimized: false,
+        isPipHidden: false,
         userRole: role as any,
       });
 
@@ -151,13 +166,14 @@ export const CallProvider = ({ children }: { children: React.ReactNode }) => {
       roomName,
       roomType,
       isMinimized: false,
+      isPipHidden: false,
       userRole: role as any,
     });
     return true;
   };
 
   return (
-    <CallContext.Provider value={{ callState, startCall, joinCall, leaveCall, toggleMinimize }}>
+    <CallContext.Provider value={{ callState, startCall, joinCall, leaveCall, toggleMinimize, togglePipHidden }}>
       {children}
     </CallContext.Provider>
   );

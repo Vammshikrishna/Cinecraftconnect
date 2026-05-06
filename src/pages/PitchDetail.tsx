@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
-  ArrowLeft, Megaphone, Calendar, Share2, Bookmark, 
+  Megaphone, Calendar, Share2, Bookmark, 
   DollarSign, Film, Users, Shield, Clock, 
   CheckCircle2, Info, MapPin, ExternalLink,
   MessageSquare, FileText, Edit2
@@ -22,6 +22,7 @@ import { UniversalShareSheet } from "@/components/common/UniversalShareSheet";
 import VerificationBadge from "@/components/common/VerificationBadge";
 import { getSafeImageUrl } from "@/services/tmdb";
 import SEO from "@/components/common/SEO";
+import { BackButton } from "@/components/common/BackButton";
 
 const FORMAT_LABELS: Record<string, string> = {
     film: 'Feature Film', series: 'Series', short: 'Short Film',
@@ -65,8 +66,7 @@ const PitchDetail = () => {
                         full_name,
                         avatar_url,
                         username,
-                        craft,
-                        account_type
+                        craft
                     )
                 `)
                 .eq('id', pitchId)
@@ -101,7 +101,7 @@ const PitchDetail = () => {
                 description: "Failed to load pitch details.",
                 variant: "destructive",
             });
-            navigate("/pitch");
+            navigate("/pitch", { state: { noScroll: true } });
         } finally {
             setLoading(false);
         }
@@ -166,14 +166,7 @@ const PitchDetail = () => {
 
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
                 <div className="flex items-center justify-between mb-6">
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={() => navigate("/pitch")}
-                        className="text-muted-foreground hover:text-foreground font-bold"
-                    >
-                        <ArrowLeft size={18} className="mr-2" /> Back to Marketplace
-                    </Button>
+                    <BackButton label="BACK TO PITCH" />
                     <div className="flex items-center gap-2">
                         <Button variant="ghost" size="icon" onClick={() => setShowShare(true)} className="rounded-full h-10 w-10">
                             <Share2 size={20} className="text-muted-foreground" />
@@ -407,11 +400,11 @@ const PitchDetail = () => {
                         </div>
                     </div>
 
-                    {/* Right Column: Producer Info */}
+                    {/* Right Column: Call Creator Info */}
                     <div className="lg:col-span-4 space-y-6">
                         <aside className="sticky top-24 space-y-6">
                             <div className="bg-card/40 backdrop-blur-md border border-border/50 rounded-[2.5rem] p-8 shadow-2xl">
-                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-8">The Producer</h3>
+                                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/60 mb-8">The Call Creator</h3>
                                 
                                 <div className="flex flex-col items-center text-center space-y-4">
                                     <Avatar className="h-24 w-24 rounded-2xl shadow-xl border border-border/50 ring-4 ring-primary/5">
@@ -426,22 +419,18 @@ const PitchDetail = () => {
                                             <VerificationBadge size="sm" />
                                         </div>
                                         <p className="text-sm text-primary font-bold uppercase tracking-wider">
-                                            {pitchCall.profiles?.craft || 'Industry Producer'}
+                                            {pitchCall.profiles?.craft || 'Call Creator'}
                                         </p>
                                     </div>
                                 </div>
 
                                 <div className="mt-8 pt-8 border-t border-border/20 space-y-4">
-                                    <div className="flex items-center justify-between text-sm">
-                                        <span className="text-muted-foreground font-bold">Account Type</span>
-                                        <Badge variant="outline" className="capitalize">{pitchCall.profiles?.account_type || 'Professional'}</Badge>
-                                    </div>
                                     <Button 
                                         variant="outline" 
                                         className="w-full h-12 rounded-xl font-bold"
                                         onClick={() => navigate(`/dm/${pitchCall.creator_id}`)}
                                     >
-                                        <MessageSquare className="h-4 w-4 mr-2" /> Message Producer
+                                        <MessageSquare className="h-4 w-4 mr-2" /> Message to call creator
                                     </Button>
                                     <Button 
                                         variant="ghost" 

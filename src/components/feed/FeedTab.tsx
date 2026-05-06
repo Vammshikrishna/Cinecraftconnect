@@ -40,6 +40,15 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [mediaItems, setMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
   const { toast } = useToast();
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+
+  const handleDismiss = (id: string) => {
+    setDismissedIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
 
   // 1. Fetch Holistic Feed Data
   const { data: homeFeed, isLoading } = useHomeFeed();
@@ -316,10 +325,19 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 return (
                   <FirstContentBlock
                     key={`blockA-${index}`}
-                    announcements={homeFeed?.announcements || []}
-                    projects={homeFeed?.projects || []}
-                    discussions={homeFeed?.discussions || []}
-                    ratings={homeFeed?.ratings || []}
+                    announcements={(homeFeed?.announcements || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
+                    projects={(homeFeed?.projects || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
+                    discussions={(homeFeed?.discussions || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
+                    ratings={(homeFeed?.ratings || [])
+                        .filter((item: any) => !dismissedIds.has(item.id.toString()))
+                        .slice(0, 7)}
+                    onDismiss={handleDismiss}
                   />
                 );
               }
@@ -327,10 +345,17 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                 return (
                   <SecondContentBlock
                     key={`blockB-${index}`}
-                    creators={homeFeed?.connections || []}
-                    marketplace={homeFeed?.marketplace || []}
-                    vendors={homeFeed?.vendors || []}
+                    creators={(homeFeed?.connections || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
+                    marketplace={(homeFeed?.marketplace || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
+                    vendors={(homeFeed?.vendors || [])
+                        .filter((item: any) => !dismissedIds.has(item.id))
+                        .slice(0, 7)}
                     onConnect={(id) => sendConnectionRequest(id)}
+                    onDismiss={handleDismiss}
                   />
                 );
               }

@@ -57,7 +57,7 @@ const VendorDetail = () => {
                     description: 'Vendor not found',
                     variant: 'destructive'
                 });
-                navigate('/vendors');
+                navigate('/vendors', { state: { noScroll: true } });
             }
         } catch (error: any) {
             console.error('Error fetching vendor details:', error);
@@ -66,7 +66,7 @@ const VendorDetail = () => {
                 description: 'Failed to load vendor details',
                 variant: 'destructive'
             });
-            navigate('/vendors');
+            navigate('/vendors', { state: { noScroll: true } });
         } finally {
             setLoading(false);
         }
@@ -100,7 +100,7 @@ const VendorDetail = () => {
             const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
             if (error) throw error;
             toast({ title: "Vendor Deleted", description: "The vendor profile has been successfully removed." });
-            navigate('/vendors');
+            navigate('/vendors', { state: { noScroll: true } });
         } catch (error: any) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
@@ -141,7 +141,7 @@ const VendorDetail = () => {
                             )}
                         </div>
                     }
-                    onBack={() => navigate(-1)}
+                    onBack={() => navigate('/vendors', { state: { noScroll: true } })}
                     actions={
                         <div className="flex gap-2">
                             <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>

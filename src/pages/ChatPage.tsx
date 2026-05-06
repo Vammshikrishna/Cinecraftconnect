@@ -74,7 +74,7 @@ const ChatPage = () => {
         partnerName={partner.full_name}
         partnerAvatarUrl={partner.avatar_url}
         partnerIsVerified={partner.is_verified}
-        onBackClick={() => navigate(-1)}
+        onBackClick={() => navigate('/messages', { state: { noScroll: true } })}
       />
     </div>
   );

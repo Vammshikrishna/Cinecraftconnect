@@ -4,17 +4,17 @@ import { fetchContentDetails, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Star, Play, ThumbsUp, Calendar, Clock, ArrowLeft, AlertTriangle, Smile } from 'lucide-react';
+import { Star, Play, ThumbsUp, Calendar, Clock, AlertTriangle, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTheme } from 'next-themes';
+import { BackButton } from '@/components/common/BackButton';
 
 const ContentDetailPage = () => {
     const { id, type } = useParams<{ id: string; type: 'movie' | 'tv' }>();
-    const navigate = useNavigate();
     const { user } = useAuth();
     const { toast } = useToast();
     const { theme } = useTheme();
@@ -175,14 +175,7 @@ const ContentDetailPage = () => {
         <div className="min-h-screen bg-background pb-40">
             {/* Back Button - Fixed and separate from content */}
             <div className="fixed top-20 left-4 md:left-8 z-50">
-                <Button
-                    variant="secondary"
-                    className="bg-background/80 hover:bg-background text-foreground shadow-xl backdrop-blur-xl rounded-full h-10 px-5 border border-border/50 group/back transition-all duration-300"
-                    onClick={() => navigate(-1)}
-                >
-                    <ArrowLeft className="h-4 w-4 mr-2 group-hover/back:-translate-x-1 transition-transform" />
-                    <span className="text-sm font-bold uppercase tracking-wider">Back</span>
-                </Button>
+                <BackButton label="BACK" />
             </div>
 
             {/* Hero Section */}

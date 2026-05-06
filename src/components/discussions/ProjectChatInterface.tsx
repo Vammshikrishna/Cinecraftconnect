@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { Phone, Video, MoreVertical, Reply, Trash2, ShieldBan, X } from 'lucide-react';
+import { MoreVertical, Reply, Trash2, ShieldBan, X } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { useGlobalCall } from '@/contexts/CallContext';
 import { MessageComposer } from './MessageComposer';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
@@ -17,6 +15,9 @@ import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import { cn } from '@/lib/utils';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useAppRole } from '@/hooks/useAppRole';
 
@@ -80,20 +81,19 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollHeight = useRef<number>(0);
+  const isInitialLoad = useRef(true);
   const [spaceId, setSpaceId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { observeMessage } = useMessageSeen('project_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const { markAsRead } = useChatReadStatus();
+  const isKeyboardVisible = useKeyboardVisible();
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
-
-
-  // Global Call state
-  const { callState, startCall: startGlobalCall } = useGlobalCall();
-  const isInCall = callState.isActive && callState.roomId === spaceId;
-  const loading = false; // Simplified for now as context handles it
 
   useEffect(() => {
     const fetchSpaceId = async () => {
@@ -117,9 +117,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         .eq('id', projectId)
         .single();
 
-      if (projectData) {
-        setProjectName(projectData.title);
-      }
 
       if (data) {
         setSpaceId((data as any).id);
@@ -231,8 +228,40 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     };
   }, [spaceId]);
 
+  // Handle scroll to top for pagination
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || loadingMessages || !hasMore) return;
+    
+    const { scrollTop } = scrollContainerRef.current;
+    if (scrollTop < 100) {
+      loadMoreMessages();
+    }
+  }, [loadingMessages, hasMore, spaceId]);
+
+  const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    }
+  };
+
   useEffect(() => {
-    scrollToBottom();
+    if (messages.length > 0) {
+      if (isInitialLoad.current) {
+        scrollToBottom('auto');
+        isInitialLoad.current = false;
+      } else {
+        // If we just loaded more messages at the top, preserve scroll position
+        if (scrollContainerRef.current && lastScrollHeight.current > 0) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          const heightDiff = newScrollHeight - lastScrollHeight.current;
+          scrollContainerRef.current.scrollTop += heightDiff;
+          lastScrollHeight.current = 0;
+        } else {
+          // If a new message arrived at the bottom
+          scrollToBottom('smooth');
+        }
+      }
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -241,8 +270,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     }
   }, [spaceId, messages.length, markAsRead, user]);
 
-  const fetchMessages = async () => {
+  const fetchMessages = async (isNewRoom = true) => {
     if (!spaceId) return;
+
+    if (isNewRoom) {
+      setLoadingMessages(true);
+      isInitialLoad.current = true;
+    }
 
     const { data, error } = await supabase
       .from('project_space_messages' as any)
@@ -261,17 +295,66 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         )
       `)
       .eq('project_space_id', spaceId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .limit(30);
 
     if (error) {
       console.error('Error fetching messages:', error);
     } else {
-      setMessages((data as any) || []);
+      const fetchedMessages = (data as any) || [];
+      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setMessages(sortedMessages);
+      setHasMore(fetchedMessages.length === 30);
     }
+    setLoadingMessages(false);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const loadMoreMessages = async () => {
+    if (!spaceId || loadingMessages || !hasMore || messages.length === 0) return;
+
+    setLoadingMessages(true);
+    lastScrollHeight.current = scrollContainerRef.current?.scrollHeight || 0;
+
+    const oldestMessageTimestamp = messages[0].created_at;
+
+    const { data, error } = await supabase
+      .from('project_space_messages' as any)
+      .select(`
+        id,
+        content,
+        user_id,
+        created_at,
+        is_deleted,
+        reply_to_id,
+        deleted_for_users,
+        profiles:user_id (
+          username,
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq('project_space_id', spaceId)
+      .lt('created_at', oldestMessageTimestamp)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      console.error('Error loading more messages:', error);
+    } else {
+      const fetchedMessages = (data as any) || [];
+      if (fetchedMessages.length > 0) {
+        const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(prev => [...sortedNewMessages, ...prev]);
+        setHasMore(fetchedMessages.length === 30);
+      } else {
+        setHasMore(false);
+      }
+    }
+    setLoadingMessages(false);
   };
 
   const handleSendMessage = async (content: string) => {
@@ -365,17 +448,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
 
 
-  const handleStartCall = async () => {
-    if (!spaceId) return;
-    const success = await startGlobalCall('project', spaceId, projectName || 'Project Call');
-    if (!success) {
-      toast({
-        title: "Error",
-        description: "Failed to start call. Please try again.",
-        variant: "destructive"
-      });
-    }
-  };
 
 
   const renderMessageContent = (content: string) => {
@@ -434,31 +506,17 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
       {/* Global call handles everything now, no local LiveKitCallContainer needed here */}
 
-      <div className="flex flex-wrap justify-between items-center p-4 border-b border-border gap-2 shrink-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <h2 className="text-lg font-semibold">Project Chat</h2>
-        <div className="flex gap-2 items-center">
-          {isInCall ? (
-            <Button size="sm" variant="outline" className="text-green-500 border-primary/20 bg-primary/10 pointer-events-none">
-              <Video className="h-4 w-4 mr-2" />In Call
-            </Button>
-          ) : !isInternal ? (
-            <>
-              <Button size="sm" variant="outline" onClick={handleStartCall} disabled={loading}>
-                <Phone className="h-4 w-4 mr-2" />Call
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleStartCall} disabled={loading}>
-                <Video className="h-4 w-4 mr-2" />Video
-              </Button>
-            </>
-          ) : (
-            <div className="flex items-center gap-1.5 text-muted-foreground/60 text-[10px] uppercase font-bold tracking-widest bg-muted/30 px-3 py-1 rounded-full border border-border/50">
-              <ShieldBan className="h-3 w-3" /> Staff Observation
-            </div>
-          )}
-        </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+      >
+        {loadingMessages && hasMore && (
+          <div className="flex justify-center py-2">
+            <LoadingSpinner size="sm" />
+          </div>
+        )}
         {messages.length === 0 ? (
           <div className="text-center text-muted-foreground py-8">
             <p>No messages yet. Start the conversation!</p>
@@ -633,8 +691,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             </button>
           </div>
         )}
-        <div className="pb-[calc(56px+env(safe-area-inset-bottom))] lg:pb-4">
-          {isInternal ? (
+        <div className={cn(
+            "p-1.5 bg-background border-t border-border transition-all duration-300",
+            isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+34px)]"
+          )}>{isInternal ? (
             <div className="p-4 bg-muted/30 text-center text-xs text-muted-foreground italic border-t border-border/50">
               Internal staff cannot send messages in project spaces.
             </div>

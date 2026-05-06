@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { 
-  ArrowLeft, MapPin, Briefcase, CheckCircle, 
+  MapPin, Briefcase, CheckCircle, 
   Share2, Bookmark, DollarSign, ExternalLink,
   Info, Flag,
   Users, 
@@ -22,6 +22,7 @@ import { formatDistanceToNow } from "date-fns";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ReportDialog from "@/components/common/ReportDialog";
 import { useAppRole } from "@/hooks/useAppRole";
+import { BackButton } from "@/components/common/BackButton";
 
 const JobDetail = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -94,7 +95,7 @@ const JobDetail = () => {
         description: "Failed to load job details.",
         variant: "destructive",
       });
-      navigate("/jobs");
+      navigate("/jobs", { state: { noScroll: true } });
     } finally {
       setLoading(false);
     }
@@ -191,16 +192,12 @@ const JobDetail = () => {
 
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
+        <div className="hidden md:block mb-6">
+          <BackButton label="BACK TO JOBS" to="/jobs" />
+        </div>
         {/* Mobile Header Icons - Now integrated into the hero for better flow */}
         <div className="md:hidden flex items-center justify-between mb-2">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => navigate("/jobs")}
-            className="text-muted-foreground hover:text-foreground no-underline"
-          >
-            <ArrowLeft size={20} />
-          </Button>
+          <BackButton label="BACK TO JOBS" to="/jobs" />
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full h-10 w-10">
               <Share2 size={20} />

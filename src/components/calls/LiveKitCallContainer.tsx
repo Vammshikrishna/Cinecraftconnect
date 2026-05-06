@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
 
 interface LiveKitCallContainerProps {
   roomId: string;
@@ -39,12 +40,14 @@ const CallImplementation = ({
   userRole,
   isMinimized,
   onToggleMinimize,
+  onHidePip,
   roomName
 }: {
   onLeave: () => void;
   userRole?: string;
   isMinimized: boolean;
   onToggleMinimize: () => void;
+  onHidePip: () => void;
   roomName?: string;
 }) => {
   useEffect(() => {
@@ -56,6 +59,7 @@ const CallImplementation = ({
   const [showParticipants, setShowParticipants] = useState(false);
   const [showReactions, setShowReactions] = useState(false);
   const [showMoreReactions, setShowMoreReactions] = useState(false);
+  const [showPipControls, setShowPipControls] = useState(false);
   const [floatingEmojis, setFloatingEmojis] = useState<{ id: number, emoji: string, x: number }[]>([]);
   const { toast } = useToast();
   const participants = useParticipants();
@@ -75,7 +79,13 @@ const CallImplementation = ({
 
   if (isMinimized) {
     return (
-      <div className="w-full h-full relative overflow-hidden rounded-[2.5rem]">
+      <div 
+        className="w-full h-full relative overflow-hidden rounded-[2.5rem]"
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowPipControls(!showPipControls);
+        }}
+      >
         {/* Full-bleed Video Background */}
         <div className="absolute inset-0 z-0">
           {tracks.length > 0 ? (
@@ -87,7 +97,7 @@ const CallImplementation = ({
               <div className="flex -space-x-3">
                 {participants.slice(0, 3).map((p) => (
                   <div key={p.sid} className="w-10 h-10 rounded-full bg-primary/20 border-2 border-white/10 flex items-center justify-center text-sm font-bold text-white backdrop-blur-md shadow-2xl">
-                    {p.identity[0].toUpperCase()}
+                    {(p.identity?.[0] || '?').toUpperCase()}
                   </div>
                 ))}
               </div>
@@ -96,7 +106,10 @@ const CallImplementation = ({
         </div>
 
         {/* Glossy Overlay for Controls */}
-        <div className="absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-black/20 to-black/60 p-3 flex flex-col justify-between opacity-0 group-hover/bubble:opacity-100 transition-opacity duration-300">
+        <div className={cn(
+          "absolute inset-0 z-10 bg-gradient-to-t from-black/80 via-black/20 to-black/60 p-3 flex flex-col justify-between transition-opacity duration-300",
+          showPipControls ? "opacity-100" : "opacity-0 group-hover/bubble:opacity-100"
+        )}>
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0 bg-black/40 backdrop-blur-md px-2 py-1 rounded-full border border-white/10">
               <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
@@ -105,10 +118,13 @@ const CallImplementation = ({
               </p>
             </div>
             <div className="flex items-center gap-1">
-              <Button size="sm" variant="ghost" onClick={onToggleMinimize} className="text-white/80 hover:text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm">
+              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onToggleMinimize(); }} className="text-white/80 hover:text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm" title="Maximize">
                 <Maximize2 className="w-3.5 h-3.5" />
               </Button>
-              <Button size="sm" variant="ghost" onClick={onLeave} className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm">
+              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onHidePip(); }} className="text-white/60 hover:text-white hover:bg-white/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm" title="Hide Video">
+                <X className="w-3.5 h-3.5" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onLeave(); }} className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-7 w-7 p-0 rounded-full backdrop-blur-sm" title="End Call">
                 <PhoneOff className="w-3.5 h-3.5" />
               </Button>
             </div>
@@ -588,7 +604,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   const [token, setToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const { callState, toggleMinimize: toggleGlobalMinimize } = useGlobalCall();
+  const { callState, toggleMinimize: toggleGlobalMinimize, togglePipHidden: toggleGlobalPipHidden } = useGlobalCall();
   const location = useLocation();
   const prevPathname = useRef(location.pathname);
   
@@ -610,12 +626,30 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   }, []);
 
   const isMinimized = callState.isMinimized;
+  const isPipHidden = callState.isPipHidden;
   const setIsMinimized = (val: boolean) => toggleGlobalMinimize(val);
+  const setIsPipHidden = (val: boolean) => toggleGlobalPipHidden(val);
   const [pipSize, setPipSize] = useState({ width: 220, height: 160 });
   const isResizing = useRef(false);
   const [embeddedStyle, setEmbeddedStyle] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [pipPos, setPipPos] = useState({ x: 0, y: 0 });
   const lastTap = useRef(0);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  // Dynamic portal target based on state
+  useEffect(() => {
+    if (!mounted) return;
+    
+    if (!isMinimized && (location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/'))) {
+      const anchorId = location.pathname.includes('/projects/') ? 'project-call-container' : 'discussion-call-container';
+      const el = document.getElementById(anchorId);
+      if (el) {
+        setPortalTarget(el);
+        return;
+      }
+    }
+    setPortalTarget(document.body);
+  }, [isMinimized, location.pathname, mounted]);
 
   const togglePipSize = () => {
     const presets = [
@@ -643,6 +677,30 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   };
 
   const isEmbeddedView = location.pathname.startsWith('/discussion-rooms') || location.pathname.startsWith('/projects/');
+  
+  // Logic to determine if we are currently looking at the same project/room that the call belongs to
+  const isCurrentlyInCallRoom = () => {
+    if (!callState.roomId) return false;
+    
+    // Check for project space match (using the anchor we added to ProjectSpace.tsx)
+    if (callState.roomType === 'project') {
+      const anchor = document.getElementById('active-project-anchor');
+      const activeSpaceId = anchor?.getAttribute('data-space-id');
+      const activeProjectId = anchor?.getAttribute('data-project-id');
+      return activeSpaceId === callState.roomId || activeProjectId === callState.roomId;
+    }
+    
+    // Check for discussion room match (using the anchor we added to DiscussionRooms.tsx)
+    if (callState.roomType === 'discussion') {
+      const anchor = document.getElementById('active-discussion-anchor');
+      const activeRoomId = anchor?.getAttribute('data-room-id');
+      return activeRoomId === callState.roomId;
+    }
+    
+    return false;
+  };
+  
+  const shouldHidePip = isMinimized && (isPipHidden || isCurrentlyInCallRoom());
 
   // Handle snapping to corners like YouTube PiP
   const handleDragEnd = (_: any, info: any) => {
@@ -781,25 +839,36 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
   }
 
   if (!mounted) return null;
-
-
   return createPortal(
     <AnimatePresence>
       <motion.div
+        layoutId="call-container"
         initial={isMinimized ? { scale: 0.8, opacity: 0 } : { opacity: 0 }}
-        animate={isMinimized ? {
-          scale: 1,
-          opacity: 1,
-          x: pipPos.x,
-          y: pipPos.y
-        } : {
-          opacity: 1,
-          scale: 1,
-          x: 0,
-          y: 0
-        }}
+        animate={
+          shouldHidePip ? {
+            opacity: 0,
+            scale: 0.5,
+            x: pipPos.x,
+            y: pipPos.y,
+            pointerEvents: 'none' as const,
+            transition: { duration: 0.3, ease: "easeIn" }
+          } : isMinimized ? {
+            scale: 1,
+            opacity: 1,
+            x: pipPos.x,
+            y: pipPos.y,
+            pointerEvents: 'auto' as const,
+            transition: { type: "spring", damping: 30, stiffness: 400 }
+          } : {
+            opacity: 1,
+            scale: 1,
+            x: 0,
+            y: 0,
+            pointerEvents: 'auto' as const,
+            transition: { type: "spring", damping: 30, stiffness: 400 }
+          }
+        }
         exit={{ scale: 0.5, opacity: 0 }}
-        transition={{ type: "spring", damping: 30, stiffness: 400 }}
         drag={isMinimized && !isResizing.current}
         onDragEnd={handleDragEnd}
         dragMomentum={false}
@@ -813,15 +882,17 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
         className={
           isMinimized
             ? "fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-[99999] bg-transparent rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] cursor-move touch-none group/bubble"
-            : isEmbeddedView
-              ? "fixed z-[40] bg-[#121214] overflow-hidden border-r border-white/10 rounded-none"
-              : "fixed inset-0 z-[99999] bg-[#121214] overflow-hidden"
+            : portalTarget && portalTarget !== document.body
+              ? "absolute inset-0 z-0 bg-[#121214] overflow-hidden"
+              : isEmbeddedView
+                ? "fixed z-[40] bg-[#121214] overflow-hidden border-r border-white/10 rounded-none"
+                : "fixed inset-0 z-[99999] bg-[#121214] overflow-hidden"
         }
         style={{
-          width: isMinimized ? `${pipSize.width}px` : (isEmbeddedView && embeddedStyle.width) ? `${embeddedStyle.width}px` : '100%',
-          height: isMinimized ? `${pipSize.height}px` : (isEmbeddedView && embeddedStyle.height) ? `${embeddedStyle.height}px` : '100%',
-          top: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.top) ? `${embeddedStyle.top}px` : undefined,
-          left: isMinimized ? undefined : (isEmbeddedView && embeddedStyle.left) ? `${embeddedStyle.left}px` : undefined,
+          width: isMinimized ? `${pipSize.width}px` : (portalTarget && portalTarget !== document.body) ? '100%' : (isEmbeddedView && embeddedStyle.width) ? `${embeddedStyle.width}px` : '100%',
+          height: isMinimized ? `${pipSize.height}px` : (portalTarget && portalTarget !== document.body) ? '100%' : (isEmbeddedView && embeddedStyle.height) ? `${embeddedStyle.height}px` : '100%',
+          top: isMinimized ? undefined : (portalTarget && portalTarget !== document.body) ? 0 : (isEmbeddedView && embeddedStyle.top) ? `${embeddedStyle.top}px` : undefined,
+          left: isMinimized ? undefined : (portalTarget && portalTarget !== document.body) ? 0 : (isEmbeddedView && embeddedStyle.left) ? `${embeddedStyle.left}px` : undefined,
         }}
         onPointerDown={handlePipClick}
       >
@@ -872,6 +943,7 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
               userRole={userRole}
               isMinimized={isMinimized}
               onToggleMinimize={() => setIsMinimized(!isMinimized)}
+              onHidePip={() => setIsPipHidden(true)}
               roomName={roomName}
             />
           </LayoutContextProvider>
@@ -879,6 +951,6 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
         </LiveKitRoom>
       </motion.div>
     </AnimatePresence>,
-    document.body
+    portalTarget || document.body
   );
 };

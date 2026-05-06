@@ -269,7 +269,7 @@ const SearchPage = () => {
                     title="Discovery" 
                     subtitle="Global content grid synchronization engine. Find production partners, projects, and gear." 
                     Icon={Compass}
-                    onBack={() => navigate(-1)}
+                    onBack={() => navigate('/explore', { state: { noScroll: true } })}
                     actions={
                         <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
                     }

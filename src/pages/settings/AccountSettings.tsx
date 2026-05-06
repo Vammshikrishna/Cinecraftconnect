@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAccountType } from '@/hooks/useAccountType';
+import { BackButton } from '@/components/common/BackButton';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -202,10 +203,7 @@ const AccountSettings = () => {
         <div className="min-h-screen bg-background pt-20 pb-32">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
-                    <Button variant="ghost" onClick={() => navigate('/settings')} className="mb-4">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Back to Settings
-                    </Button>
+                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4" />
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                         <User className="h-8 w-8 text-primary" />
                         Account

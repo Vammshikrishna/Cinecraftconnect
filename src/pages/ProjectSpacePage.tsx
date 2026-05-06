@@ -3,9 +3,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { ProjectSpace } from '@/components/projects/ProjectSpace';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { BackButton } from '@/components/common/BackButton';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -80,10 +79,7 @@ const ProjectSpacePage = () => {
         <div className="text-center">
           <h1 className="text-2xl font-bold mb-4">Error</h1>
           <p className="text-muted-foreground mb-6">{error || 'Project not found'}</p>
-          <Button onClick={() => navigate(-1)} className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Projects
-          </Button>
+          <BackButton label="BACK TO PROJECTS" to="/projects" />
         </div>
       </div>
     );

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,7 @@ import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import VerificationBadge from '../common/VerificationBadge';
 
 interface DiscussionChatInterfaceProps {
@@ -82,6 +84,10 @@ export const DiscussionChatInterface = ({
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const lastScrollHeight = useRef<number>(0);
+  const isInitialLoad = useRef(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId);
@@ -130,21 +136,48 @@ export const DiscussionChatInterface = ({
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const isKeyboardVisible = useKeyboardVisible();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
+    }
     setIsAtBottom(true);
     setUnreadCount(0);
   };
 
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (isInitialLoad.current) {
+        scrollToBottom('auto');
+        isInitialLoad.current = false;
+      } else {
+        if (scrollContainerRef.current && lastScrollHeight.current > 0) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          const heightDiff = newScrollHeight - lastScrollHeight.current;
+          scrollContainerRef.current.scrollTop += heightDiff;
+          lastScrollHeight.current = 0;
+        } else if (isAtBottom) {
+          scrollToBottom('smooth');
+        }
+      }
+    }
+  }, [messages]);
+
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    
     const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
     setIsAtBottom(isBottom);
     if (isBottom) {
       setUnreadCount(0);
+    }
+
+    // Pagination check
+    if (scrollTop < 100 && !loadingMore && hasMore) {
+      loadMoreMessages();
     }
   };
 
@@ -201,11 +234,13 @@ export const DiscussionChatInterface = ({
     fetchActualRole();
   }, [user, roomId]);
 
-  const fetchMessages = useCallback(async () => {
-
+  const fetchMessages = useCallback(async (isNewRoom = true) => {
     if (!roomId) return;
     try {
-      setLoading(true);
+      if (isNewRoom) {
+        setLoading(true);
+        isInitialLoad.current = true;
+      }
       const { data, error } = await supabase
         .from('room_messages')
         .select(`
@@ -225,14 +260,72 @@ export const DiscussionChatInterface = ({
           )
         `)
         .eq('room_id', roomId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(30);
 
       if (error) throw error;
-      setMessages((data as any) || []);
+      
+      const fetchedMessages = (data as any) || [];
+      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setMessages(sortedMessages);
+      setHasMore(fetchedMessages.length === 30);
     } finally {
       setLoading(false);
     }
   }, [roomId]);
+
+  const loadMoreMessages = async () => {
+    if (!roomId || loadingMore || !hasMore || messages.length === 0) return;
+
+    setLoadingMore(true);
+    lastScrollHeight.current = scrollContainerRef.current?.scrollHeight || 0;
+
+    const oldestMessageTimestamp = messages[0].created_at;
+
+    try {
+      const { data, error } = await supabase
+        .from('room_messages')
+        .select(`
+          id,
+          content,
+          created_at,
+          user_id,
+          is_deleted,
+          reply_to_id,
+          deleted_for_users,
+          profiles (
+            id,
+            username,
+            full_name,
+            avatar_url,
+            is_verified
+          )
+        `)
+        .eq('room_id', roomId)
+        .lt('created_at', oldestMessageTimestamp)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+
+      const fetchedMessages = (data as any) || [];
+      if (fetchedMessages.length > 0) {
+        const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(prev => [...sortedNewMessages, ...prev]);
+        setHasMore(fetchedMessages.length === 30);
+      } else {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('Error loading more messages:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const fetchReadStatuses = useCallback(async () => {
     if (!roomId) return;
@@ -246,10 +339,6 @@ export const DiscussionChatInterface = ({
   useEffect(() => {
     fetchMessages();
     fetchReadStatuses();
-    const timer = setTimeout(() => {
-      scrollToBottom('auto');
-    }, 500);
-    return () => clearTimeout(timer);
   }, [fetchMessages, fetchReadStatuses, roomId]);
 
   useEffect(() => {
@@ -622,6 +711,11 @@ export const DiscussionChatInterface = ({
             onScroll={handleScroll}
             className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 custom-scrollbar"
           >
+            {loadingMore && hasMore && (
+              <div className="flex justify-center py-2">
+                <LoadingSpinner size="sm" />
+              </div>
+            )}
             {visibleMessages.length === 0 && !roomSettings?.welcomeMessage ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
@@ -788,7 +882,10 @@ export const DiscussionChatInterface = ({
             </div>
           )}
 
-          <div className="p-3 bg-background border-t border-border pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-3">
+          <div className={cn(
+            "p-3 bg-background border-t border-border transition-all duration-300",
+            isKeyboardVisible ? "pb-3" : "pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-3"
+          )}>
             {replyingTo && (
               <div className="mx-2 mb-2 p-2 bg-muted/50 rounded-lg flex items-center justify-between border-l-4 border-primary animate-in slide-in-from-bottom-2">
                 <div className="flex-1 min-w-0 pr-4">

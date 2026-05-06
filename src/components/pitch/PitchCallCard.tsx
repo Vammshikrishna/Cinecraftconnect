@@ -81,7 +81,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                 <div className="h-1 w-full bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
 
                 <div className="p-5 space-y-4">
-                    {/* Producer Identity */}
+                    {/* Call Creator Identity */}
                     <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3" onClick={(e) => {
                             e.stopPropagation();
@@ -93,10 +93,10 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                             </Avatar>
                             <div>
                                 <div className="flex items-center gap-1.5">
-                                    <p className="text-sm font-bold leading-tight hover:text-primary transition-colors">{pitchCall.profiles?.full_name || 'Producer'}</p>
+                                    <p className="text-sm font-bold leading-tight hover:text-primary transition-colors">{pitchCall.profiles?.full_name || 'Call Creator'}</p>
                                     <VerificationBadge size="sm" />
                                 </div>
-                                <p className="text-xs text-muted-foreground">{pitchCall.profiles?.craft || pitchCall.profiles?.account_type || 'Producer'}</p>
+                                <p className="text-xs text-muted-foreground">{pitchCall.profiles?.craft || 'Call Creator'}</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-1">

@@ -184,7 +184,7 @@ const SupportPage = () => {
           title="Support Hub"
           subtitle="How can the CineCraft Team help you today?"
           Icon={LifeBuoy}
-          onBack={() => navigate('/settings')}
+          onBack={() => navigate('/settings', { state: { noScroll: true } })}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">

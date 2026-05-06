@@ -1,15 +1,16 @@
-import { useNavigate } from 'react-router-dom';
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Eye } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { BackButton } from '@/components/common/BackButton';
 
 const AccessibilitySettings = () => {
-    const navigate = useNavigate();
+
     const { settings, loading, updateSetting } = useUserSettings();
 
     if (loading) {
@@ -26,10 +27,7 @@ const AccessibilitySettings = () => {
         <div className="min-h-screen bg-background pt-20 pb-32">
             <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
-                    <Button variant="ghost" onClick={() => navigate('/settings')} className="mb-4">
-                        <ArrowLeft className="mr-2 h-4 w-4" />
-                        Back to Settings
-                    </Button>
+                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4" />
                     <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
                         <Eye className="h-8 w-8 text-primary" />
                         Accessibility

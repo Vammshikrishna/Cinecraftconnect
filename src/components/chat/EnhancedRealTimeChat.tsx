@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -30,6 +31,7 @@ import { ProjectShareCard } from './ProjectShareCard';
 import { DiscussionShareCard } from './DiscussionShareCard';
 import { usePresence } from '@/hooks/usePresence';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import VerificationBadge from '../common/VerificationBadge';
 
 
@@ -98,9 +100,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const navigate = useNavigate();
   const { onlineUserIds } = usePresence();
   const { observeMessage } = useMessageSeen();
+  const isKeyboardVisible = useKeyboardVisible();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { markAsRead } = useChatReadStatus();
   const { toast } = useToast();
@@ -108,24 +113,81 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { activeCall } = useCall('direct', roomId || '');
   const isInCall = callState.isActive && callState.roomId === roomId;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastScrollHeight = useRef<number>(0);
+  const isInitialLoad = useRef(true);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const isPartnerOnline = onlineUserIds.includes(partnerId);
   
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (isNewRoom = true) => {
     if (!roomId) return;
-    const { data, error } = await (supabase.rpc as any)('get_messages_for_channel', { p_channel_id: roomId });
+    
+    if (isNewRoom) {
+      setLoading(true);
+      isInitialLoad.current = true;
+    }
+
+    const { data, error } = await (supabase.rpc as any)('get_messages_for_channel_paginated', { 
+      p_channel_id: roomId,
+      p_limit: 30,
+      p_offset: 0
+    });
+
     if (error) {
-      console.error('Error fetching messages:', error);
-      setMessages([]);
+      // Fallback to non-paginated if RPC doesn't exist yet
+      const { data: fallbackData, error: fallbackError } = await (supabase.rpc as any)('get_messages_for_channel', { p_channel_id: roomId });
+      if (fallbackError) {
+        console.error('Error fetching messages:', fallbackError);
+        setMessages([]);
+      } else {
+        setMessages(fallbackData as Message[]);
+        setHasMore(false);
+      }
     } else {
-      setMessages(data as Message[]);
+      const fetchedMessages = (data as Message[]) || [];
+      // Data from paginated RPC is expected latest-first, but get_messages_for_channel was oldest-first
+      // Let's ensure consistency: sorted oldest to newest for UI
+      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setMessages(sortedMessages);
+      setHasMore(fetchedMessages.length === 30);
     }
     setLoading(false);
   }, [roomId]);
+
+  const loadMoreMessages = async () => {
+    if (!roomId || loadingMore || !hasMore || messages.length === 0) return;
+
+    setLoadingMore(true);
+    lastScrollHeight.current = scrollContainerRef.current?.scrollHeight || 0;
+
+    const { data, error } = await (supabase.rpc as any)('get_messages_for_channel_paginated', {
+      p_channel_id: roomId,
+      p_limit: 30,
+      p_offset: messages.length
+    });
+
+    if (error) {
+      console.error('Error loading more messages:', error);
+    } else {
+      const fetchedMessages = (data as Message[]) || [];
+      if (fetchedMessages.length > 0) {
+        const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        setMessages(prev => [...sortedNewMessages, ...prev]);
+        setHasMore(fetchedMessages.length === 30);
+      } else {
+        setHasMore(false);
+      }
+    }
+    setLoadingMore(false);
+  };
 
   // Use a ref for fetchMessages to avoid subscription churn
   const fetchMessagesRef = useRef(fetchMessages);
@@ -146,8 +208,30 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
 
   useEffect(() => {
-    scrollToBottom();
+    if (messages.length > 0) {
+      if (isInitialLoad.current) {
+        scrollToBottom('auto');
+        isInitialLoad.current = false;
+      } else {
+        if (scrollContainerRef.current && lastScrollHeight.current > 0) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          const heightDiff = newScrollHeight - lastScrollHeight.current;
+          scrollContainerRef.current.scrollTop += heightDiff;
+          lastScrollHeight.current = 0;
+        } else {
+          scrollToBottom('smooth');
+        }
+      }
+    }
   }, [messages]);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || loadingMore || !hasMore) return;
+    const { scrollTop } = scrollContainerRef.current;
+    if (scrollTop < 100) {
+      loadMoreMessages();
+    }
+  }, [loadingMore, hasMore, roomId, messages.length]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -418,7 +502,16 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
       ) : (
         <>
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide">
+          <div 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
+          >
+            {loadingMore && hasMore && (
+              <div className="flex justify-center py-2">
+                <LoadingSpinner size="sm" />
+              </div>
+            )}
             {visibleMessages.map((message, idx) => {
                 const isSender = message.sender_id === user?.id;
                 const isLatestRead = idx === lastReadIndexSentByMe;
@@ -594,11 +687,14 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   </div>
                 )}
                 </Fragment>
-              );
+                );
             })}
-          <div ref={messagesEndRef} />
-        </div>
-          <div className="border-t border-border flex flex-col relative bg-background pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-0">
+            <div ref={messagesEndRef} />
+          </div>
+          <div className={cn(
+            "border-t border-border flex flex-col relative bg-background transition-all duration-300",
+            isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-0"
+          )}>
             {showEmojiPicker && (
               <div className="absolute bottom-full mb-2 z-10 left-2">
                 <EmojiPicker onEmojiClick={onEmojiClick} />

@@ -81,7 +81,7 @@ export const PitchSubmissionModal = ({ pitchCall, isOpen, onClose, onSubmitted }
                     <Shield className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
                     <div>
                         <p className="font-bold text-green-600 dark:text-green-400">Your IP is Protected</p>
-                        <p className="text-muted-foreground text-xs mt-0.5">Your full synopsis is encrypted and timestamped. Only the producer can access it after you submit. All submissions are logged for legal proof.</p>
+                        <p className="text-muted-foreground text-xs mt-0.5">Your full synopsis is encrypted and timestamped. Only the call creator can access it after you submit. All submissions are logged for legal proof.</p>
                     </div>
                 </div>
 
@@ -111,7 +111,7 @@ export const PitchSubmissionModal = ({ pitchCall, isOpen, onClose, onSubmitted }
                                 <p className="text-xs text-muted-foreground text-right">{form.logline.length}/300</p>
                             </div>
                             <div className="space-y-2">
-                                <Label>Short Synopsis * <span className="text-muted-foreground font-normal">(visible to producer only after viewing)</span></Label>
+                                <Label>Short Synopsis * <span className="text-muted-foreground font-normal">(visible to call creator only after viewing)</span></Label>
                                 <Textarea required rows={4} placeholder="A brief 2-3 paragraph story overview covering the main arc, characters, and what makes this unique..." value={form.short_synopsis} onChange={e => setForm(f => ({ ...f, short_synopsis: e.target.value }))} />
                             </div>
                             <div className="flex gap-4">
@@ -125,8 +125,8 @@ export const PitchSubmissionModal = ({ pitchCall, isOpen, onClose, onSubmitted }
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <Label>Why this fits this producer</Label>
-                                <Textarea rows={3} placeholder="Explain why your story aligns with what this producer is looking for..." value={form.why_fits} onChange={e => setForm(f => ({ ...f, why_fits: e.target.value }))} />
+                                <Label>Why this fits this call creator</Label>
+                                <Textarea rows={3} placeholder="Explain why your story aligns with what this call creator is looking for..." value={form.why_fits} onChange={e => setForm(f => ({ ...f, why_fits: e.target.value }))} />
                             </div>
                             <Button type="button" className="w-full" onClick={() => setStep(2)}>
                                 Next: Story Details →
@@ -139,7 +139,7 @@ export const PitchSubmissionModal = ({ pitchCall, isOpen, onClose, onSubmitted }
                         <div className="space-y-5">
                             <div className="flex items-center gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
                                 <Lock className="h-4 w-4 text-primary" />
-                                <p className="text-xs font-bold text-primary">Protected Section — Only the producer can access this after submission</p>
+                                <p className="text-xs font-bold text-primary">Protected Section — Only the call creator can access this after submission</p>
                             </div>
                             <div className="space-y-2">
                                 <Label>Full Synopsis <span className="text-muted-foreground font-normal">(protected)</span></Label>
@@ -196,7 +196,7 @@ export const PitchSubmissionModal = ({ pitchCall, isOpen, onClose, onSubmitted }
                             {pitchCall.nda_required && (
                                 <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
                                     <p className="text-sm font-bold text-amber-600 dark:text-amber-400">NDA Required</p>
-                                    <p className="text-xs text-muted-foreground mt-1">This pitch call requires an NDA agreement before review. By submitting, you agree to maintain confidentiality about your interaction with this producer.</p>
+                                    <p className="text-xs text-muted-foreground mt-1">This pitch call requires an NDA agreement before review. By submitting, you agree to maintain confidentiality about your interaction with this call creator.</p>
                                 </div>
                             )}
 
