@@ -14,6 +14,7 @@ import DiscussionRoomIcon from "@/components/icons/DiscussionRoomIcon";
 import VendorIcon from "@/components/icons/VendorIcon";
 import StudioPageIcon from "@/components/icons/StudioPageIcon";
 import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
+import { cn } from "@/lib/utils";
 
 export function MobileNav() {
   const location = useLocation();
@@ -65,23 +66,23 @@ export function MobileNav() {
 
   return (
     <>
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-card/95 backdrop-blur-xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+20px)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
-        <div className="flex items-center justify-around py-2 px-4">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-[100] bg-card/95 backdrop-blur-xl border-t border-border pb-[calc(env(safe-area-inset-bottom)+8px)] md:pb-[calc(env(safe-area-inset-bottom)+20px)] shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
+        <div className="flex items-center justify-around py-1 md:py-2 px-2 md:px-4">
           {navItems.map(({ to, icon: Icon, label }) => (
             <Link
               key={to}
               to={to}
-              className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 }`}
             >
               <div className="relative">
-                <Icon size={24} className={isActive(to) ? "text-primary" : ""} />
+                <Icon className={cn("w-5 h-5 md:w-6 md:h-6", isActive(to) ? "text-primary" : "")} />
                 {hasNotification(label) && (
-                   <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-card animate-pulse" />
+                   <span className="absolute -top-1 -right-1 flex h-2 w-2 md:h-2.5 md:w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-card animate-pulse" />
                 )}
               </div>
               {isActive(to) && (
-                <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
+                <div className="w-1 h-1 bg-primary rounded-full mt-0.5 md:mt-1 animate-scale-in" />
               )}
             </Link>
           ))}
@@ -90,11 +91,11 @@ export function MobileNav() {
           <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
-                  className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
                 >
-                  <MoreHorizontal size={20} />
+                  <MoreHorizontal className="w-5 h-5 md:w-6 md:h-6" />
                   {isMoreActive && (
-                    <div className="w-1 h-1 bg-primary rounded-full mt-1 animate-scale-in" />
+                    <div className="w-1 h-1 bg-primary rounded-full mt-0.5 md:mt-1 animate-scale-in" />
                   )}
                 </button>
               </DropdownMenuTrigger>

@@ -533,7 +533,7 @@ export const DiscussionChatInterface = ({
     content.startsWith('ROOM_SHARE::');
 
   return (
-    <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
+    <div className="flex flex-col flex-1 w-full bg-background text-foreground overflow-hidden relative">
       {/* HEADER */}
       <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">

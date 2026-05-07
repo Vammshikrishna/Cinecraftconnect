@@ -88,7 +88,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
         marketplace: [],
         vendors: [],
         connections: [],
-        likedPostIds: new Set()
+        likedPostIds: []
     };
 
     const {
@@ -97,6 +97,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
         pendingRequests,
         sendConnectionRequest,
         acceptConnectionRequest,
+        rejectConnectionRequest,
         cancelConnectionRequest,
         removeConnection
     } = useConnections();
@@ -195,7 +196,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                             const isPending = sentRequests.some(r => r.following_id === profile.id);
 
                             return (
-                                <div key={profile.id} className="w-[200px] md:w-[220px] flex-none snap-start mx-1 first:ml-0 h-full">
+                                <div key={profile.id} className="w-[170px] md:w-[220px] flex-none snap-start mx-1.5 first:ml-0 h-full">
                                     <UserCard
                                         user={{
                                             ...profile,
@@ -203,19 +204,23 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                                             suggestion_reason: profile.suggestion_reason || 'Suggested for you'
                                         }}
                                         onConnect={sendConnectionRequest}
-                                        onAccept={(id) => {
+                                        onAccept={(id: string) => {
                                             const req = pendingRequests.find(r => r.follower_id === id);
                                             if (req) acceptConnectionRequest(req.id);
                                         }}
-                                        onCancelRequest={(id) => {
+                                        onReject={(id: string) => {
+                                            const req = pendingRequests.find(r => r.follower_id === id);
+                                            if (req) rejectConnectionRequest(req.id);
+                                        }}
+                                        onCancelRequest={(id: string) => {
                                             const req = sentRequests.find(r => r.following_id === id);
                                             if (req) cancelConnectionRequest(req.id);
                                         }}
-                                        onRemoveConnection={(id) => {
+                                        onRemoveConnection={(id: string) => {
                                             const conn = existingConnections.find(c => c.follower_id === id || c.following_id === id);
                                             if (conn) removeConnection(conn.id);
                                         }}
-                                        onDismiss={(id) => handleDismiss(id)}
+                                        onDismiss={(id: string) => handleDismiss(id)}
                                     />
                                 </div>
                             );
@@ -375,7 +380,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                                         share_count={post.share_count || 0}
                                         rating={postRatings[post.id]}
                                         onRate={onRate}
-                                        currentUserLiked={feedData.likedPostIds.has(post.id)}
+                                        currentUserLiked={Array.isArray(feedData.likedPostIds) && feedData.likedPostIds.includes(post.id)}
                                         onLikeToggle={handleLikeToggle}
                                         pageInfo={post.company_pages}
                                         onDelete={(postId) => {
@@ -595,7 +600,7 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
                                     // 1. Not the owner
                                     page.owner_id !== user?.id && 
                                     // 2. Not already following
-                                    !(followedPageIds?.has(page.id))
+                                    !(Array.isArray(followedPageIds) && followedPageIds.includes(page.id))
                                 )
                                 .slice(0, 3).map((page) => (
                                 <div key={page.id} className="flex items-center justify-between">

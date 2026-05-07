@@ -324,22 +324,26 @@ export function useMyPages() {
   });
 }
 
-// Fetch user's followed page IDs
 export function useFollowedPageIds() {
   const { user } = useAuth();
-  return useQuery({
+  const query = useQuery({
     queryKey: ['followed-page-ids', user?.id],
     queryFn: async () => {
-      if (!user) return new Set<string>();
+      if (!user) return [];
       const { data, error } = await supabase
         .from('company_page_followers' as any)
         .select('page_id')
         .eq('user_id', user.id);
       if (error) throw error;
-      return new Set((data || []).map((f: any) => f.page_id));
+      return (data || []).map((f: any) => f.page_id);
     },
     enabled: !!user,
   });
+
+  return {
+    ...query,
+    data: Array.isArray(query.data) ? query.data : [] as string[]
+  };
 }
 
 // Update a company page

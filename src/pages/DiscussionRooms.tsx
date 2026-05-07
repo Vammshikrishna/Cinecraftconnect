@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,7 +26,6 @@ import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useAppRole } from '@/hooks/useAppRole';
-import { useIsMobile } from '@/hooks/use-mobile';
 import { BackButton } from '@/components/common/BackButton';
 import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { ReportDialog } from '@/components/governance/ReportDialog';
@@ -61,8 +61,7 @@ interface Room {
 const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeCallRoomIds, setActiveCallRoomIds] = useState<Set<string>>(new Set());
+  const [activeCallRoomIds, setActiveCallRoomIds] = useState<string[]>([]);
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -102,9 +101,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     if (openCreate) setCreateModalOpen(true);
   }, [openCreate]);
 
-  const fetchData = useCallback(async () => {
-    // Keep silent refresh for background updates
-    try {
+  const { data: discussionData, isLoading: loading, refetch: fetchData } = useQuery({
+    queryKey: ['discussion-rooms', user?.id],
+    queryFn: async () => {
       const [roomsRes, categoriesRes] = await Promise.all([
         supabase
           .from('discussion_rooms')
@@ -149,10 +148,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         };
       });
 
-      setRooms(formattedRooms);
-      setCategories((categoriesRes.data || []).map(c => ({ ...c, description: null, icon: null })));
-
-      // Fetch active calls for discussion rooms (only started in last 6 hours to avoid stale status)
+      // Fetch active calls for discussion rooms
       const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
       const { data: activeCalls } = await supabase
         .from('calls' as any)
@@ -161,26 +157,32 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         .eq('status', 'active')
         .gt('created_at', sixHoursAgo);
 
-      if (activeCalls) {
-        setActiveCallRoomIds(new Set(activeCalls.map((c: any) => c.room_id)));
-      }
-    } catch (error: any) {
-      toast({ title: "Error fetching data", description: error.message, variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  }, [toast]);
+      return {
+        rooms: formattedRooms,
+        categories: (categoriesRes.data || []).map(c => ({ ...c, description: null, icon: null })),
+        activeCallIds: (activeCalls || []).map((c: any) => c.room_id) as string[]
+      };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
 
+  // Sync state with query data
   useEffect(() => {
-    fetchData();
+    if (discussionData) {
+      setRooms(discussionData.rooms);
+      setCategories(discussionData.categories);
+      setActiveCallRoomIds(discussionData.activeCallIds);
+    }
+  }, [discussionData]);
 
-    // Debounce the refresh to prevent UI freezing on rapid updates
+  // Real-time listener
+  useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout>;
     const debouncedRefresh = () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         fetchData();
-      }, 1000); // Wait 1s after last update before refreshing
+      }, 1000);
     };
 
     const channel = supabase.channel('discussion-rooms-realtime')
@@ -373,7 +375,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                             )}
                           </div>
                           <div className="flex items-center gap-1.5">
-                            {activeCallRoomIds.has(room.id) && (
+                            {Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id) && (
                               <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
                             )}
                           </div>
@@ -465,7 +467,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     return (
       <div className={cn(
         "fixed inset-x-0 top-14 md:top-16 bg-background text-foreground flex flex-col z-40 transition-all duration-300",
-        isKeyboardVisible ? "bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+80px)] lg:pb-0"
+        isKeyboardVisible ? "bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+60px)] md:bottom-[calc(env(safe-area-inset-bottom)+80px)] lg:pb-0"
       )}>
         <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
         <DiscussionChatInterface
@@ -535,7 +537,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             {featuredRooms
               // Hide private rooms from fans in the featured section
               .filter(room => !(isFan && room.room_type === 'private'))
-              .map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
+              .map(room => <RoomCard key={room.id} room={room} isActive={Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
           </div>
         </section>
 
@@ -581,7 +583,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             {filteredAndSortedRooms
               // Hide private rooms from fans in the listing
               .filter(room => !(isFan && room.room_type === 'private'))
-              .map(room => <RoomCard key={room.id} room={room} isActive={activeCallRoomIds.has(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
+              .map(room => <RoomCard key={room.id} room={room} isActive={Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(room.id)} onJoin={handleRoomJoin} onDelete={handleRoomDelete} onShare={(r) => { setRoomToShare(r); setIsShareSheetOpen(true); }} onReport={(r) => { setReportData({ id: r.id, title: r.title }); setIsReportOpen(true); }} />)}
           </div>
           {filteredAndSortedRooms.length === 0 && !loading && (
             <div className="text-center col-span-full py-12">
@@ -603,7 +605,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               category: roomToShare.room_categories?.name,
               memberCount: roomToShare.member_count,
               roomType: roomToShare.room_type,
-              isActive: activeCallRoomIds.has(roomToShare.id)
+              isActive: Array.isArray(activeCallRoomIds) && activeCallRoomIds.includes(roomToShare.id)
             }}
           />
         )}

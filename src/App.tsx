@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Route, Routes, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,6 +17,10 @@ import { MaintenanceGuard } from "@/components/MaintenanceGuard";
 import { FeatureGuard } from "@/components/FeatureGuard";
 import { PlatformFlagsProvider } from "@/contexts/PlatformFlagsContext";
 import { SuspendedGuard } from "./components/SuspendedGuard";
+import ScrollToTop from "@/components/ScrollToTop";
+import { CallProvider } from "@/contexts/CallContext";
+import { App as CapApp } from '@capacitor/app';
+import { useEffect } from 'react';
 
 // Lazy Loaded Pages
 import { LegalPage } from "./pages/LegalPage";
@@ -93,13 +97,35 @@ const LandingRoute = () => {
   return user ? <Navigate to="/feed" /> : <Index />;
 };
 
-import ScrollToTop from "@/components/ScrollToTop";
-import { CallProvider } from "@/contexts/CallContext";
+const HardwareBackButton = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const listener = CapApp.addListener('backButton', () => {
+      // If we're at the very root (landing) or auth, exit the app
+      // Removed /feed to allow back navigation from feed to previous pages
+      if (location.pathname === '/' || location.pathname === '/auth' || location.pathname === '/register') {
+        CapApp.exitApp();
+      } else {
+        // Otherwise, navigate back in the history
+        navigate(-1);
+      }
+    });
+
+    return () => {
+      listener.then(l => l.remove());
+    };
+  }, [navigate, location.pathname]);
+
+  return null;
+};
 
 const App = () => {
   const { user, profile, isLoading } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <HardwareBackButton />
       <PlatformFlagsProvider>
         <CallProvider>
         <PresenceProvider>

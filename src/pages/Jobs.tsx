@@ -35,7 +35,7 @@ import SEO from "@/components/common/SEO";
 
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [appliedJobIds, setAppliedJobIds] = useState<Set<string>>(new Set());
+  const [appliedJobIds, setAppliedJobIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentSelectedJob, setCurrentSelectedJob] = useState<{ id: string, title: string } | null>(null);
@@ -113,7 +113,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         .select('job_id')
         .eq('applicant_id', user.id);
       if (error) throw error;
-      const appliedIds = new Set(data.map(app => app.job_id));
+      const appliedIds = data.map(app => app.job_id);
       setAppliedJobIds(appliedIds);
     } catch (error) {
       console.error('Error fetching applications:', error);
@@ -302,7 +302,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
             <div className="space-y-6">
               <AnimatePresence mode="popLayout">
               {jobs.map((job, index) => {
-                const isApplied = appliedJobIds.has(job.id);
+                const isApplied = appliedJobIds.includes(job.id);
                 const isOwner = user?.id === job.posted_by;
                 
                 return (
