@@ -9,42 +9,49 @@ export const useKeyboardVisible = () => {
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    // Some older browsers might not support visualViewport
-    if (!window.visualViewport) {
-      const handleFocusIn = (e: FocusEvent) => {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-          setKeyboardVisible(true);
-        }
-      };
-      
-      const handleFocusOut = () => {
-        setKeyboardVisible(false);
-      };
-
-      window.addEventListener('focusin', handleFocusIn);
-      window.addEventListener('focusout', handleFocusOut);
-      return () => {
-        window.removeEventListener('focusin', handleFocusIn);
-        window.removeEventListener('focusout', handleFocusOut);
-      };
-    }
+    // Store the initial innerHeight to detect shrinkage
+    const initialHeight = window.innerHeight;
 
     const handleResize = () => {
-      if (window.visualViewport) {
-        // If viewport height is significantly smaller than window height, keyboard is open
-        // A threshold of 0.8 is usually safe to detect the keyboard
-        const isVisible = window.visualViewport.height < window.innerHeight * 0.8;
-        setKeyboardVisible(isVisible);
-      }
+      // Current height can be from visualViewport or innerHeight
+      const currentHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      
+      // If current height is significantly smaller than initial height (e.g. > 150px difference)
+      // the keyboard is likely visible.
+      const isVisible = currentHeight < initialHeight - 150;
+      setKeyboardVisible(isVisible);
     };
 
-    window.visualViewport.addEventListener('resize', handleResize);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleResize);
+    } else {
+      window.addEventListener('resize', handleResize);
+    }
+
+    // Fallback for focus events in case resize doesn't trigger as expected
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        setKeyboardVisible(true);
+      }
+    };
+    
+    const handleFocusOut = () => {
+      // Re-run height check instead of blindly setting false
+      setTimeout(handleResize, 100);
+    };
+
+    window.addEventListener('focusin', handleFocusIn);
+    window.addEventListener('focusout', handleFocusOut);
+
     // Initial check
     handleResize();
 
     return () => {
       window.visualViewport?.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('focusin', handleFocusIn);
+      window.removeEventListener('focusout', handleFocusOut);
     };
   }, []);
 

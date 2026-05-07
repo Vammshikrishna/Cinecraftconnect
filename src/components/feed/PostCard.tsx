@@ -123,7 +123,7 @@ const PostCard = ({
 
   // Bookmarks
   const { bookmarkedPostIds, toggleBookmark } = usePostBookmarks();
-  const isBookmarked = bookmarkedPostIds.has(id);
+  const isBookmarked = Array.isArray(bookmarkedPostIds) && bookmarkedPostIds.includes(id);
   const isTogglingBookmark = toggleBookmark.isPending;
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

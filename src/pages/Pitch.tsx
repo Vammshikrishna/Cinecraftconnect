@@ -47,7 +47,7 @@ const Pitch = () => {
     const { unreadPitchCount, hasUnreadPitches } = useUnreadPitchSubmissions();
 
     const { pitchCalls, loading, refetch, toggleSave } = usePitchCalls(filters, searchQuery);
-    const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set());
+    const [submittedIds, setSubmittedIds] = useState<string[]>([]);
 
     useEffect(() => {
         if (!user) return;
@@ -56,7 +56,7 @@ const Pitch = () => {
                 .from('pitch_submissions')
                 .select('pitch_call_id')
                 .eq('submitter_id', user.id);
-            if (data) setSubmittedIds(new Set(data.map((s: any) => s.pitch_call_id)));
+            if (data) setSubmittedIds(data.map((s: any) => s.pitch_call_id));
         };
         fetchMySubmissions();
     }, [user?.id]);
@@ -248,7 +248,7 @@ const Pitch = () => {
                                             pitchCall={pc}
                                             onSaveToggle={toggleSave}
                                             canSubmit={userCanSubmit}
-                                            alreadySubmitted={submittedIds.has(pc.id)}
+                                            alreadySubmitted={submittedIds.includes(pc.id)}
                                             index={index}
                                         />
                                     ))}

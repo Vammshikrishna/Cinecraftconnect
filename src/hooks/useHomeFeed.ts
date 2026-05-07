@@ -13,7 +13,7 @@ export interface HomeFeedData {
     marketplace: any[];
     vendors: any[];
     connections: any[];
-    likedPostIds: Set<string>;
+    likedPostIds: string[];
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
     fetchNextPage?: () => void;
@@ -117,13 +117,13 @@ export const useHomeFeed = () => {
     const likesQuery = useQuery({
         queryKey: ['user-likes', user?.id],
         queryFn: async () => {
-            if (!user?.id) return new Set<string>();
+            if (!user?.id) return [];
             const { data, error } = await supabase
                 .from('post_likes')
                 .select('post_id')
                 .eq('user_id', user.id);
             if (error) throw error;
-            return new Set((data || []).map((l: any) => l.post_id));
+            return (data || []).map((l: any) => l.post_id);
         },
         enabled: !!user?.id,
     });
@@ -182,7 +182,7 @@ export const useHomeFeed = () => {
             ...staticDataQuery.data,
             posts,
             ratings: ratingsQuery.data || [],
-            likedPostIds: likesQuery.data || new Set(),
+            likedPostIds: Array.isArray(likesQuery.data) ? likesQuery.data : [],
             hasNextPage: infinitePostsQuery.hasNextPage,
             isFetchingNextPage: infinitePostsQuery.isFetchingNextPage,
             fetchNextPage: infinitePostsQuery.fetchNextPage,

@@ -6,6 +6,8 @@ import { ThemeProvider } from "./components/theme-provider.tsx";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 // Suppress specific verbose library logs
 const originalLog = console.log;
@@ -43,12 +45,22 @@ console.warn = (...args: any[]) => {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 30, // 30 minutes
+      staleTime: 1000 * 60 * 10, // 10 minutes (increased for better mobile experience)
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours (keep in memory longer)
       retry: 1,
       refetchOnWindowFocus: false, // Prevent lag when switching tabs
     },
   },
+});
+
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+});
+
+persistQueryClient({
+  queryClient,
+  persister,
+  maxAge: 1000 * 60 * 60 * 24, // 24 hours persistence
 });
 
 createRoot(document.getElementById("root")!).render(

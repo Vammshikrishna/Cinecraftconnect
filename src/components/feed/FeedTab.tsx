@@ -35,7 +35,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const { user, profile } = useAuth();
   const [activeFilter, setActiveFilter] = useState("All");
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
-  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [likedPostIds, setLikedPostIds] = useState<string[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [mediaItems, setMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
@@ -235,10 +235,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
 
   const handleLikeToggle = (postId: string, isLiked: boolean) => {
     setLikedPostIds(prev => {
-      const newSet = new Set(prev);
-      if (isLiked) newSet.add(postId);
-      else newSet.delete(postId);
-      return newSet;
+      if (isLiked) return [...prev, postId];
+      return prev.filter(id => id !== postId);
     });
 
     setLocalPosts(prev => prev.map(p => {
@@ -401,7 +399,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                   share_count={post.share_count}
                   tags={post.tags || []}
                   rating={postRatings[post.id]}
-                  currentUserLiked={likedPostIds.has(post.id)}
+                  currentUserLiked={Array.isArray(likedPostIds) && likedPostIds.includes(post.id)}
                   onRate={onRate}
                   onLikeToggle={handleLikeToggle}
                   pageInfo={post.company_pages ? {

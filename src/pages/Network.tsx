@@ -3,19 +3,15 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Users, UserPlus, Clock, MoreHorizontal, UserCheck, ChevronRight } from "lucide-react";
+import { Search, Users, UserPlus, UserCheck, ChevronRight } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useUsers } from "@/hooks/useUsers";
 import { useConnections } from "@/hooks/useConnections";
 import UserCard from "@/components/network/UserCard";
-import { ConnectionRequestCard } from "@/components/network/ConnectionRequestCard";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PageHeader } from '@/components/common/PageHeader';
 import SEO from '@/components/common/SEO';
-import VerificationBadge from '@/components/common/VerificationBadge';
 
 import { useAccountType } from "@/hooks/useAccountType";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +48,16 @@ const Network = () => {
     removeConnection,
   } = useConnections();
 
+  const [dismissedUserIds, setDismissedUserIds] = useState<Set<string>>(new Set());
+
+  const handleDismiss = (id: string) => {
+    setDismissedUserIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
   const filteredConnections = useMemo(() => {
     if (!connectionsSearchQuery) return connections;
     const query = connectionsSearchQuery.toLowerCase();
@@ -71,10 +77,6 @@ const Network = () => {
     "All", "Director", "Cinematographer", "Editor", "Sound Designer", "Production Designer", "Screenwriter", "Producer",
   ];
 
-  const getInitials = (name: string | null | undefined, fallback = 'U') => {
-    if (!name || !name.trim()) return fallback;
-    return name.trim().split(/\s+/).filter(Boolean).map((word) => Array.from(word)[0].toUpperCase()).join('').slice(0, 2) || fallback;
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -195,40 +197,43 @@ const Network = () => {
                     <p className="text-sm text-muted-foreground/70 mt-1">Try adjusting your search criteria</p>
                   </Card>
                 ) : (
-                  <div className="grid grid-cols-1 min-[460px]:grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4 min-[460px]:gap-3 sm:gap-5">
-                    {users.map((user) => {
-                      const sentReq = sentRequests.find(r => r.following_id === user.id);
-                      const connection = connections.find(c =>
-                        (c.follower_id === user.id && c.following_id === currentUser?.id) ||
-                        (c.following_id === user.id && c.follower_id === currentUser?.id)
-                      );
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-3">
+                    {users
+                      .filter(user => !dismissedUserIds.has(user.id))
+                      .map((user) => {
+                        const sentReq = sentRequests.find(r => r.following_id === user.id);
+                        const connection = connections.find(c =>
+                          (c.follower_id === user.id && c.following_id === currentUser?.id) ||
+                          (c.following_id === user.id && c.follower_id === currentUser?.id)
+                        );
 
-                      return (
-                        <UserCard
-                          key={user.id}
-                          user={{
-                            ...user,
-                            is_verified: user.is_verified || undefined,
-                            connection_status: sentReq ? 'pending_sent' :
-                              connection ? 'connected' :
-                                user.connection_status || 'none'
-                          }}
-                          onConnect={sendConnectionRequest}
-                          onAccept={(id) => {
-                            const req = pendingRequests.find(r => r.follower_id === id);
-                            if (req) acceptConnectionRequest(req.id);
-                          }}
-                          onCancelRequest={(id) => {
-                            const req = sentRequests.find(r => r.following_id === id);
-                            if (req) cancelConnectionRequest(req.id);
-                          }}
-                          onRemoveConnection={(id) => {
-                            const conn = connections.find(c => c.follower_id === id || c.following_id === id);
-                            if (conn) removeConnection(conn.id);
-                          }}
-                        />
-                      );
-                    })}
+                        return (
+                          <UserCard
+                            key={user.id}
+                            user={{
+                              ...user,
+                              is_verified: user.is_verified || undefined,
+                              connection_status: sentReq ? 'pending_sent' :
+                                connection ? 'connected' :
+                                  user.connection_status || 'none'
+                            }}
+                            onConnect={sendConnectionRequest}
+                            onAccept={(id: string) => {
+                              const req = pendingRequests.find(r => r.follower_id === id);
+                              if (req) acceptConnectionRequest(req.id);
+                            }}
+                            onCancelRequest={(id: string) => {
+                              const req = sentRequests.find(r => r.following_id === id);
+                              if (req) cancelConnectionRequest(req.id);
+                            }}
+                            onRemoveConnection={(id: string) => {
+                              const conn = connections.find(c => c.follower_id === id || c.following_id === id);
+                              if (conn) removeConnection(conn.id);
+                            }}
+                            onDismiss={handleDismiss}
+                          />
+                        );
+                      })}
                   </div>
                 )}
               </>
@@ -258,20 +263,25 @@ const Network = () => {
                         <p className="text-muted-foreground text-sm">When someone invites you to connect, you'll find it here.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-3">
                         {pendingRequests.map((request) => (
-                          <ConnectionRequestCard
-                            key={request.id}
-                            connection={request}
-                            onAccept={acceptConnectionRequest}
-                            onReject={rejectConnectionRequest}
-                          />
+                          <div key={request.id} className="w-full">
+                            <UserCard
+                              user={{
+                                ...(request.follower_profile as any),
+                                connection_status: 'pending_received',
+                                suggestion_reason: 'Pending connection'
+                              }}
+                              onAccept={() => acceptConnectionRequest(request.id)}
+                              onReject={() => rejectConnectionRequest(request.id)}
+                            />
+                          </div>
                         ))}
                       </div>
                     )}
                   </CardContent>
                 </Card>
-
+ 
                 <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
                   <div className="p-5 border-b border-border/50">
                       <h2 className="text-xl font-semibold flex items-center">
@@ -291,34 +301,21 @@ const Network = () => {
                          <p className="text-muted-foreground">You have no pending sent requests.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-3">
                         {sentRequests.map((request) => {
                           const profile = request.following_profile;
                           if (!profile) return null;
-
+ 
                           return (
-                            <div key={request.id} className="bg-card hover:bg-muted/10 transition-colors border border-border/60 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-4">
-                                  <Link to={`/profile/${profile.id}`} className="shrink-0 hover:opacity-80 transition-opacity">
-                                    <Avatar className="h-14 w-14 border border-border/50 shadow-sm">
-                                        <AvatarImage src={profile.avatar_url || ''} />
-                                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{getInitials(profile.full_name || profile.username)}</AvatarFallback>
-                                    </Avatar>
-                                  </Link>
-                                  <div className="flex flex-col">
-                                    <Link to={`/profile/${profile.id}`} className="hover:underline hover:text-primary transition-colors">
-                                      <p className="font-semibold text-foreground text-base flex items-center gap-1">
-                                        {profile.full_name || profile.username}
-                                        {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
-                                      </p>
-                                    </Link>
-                                    <p className="text-sm text-muted-foreground line-clamp-1">{profile.craft}</p>
-                                    <p className="text-xs text-muted-foreground/60 flex items-center gap-1 mt-0.5"><Clock className="w-3 h-3"/> Pending</p>
-                                  </div>
-                                </div>
-                                <Button size="sm" variant="outline" onClick={() => cancelConnectionRequest(request.id)} className="w-full md:w-auto hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30">
-                                  Withdraw
-                                </Button>
+                            <div key={request.id} className="w-full">
+                              <UserCard
+                                user={{
+                                  ...(profile as any),
+                                  connection_status: 'pending_sent',
+                                  suggestion_reason: 'Pending connection'
+                                }}
+                                onCancelRequest={() => cancelConnectionRequest(request.id)}
+                              />
                             </div>
                           );
                         })}
@@ -372,41 +369,21 @@ const Network = () => {
                       )}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-2 sm:gap-3">
                       {filteredConnections.map((connection) => {
                         const profile = connection.follower_id === currentUser?.id ? connection.following_profile : connection.follower_profile;
                         if (!profile) return null;
-
+                        
                         return (
-                          <div key={connection.id} className="bg-card border border-border/60 hover:border-primary/30 hover:shadow-md transition-all rounded-xl p-5 flex flex-col group">
-                              <div className="flex items-start gap-4 mb-5">
-                                <Link to={`/profile/${profile.id}`} className="shrink-0">
-                                    <Avatar className="h-14 w-14 border border-border/50 group-hover:border-primary/20 transition-colors shadow-sm">
-                                        <AvatarImage src={profile.avatar_url || ''} />
-                                        <AvatarFallback className="bg-primary/10 text-primary font-bold">{getInitials(profile.full_name || profile.username)}</AvatarFallback>
-                                    </Avatar>
-                                </Link>
-                                <div className="flex-1 min-w-0">
-                                  <Link to={`/profile/${profile.id}`} className="group-hover:text-primary transition-colors">
-                                    <p className="font-semibold text-foreground text-base truncate flex items-center gap-1">
-                                      {profile.full_name || profile.username}
-                                      {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
-                                    </p>
-                                  </Link>
-                                  <p className="text-sm text-primary/80 truncate mb-1">{profile.craft}</p>
-                                  {profile.location && (
-                                    <p className="text-xs text-muted-foreground truncate">{profile.location}</p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="mt-auto pt-4 border-t border-border/40 flex gap-2">
-                                <Button asChild size="sm" variant="secondary" className="flex-1 bg-primary/10 hover:bg-primary/20 text-primary font-semibold">
-                                  <Link to={`/messages/${profile.id}`}>Message</Link>
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => removeConnection(connection.id)} className="px-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </div>
+                          <div key={connection.id} className="w-full">
+                            <UserCard
+                              user={{
+                                ...profile,
+                                connection_status: 'connected',
+                                suggestion_reason: 'Connected'
+                              }}
+                              onRemoveConnection={() => removeConnection(connection.id)}
+                            />
                           </div>
                         );
                       })}

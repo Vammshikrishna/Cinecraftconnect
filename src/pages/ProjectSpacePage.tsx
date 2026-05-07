@@ -5,6 +5,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { ProjectSpace } from '@/components/projects/ProjectSpace';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { BackButton } from '@/components/common/BackButton';
+import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { cn } from '@/lib/utils';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -23,6 +25,7 @@ const ProjectSpacePage = () => {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isKeyboardVisible = useKeyboardVisible();
 
   useEffect(() => {
     if (isFan && !isInternal) {
@@ -86,12 +89,17 @@ const ProjectSpacePage = () => {
   }
 
   return (
-    <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col pt-14 lg:p-4 lg:pt-20 pb-[calc(env(safe-area-inset-bottom)+56px)] lg:pb-0 overflow-hidden">
-      <ProjectSpace
-        projectId={project.id}
-        projectTitle={project.title}
-        projectDescription={project.description || ''}
-      />
+    <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col overflow-hidden">
+      <div className={cn(
+        "flex-1 flex flex-col pt-14 lg:p-4 lg:pt-20 transition-all duration-300 overflow-hidden",
+        isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+60px)] md:pb-[calc(env(safe-area-inset-bottom)+80px)] lg:pb-0"
+      )}>
+        <ProjectSpace
+          projectId={project.id}
+          projectTitle={project.title}
+          projectDescription={project.description || ''}
+        />
+      </div>
     </div>
   );
 };

@@ -12,14 +12,14 @@ export function usePostBookmarks() {
   const bookmarkedPostIds = useQuery({
     queryKey: ["post_bookmarks", user?.id],
     queryFn: async () => {
-      if (!user) return new Set<string>();
+      if (!user) return [];
       const { data, error } = await supabase
         .from("post_bookmarks" as any)
         .select("post_id")
         .eq("user_id", user.id);
       
       if (error) throw error;
-      return new Set((data as any[]).map((b) => b.post_id));
+      return (data as any[]).map((b) => b.post_id);
     },
     enabled: !!user,
   });
@@ -104,7 +104,7 @@ export function usePostBookmarks() {
   });
 
   return {
-    bookmarkedPostIds: bookmarkedPostIds.data || new Set<string>(),
+    bookmarkedPostIds: Array.isArray(bookmarkedPostIds.data) ? bookmarkedPostIds.data : [],
     toggleBookmark,
     bookmarkedPosts,
     isInitialLoading: bookmarkedPostIds.isLoading,

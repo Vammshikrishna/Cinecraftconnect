@@ -81,7 +81,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const { user } = useAuth();
-  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [likedPostIds, setLikedPostIds] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchAllContent = async () => {
@@ -128,7 +128,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
             .eq('user_id', user.id);
 
           if (likesData) {
-            setLikedPostIds(new Set((likesData as any[]).map(l => l.post_id)));
+            setLikedPostIds((likesData as any[]).map(l => l.post_id));
           }
         }
 
@@ -184,13 +184,11 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
 
   const handleLikeToggle = (postId: string, isLiked: boolean) => {
     setLikedPostIds(prev => {
-      const newSet = new Set(prev);
       if (isLiked) {
-        newSet.add(postId);
+        return [...prev, postId];
       } else {
-        newSet.delete(postId);
+        return prev.filter(id => id !== postId);
       }
-      return newSet;
     });
 
     setFeed(prev => prev.map(item => {
@@ -255,7 +253,7 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
               share_count={item.share_count}
               rating={postRatings[item.id]}
               onRate={onRate}
-              currentUserLiked={likedPostIds.has(item.id)}
+              currentUserLiked={Array.isArray(likedPostIds) && likedPostIds.includes(item.id)}
               onLikeToggle={handleLikeToggle}
               onDelete={(postId) => {
                 setFeed(prev => prev.filter(item => !(item.itemType === 'post' && item.id === postId)));

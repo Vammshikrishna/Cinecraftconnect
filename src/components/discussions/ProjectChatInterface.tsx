@@ -502,7 +502,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
   // Otherwise show chat interface
   return (
-    <div className="flex flex-col h-full w-full bg-background text-foreground overflow-hidden relative">
+    <div className="flex flex-col flex-1 w-full bg-background text-foreground overflow-hidden relative">
 
       {/* Global call handles everything now, no local LiveKitCallContainer needed here */}
 
@@ -510,7 +510,15 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-4"
+        onPointerDown={(e) => {
+          // Equivalent to keyboardShouldPersistTaps="handled"
+          // Prevents blurring the input when tapping the messages area
+          const target = e.target as HTMLElement;
+          if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+          }
+        }}
+        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
       >
         {loadingMessages && hasMore && (
           <div className="flex justify-center py-2">
@@ -691,10 +699,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             </button>
           </div>
         )}
-        <div className={cn(
-            "p-1.5 bg-background border-t border-border transition-all duration-300",
-            isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+34px)]"
-          )}>{isInternal ? (
+      <div className={cn(
+        "p-1.5 bg-background border-t border-border transition-all duration-300",
+        isKeyboardVisible ? "pb-1.5" : "pb-2 lg:pb-1.5"
+      )}>{isInternal ? (
             <div className="p-4 bg-muted/30 text-center text-xs text-muted-foreground italic border-t border-border/50">
               Internal staff cannot send messages in project spaces.
             </div>
