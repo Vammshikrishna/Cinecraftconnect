@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ArrowLeft, Copy, Check, Loader2, Edit } from "lucide-react";
 import { fetchJoinRequests, approveJoinRequest, denyJoinRequest } from '@/lib/api';
+import { copyToClipboard, getAppOrigin } from '@/lib/utils/share';
 
 interface RoomInfoPanelProps {
   roomId: string;
@@ -151,18 +152,16 @@ const RoomInfoPanel = ({ roomId, roomTitle, roomDescription, onClose, onRoomUpda
     }
   }
 
-  const generateInviteLink = () => {
-    const link = `${window.location.origin}/join-room/${roomId}`;
+  const generateInviteLink = async () => {
+    const link = `${getAppOrigin()}/join-room/${roomId}`;
     setInviteLink(link);
-    copyToClipboard(link);
+    const success = await copyToClipboard(link);
+    if (success) {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000); // Reset after 2s
-    });
-  };
 
 
   return (

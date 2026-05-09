@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Edit, Trash2, Eye } from "lucide-react";
 import { getOptimizedImage } from "@/utils/image-optimization";
 

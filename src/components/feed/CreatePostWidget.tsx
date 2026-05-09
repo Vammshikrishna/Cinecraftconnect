@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { MentionTextarea } from '@/components/ui/mention-textarea';
 import { Card } from '@/components/ui/card';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, User, Building2, Loader2, Smile } from 'lucide-react';
 import MediaUpload from '@/components/feed/MediaUpload';
 import { useAuth } from '@/contexts/AuthContext';
 import { z } from 'zod';
@@ -20,10 +20,10 @@ import {
     SelectValue 
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { User, Building2, Loader2, Smile } from 'lucide-react';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useQueryClient } from '@tanstack/react-query';
+import { useKeyboard } from '@/contexts/KeyboardContext';
+import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const postSchema = z.object({
     content: z.string().trim().optional(),
@@ -53,6 +53,25 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
     const [selectedPageId, setSelectedPageId] = useState<string | "user">(defaultPageId);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const queryClient = useQueryClient();
+    
+    // Emoji & Keyboard interaction states
+    const { isEmojiPickerOpen, setIsEmojiPickerOpen } = useKeyboard();
+    const [localEmojiOpen, setLocalEmojiOpen] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    // Sync local open state with global back button signal
+    useEffect(() => {
+        if (!isEmojiPickerOpen) {
+            setLocalEmojiOpen(false);
+        }
+    }, [isEmojiPickerOpen]);
 
     useEffect(() => {
         if (defaultExpanded) {
@@ -61,6 +80,43 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
     }, [defaultExpanded]);
 
     if (isInternal) return null;
+
+    const handleEmojiToggle = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (localEmojiOpen) {
+            setLocalEmojiOpen(false);
+            setIsEmojiPickerOpen(false);
+            if (isMobile) {
+                setTimeout(() => textareaRef.current?.focus(), 50);
+            }
+        } else {
+            if (isMobile) {
+                // Native-like interaction for mobile: dismiss keyboard first, wait, then show picker
+                if (document.activeElement instanceof HTMLElement) {
+                    document.activeElement.blur();
+                }
+                textareaRef.current?.blur();
+                
+                setTimeout(() => {
+                    setLocalEmojiOpen(true);
+                    setIsEmojiPickerOpen(true);
+                }, 150);
+            } else {
+                setLocalEmojiOpen(true);
+                setIsEmojiPickerOpen(true);
+            }
+        }
+    };
+
+    const handleInputFocus = () => {
+        // Only auto-close on mobile when keyboard is coming up
+        if (isMobile && localEmojiOpen) {
+            setLocalEmojiOpen(false);
+            setIsEmojiPickerOpen(false);
+        }
+    };
 
     const handleMediaUpload = (items: MediaItem[]) => {
         setMediaItems(items);
@@ -138,6 +194,8 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
             setMentionedIds(new Set());
             setSelectedPageId("user");
             setShowCreatePost(false);
+            setLocalEmojiOpen(false);
+            setIsEmojiPickerOpen(false);
 
             // Invalidate cache
             cacheManager.invalidate('posts-feed');
@@ -164,6 +222,23 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
             setIsSubmitting(false);
         }
     };
+
+    const renderEmojiPicker = () => (
+        <EmojiPicker
+            theme={Theme.DARK}
+            emojiStyle={EmojiStyle.APPLE}
+            onEmojiClick={(emojiData) => {
+                setNewPostContent(prev => prev + emojiData.emoji);
+            }}
+            autoFocusSearch={false}
+            width={isMobile ? "100%" : 320}
+            height={isMobile ? 300 : 400}
+            lazyLoadEmojis={true}
+            skinTonesDisabled={true}
+            searchDisabled={false}
+            previewConfig={{ showPreview: false }}
+        />
+    );
 
     return (
         <Card className="glass-card p-2 mb-6" id="create-post-widget">
@@ -215,43 +290,64 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
 
                     <div className="relative group/caption">
                         <MentionTextarea
+                            ref={textareaRef}
                             placeholder="What's happening in your creative world?"
                             value={newPostContent}
                             onChange={(e) => setNewPostContent(e.target.value)}
+                            onFocus={handleInputFocus}
                             onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
                             className="bg-input border-border text-foreground placeholder:text-muted-foreground min-h-[120px] pb-10"
-                            autoFocus
+                            autoFocus={false}
                         />
                         
-                        {/* Integrated Emoji Portal */}
+                        {/* Emoji Toggle Button */}
                         <div className="absolute bottom-3 right-3 z-20">
-                            <Popover>
-                                <PopoverTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all">
-                                        <Smile className="h-5 w-5" />
-                                    </Button>
-                                </PopoverTrigger>
-                                <PopoverContent 
-                                  className="p-0 border-none bg-transparent shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative z-[999] animate-in zoom-in-95 duration-200 w-[85vw] max-w-[280px]" 
-                                  align="end"
-                                  sideOffset={10}
+                            {isMobile ? (
+                                <Button 
+                                    type="button"
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all emoji-toggle-button"
+                                    onClick={handleEmojiToggle}
                                 >
-                                    <EmojiPicker
-                                        theme={Theme.DARK}
-                                        onEmojiClick={(emojiData) => {
-                                            setNewPostContent(prev => prev + emojiData.emoji);
-                                        }}
-                                        width="100%"
-                                        height={320}
-                                        lazyLoadEmojis={true}
-                                        skinTonesDisabled={true}
-                                        searchDisabled={false}
-                                        previewConfig={{ showPreview: false }}
-                                    />
-                                </PopoverContent>
-                            </Popover>
+                                    <Smile className={localEmojiOpen ? "h-5 w-5 text-primary" : "h-5 w-5"} />
+                                </Button>
+                            ) : (
+                                <Popover open={localEmojiOpen} onOpenChange={(open) => {
+                                    setLocalEmojiOpen(open);
+                                    setIsEmojiPickerOpen(open);
+                                }} modal={false}>
+                                    <PopoverTrigger asChild>
+                                        <Button 
+                                            type="button"
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all emoji-toggle-button"
+                                        >
+                                            <Smile className={localEmojiOpen ? "h-5 w-5 text-primary" : "h-5 w-5"} />
+                                        </Button>
+                                    </PopoverTrigger>
+                                    <PopoverContent 
+                                        className="p-0 border-none shadow-2xl bg-transparent z-[9999]" 
+                                        align="end" 
+                                        side="top" 
+                                        sideOffset={8}
+                                        onOpenAutoFocus={(e) => e.preventDefault()}
+                                        onCloseAutoFocus={(e) => e.preventDefault()}
+                                    >
+                                        {localEmojiOpen && renderEmojiPicker()}
+                                    </PopoverContent>
+                                </Popover>
+                            )}
                         </div>
                     </div>
+
+                    {/* Mobile Emoji Picker Extension */}
+                    {isMobile && localEmojiOpen && (
+                        <div className="animate-in slide-in-from-bottom-2 duration-200">
+                            {renderEmojiPicker()}
+                        </div>
+                    )}
 
                     <MediaUpload
                         onMediaUpload={handleMediaUpload}
@@ -265,6 +361,8 @@ export function CreatePostWidget({ onPostCreated, defaultExpanded = false, defau
                                 setShowCreatePost(false);
                                 setNewPostContent("");
                                 setMediaItems([]);
+                                setLocalEmojiOpen(false);
+                                setIsEmojiPickerOpen(false);
                             }}
                         >
                             Cancel

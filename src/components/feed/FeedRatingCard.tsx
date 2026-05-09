@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAppRole } from '@/hooks/useAppRole';
+import { LazyImage } from '@/components/performance/LazyImage';
 
 interface FeedRatingCardProps {
     rating: {
@@ -55,10 +56,9 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
             >
                 <div className="aspect-[2/3] w-full relative overflow-hidden">
                     {rating.poster_url ? (
-                        <img
+                        <LazyImage
                             src={rating.poster_url}
                             alt={rating.title}
-                            loading="lazy"
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
                     ) : (
@@ -153,10 +153,9 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
             <div className="flex flex-row h-full">
                 <div className="w-1/3 sm:w-32 shrink-0 relative">
                     {rating.poster_url ? (
-                        <img
+                        <LazyImage
                             src={rating.poster_url}
                             alt={rating.title}
-                            loading="lazy"
                             className="w-full h-full object-cover"
                         />
                     ) : (

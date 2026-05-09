@@ -17,7 +17,7 @@ import {
     Star
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { VendorShareSheet } from '@/components/vendors/VendorShareSheet';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Trash2 } from 'lucide-react';
@@ -252,10 +252,19 @@ const VendorDetail = () => {
                                 {/* Future: Add booking/request quote button */}
                             </div>
 
-                            <VendorShareSheet
+                            <UniversalShareSheet
                                 isOpen={showShareSheet}
                                 onOpenChange={setShowShareSheet}
-                                vendorId={vendor.id}
+                                shareType="vendor"
+                                shareId={vendor.id}
+                                shareData={{
+                                    vendorId: vendor.id,
+                                    name: vendor.business_name,
+                                    logoUrl: vendor.logo_url,
+                                    category: vendor.category,
+                                    location: vendor.location,
+                                    description: vendor.description
+                                }}
                             />
 
                             <hr className="border-border" />

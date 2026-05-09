@@ -21,9 +21,10 @@ import ScrollToTop from "@/components/ScrollToTop";
 import { CallProvider } from "@/contexts/CallContext";
 import { App as CapApp } from '@capacitor/app';
 import { useEffect } from 'react';
+import { KeyboardProvider, useKeyboard } from "@/contexts/KeyboardContext";
 
 // Lazy Loaded Pages
-import { LegalPage } from "./pages/LegalPage";
+const LegalPage = lazy(() => import("./pages/LegalPage"));
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Feed = lazy(() => import("./pages/Feed"));
@@ -101,10 +102,17 @@ const HardwareBackButton = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const { isEmojiPickerOpen, setIsEmojiPickerOpen } = useKeyboard();
+
   useEffect(() => {
     const listener = CapApp.addListener('backButton', () => {
+      // Priority 1: If emoji picker is open, close it and don't navigate
+      if (isEmojiPickerOpen) {
+        setIsEmojiPickerOpen(false);
+        return;
+      }
+
       // If we're at the very root (landing) or auth, exit the app
-      // Removed /feed to allow back navigation from feed to previous pages
       if (location.pathname === '/' || location.pathname === '/auth' || location.pathname === '/register') {
         CapApp.exitApp();
       } else {
@@ -116,7 +124,7 @@ const HardwareBackButton = () => {
     return () => {
       listener.then(l => l.remove());
     };
-  }, [navigate, location.pathname]);
+  }, [navigate, location.pathname, isEmojiPickerOpen, setIsEmojiPickerOpen]);
 
   return null;
 };
@@ -125,135 +133,137 @@ const App = () => {
   const { user, profile, isLoading } = useAuth();
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-      <HardwareBackButton />
-      <PlatformFlagsProvider>
-        <CallProvider>
-        <PresenceProvider>
-          <ScrollToTop />
-          <SystemStatusBanner />
-          <Toaster />
-          <GlobalFeatures />
-          <ThemeSyncPrompt />
-        {!isLoading && (() => {
-          const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
-          const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
-          return showFullNavbar ? <Navbar /> : <LandingNavbar />;
-        })()}
-        <MaintenanceGuard>
-          <ErrorBoundary>
-            <Suspense
-              fallback={
-                <div className="h-screen w-full flex items-center justify-center bg-background">
-                  <LoadingSpinner size="lg" />
-                </div>
-              }
-            >
-              <SuspendedGuard>
-              <Routes>
-                <Route path="/" element={<LandingRoute />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/register" element={<Auth />} />
-                <Route path="/about" element={<About />} />
-                <Route path="/features" element={<Features />} />
-                <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-                <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
-                <Route path="/profile/:userId" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-                <Route path="/projects" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/projects/:projectId" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/projects/:projectId/space" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/jobs" element={<ProtectedRoute><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><Jobs /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/network" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Talent Search Restricted"><Network /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/craft/:craftName" element={<CraftPage />} />
-                <Route path="/all-crafts" element={<AllCraftsPage />} />
-                <Route path="/setup-admin" element={
-                  <DesktopOnlyGuard>
-                    <SetupAdmin />
-                  </DesktopOnlyGuard>
-                } />
-                <Route path="/learn" element={<LearningPortal />} />
-                <Route path="/discussion-rooms" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled" fallbackTitle="Discussions Offline"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/messages" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/messages/:conversationId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/dm/:userId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/pricing" element={<ProtectedRoute><FeatureGuard flag="monetization_enabled"><Pricing /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/legal/:type" element={<LegalPage />} />
-                <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
-                <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
-                <Route path="/settings/privacy" element={<ProtectedRoute><PrivacySettings /></ProtectedRoute>} />
-                <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
-                <Route path="/settings/accessibility" element={<ProtectedRoute><AccessibilitySettings /></ProtectedRoute>} />
-                <Route path="/settings/sound" element={<ProtectedRoute><SoundSettings /></ProtectedRoute>} />
-                <Route path="/settings/data" element={<ProtectedRoute><DataSettings /></ProtectedRoute>} />
-                <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
-                <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
-                <Route path="/marketplace" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled" fallbackTitle="Marketplace Disabled"><Marketplace /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/marketplace/:listingId" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard></ProtectedRoute>} />
-                <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
-                <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
-                <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
-                <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
-                <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
-                <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
-                <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
-                <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
-                <Route path="/pitch" element={<ProtectedRoute><Pitch /></ProtectedRoute>} />
-                <Route path="/pitch/:pitchId" element={<ProtectedRoute><PitchDetail /></ProtectedRoute>} />
-                <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
-                <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-                <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
-                <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
-                <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
-                <Route path="/support/ticket/:ticketId" element={<ProtectedRoute><SupportTicketDetail /></ProtectedRoute>} />
+      <KeyboardProvider>
+        <HardwareBackButton />
+        <PlatformFlagsProvider>
+          <CallProvider>
+            <PresenceProvider>
+              <ScrollToTop />
+              <SystemStatusBanner />
+              <Toaster />
+              <GlobalFeatures />
+              <ThemeSyncPrompt />
+              {!isLoading && (() => {
+                const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+                const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
+                return showFullNavbar ? <Navbar /> : <LandingNavbar />;
+              })()}
+              <MaintenanceGuard>
+                <ErrorBoundary>
+                  <Suspense
+                    fallback={
+                      <div className="h-screen w-full flex items-center justify-center bg-background">
+                        <LoadingSpinner size="lg" />
+                      </div>
+                    }
+                  >
+                    <SuspendedGuard>
+                      <Routes>
+                        <Route path="/" element={<LandingRoute />} />
+                        <Route path="/auth" element={<Auth />} />
+                        <Route path="/register" element={<Auth />} />
+                        <Route path="/about" element={<About />} />
+                        <Route path="/features" element={<Features />} />
+                        <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
+                        <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
+                        <Route path="/profile/:userId" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                        <Route path="/projects" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/projects/:projectId" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/projects/:projectId/space" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/jobs" element={<ProtectedRoute><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><Jobs /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/network" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Talent Search Restricted"><Network /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/craft/:craftName" element={<CraftPage />} />
+                        <Route path="/all-crafts" element={<AllCraftsPage />} />
+                        <Route path="/setup-admin" element={
+                          <DesktopOnlyGuard>
+                            <SetupAdmin />
+                          </DesktopOnlyGuard>
+                        } />
+                        <Route path="/learn" element={<LearningPortal />} />
+                        <Route path="/discussion-rooms" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled" fallbackTitle="Discussions Offline"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/messages" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/messages/:conversationId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/dm/:userId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/pricing" element={<ProtectedRoute><FeatureGuard flag="monetization_enabled"><Pricing /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/legal/:type" element={<LegalPage />} />
+                        <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                        <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
+                        <Route path="/settings/notifications" element={<ProtectedRoute><NotificationsSettings /></ProtectedRoute>} />
+                        <Route path="/settings/privacy" element={<ProtectedRoute><PrivacySettings /></ProtectedRoute>} />
+                        <Route path="/settings/security" element={<ProtectedRoute><SecuritySettings /></ProtectedRoute>} />
+                        <Route path="/settings/accessibility" element={<ProtectedRoute><AccessibilitySettings /></ProtectedRoute>} />
+                        <Route path="/settings/sound" element={<ProtectedRoute><SoundSettings /></ProtectedRoute>} />
+                        <Route path="/settings/data" element={<ProtectedRoute><DataSettings /></ProtectedRoute>} />
+                        <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
+                        <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
+                        <Route path="/marketplace" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled" fallbackTitle="Marketplace Disabled"><Marketplace /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/marketplace/:listingId" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard></ProtectedRoute>} />
+                        <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
+                        <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
+                        <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
+                        <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
+                        <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
+                        <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
+                        <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
+                        <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+                        <Route path="/pitch" element={<ProtectedRoute><Pitch /></ProtectedRoute>} />
+                        <Route path="/pitch/:pitchId" element={<ProtectedRoute><PitchDetail /></ProtectedRoute>} />
+                        <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
+                        <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+                        <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
+                        <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
+                        <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
+                        <Route path="/support/ticket/:ticketId" element={<ProtectedRoute><SupportTicketDetail /></ProtectedRoute>} />
 
-                {/* Public Legal Routes */}
-                <Route path="/privacy" element={<PrivacyPolicy />} />
-                <Route path="/terms" element={<TermsOfService />} />
-                <Route path="/cookie" element={<CookiePolicy />} />
-                <Route path="/documentation" element={<Documentation />} />
-                <Route path="/community-guidelines" element={<CommunityGuidelines />} />
-                <Route path="/safety-center" element={<SafetyCenter />} />
+                        {/* Public Legal Routes */}
+                        <Route path="/privacy" element={<PrivacyPolicy />} />
+                        <Route path="/terms" element={<TermsOfService />} />
+                        <Route path="/cookie" element={<CookiePolicy />} />
+                        <Route path="/documentation" element={<Documentation />} />
+                        <Route path="/community-guidelines" element={<CommunityGuidelines />} />
+                        <Route path="/safety-center" element={<SafetyCenter />} />
 
-                {/* Internal Governance Routes — role-gated */}
-                <Route path="/moderation" element={
-                  <ProtectedRoute>
-                    <RoleGuard requiredRole="moderator">
-                      <DesktopOnlyGuard>
-                        <ModerationDashboard />
-                      </DesktopOnlyGuard>
-                    </RoleGuard>
-                  </ProtectedRoute>
-                } />
-                <Route path="/admin" element={
-                  <ProtectedRoute>
-                    <RoleGuard requiredRole="admin">
-                      <DesktopOnlyGuard>
-                        <AdminDashboard />
-                      </DesktopOnlyGuard>
-                    </RoleGuard>
-                  </ProtectedRoute>
-                } />
-                <Route path="/super-admin" element={
-                  <ProtectedRoute>
-                    <RoleGuard requiredRole="super_admin">
-                      <DesktopOnlyGuard>
-                        <SuperAdminDashboard />
-                      </DesktopOnlyGuard>
-                    </RoleGuard>
-                  </ProtectedRoute>
-                } />
+                        {/* Internal Governance Routes — role-gated */}
+                        <Route path="/moderation" element={
+                          <ProtectedRoute>
+                            <RoleGuard requiredRole="moderator">
+                              <DesktopOnlyGuard>
+                                <ModerationDashboard />
+                              </DesktopOnlyGuard>
+                            </RoleGuard>
+                          </ProtectedRoute>
+                        } />
+                        <Route path="/admin" element={
+                          <ProtectedRoute>
+                            <RoleGuard requiredRole="admin">
+                              <DesktopOnlyGuard>
+                                <AdminDashboard />
+                              </DesktopOnlyGuard>
+                            </RoleGuard>
+                          </ProtectedRoute>
+                        } />
+                        <Route path="/super-admin" element={
+                          <ProtectedRoute>
+                            <RoleGuard requiredRole="super_admin">
+                              <DesktopOnlyGuard>
+                                <SuperAdminDashboard />
+                              </DesktopOnlyGuard>
+                            </RoleGuard>
+                          </ProtectedRoute>
+                        } />
 
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-              </SuspendedGuard>
-            </Suspense>
-          </ErrorBoundary>
-        </MaintenanceGuard>
-        </PresenceProvider>
-      </CallProvider>
-      </PlatformFlagsProvider>
+                        <Route path="*" element={<NotFound />} />
+                      </Routes>
+                    </SuspendedGuard>
+                  </Suspense>
+                </ErrorBoundary>
+              </MaintenanceGuard>
+            </PresenceProvider>
+          </CallProvider>
+        </PlatformFlagsProvider>
+      </KeyboardProvider>
     </Router>
   );
 };

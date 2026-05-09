@@ -1,5 +1,6 @@
 import { ShoppingBag, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { LazyImage } from '@/components/performance/LazyImage';
 
 interface FeedMarketplaceCardProps {
     item: {
@@ -38,7 +39,7 @@ const FeedMarketplaceCard = ({ item, onDismiss }: FeedMarketplaceCardProps) => {
                 <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/40 dark:bg-black/40 backdrop-blur-xl hover:shadow-[0_8px_30px_-5px_rgba(var(--primary),0.2)] hover:-translate-y-1 hover:border-primary/50 transition-all duration-500 h-full flex flex-col group/card p-1.5">
                     <div className="aspect-square w-full relative overflow-hidden rounded-[18px] bg-black/5 dark:bg-white/5 group-hover:shadow-inner transition-all duration-500">
                         {imageUrl ? (
-                            <img
+                            <LazyImage
                                 src={imageUrl}
                                 alt={item.title}
                                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"

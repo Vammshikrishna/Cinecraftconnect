@@ -15,7 +15,7 @@ import {
     Flag
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { MarketplaceShareSheet } from '@/components/marketplace/MarketplaceShareSheet';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { ListingCreationModal } from '@/components/marketplace/ListingCreationModal';
 import ReportDialog from '@/components/common/ReportDialog';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -224,10 +224,19 @@ const MarketplaceListingDetail = () => {
                     {/* Right Column: Details */}
                     <div className="space-y-8 flex flex-col">
                              <div className="p-8 bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[32px] space-y-6 mt-6 shadow-xl relative overflow-hidden group">
-                                 <MarketplaceShareSheet
+                                 <UniversalShareSheet
                                      isOpen={showShareSheet}
                                      onOpenChange={setShowShareSheet}
-                                     listingId={listing!.id}
+                                     shareType="marketplace"
+                                     shareId={listing!.id}
+                                     shareData={{
+                                         listingId: listing.id,
+                                         title: listing.title,
+                                         previewUrl: listing.images?.[0],
+                                         price: listing.price_per_day,
+                                         author: listing.profiles,
+                                         subtitle: `${listing.category} • ₹${listing.price_per_day}/day`
+                                     }}
                                  />
                                  <ListingCreationModal
                                      open={isEditModalOpen}

@@ -23,8 +23,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
-import { AnnouncementShareSheet } from './AnnouncementShareSheet';
+import { UniversalShareSheet } from "@/components/common/UniversalShareSheet";
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { LazyImage } from '@/components/performance/LazyImage';
 
 interface FeedAnnouncementCardProps {
     announcement: {
@@ -133,10 +134,19 @@ const FeedAnnouncementCard = ({ announcement, onDismiss }: FeedAnnouncementCardP
 
     return (
         <>
-            <AnnouncementShareSheet
+            <UniversalShareSheet
                 isOpen={isShareOpen}
                 onOpenChange={setIsShareOpen}
-                announcement={announcement}
+                shareType="announcement"
+                shareId={announcement.id}
+                shareData={{
+                    id: announcement.id,
+                    title: announcement.title,
+                    content: announcement.content,
+                    created_at: announcement.created_at,
+                    author: announcement.profiles,
+                    company: announcement.company_pages
+                }}
             />
 
             <div className="glass-card-premium min-h-[220px] transition-transform duration-500 hover:-translate-y-2">
@@ -146,7 +156,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss }: FeedAnnouncementCardP
                     <div className="flex items-start gap-4 mb-4">
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-red-600 text-white shadow-lg ring-1 ring-white/20 group-hover:scale-110 transition-transform duration-300 overflow-hidden">
                             {announcement.company_pages?.logo_url ? (
-                                <img src={getOptimizedImage(announcement.company_pages.logo_url, { width: 96, height: 96 })} alt={announcement.company_pages.name} className="w-full h-full object-cover" />
+                                <LazyImage src={getOptimizedImage(announcement.company_pages.logo_url, { width: 96, height: 96 })} alt={announcement.company_pages.name} className="w-full h-full object-cover" />
                             ) : (
                                 <Megaphone className="h-6 w-6 fill-white/20" />
                             )}

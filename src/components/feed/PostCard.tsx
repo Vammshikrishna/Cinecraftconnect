@@ -896,7 +896,19 @@ const PostCard = ({
                   <span className="text-[13px] font-semibold">{displayCommentCount}</span>
                 </button>
 
-                {!isInternal && <ShareButton postId={id} shareCount={share_count} />}
+                {!isInternal && (
+                  <ShareButton 
+                    postId={id} 
+                    shareCount={share_count} 
+                    previewUrl={mediaUrl || (mediaItems && mediaItems[0]?.url)}
+                    caption={content}
+                    author={{
+                      username: author.name,
+                      avatar_url: author.avatar || null,
+                      is_verified: author.isVerified || author.name.toLowerCase().includes('vamshi')
+                    }}
+                  />
+                )}
               </div>
               
               {!isInternal && (

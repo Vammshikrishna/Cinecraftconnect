@@ -12,6 +12,7 @@ import { togglePostLike } from '@/services/postService';
 import { useToast } from '@/hooks/use-toast';
 import { JobShareCard } from './JobShareCard';
 import { FormattedText } from '@/components/ui/formatted-text';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 
 interface PostDialogProps {
     postId: string;
@@ -26,6 +27,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
     const [isLiking, setIsLiking] = useState(false);
     const { user } = useAuth();
     const { toast } = useToast();
+    const [showShareSheet, setShowShareSheet] = useState(false);
 
     useEffect(() => {
         if (isOpen && postId) {
@@ -236,7 +238,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                                     <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
                                         <MessageCircle className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                                    <Button variant="ghost" size="icon" onClick={() => setShowShareSheet(true)} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
                                         <Share2 className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
                                 </div>
@@ -296,6 +298,26 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                     </div>
                 </div>
             </DialogContent>
+
+            {post && (
+                <UniversalShareSheet
+                    isOpen={showShareSheet}
+                    onOpenChange={setShowShareSheet}
+                    shareType="post"
+                    shareId={postId}
+                    shareData={{
+                        postId: postId,
+                        previewUrl: items?.[0]?.url || (post as any).media_url,
+                        caption: post.content,
+                        author: {
+                            username: author.username,
+                            full_name: (author as any).full_name,
+                            avatar_url: author.avatar_url,
+                            is_verified: author.is_verified
+                        }
+                    }}
+                />
+            )}
         </Dialog>
     );
 };

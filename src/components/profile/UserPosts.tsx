@@ -8,7 +8,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import CommentSection from '@/components/feed/CommentSection';
-import { InstagramShareSheet } from '@/components/feed/InstagramShareSheet';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { formatDistanceToNow } from 'date-fns';
 import { FormattedText } from '@/components/ui/formatted-text';
 import { JobShareCard } from '@/components/chat/JobShareCard';
@@ -888,10 +888,21 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       </Dialog>
 
       {selectedPost && (
-        <InstagramShareSheet
+        <UniversalShareSheet
           isOpen={showShareSheet}
           onOpenChange={setShowShareSheet}
-          postId={selectedPost.id}
+          shareType="post"
+          shareId={selectedPost.id}
+          shareData={{
+            postId: selectedPost.id,
+            previewUrl: selectedPost.media_items?.[0]?.url || selectedPost.media_url,
+            caption: selectedPost.content,
+            author: {
+              username: selectedPost.profiles.username,
+              avatar_url: selectedPost.profiles.avatar_url,
+              is_verified: selectedPost.profiles.is_verified
+            }
+          }}
         />
       )}
 

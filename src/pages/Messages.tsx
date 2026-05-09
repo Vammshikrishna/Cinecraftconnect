@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { usePresence } from '@/hooks/usePresence';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
+import { useKeyboard } from '@/contexts/KeyboardContext';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -21,9 +21,17 @@ import { Conversation } from '@/types/chat';
 const Messages = () => {
   const { user } = useAuth();
   const { isFan } = useAccountType();
+  const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const { conversationId, userId } = useParams<{ conversationId: string; userId: string }>();
   const activePartnerId = conversationId || userId;
   const navigate = useNavigate();
+
+  // Global blur on mount/route change to kill any background focus triggers
+  useEffect(() => {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }, [activePartnerId]);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +41,6 @@ const Messages = () => {
   const [searchedUsers, setSearchedUsers] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const { onlineUserIds } = usePresence();
-  const isKeyboardVisible = useKeyboardVisible();
 
   // Partner data for the active chat
   const [activePartnerData, setActivePartnerData] = useState<{ id: string; name: string; avatar: string } | null>(null);
@@ -143,8 +150,8 @@ const Messages = () => {
 
   return (
     <div className={cn(
-      "h-screen w-full flex flex-col pt-16 bg-background overflow-hidden relative transition-all duration-300",
-      isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-0"
+      "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40",
+      (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-0"
     )}>
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">

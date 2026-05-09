@@ -15,6 +15,7 @@ import {
   MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan
 } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
+import { useKeyboard } from '@/contexts/KeyboardContext';
 
 import { RoomSettings } from './RoomSettings';
 import { useGlobalCall } from '@/contexts/CallContext';
@@ -25,9 +26,13 @@ import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
+import { ProfileShareCard } from '@/components/chat/ProfileShareCard';
+import { PitchShareCard } from '@/components/chat/PitchShareCard';
+import { CompanyShareCard } from '@/components/chat/CompanyShareCard';
+import { ContentShareCard } from '@/components/chat/ContentShareCard';
+import { JobShareCard } from '@/components/chat/JobShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import VerificationBadge from '../common/VerificationBadge';
 
 interface DiscussionChatInterfaceProps {
@@ -97,6 +102,7 @@ export const DiscussionChatInterface = ({
 
   // Global Call state
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize } = useGlobalCall();
+  const { isEmojiPickerOpen } = useKeyboard();
   const isInCall = callState.isActive && callState.roomId === roomId;
   const isCallMinimized = callState.isMinimized;
   const [showJoinBanner, setShowJoinBanner] = useState(false);
@@ -136,12 +142,16 @@ export const DiscussionChatInterface = ({
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-  const isKeyboardVisible = useKeyboardVisible();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior });
+    if (scrollContainerRef.current) {
+      const targetScroll = scrollContainerRef.current.scrollHeight;
+      if (behavior === 'smooth') {
+        scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      } else {
+        scrollContainerRef.current.scrollTop = targetScroll;
+      }
     }
     setIsAtBottom(true);
     setUnreadCount(0);
@@ -168,7 +178,7 @@ export const DiscussionChatInterface = ({
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    
+
     const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 50;
     setIsAtBottom(isBottom);
     if (isBottom) {
@@ -185,7 +195,7 @@ export const DiscussionChatInterface = ({
   useEffect(() => {
     const enrollUser = async () => {
       if (!user || !roomId) return;
-      
+
       // Fans are anonymous viewers and shouldn't be added to room_members
       const isFan = user.user_metadata?.role === 'fan';
       if (isFan) return;
@@ -208,7 +218,7 @@ export const DiscussionChatInterface = ({
               user_id: user.id,
               role: 'member'
             });
-          
+
           if (joinError) throw joinError;
           console.log(`Successfully enrolled user ${user.id} in room ${roomId}`);
         }
@@ -264,9 +274,9 @@ export const DiscussionChatInterface = ({
         .limit(30);
 
       if (error) throw error;
-      
+
       const fetchedMessages = (data as any) || [];
-      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+      const sortedMessages = [...fetchedMessages].sort((a, b) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
       setMessages(sortedMessages);
@@ -312,7 +322,7 @@ export const DiscussionChatInterface = ({
 
       const fetchedMessages = (data as any) || [];
       if (fetchedMessages.length > 0) {
-        const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
+        const sortedNewMessages = [...fetchedMessages].sort((a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
         setMessages(prev => [...sortedNewMessages, ...prev]);
@@ -393,13 +403,13 @@ export const DiscussionChatInterface = ({
 
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
-    
+
     // Only admins or the sender can delete
     const query = supabase.from('room_messages').delete().eq('id', messageId);
     if (!isAdmin) {
       query.eq('user_id', user.id);
     }
-    
+
     const { error } = await query;
 
     if (error) {
@@ -513,11 +523,49 @@ export const DiscussionChatInterface = ({
         return <ProjectShareCard {...shareData} />;
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
+    if (content.startsWith('PROFILE_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('PROFILE_SHARE::', ''));
+        return <ProfileShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('PITCH_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('PITCH_SHARE::', ''));
+        return <PitchShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('COMPANY_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('COMPANY_SHARE::', ''));
+        return <CompanyShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
     if (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) {
       try {
         const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
         const shareData = JSON.parse(content.replace(prefix, ''));
         return <DiscussionShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('CONTENT_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('CONTENT_SHARE::', ''));
+        return <ContentShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.includes('JOB_SHARE::')) {
+      try {
+        const parts = content.split('JOB_SHARE::');
+        const caption = parts[0].trim();
+        const jsonStr = parts[parts.length - 1].trim();
+        const shareData = JSON.parse(jsonStr);
+        return (
+          <div className="space-y-2">
+            {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+            <JobShareCard {...shareData} />
+          </div>
+        );
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
     return <p className="text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</p>;
@@ -530,12 +578,17 @@ export const DiscussionChatInterface = ({
     content.startsWith('VENDOR_SHARE::') ||
     content.startsWith('PROJECT_SHARE::') ||
     content.startsWith('DISCUSSION_SHARE::') ||
-    content.startsWith('ROOM_SHARE::');
+    content.startsWith('ROOM_SHARE::') ||
+    content.startsWith('PROFILE_SHARE::') ||
+    content.startsWith('PITCH_SHARE::') ||
+    content.startsWith('COMPANY_SHARE::') ||
+    content.startsWith('CONTENT_SHARE::') ||
+    content.includes('JOB_SHARE::');
 
   return (
     <div className="flex flex-col flex-1 w-full bg-background text-foreground overflow-hidden relative">
       {/* HEADER */}
-      <header className="flex items-center justify-between gap-4 p-3 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-10 sticky top-0">
+      <header className="flex items-center justify-between px-4 py-4 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           {(showBackButton || !isDesktop) && (
             <button onClick={onClose} className="p-2 rounded-full hover:bg-muted transition-colors shrink-0">
@@ -573,9 +626,9 @@ export const DiscussionChatInterface = ({
 
 
 
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
             onClick={() => setSettingsOpen(true)}
             title="Discussion Settings"
@@ -660,8 +713,8 @@ export const DiscussionChatInterface = ({
             <Radio className="w-4 h-4" />
             Discussion
             {mobileTab === 'discussion' && (
-              <div 
-                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300" 
+              <div
+                className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300"
               />
             )}
           </button>
@@ -675,7 +728,7 @@ export const DiscussionChatInterface = ({
             <MessageSquare className="w-4 h-4" />
             Chat
             {mobileTab === 'chat' && (
-              <div 
+              <div
                 className="absolute bottom-0 inset-x-0 h-1 bg-primary rounded-t-full transition-all duration-300"
               />
             )}
@@ -737,7 +790,7 @@ export const DiscussionChatInterface = ({
                     </div>
                   </div>
                 )}
-                
+
                 {visibleMessages.map((message, idx) => {
                   const isSender = message.user_id === user?.id;
                   const isShare = isShareContent(message.content);
@@ -797,11 +850,11 @@ export const DiscussionChatInterface = ({
                                 <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
                                   {message.profiles?.username || message.profiles?.full_name || 'User'}
                                 </p>
-                                {(message.profiles?.is_verified || 
-                                  message.profiles?.username?.toLowerCase().includes('vamshi') || 
+                                {(message.profiles?.is_verified ||
+                                  message.profiles?.username?.toLowerCase().includes('vamshi') ||
                                   message.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
-                                  <VerificationBadge size="xs" />
-                                )}
+                                    <VerificationBadge size="xs" />
+                                  )}
                               </div>
                             )}
                             {message.reply_to_id && !message.is_deleted && (() => {
@@ -883,8 +936,8 @@ export const DiscussionChatInterface = ({
           )}
 
           <div className={cn(
-            "p-3 bg-background border-t border-border transition-all duration-300",
-            isKeyboardVisible ? "pb-3" : "pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-3"
+            "p-0 transition-colors duration-300",
+            isEmojiPickerOpen ? "bg-[#161618]" : "bg-background"
           )}>
             {replyingTo && (
               <div className="mx-2 mb-2 p-2 bg-muted/50 rounded-lg flex items-center justify-between border-l-4 border-primary animate-in slide-in-from-bottom-2">
@@ -907,4 +960,3 @@ export const DiscussionChatInterface = ({
     </div>
   );
 };
-

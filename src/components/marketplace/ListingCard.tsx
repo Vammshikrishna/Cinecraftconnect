@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { LazyImage } from '@/components/performance/LazyImage';
 import { MarketplaceListing } from '@/types/marketplace';
 import { MapPin, Star, User, MoreVertical, Trash2, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -60,7 +61,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                 {/* Image Section */}
                 <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
                     {primaryImage ? (
-                        <img
+                        <LazyImage
                             src={primaryImage}
                             alt={listing.title}
                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"

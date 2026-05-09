@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeComments } from "@/hooks/useRealtimeComments";
 import { useAppRole } from "@/hooks/useAppRole";
-import { Trash2, MoreHorizontal } from "lucide-react";
+import { Trash2, MoreHorizontal, Smile } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import {
   DropdownMenu,
@@ -21,6 +21,9 @@ import {
 import { Comment } from "@/types";
 import { getOptimizedImage } from "@/utils/image-optimization";
 import VerificationBadge from "../common/VerificationBadge";
+import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
+import { useKeyboard } from "@/contexts/KeyboardContext";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const CommentSection = ({ postId }: { postId: string }) => {
   const { user } = useAuth();
@@ -31,6 +34,25 @@ const CommentSection = ({ postId }: { postId: string }) => {
   const [mentionedIds, setMentionedIds] = useState<Set<string>>(new Set());
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<{ avatar_url: string | null, full_name: string | null } | null>(null);
+  
+  // Emoji & Keyboard interaction states
+  const { isEmojiPickerOpen, setIsEmojiPickerOpen } = useKeyboard();
+  const [localEmojiOpen, setLocalEmojiOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Sync local open state with global back button signal
+  useEffect(() => {
+    if (!isEmojiPickerOpen) {
+      setLocalEmojiOpen(false);
+    }
+  }, [isEmojiPickerOpen]);
 
   const fetchComments = useCallback(async () => {
     if (!postId) return;
@@ -51,7 +73,6 @@ const CommentSection = ({ postId }: { postId: string }) => {
   useEffect(() => {
     fetchComments();
     
-    // Fetch current user's full profile to get the avatar accurately
     const fetchUserProfile = async () => {
       if (!user?.id) return;
       const { data } = await supabase
@@ -73,6 +94,42 @@ const CommentSection = ({ postId }: { postId: string }) => {
       setComments((prevComments) => prevComments.filter((comment) => comment.id !== deletedCommentId));
     },
   });
+
+  const handleEmojiToggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (localEmojiOpen) {
+      setLocalEmojiOpen(false);
+      setIsEmojiPickerOpen(false);
+      if (isMobile) {
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
+    } else {
+      if (isMobile) {
+        // dismiss keyboard first, wait, then show picker
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        textareaRef.current?.blur();
+        
+        setTimeout(() => {
+          setLocalEmojiOpen(true);
+          setIsEmojiPickerOpen(true);
+        }, 150);
+      } else {
+        setLocalEmojiOpen(true);
+        setIsEmojiPickerOpen(true);
+      }
+    }
+  };
+
+  const handleInputFocus = () => {
+    if (isMobile && localEmojiOpen) {
+      setLocalEmojiOpen(false);
+      setIsEmojiPickerOpen(false);
+    }
+  };
 
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,6 +157,8 @@ const CommentSection = ({ postId }: { postId: string }) => {
     setComments((prev) => [optimisticComment, ...prev]);
     const originalNewComment = newComment;
     setNewComment("");
+    setLocalEmojiOpen(false);
+    setIsEmojiPickerOpen(false);
 
       const { data: commentData, error } = await supabase.from("post_comments" as any).insert({
         post_id: postId,
@@ -107,18 +166,17 @@ const CommentSection = ({ postId }: { postId: string }) => {
         content: originalNewComment.trim(),
         parent_id: replyTo?.id || null,
       }).select().single();
- 
+  
      if (error) {
        toast({ title: "Failed to add comment", description: error.message, variant: "destructive" });
        setComments((prev) => prev.filter((c) => c.id !== tempId)); // Rollback
        setNewComment(originalNewComment);
      } else {
-       // Handle Mentions Persistence for Comments
        if (mentionedIds.size > 0 && commentData) {
          const mentionsToInsert = Array.from(mentionedIds).map(mentionedId => ({
            mentioner_id: user.id,
            mentioned_id: mentionedId,
-           related_id: postId, // Link to the post
+           related_id: postId,
            related_type: 'post'
          }));
          
@@ -137,7 +195,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
 
     if (error) {
       toast({ title: "Failed to delete comment", description: error.message, variant: "destructive" });
-      setComments(originalComments); // Rollback
+      setComments(originalComments);
     }
   };
 
@@ -145,12 +203,29 @@ const CommentSection = ({ postId }: { postId: string }) => {
     setReplyTo(comment);
     const authorName = comment.profiles?.username || comment.profiles?.full_name?.split(' ')[0] || "user";
     setNewComment(`@${authorName} `);
-    // Focus the textarea - would need a ref here in a full implementation
+    setTimeout(() => textareaRef.current?.focus(), 100);
   };
 
   const getInitials = (name: string) => {
     return name.split(' ').map(word => word[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  const renderEmojiPicker = () => (
+    <EmojiPicker
+      theme={Theme.DARK}
+      emojiStyle={EmojiStyle.APPLE}
+      onEmojiClick={(emojiData) => {
+        setNewComment(prev => prev + emojiData.emoji);
+      }}
+      autoFocusSearch={false}
+      width={isMobile ? "100%" : 320}
+      height={isMobile ? 300 : 400}
+      lazyLoadEmojis={true}
+      skinTonesDisabled={true}
+      searchDisabled={false}
+      previewConfig={{ showPreview: false }}
+    />
+  );
 
   return (
     <div className="mt-4">
@@ -169,32 +244,82 @@ const CommentSection = ({ postId }: { postId: string }) => {
                </button>
             </div>
           )}
-          <form onSubmit={handleAddComment} className="flex items-center space-x-3">
-             <Avatar className="h-9 w-9 ring-1 ring-white/5 shadow-sm">
-               {(currentUserProfile?.avatar_url || user.user_metadata?.avatar_url) && (
-                 <AvatarImage src={getOptimizedImage(currentUserProfile?.avatar_url || user.user_metadata.avatar_url, { width: 96, height: 96 })} />
-               )}
-               <AvatarFallback className="bg-muted text-[10px] uppercase">
-                 {getInitials(currentUserProfile?.full_name || user.user_metadata?.full_name || 'U')}
-               </AvatarFallback>
-             </Avatar>
-             <div className="flex-1">
-               <MentionTextarea
-                 value={newComment}
-                 onChange={(e) => setNewComment(e.target.value)}
-                 onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
-                 placeholder={replyTo ? "Add a reply..." : "Add a comment..."}
-                 className="min-h-[40px] resize-none py-2 ring-1 ring-white/10 focus:ring-primary/40 bg-white/5 rounded-xl transition-all"
-                 rows={1}
-               />
+          <form onSubmit={handleAddComment} className="space-y-3">
+             <div className="flex items-center space-x-3">
+               <Avatar className="h-9 w-9 ring-1 ring-white/5 shadow-sm">
+                 {(currentUserProfile?.avatar_url || user.user_metadata?.avatar_url) && (
+                   <AvatarImage src={getOptimizedImage(currentUserProfile?.avatar_url || user.user_metadata.avatar_url, { width: 96, height: 96 })} />
+                 )}
+                 <AvatarFallback className="bg-muted text-[10px] uppercase">
+                   {getInitials(currentUserProfile?.full_name || user.user_metadata?.full_name || 'U')}
+                 </AvatarFallback>
+               </Avatar>
+               <div className="flex-1 relative">
+                 <MentionTextarea
+                   ref={textareaRef}
+                   value={newComment}
+                   onChange={(e) => setNewComment(e.target.value)}
+                   onFocus={handleInputFocus}
+                   onMentionSelected={(user) => setMentionedIds(prev => new Set(prev).add(user.id))}
+                   placeholder={replyTo ? "Add a reply..." : "Add a comment..."}
+                   className="min-h-[40px] resize-none py-2 pr-10 ring-1 ring-white/10 focus:ring-primary/40 bg-white/5 rounded-xl transition-all"
+                   rows={1}
+                   autoFocus={false}
+                 />
+                 <div className="absolute right-2 bottom-1.5">
+                   {isMobile ? (
+                     <Button 
+                       type="button"
+                       variant="ghost" 
+                       size="icon" 
+                       className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all emoji-toggle-button"
+                       onClick={handleEmojiToggle}
+                     >
+                       <Smile className={localEmojiOpen ? "h-4 w-4 text-primary" : "h-4 w-4"} />
+                     </Button>
+                   ) : (
+                     <Popover open={localEmojiOpen} onOpenChange={(open) => {
+                       setLocalEmojiOpen(open);
+                       setIsEmojiPickerOpen(open);
+                     }} modal={false}>
+                       <PopoverTrigger asChild>
+                         <Button 
+                           type="button"
+                           variant="ghost" 
+                           size="icon" 
+                           className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all emoji-toggle-button"
+                         >
+                           <Smile className={localEmojiOpen ? "h-4 w-4 text-primary" : "h-4 w-4"} />
+                         </Button>
+                       </PopoverTrigger>
+                       <PopoverContent 
+                         className="p-0 border-none shadow-2xl bg-transparent z-[9999]" 
+                         align="end" 
+                         side="top" 
+                         sideOffset={8}
+                         onOpenAutoFocus={(e) => e.preventDefault()}
+                         onCloseAutoFocus={(e) => e.preventDefault()}
+                       >
+                         {localEmojiOpen && renderEmojiPicker()}
+                       </PopoverContent>
+                     </Popover>
+                   )}
+                 </div>
+               </div>
+               <Button type="submit" className="rounded-xl h-10 px-6 font-black uppercase tracking-widest text-xs bg-primary hover:bg-primary/90 text-primary-foreground">Post</Button>
              </div>
-             <Button type="submit" className="rounded-xl h-10 px-6 font-black uppercase tracking-widest text-xs bg-primary hover:bg-primary/90 text-primary-foreground">Post</Button>
+
+             {/* Emoji Picker Extension (Mobile Only) */}
+             {isMobile && localEmojiOpen && (
+               <div className="animate-in slide-in-from-bottom-2 duration-200">
+                 {renderEmojiPicker()}
+               </div>
+             )}
            </form>
         </div>
       )}
       
       <div className="space-y-6">
-        {/* Render only Parent Comments */}
         {comments.filter(c => !c.parent_id).map((parent) => (
           <CommentItem 
             key={parent.id}
@@ -214,7 +339,6 @@ const CommentSection = ({ postId }: { postId: string }) => {
   );
 };
 
-// Sub-component for individual comments and their threads
 const CommentItem = ({ 
   comment, 
   replies, 
@@ -254,7 +378,6 @@ const CommentItem = ({
           </Avatar>
         </Link>
 
-        {/* Content Column */}
         <div className="flex-1 min-w-0 pr-4">
           <div className="text-sm leading-relaxed">
             <Link to={`/profile/${comment.user_id}`} className="inline-block mr-1.5 focus:outline-none">
@@ -274,7 +397,6 @@ const CommentItem = ({
             />
           </div>
 
-          {/* Metadata Row */}
           <div className="flex items-center gap-4 mt-1.5 overflow-hidden whitespace-nowrap">
             <span className="text-[11px] font-medium text-muted-foreground whitespace-nowrap">
               {(() => {
@@ -297,7 +419,6 @@ const CommentItem = ({
               })()}
             </span>
             
-            {/* Show reply button only if not internal */}
             {!isInternal && (
               <button 
                 onClick={() => onReply(comment)}
@@ -339,7 +460,6 @@ const CommentItem = ({
         </div>
       </div>
 
-      {/* Show Replies Button */}
       {replies && replies.length > 0 && !isReply && (
         <div className="ml-5 sm:ml-7 mt-2">
           {!showReplies ? (

@@ -24,7 +24,6 @@ interface MovieRating {
 
 const StarRating = ({
   title,
-  type,
   initialRating = 0,
   readOnly = false,
   className = "",

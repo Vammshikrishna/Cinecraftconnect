@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { ExternalLink, Info } from 'lucide-react';
+import { LazyImage } from '@/components/performance/LazyImage';
 
 interface AdCardProps {
     title?: string;
@@ -29,7 +30,7 @@ const AdCard = ({
             </div>
 
             <div className="relative aspect-video w-full overflow-hidden">
-                <img
+                <LazyImage
                     src={imageUrl}
                     alt={title}
                     className="w-full h-full object-cover transition-transform hover:scale-105 duration-700"

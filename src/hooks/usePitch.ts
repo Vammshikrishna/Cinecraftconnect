@@ -37,6 +37,7 @@ export interface PitchCall {
         avatar_url: string | null;
         craft: string | null;
         location: string | null;
+        is_verified?: boolean;
     };
 }
 
@@ -73,6 +74,7 @@ export interface PitchSubmission {
         avatar_url?: string;
         username?: string;
         craft?: string;
+        is_verified?: boolean;
     };
     pitch_calls?: {
         title: string;
@@ -109,7 +111,8 @@ export const usePitchCalls = (filters?: Partial<FilterState>, searchQuery?: stri
                         avatar_url,
                         username,
                         craft,
-                        location
+                        location,
+                        is_verified
                     )
                 `)
                 .eq('status', 'open')

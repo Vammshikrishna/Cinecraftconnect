@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import Footer from '@/components/Footer';
 import Navbar from '@/components/navbar/Navbar';
 
-export const LegalPage = () => {
+const LegalPage = () => {
   const { type } = useParams<{ type: string }>();
   const [policy, setPolicy] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -90,3 +90,5 @@ export const LegalPage = () => {
     </div>
   );
 };
+
+export default LegalPage;

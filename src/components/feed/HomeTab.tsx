@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -13,12 +13,14 @@ import {
 import FeedSection from './FeedSection';
 import { CreatePostWidget } from './CreatePostWidget';
 import PostCard from './PostCard';
-import FeedProjectCard from './FeedProjectCard';
-import FeedDiscussionCard from './FeedDiscussionCard';
-import FeedRatingCard from './FeedRatingCard';
-import FeedAnnouncementCard from './FeedAnnouncementCard';
-import { ListingCard } from '@/components/marketplace/ListingCard';
-import { VendorCard } from '@/components/vendors/VendorCard';
+// Lazy loaded components for interleaved sections
+const FeedProjectCard = lazy(() => import('./FeedProjectCard'));
+const FeedDiscussionCard = lazy(() => import('./FeedDiscussionCard'));
+const FeedRatingCard = lazy(() => import('./FeedRatingCard'));
+const FeedAnnouncementCard = lazy(() => import('./FeedAnnouncementCard'));
+const ListingCard = lazy(() => import('@/components/marketplace/ListingCard').then(m => ({ default: m.ListingCard })));
+const VendorCard = lazy(() => import('@/components/vendors/VendorCard').then(m => ({ default: m.VendorCard })));
+
 import { PostSkeleton } from '@/components/ui/enhanced-skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
@@ -135,21 +137,23 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.announcements.length > 0,
             component: (
                 <FeedSection title="Announcements" icon={Megaphone} linkTo="/announcements">
-                    {feedData.announcements
-                        .filter((item: any) => !dismissedIds.has(item.id))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[85vw] sm:w-[280px] md:w-[320px] flex-none snap-start mx-1 first:ml-0">
-                            <FeedAnnouncementCard
-                                announcement={{
-                                    ...item,
-                                    created_at: item.posted_at || item.created_at,
-                                    itemType: 'announcement'
-                                }}
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[280px] h-32 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.announcements
+                            .filter((item: any) => !dismissedIds.has(item.id))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[85vw] sm:w-[280px] md:w-[320px] flex-none snap-start mx-1 first:ml-0">
+                                <FeedAnnouncementCard
+                                    announcement={{
+                                        ...item,
+                                        created_at: item.posted_at || item.created_at,
+                                        itemType: 'announcement'
+                                    }}
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         },
@@ -158,21 +162,23 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.projects.length > 0,
             component: (
                 <FeedSection title="Trending Projects" icon={Film} linkTo="/projects">
-                    {feedData.projects
-                        .filter((item: any) => !dismissedIds.has(item.id))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[240px] md:w-[280px] flex-none snap-start h-full">
-                            <FeedProjectCard
-                                project={{
-                                    ...item,
-                                    name: item.title,
-                                    itemType: 'project'
-                                }}
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[240px] h-40 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.projects
+                            .filter((item: any) => !dismissedIds.has(item.id))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[240px] md:w-[280px] flex-none snap-start h-full">
+                                <FeedProjectCard
+                                    project={{
+                                        ...item,
+                                        name: item.title,
+                                        itemType: 'project'
+                                    }}
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         },
@@ -233,17 +239,19 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.discussions.length > 0,
             component: (
                 <FeedSection title="Active Discussions" icon={DiscussionRoomIcon} linkTo="/discussion-rooms">
-                    {feedData.discussions
-                        .filter((item: any) => !dismissedIds.has(item.id))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[260px] md:w-[320px] flex-none snap-start h-full">
-                            <FeedDiscussionCard
-                                discussion={{ ...item, itemType: 'discussion' }}
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[260px] h-32 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.discussions
+                            .filter((item: any) => !dismissedIds.has(item.id))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[260px] md:w-[320px] flex-none snap-start h-full">
+                                <FeedDiscussionCard
+                                    discussion={{ ...item, itemType: 'discussion' }}
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         },
@@ -252,17 +260,19 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.marketplace.length > 0,
             component: (
                 <FeedSection title="Marketplace Highlights" icon={ShoppingBag} linkTo="/marketplace">
-                    {feedData.marketplace
-                        .filter((item: any) => !dismissedIds.has(item.id))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[200px] md:w-[240px] flex-none snap-start h-full">
-                            <ListingCard 
-                                listing={item} 
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[200px] h-48 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.marketplace
+                            .filter((item: any) => !dismissedIds.has(item.id))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[200px] md:w-[240px] flex-none snap-start h-full">
+                                <ListingCard 
+                                    listing={item} 
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         },
@@ -271,17 +281,19 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.vendors.length > 0,
             component: (
                 <FeedSection title="Featured Vendors" icon={VendorIcon} linkTo="/vendors">
-                    {feedData.vendors
-                        .filter((item: any) => !dismissedIds.has(item.id))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[240px] md:w-[300px] flex-none snap-start h-full">
-                            <VendorCard 
-                                vendor={item} 
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[240px] h-40 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.vendors
+                            .filter((item: any) => !dismissedIds.has(item.id))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[240px] md:w-[300px] flex-none snap-start h-full">
+                                <VendorCard 
+                                    vendor={item} 
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         },
@@ -290,29 +302,31 @@ import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } 
             hasData: feedData.ratings.length > 0,
             component: (
                 <FeedSection title="Latest Ratings" icon={Star} linkTo="/ratings">
-                    {feedData.ratings
-                        .filter((item: any) => !dismissedIds.has(item.id.toString()))
-                        .slice(0, 7)
-                        .map((item: any) => (
-                        <div key={item.id} className="w-[180px] md:w-[220px] flex-none snap-start">
-                            <FeedRatingCard
-                                rating={{
-                                    id: item.id.toString(),
-                                    title: item.title || item.name || 'Untitled',
-                                    tmdb_rating: item.vote_average,
-                                    user_rating: item.user_rating,
-                                    app_rating: item.app_rating,
-                                    created_at: item.release_date || item.first_air_date || '',
-                                    poster_url: getSafeImageUrl(item.poster_path),
-                                    overview: item.overview,
-                                    original_language: item.original_language
-                                }}
-                                variant="vertical"
-                                contentType={item.title ? 'movie' : 'tv'}
-                                onDismiss={(id) => handleDismiss(id)}
-                            />
-                        </div>
-                    ))}
+                    <Suspense fallback={<div className="w-[180px] h-56 animate-pulse bg-muted rounded-xl" />}>
+                        {feedData.ratings
+                            .filter((item: any) => !dismissedIds.has(item.id.toString()))
+                            .slice(0, 7)
+                            .map((item: any) => (
+                            <div key={item.id} className="w-[180px] md:w-[220px] flex-none snap-start">
+                                <FeedRatingCard
+                                    rating={{
+                                        id: item.id.toString(),
+                                        title: item.title || item.name || 'Untitled',
+                                        tmdb_rating: item.vote_average,
+                                        user_rating: item.user_rating,
+                                        app_rating: item.app_rating,
+                                        created_at: item.release_date || item.first_air_date || '',
+                                        poster_url: getSafeImageUrl(item.poster_path),
+                                        overview: item.overview,
+                                        original_language: item.original_language
+                                    }}
+                                    variant="vertical"
+                                    contentType={item.title ? 'movie' : 'tv'}
+                                    onDismiss={(id) => handleDismiss(id)}
+                                />
+                            </div>
+                        ))}
+                    </Suspense>
                 </FeedSection>
             )
         }

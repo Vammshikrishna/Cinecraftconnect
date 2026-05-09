@@ -18,7 +18,7 @@ const Navbar = () => {
 
   return (
     <>
-      <header className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden`}>
+      <header className="fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden translate-y-0 opacity-100 pt-[env(safe-area-inset-top)]">
         <div className="w-full px-2 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-2 sm:gap-4">
             {/* Logo */}

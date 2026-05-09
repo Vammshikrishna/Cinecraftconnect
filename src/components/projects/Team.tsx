@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { UserPlus, Link as LinkIcon, Copy, Search, Trash2, Check, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAppRole } from '@/hooks/useAppRole';
+import { copyToClipboard, getAppOrigin } from '@/lib/utils/share';
 
 interface TeamMember {
     user_id: string;
@@ -149,12 +150,14 @@ const Team = ({ project_id }: TeamProps) => {
         }
     };
 
-    const copyInviteLink = () => {
-        const link = `${window.location.origin}/projects/join/${inviteCode}`;
-        navigator.clipboard.writeText(link);
-        setCopied(true);
-        toast({ title: "Copied!", description: "Invite link copied to clipboard" });
-        setTimeout(() => setCopied(false), 2000);
+    const copyInviteLink = async () => {
+        const link = `${getAppOrigin()}/projects/join/${inviteCode}`;
+        const success = await copyToClipboard(link);
+        if (success) {
+            setCopied(true);
+            toast({ title: "Copied!", description: "Invite link copied to clipboard" });
+            setTimeout(() => setCopied(false), 2000);
+        }
     };
 
     const searchUsers = async () => {
@@ -266,7 +269,7 @@ const Team = ({ project_id }: TeamProps) => {
                                                 <Label className="text-foreground">Invite Link</Label>
                                                 <div className="flex gap-2 mt-2">
                                                     <Input
-                                                        value={`${window.location.origin}/projects/join/${inviteCode}`}
+                                                        value={`${getAppOrigin()}/projects/join/${inviteCode}`}
                                                         readOnly
                                                         className="flex-1 bg-background border-border"
                                                     />

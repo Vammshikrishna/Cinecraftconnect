@@ -9,54 +9,62 @@ interface AnnouncementShareCardProps {
 
 export const AnnouncementShareCard = ({ title, content }: AnnouncementShareCardProps) => {
     return (
-        <div className="block w-full max-w-[280px] bg-gradient-to-br from-orange-500/10 to-red-500/10 rounded-[18px] border border-orange-500/20 overflow-hidden cursor-pointer backdrop-blur-sm">
-            <div className="p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                    <div className="h-8 w-8 rounded-lg bg-orange-500/20 flex items-center justify-center shrink-0">
-                        <Megaphone className="h-4 w-4 text-orange-500" />
+        <div className="w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 group relative active:scale-[0.98] shadow-2xl border border-white/10">
+            {/* Compact Header */}
+            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/30">
+                        <Megaphone className="w-4 h-4 text-primary" />
                     </div>
-                    <div>
-                        <h4 className="font-semibold text-sm line-clamp-2 leading-tight text-orange-600 dark:text-orange-400">
-                            {title}
-                        </h4>
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Announcement</span>
+                    <div className="flex flex-col">
+                        <span className="text-[11px] font-black text-white uppercase tracking-wider">
+                            Platform
+                        </span>
+                        <span className="text-[8px] text-primary font-black uppercase tracking-[0.2em] leading-tight">
+                            Announcement
+                        </span>
                     </div>
                 </div>
-
-                {content.includes('JOB_SHARE::') ? (
-                    (() => {
-                        try {
-                            const parts = content.split('JOB_SHARE::');
-                            const caption = parts[0].trim();
-                            const jsonStr = parts[parts.length - 1].trim();
-                            const shareData = JSON.parse(jsonStr);
-                            return (
-                                <div className="space-y-2">
-                                    {caption && <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{caption}</p>}
-                                    <div className="scale-[0.85] origin-top-left -mb-4">
-                                        <JobShareCard {...shareData} />
-                                    </div>
-                                </div>
-                            );
-                        } catch (e) {
-                            return (
-                                <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                                    {content}
-                                </p>
-                            );
-                        }
-                    })()
-                ) : (
-                    <p className="text-xs text-muted-foreground line-clamp-3 leading-relaxed">
-                        {content}
-                    </p>
-                )}
             </div>
 
-            {/* Optional: "Read More" logic if we had a dedicated page. For now, it's just a display card in chat. 
-                 Maybe link to /announcements if clicked? */}
-            <div className="px-4 py-2 border-t border-orange-500/10 bg-orange-500/5 hover:bg-orange-500/10 transition-colors">
-                <Link to="/announcements" className="text-xs font-medium text-orange-500 flex items-center justify-center w-full">
+            {/* Content */}
+            <div className="p-5 space-y-4 bg-background/80 backdrop-blur-md">
+                <div className="space-y-1">
+                    <h4 className="text-[15px] font-black text-foreground leading-tight line-clamp-2 tracking-tight uppercase group-hover:text-primary transition-colors">
+                        {title}
+                    </h4>
+                    
+                    {content.includes('JOB_SHARE::') ? (
+                        (() => {
+                            try {
+                                const parts = content.split('JOB_SHARE::');
+                                const caption = parts[0].trim();
+                                const jsonStr = parts[parts.length - 1].trim();
+                                const shareData = JSON.parse(jsonStr);
+                                return (
+                                    <div className="space-y-2">
+                                        {caption && <p className="text-[11px] text-muted-foreground/70 font-medium line-clamp-4 leading-relaxed">{caption}</p>}
+                                        <div className="scale-[0.9] origin-top-left -mb-4">
+                                            <JobShareCard {...shareData} />
+                                        </div>
+                                    </div>
+                                );
+                            } catch (e) {
+                                return (
+                                    <p className="text-[11px] text-muted-foreground/70 font-medium line-clamp-6 leading-relaxed">
+                                        {content}
+                                    </p>
+                                );
+                            }
+                        })()
+                    ) : (
+                        <p className="text-[11px] text-muted-foreground/70 font-medium line-clamp-6 leading-relaxed">
+                            {content}
+                        </p>
+                    )}
+                </div>
+
+                <Link to="/announcements" className="block w-full py-2 bg-primary/10 text-primary text-center rounded-xl group-hover:bg-primary group-hover:text-black transition-all text-[9px] font-black uppercase tracking-widest">
                     View Announcement
                 </Link>
             </div>

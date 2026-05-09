@@ -14,7 +14,6 @@ import {
   UserPlus,
   UserCheck,
   Clock,
-  ArrowLeft,
   Instagram,
   Linkedin,
   Twitter,
@@ -25,7 +24,9 @@ import {
   Zap,
   Flag,
   Briefcase,
+  Share2,
 } from 'lucide-react';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import ReportDialog from '@/components/common/ReportDialog';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
@@ -82,6 +83,7 @@ const PublicProfile = () => {
   const [followingCount, setFollowingCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -98,20 +100,54 @@ const PublicProfile = () => {
   const fetchProfile = async () => {
     setLoading(true);
     try {
-      // Determine if userId is a UUID or a username
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId || '');
+      let identifier = (userId || '').trim();
+      // Strip leading '@' if present
+      if (identifier.startsWith('@')) {
+        identifier = identifier.substring(1);
+      }
       
-      let query = supabase.from('profiles').select('*');
-      
-      if (isUUID) {
-        query = query.eq('id', userId || '');
-      } else {
-        query = query.eq('username', userId || '');
+      if (!identifier || identifier.toLowerCase() === 'undefined' || identifier.toLowerCase() === 'null') {
+        console.warn('Blocked fetch for invalid identifier:', identifier);
+        setLoading(false);
+        return;
       }
 
-      const { data, error } = await query.maybeSingle();
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier) || 
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+      
+      console.log('Fetching profile for:', { identifier, isUUID });
+      
+      let data = null;
+      let error = null;
 
-      if (error || !data) throw error || new Error('Profile not found');
+      // Step 1: Try UUID lookup if applicable
+      if (isUUID) {
+        console.log('Attempting UUID lookup for:', identifier);
+        const res = await supabase.from('profiles').select('*').eq('id', identifier).maybeSingle();
+        data = res.data;
+        error = res.error;
+      }
+
+      // Step 2: Try Username lookup
+      if (!data && !error) {
+        console.log('Attempting Username lookup for:', identifier);
+        const res = await supabase.from('profiles').select('*').ilike('username', identifier).maybeSingle();
+        data = res.data;
+        error = res.error;
+      }
+
+      // Step 3: Try Full Name lookup (Last resort for manual links/legacy data)
+      if (!data && !error && !isUUID && identifier.length > 3) {
+        console.log('Attempting Full Name lookup for:', identifier);
+        const res = await supabase.from('profiles').select('*').ilike('full_name', identifier).maybeSingle();
+        data = res.data;
+        error = res.error;
+      }
+
+      if (error || !data) {
+        console.warn('Profile resolution failed:', { identifier, error: error?.message });
+        throw error || new Error('Profile not found or is restricted');
+      }
       
       // Check if this is the user's own profile (resolved by username)
       if (user && data.id === user.id) {
@@ -482,6 +518,17 @@ const PublicProfile = () => {
                 )}
                 
                 {user && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-9 w-9 rounded-full hover:bg-primary/10 hover:text-primary" 
+                    onClick={() => setShowShareSheet(true)}
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                {user && (
                   <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full hover:bg-rose-500/10 hover:text-rose-500" onClick={() => setIsReportOpen(true)}>
                     <Flag className="h-4 w-4" />
                   </Button>
@@ -534,6 +581,19 @@ const PublicProfile = () => {
           targetId={profile.id}
         />
       )}
+      <UniversalShareSheet
+        isOpen={showShareSheet}
+        onOpenChange={setShowShareSheet}
+        shareType="profile"
+        shareId={profile.username || profile.id}
+        shareData={{ 
+          name: profile.full_name || profile.username,
+          username: profile.username,
+          id: profile.id,
+          avatar: profile.avatar_url,
+          craft: profile.craft
+        }}
+      />
     </div>
   );
 };

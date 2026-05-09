@@ -14,19 +14,25 @@
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 89%;
     --popover-foreground: 0 0% 9%;
-    --primary: 7 100% 60%;              /* #FF4B33 - Tangerine Red-Orange */
-    --primary-foreground: 0 0% 100%;   /* White text on primary */
-    --secondary: 7 60% 92%;            /* Light peachy tint */
+    --primary: 7 100% 60%;
+    /* #FF4B33 - Tangerine Red-Orange */
+    --primary-foreground: 0 0% 100%;
+    /* White text on primary */
+    --secondary: 7 60% 92%;
+    /* Light peachy tint */
     --secondary-foreground: 7 100% 30%;
-    --muted: 7 20% 93%;                /* Warm light gray */
+    --muted: 7 20% 93%;
+    /* Warm light gray */
     --muted-foreground: 0 0% 40%;
-    --accent: 16 100% 66%;             /* Warm orange #FF6B3D */
+    --accent: 16 100% 66%;
+    /* Warm orange #FF6B3D */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
     --success: 142 76% 36%;
     --warning: 38 92% 50%;
-    --border: 7 15% 87%;               /* Warm-tinted border */
+    --border: 7 15% 87%;
+    /* Warm-tinted border */
     --input: 0 0% 83%;
     --ring: 7 100% 60%;
     --radius: 0.75rem;
@@ -36,11 +42,16 @@
     --glass-blur: 40px;
     --glass-border: rgba(255, 75, 51, 0.15);
     --glass-shadow: rgba(0, 0, 0, 0.3);
-    --chart-1: 7 100% 60%;   /* Primary red-orange */
-    --chart-2: 16 100% 66%;  /* Warm orange */
-    --chart-3: 0 72% 50%;    /* Deep red */
-    --chart-4: 30 100% 64%;  /* Amber-orange */
-    --chart-5: 7 40% 80%;    /* Light salmon */
+    --chart-1: 7 100% 60%;
+    /* Primary red-orange */
+    --chart-2: 16 100% 66%;
+    /* Warm orange */
+    --chart-3: 0 72% 50%;
+    /* Deep red */
+    --chart-4: 30 100% 64%;
+    /* Amber-orange */
+    --chart-5: 7 40% 80%;
+    /* Light salmon */
     --sidebar: 0 0% 98%;
     --sidebar-foreground: 0 0% 9%;
     --sidebar-primary: 7 100% 60%;
@@ -66,25 +77,32 @@
 
   .light {
     /* Tangerine Dream - Light Mode */
-    --background: 7 20% 97%;           /* Very warm off-white */
+    --background: 7 20% 97%;
+    /* Very warm off-white */
     --foreground: 0 0% 10%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 10%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 10%;
-    --primary: 7 100% 60%;             /* #FF4B33 — Tangerine Red-Orange */
-    --primary-foreground: 0 0% 100%;   /* White */
-    --secondary: 7 60% 93%;            /* Peach blush */
+    --primary: 7 100% 60%;
+    /* #FF4B33 — Tangerine Red-Orange */
+    --primary-foreground: 0 0% 100%;
+    /* White */
+    --secondary: 7 60% 93%;
+    /* Peach blush */
     --secondary-foreground: 7 80% 35%;
-    --muted: 7 25% 93%;                /* Warm light muted */
+    --muted: 7 25% 93%;
+    /* Warm light muted */
     --muted-foreground: 0 0% 38%;
-    --accent: 16 100% 66%;             /* Warm orange */
+    --accent: 16 100% 66%;
+    /* Warm orange */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 76% 36%;
     --warning: 38 92% 50%;
-    --border: 7 20% 89%;               /* Warm border */
+    --border: 7 20% 89%;
+    /* Warm border */
     --input: 7 15% 91%;
     --ring: 7 100% 60%;
 
@@ -101,12 +119,15 @@
   * {
     @apply border-border selection:bg-primary/20 selection:text-foreground;
     /* Hide scrollbar for all elements but keep scrolling */
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE and Edge */
   }
 
   *::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
+    display: none;
+    /* Chrome, Safari and Opera */
   }
 
   body {
@@ -127,30 +148,41 @@
 
   .dark {
     /* Tangerine Dream - Dark Mode */
-    --background: 0 0% 9%;             /* Deep charcoal */
+    --background: 0 0% 9%;
+    /* Deep charcoal */
     --foreground: 0 0% 98%;
     --card: 0 0% 14%;
     --card-foreground: 0 0% 98%;
     --popover: 0 0% 20%;
     --popover-foreground: 0 0% 98%;
-    --primary: 7 95% 65%;              /* Slightly brighter for dark bg */
+    --primary: 7 95% 65%;
+    /* Slightly brighter for dark bg */
     --primary-foreground: 0 0% 100%;
-    --secondary: 7 30% 25%;            /* Dark warm brown-red */
+    --secondary: 7 30% 25%;
+    /* Dark warm brown-red */
     --secondary-foreground: 0 0% 98%;
-    --muted: 7 15% 22%;                /* Warm dark muted */
+    --muted: 7 15% 22%;
+    /* Warm dark muted */
     --muted-foreground: 0 0% 70%;
-    --accent: 16 80% 55%;              /* Orange accent in dark */
+    --accent: 16 80% 55%;
+    /* Orange accent in dark */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 85% 97%;
-    --border: 7 15% 25%;               /* Warm dark border */
+    --border: 7 15% 25%;
+    /* Warm dark border */
     --input: 7 10% 28%;
     --ring: 7 95% 65%;
-    --chart-1: 7 95% 65%;    /* Primary red-orange */
-    --chart-2: 16 90% 60%;   /* Warm orange */
-    --chart-3: 0 75% 55%;    /* Deep red */
-    --chart-4: 30 90% 60%;   /* Amber */
-    --chart-5: 7 50% 45%;    /* Muted salmon */
+    --chart-1: 7 95% 65%;
+    /* Primary red-orange */
+    --chart-2: 16 90% 60%;
+    /* Warm orange */
+    --chart-3: 0 75% 55%;
+    /* Deep red */
+    --chart-4: 30 90% 60%;
+    /* Amber */
+    --chart-5: 7 50% 45%;
+    /* Muted salmon */
     --sidebar: 0 0% 14%;
     --sidebar-foreground: 0 0% 98%;
     --sidebar-primary: 7 95% 65%;
@@ -404,14 +436,16 @@
   /* ============================================
      ANIMATIONS
      ============================================ */
-  
+
   @keyframes logo-motion-rotation {
     0% {
       transform: rotate(0deg) scale(0.95);
     }
+
     50% {
       transform: rotate(180deg) scale(1.05);
     }
+
     100% {
       transform: rotate(360deg) scale(0.95);
     }
@@ -430,7 +464,8 @@
     background-position: center !important;
     border-color: transparent !important;
     color: transparent !important;
-    background-color: white !important; /* Ensure logo background is consistent */
+    background-color: white !important;
+    /* Ensure logo background is consistent */
     border-radius: 9999px !important;
     padding: 1px !important;
     box-shadow: var(--shadow-sm) !important;
@@ -609,30 +644,70 @@
     font-size: clamp(1.5rem, 5vw, 2.5rem);
     line-height: 1.1;
   }
+
   .text-fluid-h2 {
     font-size: clamp(1.25rem, 4vw, 2rem);
     line-height: 1.2;
   }
+
   .text-fluid-lg {
     font-size: clamp(1rem, 2.5vw, 1.25rem);
   }
+
   .text-fluid-base {
     font-size: clamp(0.875rem, 2vw, 1rem);
   }
+
   .text-fluid-sm {
     font-size: clamp(0.75rem, 1.5vw, 0.875rem);
   }
+
   .p-fluid {
     padding: clamp(1rem, 5vw, 5rem);
   }
+
   .px-fluid {
     padding-left: clamp(1rem, 5vw, 5rem);
     padding-right: clamp(1rem, 5vw, 5rem);
   }
+
   .gap-fluid {
     gap: clamp(1rem, 3vw, 3rem);
   }
+
   .m-fluid-negative {
     margin-top: calc(-1 * clamp(40px, 8.8vw, 72px));
   }
+}
+
+/* Emoji Picker Tightening */
+.EmojiPickerReact {
+  --epr-category-label-height: 30px !important;
+  --epr-header-padding: 8px !important;
+  --epr-highlight-color: transparent !important;
+}
+
+.epr-emoji-category-label {
+  padding: 4px 12px !important;
+  margin: 0 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+}
+
+.epr-category-nav {
+  padding: 4px 0 !important;
+  border-bottom: 1px solid hsl(var(--border) / 0.3) !important;
+}
+
+.epr-search-container {
+  padding: 8px !important;
+}
+
+/* Remove weird glow/line from picker */
+.epr-header {
+  border-bottom: none !important;
+  box-shadow: none !important;
 }

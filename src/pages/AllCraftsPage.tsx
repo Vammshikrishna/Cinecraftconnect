@@ -64,7 +64,7 @@ const AllCraftsPage = () => {
           title="The 24 Film Crafts" 
           subtitle="Filmmaking is a collaborative art form that brings together a diverse range of specialized crafts. Each craft contributes unique skills to the magic of cinema." 
           Icon={Film}
-          onBack={() => navigate('/explore', { state: { noScroll: true } })}
+          onBack={() => navigate('/feed', { state: { noScroll: true } })}
         />
 
         <div className="max-w-6xl mx-auto mt-12">
