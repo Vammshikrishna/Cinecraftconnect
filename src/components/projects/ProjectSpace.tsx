@@ -487,7 +487,7 @@ export const ProjectSpace = ({
   }
 
   return (
-    <div className="flex flex-col flex-1 w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)]">
+    <div className="flex flex-col flex-1 w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] relative">
       {/* Invisible anchor for Call UI logic to recognize this space */}
       <div id="active-project-anchor" data-project-id={projectId} data-space-id={resolvedSpaceId} className="hidden" />
       

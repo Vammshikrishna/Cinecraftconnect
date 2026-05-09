@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
+import { LazyImage } from '@/components/performance/LazyImage';
 import { Vendor } from '@/types/marketplace';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MapPin, Star, CheckCircle2, Phone, Mail, MoreVertical, Trash2, X } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Button } from '@/components/ui/button';
@@ -61,12 +61,17 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                 <div className="flex items-start justify-between">
                     <div className="relative">
                         <div className="w-20 h-20 rounded-2xl border-4 border-background shadow-xl ring-1 ring-black/5 dark:ring-white/10 bg-background overflow-hidden transform group-hover:scale-105 transition-transform duration-500">
-                            <Avatar className="h-full w-full rounded-none">
-                                <AvatarImage src={logoUrl} className="object-cover" />
-                                <AvatarFallback className="bg-primary/10 text-primary text-2xl font-black uppercase">
+                            {logoUrl ? (
+                                <LazyImage
+                                    src={logoUrl}
+                                    alt={vendor.business_name}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="h-full w-full bg-primary/10 text-primary flex items-center justify-center text-2xl font-black uppercase">
                                     {vendor.business_name?.[0]}
-                                </AvatarFallback>
-                            </Avatar>
+                                </div>
+                            )}
                         </div>
                         {vendor.is_verified && (
                             <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground p-1 rounded-full shadow-lg border-2 border-background animate-in zoom-in duration-500">

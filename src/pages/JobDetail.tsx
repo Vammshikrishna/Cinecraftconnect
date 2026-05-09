@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { JobApplicationModal } from "@/components/jobs/JobApplicationModal";
-import { JobShareSheet } from "@/components/jobs/JobShareSheet";
+import { UniversalShareSheet } from "@/components/common/UniversalShareSheet";
 import { supabase } from "@/integrations/supabase/client";
 import { Job } from "@/types/jobs";
 import { useToast } from "@/hooks/use-toast";
@@ -531,10 +531,20 @@ const JobDetail = () => {
         onSuccess={() => setIsApplied(true)}
       />
 
-      <JobShareSheet 
+      <UniversalShareSheet 
         isOpen={isShareSheetOpen}
         onOpenChange={setIsShareSheetOpen}
-        jobId={job.id}
+        shareType="job"
+        shareId={job.id}
+        shareData={{
+          jobId: job.id,
+          title: job.title,
+          company: job.company_pages?.name || job.company,
+          location: job.location,
+          type: job.type,
+          logoUrl: job.company_pages?.logo_url,
+          subtitle: `${job.company_pages?.name || job.company} • ${job.location}`
+        }}
       />
       {job && (
         <ReportDialog

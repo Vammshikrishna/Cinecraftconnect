@@ -1,8 +1,24 @@
 import { Share2 } from 'lucide-react';
 import { useState } from 'react';
-import { InstagramShareSheet } from '@/components/feed/InstagramShareSheet';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 
-const ShareButton = ({ postId, shareCount }: { postId: string, shareCount: number }) => {
+const ShareButton = ({ 
+  postId, 
+  shareCount, 
+  previewUrl, 
+  caption, 
+  author 
+}: { 
+  postId: string, 
+  shareCount: number,
+  previewUrl?: string,
+  caption?: string,
+  author?: {
+    username: string | null;
+    avatar_url: string | null;
+    is_verified?: boolean;
+  }
+}) => {
   const [currentShareCount] = useState(shareCount);
   const [showShareSheet, setShowShareSheet] = useState(false);
 
@@ -20,10 +36,17 @@ const ShareButton = ({ postId, shareCount }: { postId: string, shareCount: numbe
       </button>
     </div>
 
-      <InstagramShareSheet
+      <UniversalShareSheet
         isOpen={showShareSheet}
         onOpenChange={setShowShareSheet}
-        postId={postId}
+        shareType="post"
+        shareId={postId}
+        shareData={{
+          postId: postId,
+          previewUrl: previewUrl,
+          caption: caption,
+          author: author
+        }}
       />
     </>
   );

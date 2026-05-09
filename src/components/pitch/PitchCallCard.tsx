@@ -210,9 +210,26 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
             <UniversalShareSheet
                 isOpen={showShare}
                 onOpenChange={setShowShare}
-                shareType="job"
+                shareType="pitch"
                 shareId={pitchCall.id}
-                shareData={{ title: pitchCall.title, description: pitchCall.requirement_description }}
+                shareData={{ 
+                    title: pitchCall.title, 
+                    description: pitchCall.requirement_description,
+                    format: FORMAT_LABELS[pitchCall.project_type || ''] || pitchCall.project_type,
+                    category: pitchCall.genre?.[0],
+                    compensation: COMPENSATION_LABELS[pitchCall.compensation || ''] || pitchCall.compensation,
+                    tags: [
+                        pitchCall.is_open_to_debut && 'Debut Writers Welcome',
+                        pitchCall.is_regional_welcome && 'Regional Stories',
+                        pitchCall.nda_required && 'NDA Required'
+                    ].filter(Boolean) as string[],
+                    author: {
+                        name: pitchCall.profiles?.full_name || 'Creator',
+                        avatar: pitchCall.profiles?.avatar_url || '',
+                        craft: pitchCall.profiles?.craft || 'Creator',
+                        is_verified: pitchCall.profiles?.is_verified
+                    }
+                }}
             />
         </>
     );

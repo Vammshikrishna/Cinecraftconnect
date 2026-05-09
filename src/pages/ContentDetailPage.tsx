@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { fetchContentDetails, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,10 +8,13 @@ import { Star, Play, ThumbsUp, Calendar, Clock, AlertTriangle, Smile } from 'luc
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import EmojiPicker, { Theme } from 'emoji-picker-react';
+import EmojiPicker, { Theme, EmojiStyle } from 'emoji-picker-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTheme } from 'next-themes';
 import { BackButton } from '@/components/common/BackButton';
+import { useKeyboard } from '@/contexts/KeyboardContext';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { Share2 } from 'lucide-react';
 
 const ContentDetailPage = () => {
     const { id, type } = useParams<{ id: string; type: 'movie' | 'tv' }>();
@@ -28,6 +31,17 @@ const ContentDetailPage = () => {
     const [isSpoiler, setIsSpoiler] = useState(false);
     const [submittingReview, setSubmittingReview] = useState(false);
     const [isAnonymous, setIsAnonymous] = useState(false);
+    const [showShareSheet, setShowShareSheet] = useState(false);
+    const { isEmojiPickerOpen, setIsEmojiPickerOpen } = useKeyboard();
+    const [localEmojiOpen, setLocalEmojiOpen] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Sync local open state with global back button signal
+    useEffect(() => {
+        if (!isEmojiPickerOpen) {
+            setLocalEmojiOpen(false);
+        }
+    }, [isEmojiPickerOpen]);
 
     useEffect(() => {
         loadContentDetails();
@@ -232,14 +246,24 @@ const ContentDetailPage = () => {
                                     const trailerUrl = trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null;
 
                                     return (
-                                        <Button 
-                                            className="bg-white text-black hover:bg-white/90 w-full sm:w-auto shadow-xl"
-                                            onClick={() => trailerUrl && window.open(trailerUrl, '_blank')}
-                                            disabled={!trailerUrl}
-                                        >
-                                            <Play className="h-4 w-4 mr-2 fill-current" />
-                                            {trailerUrl ? 'Watch Trailer' : 'Trailer Unavailable'}
-                                        </Button>
+                                        <div className="flex flex-wrap gap-3">
+                                            <Button 
+                                                className="bg-white text-black hover:bg-white/90 w-full sm:w-auto shadow-xl"
+                                                onClick={() => trailerUrl && window.open(trailerUrl, '_blank')}
+                                                disabled={!trailerUrl}
+                                            >
+                                                <Play className="h-4 w-4 mr-2 fill-current" />
+                                                {trailerUrl ? 'Watch Trailer' : 'Trailer Unavailable'}
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                className="bg-background/20 backdrop-blur-md border-white/10 hover:bg-background/40 w-full sm:w-auto"
+                                                onClick={() => setShowShareSheet(true)}
+                                            >
+                                                <Share2 className="h-4 w-4 mr-2" />
+                                                Share
+                                            </Button>
+                                        </div>
                                     );
                                 })()}
                             </div>
@@ -369,6 +393,7 @@ const ContentDetailPage = () => {
                             <h3 className="font-semibold text-lg">Write a Review (Optional)</h3>
                             <div className="relative">
                                 <Textarea
+                                    ref={textareaRef}
                                     placeholder="Share your thoughts about this film..."
                                     value={reviewText}
                                     onChange={(e) => setReviewText(e.target.value)}
@@ -376,19 +401,37 @@ const ContentDetailPage = () => {
                                     className="resize-none"
                                 />
                                 <div className="absolute bottom-2 right-2">
-                                    <Popover>
+                                    <Popover open={localEmojiOpen} onOpenChange={(open) => {
+                                        setLocalEmojiOpen(open);
+                                        if (open) setIsEmojiPickerOpen(true);
+                                        else setIsEmojiPickerOpen(false);
+                                    }}>
                                         <PopoverTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
+                                            <Button 
+                                                type="button"
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-8 w-8 rounded-full hover:bg-muted emoji-toggle-button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    e.stopPropagation();
+                                                    e.preventDefault();
+                                                }}
+                                            >
                                                 <Smile className="h-5 w-5 text-muted-foreground" />
                                             </Button>
                                         </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="end" side="top">
+                                        <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="start" side="top" sideOffset={5}>
                                             <EmojiPicker 
                                                 onEmojiClick={(emojiData) => setReviewText(prev => prev + emojiData.emoji)}
                                                 autoFocusSearch={false}
+                                                emojiStyle={EmojiStyle.APPLE}
                                                 theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
-                                                width={320}
-                                                height={400}
+                                                width={280}
+                                                height={350}
+                                                lazyLoadEmojis={false}
                                             />
                                         </PopoverContent>
                                     </Popover>
@@ -442,6 +485,20 @@ const ContentDetailPage = () => {
                     </div>
                 </section>
             </div>
+            <UniversalShareSheet
+                isOpen={showShareSheet}
+                onOpenChange={setShowShareSheet}
+                shareType="content"
+                shareId={id!}
+                shareData={{ 
+                    type, 
+                    id, 
+                    title,
+                    poster_path: content.poster_path,
+                    rating: content.vote_average,
+                    overview: content.overview
+                }}
+            />
         </div>
     );
 };

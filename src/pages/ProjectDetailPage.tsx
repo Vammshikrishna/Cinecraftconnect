@@ -9,7 +9,6 @@ import { useToast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useAppRole } from '@/hooks/useAppRole';
 import { 
-  ArrowLeft, 
   MapPin, 
   Calendar, 
   Film, 
@@ -18,6 +17,8 @@ import {
 } from 'lucide-react';
 import { BackButton } from '@/components/common/BackButton';
 import { ProjectApplicationDialog } from '@/components/projects/ProjectApplicationDialog';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { Share2 } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -46,6 +47,7 @@ const ProjectDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [hasApplied, setHasApplied] = useState(false);
   const [isApplicationDialogOpen, setIsApplicationDialogOpen] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
   const [isMember, setIsMember] = useState(false);
 
@@ -152,6 +154,9 @@ const ProjectDetailPage = () => {
             </div>
             
             <div className="flex flex-wrap gap-3">
+              <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>
+                <Share2 className="h-4 w-4" />
+              </Button>
               {(isOwner || isMember || isInternal) ? (
                 <Button 
                   className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
@@ -248,6 +253,20 @@ const ProjectDetailPage = () => {
         open={isApplicationDialogOpen}
         onOpenChange={setIsApplicationDialogOpen}
         onApplicationSent={() => setHasApplied(true)}
+      />
+
+      <UniversalShareSheet
+        isOpen={showShareSheet}
+        onOpenChange={setShowShareSheet}
+        shareType="project"
+        shareId={project.id}
+        shareData={{
+          projectId: project.id,
+          title: project.title,
+          description: project.description,
+          location: project.location,
+          genre: project.genre
+        }}
       />
     </div>
   );

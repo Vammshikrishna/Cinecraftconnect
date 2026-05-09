@@ -1,5 +1,6 @@
 import { Building2, MapPin, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { LazyImage } from '@/components/performance/LazyImage';
 
 interface FeedVendorCardProps {
     vendor: {
@@ -38,7 +39,7 @@ const FeedVendorCard = ({ vendor, onDismiss }: FeedVendorCardProps) => {
                             <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-500" />
                             <div className="w-16 h-16 rounded-full overflow-hidden bg-background border-4 border-background shadow-xl group-hover/avatar:scale-105 transition-transform duration-500 ring-1 ring-border/50 relative z-10">
                                 {vendor.logo_url ? (
-                                    <img
+                                    <LazyImage
                                         src={vendor.logo_url}
                                         alt={vendor.business_name}
                                         className="w-full h-full object-cover"

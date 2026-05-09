@@ -28,7 +28,9 @@ import {
   Youtube,
   Building2,
   Zap,
+  Share2,
 } from 'lucide-react';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import VerificationBadge from '@/components/common/VerificationBadge';
 
 import { useAccountType } from '@/hooks/useAccountType';
@@ -47,6 +49,7 @@ const ProfilePage = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
 
   const [postCount, setPostCount] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
@@ -404,10 +407,17 @@ const ProfilePage = () => {
               <div className="flex items-center gap-2">
                 <Button
                   onClick={() => setIsEditing(true)}
-                  className="flex-none w-[130px] gap-2 bg-primary hover:bg-primary/90 text-white rounded-lg h-9 px-0 shadow-md shadow-primary/10 transition-all hover:scale-[1.02] active:scale-95"
+                  className="flex-none w-[110px] gap-2 bg-primary hover:bg-primary/90 text-white rounded-lg h-9 px-0 shadow-md shadow-primary/10 transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <Pencil className="h-3 w-3" />
-                  <span className="font-bold uppercase tracking-wider text-[9px]">Edit Profile</span>
+                  <span className="font-bold uppercase tracking-wider text-[9px]">Edit</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all"
+                  onClick={() => setShowShareSheet(true)}
+                >
+                  <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
                 <Link to="/settings" className="shrink-0">
                   <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
@@ -474,6 +484,19 @@ const ProfilePage = () => {
           )}
         </Tabs>
       </div>
+      <UniversalShareSheet
+        isOpen={showShareSheet}
+        onOpenChange={setShowShareSheet}
+        shareType="profile"
+        shareId={profile.username || profile.id}
+        shareData={{ 
+          name: profile.full_name || profile.username,
+          username: profile.username,
+          id: profile.id,
+          avatar: profile.avatar_url,
+          craft: profile.craft
+        }}
+      />
     </div>
   );
 };

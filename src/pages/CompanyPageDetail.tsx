@@ -37,6 +37,7 @@ import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { BackButton } from '@/components/common/BackButton';
+import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 
 const getInitials = (name: string) => {
   return name
@@ -55,6 +56,7 @@ const CompanyPageDetail = () => {
   const [activeTab, setActiveTab] = useState('posts');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isManageMembersOpen, setIsManageMembersOpen] = useState(false);
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const [postRatings, setPostRatings] = useState<Record<string, number>>({});
   const { isFan } = useAccountType();
 
@@ -62,14 +64,32 @@ const CompanyPageDetail = () => {
   const { data: page, isLoading: pageLoading } = useQuery({
     queryKey: ['company-page', slug],
     queryFn: async () => {
+      if (!slug || slug === 'undefined') return null;
+
+      // Try to fetch by slug first
       const { data, error } = await (supabase as any)
         .from('company_pages')
         .select('*')
-        .eq('slug', slug)
-        .single();
+        .ilike('slug', slug)
+        .maybeSingle();
+      
+      if (data) return data;
+
+      // If not found by slug, try by ID (if it looks like a UUID)
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
+      if (isUuid) {
+        const { data: idData } = await (supabase as any)
+          .from('company_pages')
+          .select('*')
+          .eq('id', slug)
+          .maybeSingle();
+        if (idData) return idData;
+      }
+
       if (error) throw error;
-      return data;
+      return null;
     },
+    enabled: !!slug && slug !== 'undefined',
   });
 
   // 2. Fetch Posts
@@ -155,12 +175,7 @@ const CompanyPageDetail = () => {
   });
 
   const handleShare = () => {
-    const url = window.location.href;
-    navigator.clipboard.writeText(url);
-    toast({
-      title: "Link copied!",
-      description: "Company page link has been copied to your clipboard.",
-    });
+    setShowShareSheet(true);
   };
 
   const handleRate = (postId: string, rating: number) => {
@@ -177,7 +192,7 @@ const CompanyPageDetail = () => {
     <div className="flex h-screen items-center justify-center text-foreground p-8 text-center bg-background">
       <div className="flex flex-col items-center gap-6">
         <h2 className="text-2xl font-bold">Organization not found</h2>
-        <BackButton label="GO BACK" to="/explore" />
+        <BackButton label="GO BACK" to="/pages" />
       </div>
     </div>
   );
@@ -188,7 +203,7 @@ const CompanyPageDetail = () => {
       const { error } = await (supabase as any).from('company_pages').delete().eq('id', page.id);
       if (error) throw error;
       toast({ title: "Page deleted", description: "The company page has been removed successfully." });
-      navigate('/explore', { state: { noScroll: true } });
+      navigate('/pages', { state: { noScroll: true } });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -638,6 +653,22 @@ const CompanyPageDetail = () => {
           isOpen={isManageMembersOpen}
           onOpenChange={setIsManageMembersOpen}
           existingMembers={members}
+        />
+      )}
+      {page && (
+        <UniversalShareSheet
+          isOpen={showShareSheet}
+          onOpenChange={setShowShareSheet}
+          shareType="company"
+          shareId={page.slug || page.id}
+          shareData={{
+            id: page.id,
+            name: page.name,
+            slug: page.slug,
+            logo: page.logo_url,
+            location: page.headquarters,
+            industry: page.industry || 'Production Studio'
+          }}
         />
       )}
     </div>

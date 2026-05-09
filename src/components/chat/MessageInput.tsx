@@ -3,8 +3,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Send } from 'lucide-react';
 import { useAppRole } from '@/hooks/useAppRole';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
-import { cn } from '@/lib/utils';
 
 interface MessageInputProps {
     onSendMessage: (content: string) => void;
@@ -13,7 +11,6 @@ interface MessageInputProps {
 export const MessageInput = ({ onSendMessage }: MessageInputProps) => {
     const [newMessage, setNewMessage] = useState('');
     const { isInternal } = useAppRole();
-    const isKeyboardVisible = useKeyboardVisible();
 
     const handleSendMessage = () => {
         if (newMessage.trim() && !isInternal) {
@@ -24,20 +21,14 @@ export const MessageInput = ({ onSendMessage }: MessageInputProps) => {
 
     if (isInternal) {
         return (
-            <div className={cn(
-                "p-4 border-t border-border bg-muted/30 text-center text-sm text-muted-foreground italic",
-                isKeyboardVisible ? "pb-4" : "pb-[calc(env(safe-area-inset-bottom)+1rem)]"
-            )}>
+            <div className="p-4 border-t border-border bg-muted/30 text-center text-sm text-muted-foreground italic pb-[calc(env(safe-area-inset-bottom)+1rem)]">
                 Staff accounts are in read-only mode for messages.
             </div>
         );
     }
 
     return (
-        <div className={cn(
-            "p-4 border-t border-border bg-background",
-            isKeyboardVisible ? "pb-4" : "pb-[calc(env(safe-area-inset-bottom)+1rem)]"
-        )}>
+        <div className="p-4 border-t border-border bg-background pb-[calc(env(safe-area-inset-bottom)+1rem)]">
             <div className="flex items-center space-x-2">
                 <Input
                     placeholder="Type a message..."

@@ -13,13 +13,18 @@ import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
 import { VendorShareCard } from '@/components/chat/VendorShareCard';
 import { ProjectShareCard } from '@/components/chat/ProjectShareCard';
 import { DiscussionShareCard } from '@/components/chat/DiscussionShareCard';
+import { ProfileShareCard } from '@/components/chat/ProfileShareCard';
+import { PitchShareCard } from '@/components/chat/PitchShareCard';
+import { CompanyShareCard } from '@/components/chat/CompanyShareCard';
+import { ContentShareCard } from '@/components/chat/ContentShareCard';
+import { JobShareCard } from '@/components/chat/JobShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
-import { cn } from '@/lib/utils';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 import { useAppRole } from '@/hooks/useAppRole';
+import { useKeyboard } from '@/contexts/KeyboardContext';
+import { cn } from '@/lib/utils';
 
 interface Message {
   id: string;
@@ -92,7 +97,6 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const { observeMessage } = useMessageSeen('project_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const { markAsRead } = useChatReadStatus();
-  const isKeyboardVisible = useKeyboardVisible();
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
   useEffect(() => {
@@ -239,8 +243,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   }, [loadingMessages, hasMore, spaceId]);
 
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior });
+    if (scrollContainerRef.current) {
+      const el = scrollContainerRef.current;
+      if (behavior === 'smooth') {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
     }
   };
 
@@ -481,11 +490,49 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         return <ProjectShareCard {...shareData} />;
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
+    if (content.startsWith('PROFILE_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('PROFILE_SHARE::', ''));
+        return <ProfileShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('PITCH_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('PITCH_SHARE::', ''));
+        return <PitchShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('COMPANY_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('COMPANY_SHARE::', ''));
+        return <CompanyShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
     if (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) {
       try {
         const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
         const shareData = JSON.parse(content.replace(prefix, ''));
         return <DiscussionShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.startsWith('CONTENT_SHARE::')) {
+      try {
+        const shareData = JSON.parse(content.replace('CONTENT_SHARE::', ''));
+        return <ContentShareCard {...shareData} />;
+      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+    }
+    if (content.includes('JOB_SHARE::')) {
+      try {
+        const parts = content.split('JOB_SHARE::');
+        const caption = parts[0].trim();
+        const jsonStr = parts[parts.length - 1].trim();
+        const shareData = JSON.parse(jsonStr);
+        return (
+          <div className="space-y-2">
+            {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+            <JobShareCard {...shareData} />
+          </div>
+        );
       } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
     }
     return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>;
@@ -498,26 +545,24 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     content.startsWith('VENDOR_SHARE::') ||
     content.startsWith('PROJECT_SHARE::') ||
     content.startsWith('DISCUSSION_SHARE::') ||
-    content.startsWith('ROOM_SHARE::');
+    content.startsWith('ROOM_SHARE::') ||
+    content.startsWith('PROFILE_SHARE::') ||
+    content.startsWith('PITCH_SHARE::') ||
+    content.startsWith('COMPANY_SHARE::') ||
+    content.startsWith('CONTENT_SHARE::') ||
+    content.includes('JOB_SHARE::');
+
+  const { isEmojiPickerOpen } = useKeyboard();
 
   // Otherwise show chat interface
   return (
-    <div className="flex flex-col flex-1 w-full bg-background text-foreground overflow-hidden relative">
-
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {/* Global call handles everything now, no local LiveKitCallContainer needed here */}
 
 
       <div 
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        onPointerDown={(e) => {
-          // Equivalent to keyboardShouldPersistTaps="handled"
-          // Prevents blurring the input when tapping the messages area
-          const target = e.target as HTMLElement;
-          if (target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
-            e.preventDefault();
-          }
-        }}
         className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar"
       >
         {loadingMessages && hasMore && (
@@ -676,7 +721,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-border flex flex-col bg-background">
+      <div className={cn(
+        "border-t border-border flex flex-col transition-colors duration-300",
+        isEmojiPickerOpen ? "bg-[#161618]" : "bg-background"
+      )}>
         {replyingTo && (
           <div className="bg-muted px-4 py-2 flex items-center justify-between border-b border-border text-xs">
             <div className="flex-1 overflow-hidden pr-2">
@@ -699,10 +747,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             </button>
           </div>
         )}
-      <div className={cn(
-        "p-1.5 bg-background border-t border-border transition-all duration-300",
-        isKeyboardVisible ? "pb-1.5" : "pb-2 lg:pb-1.5"
-      )}>{isInternal ? (
+      <div className="p-0 border-t border-border">{isInternal ? (
             <div className="p-4 bg-muted/30 text-center text-xs text-muted-foreground italic border-t border-border/50">
               Internal staff cannot send messages in project spaces.
             </div>

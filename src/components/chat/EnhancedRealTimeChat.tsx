@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
-import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
@@ -8,6 +7,7 @@ import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
+import { useKeyboard } from '@/contexts/KeyboardContext';
 import { 
     DropdownMenu, 
     DropdownMenuContent, 
@@ -16,13 +16,18 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { Video, Phone, Settings, Trash2, Send, ArrowLeft, Smile, X, Reply, ShieldBan, MoreVertical, User, BellOff, ShieldAlert, Search } from 'lucide-react';
+import { Video, Phone, Settings, Trash2, Send, ArrowLeft, Smile, Keyboard, X, Reply, ShieldBan, MoreVertical, User, BellOff, ShieldAlert, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
 import { useGlobalCall } from '@/contexts/CallContext';
 import { useToast } from '@/hooks/use-toast';
-import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, EmojiStyle, Theme as EmojiTheme } from 'emoji-picker-react';
 import { PostShareCard } from './PostShareCard';
+import { ProfileShareCard } from './ProfileShareCard';
+import { PitchShareCard } from './PitchShareCard';
+import { CompanyShareCard } from './CompanyShareCard';
+import { ContentShareCard } from './ContentShareCard';
 import { MarketplaceShareCard } from './MarketplaceShareCard';
 import { AnnouncementShareCard } from './AnnouncementShareCard';
 import { VendorShareCard } from './VendorShareCard';
@@ -31,7 +36,6 @@ import { ProjectShareCard } from './ProjectShareCard';
 import { DiscussionShareCard } from './DiscussionShareCard';
 import { usePresence } from '@/hooks/usePresence';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import VerificationBadge from '../common/VerificationBadge';
 
 
@@ -100,7 +104,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const navigate = useNavigate();
   const { onlineUserIds } = usePresence();
   const { observeMessage } = useMessageSeen();
-  const isKeyboardVisible = useKeyboardVisible();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -114,14 +117,42 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const isInCall = callState.isActive && callState.roomId === roomId;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
   const lastScrollHeight = useRef<number>(0);
   const isInitialLoad = useRef(true);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
   const isPartnerOnline = onlineUserIds.includes(partnerId);
   
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    if (scrollContainerRef.current) {
+      const targetScroll = scrollContainerRef.current.scrollHeight;
+      if (behavior === 'smooth') {
+        scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      } else {
+        scrollContainerRef.current.scrollTop = targetScroll;
+      }
+    }
   };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        // Also check if the click was on the emoji button itself
+        const target = event.target as HTMLElement;
+        if (!target.closest('button')?.querySelector('.lucide-smile')) {
+          setShowEmojiPicker(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+
 
   const fetchMessages = useCallback(async (isNewRoom = true) => {
     if (!roomId) return;
@@ -295,6 +326,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     setNewMessage('');
     setShowEmojiPicker(false);
     setReplyingTo(null);
+    if (!showEmojiPicker) {
+      inputRef.current?.focus();
+    }
   };
 
   const handleUndoMessage = async (messageId: string) => {
@@ -331,6 +365,34 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   const onEmojiClick = (emojiObject: EmojiClickData) => {
     setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
+    // Focus back to input after selection if desired, or keep picker open
+    // inputRef.current?.focus();
+  };
+
+  const openEmojiPanel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Aggressively blur any active element to force keyboard dismissal
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    inputRef.current?.blur();
+
+    setTimeout(() => {
+      setShowEmojiPicker(true);
+    }, 150);
+  };
+
+  const openKeyboard = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Focus input first to start bringing up system keyboard
+    inputRef.current?.focus();
+    // Wait for keyboard to start appearing before closing emoji panel
+    setTimeout(() => {
+      setShowEmojiPicker(false);
+    }, 200);
   };
 
   const handleDeleteChat = async () => {
@@ -385,8 +447,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
 
   return (
-    <div className="flex flex-col h-full bg-background text-foreground">
-      <header className="flex items-center justify-between px-4 py-4 border-b border-border">
+    <div className="flex flex-col h-full bg-background text-foreground relative">
+      <header className="flex items-center justify-between px-4 py-4 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0">
         <div className="flex items-center gap-3">
           <button onClick={onBackClick} className="p-2 rounded-full hover:bg-muted lg:hidden">
             <ArrowLeft className="h-6 w-6" />
@@ -541,9 +603,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%]`}>
+                  <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} ${message.content.includes('_SHARE::') ? 'max-w-full' : 'max-w-[85%]'}`}>
                     <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                      <div className={`relative transition-all duration-300 ${message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-2xl italic text-muted-foreground' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') ? 'p-0 bg-transparent rounded-2xl border border-border/10 overflow-hidden' : `${isSender ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}`)}`}>
+                      <div className={`relative transition-all duration-300 ${message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::') ? 'p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[270px] min-w-[200px]' : `${isSender ? 'bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md'}`)}`}>
                         {!message.is_deleted && (
                           <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
                             <DropdownMenu>
@@ -602,6 +664,33 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                   return <p className="text-sm break-words">{message.content}</p>;
                                 }
                               })()
+                            ) : message.content.startsWith('PROFILE_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('PROFILE_SHARE::', ''));
+                                  return <ProfileShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('PITCH_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('PITCH_SHARE::', ''));
+                                  return <PitchShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : message.content.startsWith('COMPANY_SHARE::') ? (
+                              (() => {
+                                try {
+                                  const shareData = JSON.parse(message.content.replace('COMPANY_SHARE::', ''));
+                                  return <CompanyShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
                             ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
                               (() => {
                                 try {
@@ -638,10 +727,20 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                   return <p className="text-sm break-words">{message.content}</p>;
                                 }
                               })()
-                            ) : message.content.startsWith('DISCUSSION_SHARE::') ? (
+                            ) : message.content.startsWith('CONTENT_SHARE::') ? (
                               (() => {
                                 try {
-                                  const shareData = JSON.parse(message.content.replace('DISCUSSION_SHARE::', ''));
+                                  const shareData = JSON.parse(message.content.replace('CONTENT_SHARE::', ''));
+                                  return <ContentShareCard {...shareData} />;
+                                } catch (e) {
+                                  return <p className="text-sm break-words">{message.content}</p>;
+                                }
+                              })()
+                            ) : (message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::')) ? (
+                              (() => {
+                                try {
+                                  const prefix = message.content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+                                  const shareData = JSON.parse(message.content.replace(prefix, ''));
                                   return <DiscussionShareCard {...shareData} />;
                                 } catch (e) {
                                   return <p className="text-sm break-words">{message.content}</p>;
@@ -691,18 +790,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
             })}
             <div ref={messagesEndRef} />
           </div>
-          <div className={cn(
-            "border-t border-border flex flex-col relative bg-background transition-all duration-300",
-            isKeyboardVisible ? "pb-0" : "pb-[calc(env(safe-area-inset-bottom)+5px)] lg:pb-0"
-          )}>
-            {showEmojiPicker && (
-              <div className="absolute bottom-full mb-2 z-10 left-2">
-                <EmojiPicker onEmojiClick={onEmojiClick} />
-              </div>
-            )}
-            
+            <div className="flex flex-col relative bg-background z-20 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.1)]">
             {replyingTo && (
-              <div className="bg-muted px-4 py-2 flex items-center justify-between border-b border-border text-xs">
+              <div className="bg-muted/30 px-4 py-2 flex items-center justify-between border-b border-border text-xs animate-in fade-in slide-in-from-bottom-2 duration-200">
                 <div className="flex-1 overflow-hidden pr-2">
                   <div className={`font-semibold mb-0.5 ${getUserColor(replyingTo.sender_id)}`}>
                     Replying to {replyingTo.sender_profile?.full_name || 'User'}
@@ -720,34 +810,83 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 </div>
                 <button 
                   onClick={() => setReplyingTo(null)}
-                  className="p-1.5 rounded-full hover:bg-background text-muted-foreground transition-colors"
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
             )}
             
-            <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-3 pb-safe-offset-4">
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                className="rounded-full"
-              >
-                <Smile className="h-5 w-5" />
-              </Button>
+            <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-1.5 bg-background">
+              {/* WhatsApp-style toggle: keyboard icon when emoji open, emoji icon otherwise */}
+              {showEmojiPicker ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={openKeyboard}
+                  className="rounded-full text-primary bg-primary/10"
+                  title="Open keyboard"
+                >
+                  <Keyboard className="h-5 w-5" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEmojiPanel(e);
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  className="rounded-full text-muted-foreground emoji-toggle-button"
+                  title="Open emoji picker"
+                >
+                  <Smile className="h-5 w-5" />
+                </Button>
+              )}
               <Input
+                ref={inputRef}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
+                onFocus={() => {
+                  if (showEmojiPicker) {
+                    setTimeout(() => setShowEmojiPicker(false), 200);
+                  }
+                }}
                 placeholder="Send a message..."
-                className="flex-1 rounded-full"
+                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-10"
                 autoComplete="off"
               />
-              <Button type="submit" size="icon" className="rounded-full" disabled={!newMessage.trim()}>
+              <Button type="submit" size="icon" className="rounded-full h-10 w-10 shrink-0" disabled={!newMessage.trim()}>
                 <Send className="h-5 w-5" />
               </Button>
             </form>
+          </div>
+
+          <div
+            ref={emojiPickerRef}
+            className={cn(
+              "w-full bg-background border-t border-border overflow-hidden h-[300px] transition-all duration-300",
+              showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
+            )}
+          >
+            <EmojiPicker 
+              onEmojiClick={onEmojiClick}
+              autoFocusSearch={false}
+              theme={EmojiTheme.DARK}
+              emojiStyle={EmojiStyle.APPLE}
+              width="100%"
+              height={Math.max(300, keyboardHeight || 350)}
+              lazyLoadEmojis={true}
+              previewConfig={{ showPreview: false }}
+              searchDisabled={false}
+              skinTonesDisabled={true}
+            />
           </div>
         </>
       )}

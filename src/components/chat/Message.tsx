@@ -11,8 +11,8 @@ export const Message = ({ message, isSender }: MessageProps) => (
         <div className={cn(
             "px-4 py-2.5 max-w-[85%] shadow-sm font-medium transition-all",
             isSender 
-                ? "bg-primary text-primary-foreground rounded-[22px] rounded-tr-[4px]" 
-                : "bg-muted text-foreground rounded-[22px] rounded-tl-[4px]"
+                ? "bg-primary text-primary-foreground rounded-xl" 
+                : "bg-muted text-foreground rounded-xl"
         )}>
             <p className="text-sm">{message.content}</p>
             <span className={cn(

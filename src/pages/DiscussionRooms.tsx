@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
+import { useKeyboard } from '@/contexts/KeyboardContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 
@@ -27,7 +28,6 @@ import { useGlobalCall } from '@/contexts/CallContext';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { useAppRole } from '@/hooks/useAppRole';
 import { BackButton } from '@/components/common/BackButton';
-import { useKeyboardVisible } from '@/hooks/useKeyboardVisible';
 import { ReportDialog } from '@/components/governance/ReportDialog';
 import SEO from '@/components/common/SEO';
 import VerificationBadge from '@/components/common/VerificationBadge';
@@ -45,9 +45,9 @@ interface Room {
   creator_id: string;
   created_at: string;
   room_categories: { name: string } | null;
-  last_message?: { 
-    content: string; 
-    created_at: string; 
+  last_message?: {
+    content: string;
+    created_at: string;
     sender_name?: string;
     sender_username?: string;
     is_verified?: boolean;
@@ -69,9 +69,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const { isInternal } = useAppRole();
   const { callState } = useGlobalCall();
   const { unreadDiscussionIds } = useUnreadMessages();
+  const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const isInCall = callState.isActive && callState.roomId === roomId;
   const isCallMinimized = callState.isMinimized;
-  const isKeyboardVisible = useKeyboardVisible();
 
   // Use URL as the source of truth for the selected room
   const activeRoom = useMemo(() => {
@@ -100,6 +100,15 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   useEffect(() => {
     if (openCreate) setCreateModalOpen(true);
   }, [openCreate]);
+
+  // Global blur when room changes to kill any background focus from navbar/sidebar
+  useEffect(() => {
+    if (roomId) {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
+  }, [roomId]);
 
   const { data: discussionData, isLoading: loading, refetch: fetchData } = useQuery({
     queryKey: ['discussion-rooms', user?.id],
@@ -199,6 +208,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   }, [fetchData]);
 
   const handleRoomJoin = (room: Room) => {
+    // Clear any existing focus to prevent keyboard from following us into the room
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     // Fans can only join PUBLIC rooms
     if (isFan && room.room_type !== 'public') {
       toast({
@@ -213,6 +226,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
 
   const handleRoomCreated = (newRoom: Room) => {
+    // Clear any existing focus
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
     setRooms(prevRooms => [newRoom, ...prevRooms]);
     navigate(`/discussion-rooms/${newRoom.id}`);
   };
@@ -318,6 +335,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                     placeholder="Search rooms..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
+                    disabled={!!activeRoom} // Disable while room is active to prevent focus stealing
                     className="bg-muted/50 border-none pl-9 h-10 text-sm rounded-xl focus-visible:ring-1 focus-visible:ring-primary/30"
                   />
                 </div>
@@ -385,11 +403,11 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                             {room.last_message ? (
                               <>
                                 <span className="font-bold shrink-0">{room.last_message.sender_name}</span>
-                                {(room.last_message.is_verified || 
-                                  room.last_message.sender_name?.toLowerCase().includes('vamshi') || 
+                                {(room.last_message.is_verified ||
+                                  room.last_message.sender_name?.toLowerCase().includes('vamshi') ||
                                   room.last_message.sender_username?.toLowerCase().includes('vamshi')) && (
-                                  <VerificationBadge size="xs" className="scale-75" />
-                                )}
+                                    <VerificationBadge size="xs" className="scale-75" />
+                                  )}
                                 <span className="truncate">: {getDisplayMessage(room.last_message.content)}</span>
                               </>
                             ) : (
@@ -466,8 +484,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     }
     return (
       <div className={cn(
-        "fixed inset-x-0 top-14 md:top-16 bg-background text-foreground flex flex-col z-40 transition-all duration-300",
-        isKeyboardVisible ? "bottom-0" : "bottom-[calc(env(safe-area-inset-bottom)+60px)] md:bottom-[calc(env(safe-area-inset-bottom)+80px)] lg:pb-0"
+        "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40",
+        (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)]"
       )}>
         <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
         <DiscussionChatInterface
@@ -489,9 +507,9 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   // --- Mobile List View ---
   return (
     <div className="min-h-screen bg-background text-foreground pt-20">
-      <SEO 
-        title="Discussion Hub" 
-        description="Join real-time conversations with film crews and creators. Discuss projects, share techniques, and network with industry professionals." 
+      <SEO
+        title="Discussion Hub"
+        description="Join real-time conversations with film crews and creators. Discuss projects, share techniques, and network with industry professionals."
       />
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36">
         {/* Header and Controls */}
@@ -612,7 +630,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
         {/* Report Dialog */}
         {reportData && (
-          <ReportDialog 
+          <ReportDialog
             isOpen={isReportOpen}
             onOpenChange={setIsReportOpen}
             targetType="discussion"
@@ -744,8 +762,8 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive }: { roo
                     <Share2 className="h-4 w-4 mr-2" />
                     Share Room
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    onClick={() => onReport?.(room)} 
+                  <DropdownMenuItem
+                    onClick={() => onReport?.(room)}
                     className="cursor-pointer text-amber-500 focus:text-amber-500"
                   >
                     <Flag className="h-4 w-4 mr-2" />

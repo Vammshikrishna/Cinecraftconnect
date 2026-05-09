@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
+import { useKeyboard } from '@/contexts/KeyboardContext';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Paperclip, Send, Smile } from 'lucide-react';
+import { Paperclip, Send, Smile, Keyboard } from 'lucide-react';
 import { z } from 'zod';
-import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import EmojiPicker, { EmojiClickData, EmojiStyle, Theme as EmojiTheme } from 'emoji-picker-react';
 
 const messageSchema = z.object({
   content: z.string()
@@ -26,20 +28,28 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Kill any auto-focus on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (textareaRef.current && document.activeElement === textareaRef.current) {
+        textareaRef.current.blur();
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSend = async () => {
     setError(null);
-
     try {
       messageSchema.parse({ content });
       setSending(true);
       onStopTyping?.();
       await onSend(content);
       setContent('');
-      setShowEmojiPicker(false);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0].message);
@@ -67,51 +77,59 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
     setContent(prevContent => prevContent + emojiData.emoji);
   };
 
+  const openEmojiPanel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    textareaRef.current?.blur();
+    setTimeout(() => {
+      setShowEmojiPicker(true);
+    }, 150);
+  };
+
+  const openKeyboard = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    textareaRef.current?.focus();
+    setTimeout(() => {
+      setShowEmojiPicker(false);
+    }, 200);
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && onAttach) {
       onAttach(file);
     }
-    // Reset input so same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
+  const handleInputFocus = () => {
+    if (showEmojiPicker) {
+      setTimeout(() => setShowEmojiPicker(false), 200);
+    }
+  };
 
   const charCount = content.length;
   const isNearLimit = charCount > 1800;
   const isOverLimit = charCount > 2000;
 
   return (
-    <div className="p-1 sm:p-4">
+    <div className="bg-background">
       {error && (
         <div className="mb-2 px-2 text-xs text-destructive flex items-center gap-1">
           <span>{error}</span>
         </div>
       )}
 
-      <div className="relative">
-        {showEmojiPicker && (
-          <div ref={emojiPickerRef} className="absolute bottom-12 left-0 z-50 shadow-xl rounded-lg overflow-hidden">
-            <EmojiPicker onEmojiClick={handleEmojiClick} width={300} height={400} />
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-end gap-2">
+      <div className={cn(
+        "flex items-end gap-2 px-2 bg-background py-1.5",
+        showEmojiPicker && "pb-0"
+      )}>
         <div className="flex gap-0.5 pb-0.5 shrink-0">
           <Button
             type="button"
@@ -129,22 +147,37 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
               onChange={handleFileSelect}
             />
           </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
-            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          >
-            <Smile className="h-5 w-5" />
-          </Button>
+
+          {showEmojiPicker ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9 rounded-full text-primary bg-primary/10"
+              onClick={openKeyboard}
+            >
+              <Keyboard className="h-5 w-5" />
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted emoji-toggle-button"
+              onClick={openEmojiPanel}
+            >
+              <Smile className="h-5 w-5" />
+            </Button>
+          )}
         </div>
 
         <div className="flex-1 relative bg-muted/50 rounded-2xl border border-transparent focus-within:border-primary/20 focus-within:bg-background transition-all">
           <Textarea
+            ref={textareaRef}
             value={content}
             onChange={handleContentChange}
             onKeyPress={handleKeyPress}
+            onFocus={handleInputFocus}
             onBlur={() => onStopTyping?.()}
             placeholder="Message..."
             className="min-h-[40px] max-h-[120px] py-2.5 px-4 bg-transparent border-none shadow-none focus-visible:ring-0 resize-none text-sm sm:text-base w-full"
@@ -164,11 +197,35 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
       </div>
 
       {(isNearLimit || isOverLimit) && (
-        <div className="text-[10px] text-right mt-1 px-2 text-muted-foreground">
+        <div className="text-[10px] text-right px-2 text-muted-foreground">
           {charCount}/2000
           {isOverLimit && <span className="text-destructive ml-1">Limit exceeded</span>}
         </div>
       )}
+
+      <div
+        className={cn(
+          "w-full bg-[#161618] border-t border-border overflow-hidden transition-all duration-300",
+          showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
+        )}
+        style={{ 
+          height: `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px))`,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)'
+        }}
+      >
+        <EmojiPicker
+          onEmojiClick={handleEmojiClick}
+          width="100%"
+          height={keyboardHeight}
+          emojiStyle={EmojiStyle.APPLE}
+          theme={EmojiTheme.DARK}
+          lazyLoadEmojis={false}
+          previewConfig={{ showPreview: false }}
+          searchDisabled={false}
+          autoFocusSearch={false}
+          skinTonesDisabled={true}
+        />
+      </div>
     </div>
   );
 };

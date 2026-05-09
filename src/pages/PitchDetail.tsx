@@ -476,13 +476,16 @@ const PitchDetail = () => {
             <UniversalShareSheet
                 isOpen={showShare}
                 onOpenChange={setShowShare}
-                shareType="marketplace"
+                shareType="pitch"
                 shareId={pitchCall.id}
                 shareData={{ 
                     title: pitchCall.title, 
+                    id: pitchCall.id,
                     requirement_description: pitchCall.requirement_description,
                     budget_range: pitchCall.budget_range,
-                    compensation: pitchCall.compensation
+                    compensation: pitchCall.compensation,
+                    subtitle: `${pitchCall.project_type} • ${pitchCall.profiles?.location || 'Remote'}`,
+                    avatarUrl: pitchCall.profiles?.avatar_url
                 }}
             />
         </div>
