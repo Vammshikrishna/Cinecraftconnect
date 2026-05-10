@@ -3,7 +3,7 @@ import { useKeyboard } from '@/contexts/KeyboardContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Paperclip, Send, Smile, Keyboard } from 'lucide-react';
+import { Paperclip, Send, Smile, Keyboard, Video as VideoIcon, X, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import EmojiPicker, { EmojiClickData, EmojiStyle, Theme as EmojiTheme } from 'emoji-picker-react';
 
@@ -16,18 +16,20 @@ const messageSchema = z.object({
 });
 
 interface MessageComposerProps {
-  onSend: (content: string) => Promise<void>;
+  onSend: (content: string, file?: File | null) => Promise<void>;
   disabled?: boolean;
   onTyping?: () => void;
   onStopTyping?: () => void;
-  onAttach?: (file: File) => void;
   userRole?: string;
+  isUploading?: boolean;
 }
 
-export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAttach }: MessageComposerProps) => {
+export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUploading }: MessageComposerProps) => {
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -43,13 +45,18 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
   }, []);
 
   const handleSend = async () => {
+    if (!content.trim() && !selectedFile) return;
     setError(null);
     try {
-      messageSchema.parse({ content });
+      if (content.trim()) {
+        messageSchema.parse({ content });
+      }
       setSending(true);
       onStopTyping?.();
-      await onSend(content);
+      await onSend(content, selectedFile);
       setContent('');
+      setSelectedFile(null);
+      setMediaPreview(null);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0].message);
@@ -100,12 +107,26 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && onAttach) {
-      onAttach(file);
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) {
+        setError("File size exceeds 50MB limit");
+        return;
+      }
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setMediaPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    setMediaPreview(null);
   };
 
   const handleInputFocus = () => {
@@ -120,6 +141,34 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
 
   return (
     <div className="bg-background">
+      {mediaPreview && (
+        <div className="px-4 py-3 bg-muted/30 border-t border-border/50 animate-in slide-in-from-bottom-2">
+          <div className="relative inline-block group">
+            {selectedFile?.type.startsWith('image/') ? (
+              <img
+                src={mediaPreview}
+                alt="Preview"
+                className="h-24 w-24 object-cover rounded-xl border-2 border-primary/20 shadow-lg"
+              />
+            ) : (
+              <div className="h-24 w-24 bg-primary/10 rounded-xl flex flex-col items-center justify-center border-2 border-primary/20 shadow-lg">
+                <VideoIcon className="h-8 w-8 text-primary mb-1" />
+                <span className="text-[10px] font-bold uppercase tracking-tighter opacity-60">Video</span>
+              </div>
+            )}
+            <button
+              onClick={clearSelectedFile}
+              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600 transition-colors z-10"
+            >
+              <X className="h-3 w-3" />
+            </button>
+            <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">{Math.round(selectedFile!.size / 1024)}KB</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-2 px-2 text-xs text-destructive flex items-center gap-1">
           <span>{error}</span>
@@ -137,7 +186,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
             variant="ghost"
             className="h-9 w-9 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted"
             onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || !onAttach}
+            disabled={disabled}
           >
             <Paperclip className="h-5 w-5" />
             <input
@@ -188,11 +237,11 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
 
         <Button
           onClick={handleSend}
-          disabled={disabled || sending || content.trim().length === 0 || isOverLimit}
+          disabled={disabled || sending || isUploading || (content.trim().length === 0 && !selectedFile) || isOverLimit}
           size="icon"
           className="h-10 w-10 rounded-full shrink-0 shadow-sm mb-0.5"
         >
-          <Send className="h-5 w-5 ml-0.5" />
+          {sending || isUploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5 ml-0.5" />}
         </Button>
       </div>
 
@@ -208,7 +257,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, onAt
           "w-full bg-[#161618] border-t border-border overflow-hidden transition-all duration-300",
           showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
         )}
-        style={{ 
+        style={{
           height: `calc(${keyboardHeight}px + env(safe-area-inset-bottom, 0px))`,
           paddingBottom: 'env(safe-area-inset-bottom, 0px)'
         }}

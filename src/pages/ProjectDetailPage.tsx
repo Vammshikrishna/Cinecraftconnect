@@ -23,15 +23,15 @@ import { Share2 } from 'lucide-react';
 interface Project {
   id: string;
   title: string;
-  description: string;
-  status: string;
-  location: string;
-  genre: string[];
-  required_roles: string[];
-  budget_min: number;
-  budget_max: number;
-  start_date: string;
-  end_date?: string;
+  description: string | null;
+  status: string | null;
+  location: string | null;
+  genre: string[] | null;
+  required_roles: string[] | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  start_date: string | null;
+  end_date?: string | null;
   creator_id: string;
   created_at: string;
 }
@@ -67,7 +67,7 @@ const ProjectDetailPage = () => {
         .single();
 
       if (error) throw error;
-      setProject(data as Project);
+      setProject(data);
 
       // Check for membership & application
       if (user && projectId) {
@@ -99,13 +99,15 @@ const ProjectDetailPage = () => {
           }
 
         // 2. Check for application
-        const { data: appData } = await supabase
-          .from('project_applications')
-          .select('id')
-          .eq('project_id', projectId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-        setHasApplied(!!appData);
+        const { data: appData, error: appError } = await supabase
+        .from('project_applications')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (appError) console.error('Error checking application:', appError);
+      setHasApplied(!!appData);
       }
     } catch (error) {
       console.error('Error fetching project:', error);
@@ -115,7 +117,7 @@ const ProjectDetailPage = () => {
     }
   };
 
-  const getStatusVariant = (status: string) => {
+  const getStatusVariant = (status: string | null) => {
     switch (status?.toLowerCase()) {
       case 'planning': return 'secondary';
       case 'in-production': return 'default';
@@ -146,7 +148,7 @@ const ProjectDetailPage = () => {
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             <div className="space-y-4">
               <Badge variant={getStatusVariant(project.status)} className="capitalize px-4 py-1 text-sm font-medium">
-                {project.status}
+                {project.status || 'Planning'}
               </Badge>
               <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-gradient leading-tight">
                 {project.title}
@@ -218,7 +220,9 @@ const ProjectDetailPage = () => {
                     <Calendar className="h-4 w-4 text-primary" />
                   </div>
                   <span>
-                    {new Date(project.start_date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                    {project.start_date 
+                      ? new Date(project.start_date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+                      : 'Start Date TBD'}
                     {project.end_date && ` - ${new Date(project.end_date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}`}
                   </span>
                 </div>

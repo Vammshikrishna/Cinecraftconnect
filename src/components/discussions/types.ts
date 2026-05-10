@@ -7,6 +7,10 @@ export interface Message {
   user_id: string;
   is_deleted?: boolean;
   reply_to_id?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
+  attachment_url?: string | null;
+  attachment_type?: string | null;
   profiles: {
     id: string;
     username: string | null;

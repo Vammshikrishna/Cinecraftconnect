@@ -166,8 +166,8 @@ const Index = () => {
       />
       <LandingNavbar />
 
-      {/* ───────────── HERO ───────────── */}
-      <section ref={heroRef} className="relative z-10 min-h-[100dvh] flex items-center justify-center px-4 overflow-hidden">
+      {/* ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  HERO ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  */}
+      <section ref={heroRef} className="relative z-10 min-h-[100dvh] flex items-center justify-center px-4 pt-24 sm:pt-32 pb-16 overflow-hidden">
 
         {/* Cinematic ambient light — two warm diffused orbs */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -244,10 +244,10 @@ const Index = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="inline-flex items-center gap-2 glass-card px-5 py-2.5 rounded-full mb-8"
+            className="inline-flex items-center gap-2 glass-card px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-full mb-6 sm:mb-8"
           >
-            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sm font-medium text-muted-foreground tracking-wide">
+            <div className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] sm:text-sm font-medium text-muted-foreground tracking-wide">
               Now open for the entertainment community worldwide
             </span>
           </motion.div>

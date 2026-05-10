@@ -35,7 +35,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
             try {
                 // Try to fetch by ID or Slug
                 const { data, error } = await supabase
-                    .from('company_pages' as any)
+                    .from('company_pages')
                     .select('*')
                     .or(`id.eq.${id},slug.eq.${id},slug.eq.${slug || ''}`)
                     .single();
@@ -43,12 +43,12 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
                 if (data && !error) {
                     setName(data.name);
                     setSlug(data.slug);
-                    setLogoUrl(data.logo_url);
-                    setBannerUrl(data.cover_image_url);
-                    setLocation(data.headquarters);
-                    setIndustry(Array.isArray(data.industry) ? data.industry[0] : data.industry);
-                    setDescription(data.description || data.tagline);
-                    setIsVerified(data.is_verified);
+                    setLogoUrl(data.logo_url || undefined);
+                    setBannerUrl(data.cover_image_url || null);
+                    setLocation(data.headquarters || undefined);
+                    setIndustry((Array.isArray(data.industry) ? data.industry[0] : data.industry) || undefined);
+                    setDescription((data.description || data.tagline) || undefined);
+                    setIsVerified(data.is_verified || false);
                     setFollowerCount(data.follower_count);
                 }
             } catch (err) {
@@ -60,7 +60,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
     }, [id, slug, initialDesc, initialLoc, initialInd]);
 
     return (
-        <Link 
+        <Link
             to={`/pages/${slug || id}`}
             className="block w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
         >

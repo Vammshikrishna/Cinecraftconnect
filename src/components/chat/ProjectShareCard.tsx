@@ -13,11 +13,11 @@ interface ProjectShareCardProps {
     genre?: string;
 }
 
-export const ProjectShareCard = ({ 
-    projectId, 
-    title: initialTitle, 
-    description: initialDesc, 
-    location: initialLoc, 
+export const ProjectShareCard = ({
+    projectId,
+    title: initialTitle,
+    description: initialDesc,
+    location: initialLoc,
     status: initialStatus,
     genre: initialGenre
 }: ProjectShareCardProps) => {
@@ -40,10 +40,10 @@ export const ProjectShareCard = ({
 
                 if (data && !error) {
                     setTitle(data.title);
-                    setDescription(data.description);
+                    setDescription(data.description || '');
                     setLocation(data.location || 'Global Production');
-                    setStatus(data.status);
-                    setGenre(data.genre);
+                    setStatus(data.status || 'Active');
+                    setGenre((data.genre as any)?.[0] || 'Film');
                 }
             } catch (err) {
                 console.error('Error self-healing project card:', err);
@@ -58,7 +58,7 @@ export const ProjectShareCard = ({
     return (
         <Link
             to={`/projects/${projectId}/space`}
-            className="block w-full max-w-[240px] min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
+            className="block w-full max-w-[280px] min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
         >
             {/* Visual Header */}
             <div
@@ -67,7 +67,7 @@ export const ProjectShareCard = ({
             >
                 <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px]" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                
+
                 <Film className="w-16 h-16 text-white/40 relative z-10 group-hover:scale-110 transition-transform duration-700 drop-shadow-2xl" />
 
                 {status && (
@@ -81,7 +81,7 @@ export const ProjectShareCard = ({
                         {genre}
                     </div>
                 )}
-                
+
                 <div className="absolute bottom-3 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary text-black text-[8px] font-black uppercase tracking-widest shadow-lg">
                     <Box size={10} fill="currentColor" />
                     Project Space

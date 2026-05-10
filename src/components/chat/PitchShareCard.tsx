@@ -76,7 +76,7 @@ export const PitchShareCard = ({
             
             try {
                 const { data, error } = await supabase
-                    .from('pitch_calls')
+                    .from('pitch_calls' as any)
                     .select(`
                         *,
                         profiles:creator_id (
@@ -90,26 +90,27 @@ export const PitchShareCard = ({
                     .single();
 
                 if (data && !error) {
+                    const d = data as any;
                     if (!author) {
                         setAuthor({
-                            name: data.profiles?.full_name || 'Creator',
-                            avatar: data.profiles?.avatar_url || '',
-                            craft: data.profiles?.craft || 'Creator',
-                            is_verified: data.profiles?.is_verified
+                            name: d.profiles?.full_name || 'Creator',
+                            avatar: d.profiles?.avatar_url || '',
+                            craft: d.profiles?.craft || 'Creator',
+                            is_verified: d.profiles?.is_verified
                         });
                     }
-                    if (!description) setDescription(data.requirement_description);
-                    if (!format) setFormat(data.project_type);
-                    if (genres.length === 0) setGenres(data.genre || []);
-                    if (languages.length === 0) setLanguages(data.language || []);
-                    if (!compensation) setCompensation(data.compensation);
-                    if (!budgetRange) setBudgetRange(data.budget_range);
-                    if (!deadline) setDeadline(data.deadline);
+                    if (!description) setDescription(d.requirement_description);
+                    if (!format) setFormat(d.project_type);
+                    if (genres.length === 0) setGenres(d.genre || []);
+                    if (languages.length === 0) setLanguages(d.language || []);
+                    if (!compensation) setCompensation(d.compensation);
+                    if (!budgetRange) setBudgetRange(d.budget_range);
+                    if (!deadline) setDeadline(d.deadline);
                     if (!tags || tags.length === 0) {
                         const newTags = [
-                            data.is_open_to_debut && 'Debut Writers Welcome',
-                            data.is_regional_welcome && 'Regional Stories',
-                            data.nda_required && 'NDA Required'
+                            d.is_open_to_debut && 'Debut Writers Welcome',
+                            d.is_regional_welcome && 'Regional Stories',
+                            d.nda_required && 'NDA Required'
                         ].filter(Boolean) as string[];
                         setTags(newTags);
                     }

@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
@@ -16,7 +15,14 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger 
 } from '@/components/ui/dropdown-menu';
-import { Video, Phone, Settings, Trash2, Send, ArrowLeft, Smile, Keyboard, X, Reply, ShieldBan, MoreVertical, User, BellOff, ShieldAlert, Search } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
@@ -46,6 +52,8 @@ interface Message {
   sender_id: string;
   is_deleted?: boolean;
   reply_to_id?: string | null;
+  attachment_url?: string | null;
+  attachment_type?: string | null;
   replied_to_message?: {
     id: string;
     content: string;
@@ -103,7 +111,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { user } = useAuth();
   const navigate = useNavigate();
   const { onlineUserIds } = usePresence();
-  const { observeMessage } = useMessageSeen();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -115,13 +122,18 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall } = useGlobalCall();
   const { activeCall } = useCall('direct', roomId || '');
   const isInCall = callState.isActive && callState.roomId === roomId;
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<{file: File, preview: string, type: 'image' | 'video' | 'other'} | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const lastScrollHeight = useRef<number>(0);
   const isInitialLoad = useRef(true);
   const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const isPartnerOnline = onlineUserIds.includes(partnerId);
   
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
@@ -138,7 +150,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        // Also check if the click was on the emoji button itself
         const target = event.target as HTMLElement;
         if (!target.closest('button')?.querySelector('.lucide-smile')) {
           setShowEmojiPicker(false);
@@ -162,15 +173,14 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       isInitialLoad.current = true;
     }
 
-    const { data, error } = await (supabase.rpc as any)('get_messages_for_channel_paginated', { 
+    const { data, error } = await supabase.rpc('get_messages_for_channel_paginated', { 
       p_channel_id: roomId,
       p_limit: 30,
       p_offset: 0
     });
 
     if (error) {
-      // Fallback to non-paginated if RPC doesn't exist yet
-      const { data: fallbackData, error: fallbackError } = await (supabase.rpc as any)('get_messages_for_channel', { p_channel_id: roomId });
+      const { data: fallbackData, error: fallbackError } = await supabase.rpc('get_messages_for_channel', { p_channel_id: roomId });
       if (fallbackError) {
         console.error('Error fetching messages:', fallbackError);
         setMessages([]);
@@ -180,8 +190,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       }
     } else {
       const fetchedMessages = (data as Message[]) || [];
-      // Data from paginated RPC is expected latest-first, but get_messages_for_channel was oldest-first
-      // Let's ensure consistency: sorted oldest to newest for UI
       const sortedMessages = [...fetchedMessages].sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
@@ -197,7 +205,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     setLoadingMore(true);
     lastScrollHeight.current = scrollContainerRef.current?.scrollHeight || 0;
 
-    const { data, error } = await (supabase.rpc as any)('get_messages_for_channel_paginated', {
+    const { data, error } = await supabase.rpc('get_messages_for_channel_paginated', {
       p_channel_id: roomId,
       p_limit: 30,
       p_offset: messages.length
@@ -220,7 +228,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     setLoadingMore(false);
   };
 
-  // Use a ref for fetchMessages to avoid subscription churn
   const fetchMessagesRef = useRef(fetchMessages);
   useEffect(() => {
     fetchMessagesRef.current = fetchMessages;
@@ -230,7 +237,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     fetchMessages();
   }, [fetchMessages]);
 
-  // Separate "Mark as Read" to avoid refetch loops
   useEffect(() => {
     if (partnerId && messages.length > 0) {
       markAsRead('dm', partnerId);
@@ -270,60 +276,105 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     const channel = supabase
       .channel(`chat-v4-${roomId}`)
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
-        (payload) => {
-          const newPayload = payload.new as any;
-          const oldPayload = payload.old as any;
-          if (newPayload.channel_id === roomId || oldPayload?.channel_id === roomId) {
-            setTimeout(() => fetchMessagesRef.current(), 100);
-            setTimeout(() => fetchMessagesRef.current(), 500);
-          }
+        { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        () => {
+          setTimeout(() => fetchMessagesRef.current(false), 150);
         }
       )
       .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'direct_messages' },
-        (payload) => {
-          const newPayload = payload.new as any;
-          const oldPayload = payload.old as any;
-          if (newPayload.channel_id === roomId || oldPayload?.channel_id === roomId) {
-            setTimeout(() => fetchMessagesRef.current(), 100);
-          }
+        { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        () => {
+          setTimeout(() => fetchMessagesRef.current(false), 150);
         }
-      ).subscribe();
+      )
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        () => {
+          setTimeout(() => fetchMessagesRef.current(false), 150);
+        }
+      ).subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to real-time chat for room:', roomId);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [roomId]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 50 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 50MB", variant: "destructive" });
+      return;
+    }
+
+    const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+    const preview = URL.createObjectURL(file);
+    setSelectedFile({ file, preview, type });
+  };
+
+  const uploadMedia = async (file: File): Promise<string | null> => {
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+      const filePath = `${user?.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('post-media')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('post-media')
+        .getPublicUrl(filePath);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading media:', error);
+      toast({ title: "Upload failed", description: "Failed to upload media", variant: "destructive" });
+      return null;
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newMessage.trim() === '' || !user || !roomId) return;
+    if ((newMessage.trim() === '' && !selectedFile) || !user || !roomId) return;
 
-    const contentToSend = newMessage.trim();
+    setUploading(true);
+    let attachmentUrl = null;
+    let attachmentType = null;
 
-    const { error: sendError } = await supabase.from('direct_messages' as any).insert({
+    if (selectedFile) {
+      attachmentUrl = await uploadMedia(selectedFile.file);
+      attachmentType = selectedFile.type;
+    }
+
+    const contentToSend = newMessage.trim() || (attachmentType === 'image' ? 'Shared an image' : attachmentType === 'video' ? 'Shared a video' : attachmentType ? 'Shared a file' : '');
+
+    const { error: sendError } = await supabase.from('direct_messages').insert({
       content: contentToSend,
       sender_id: user.id,
       channel_id: roomId,
-      receiver_id: partnerId,
-      reply_to_id: replyingTo?.id || null
+      recipient_id: partnerId,
+      reply_to_id: replyingTo?.id || null,
+      attachment_url: attachmentUrl,
+      attachment_type: attachmentType
     });
-
-    if (sendError && (sendError as any).message?.includes('receiver_id')) {
-      await supabase.from('direct_messages' as any).insert({
-        content: contentToSend,
-        sender_id: user.id,
-        channel_id: roomId,
-        recipient_id: partnerId,
-        reply_to_id: replyingTo?.id || null
-      });
-    } else if (sendError) {
+    
+    if (sendError) {
       console.error('Error sending message:', sendError);
+      setUploading(false);
       return;
     }
 
     setNewMessage('');
+    setSelectedFile(null);
+    setUploading(false);
     setShowEmojiPicker(false);
     setReplyingTo(null);
     if (!showEmojiPicker) {
@@ -334,7 +385,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
     const { error } = await supabase
-      .from('direct_messages' as any)
+      .from('direct_messages')
       .delete()
       .eq('id', messageId)
       .eq('sender_id', user.id);
@@ -349,24 +400,22 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   const handleHideMessage = async (messageId: string) => {
     if (!user) return;
-    const { error } = await (supabase.rpc as any)('hide_message_for_user', {
+    const { error } = await supabase.rpc('hide_message_for_user', {
       p_table: 'direct_messages',
-      p_message_id: messageId
+      p_message_id: messageId,
+      p_user_id: user.id
     });
     
     if (error) {
       console.error('Error hiding message:', error);
       toast({ title: "Error", description: "Failed to hide message", variant: "destructive" });
     } else {
-      // Optimistic update
       setMessages(prev => prev.filter(m => m.id !== messageId));
     }
   };
 
   const onEmojiClick = (emojiObject: EmojiClickData) => {
     setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
-    // Focus back to input after selection if desired, or keep picker open
-    // inputRef.current?.focus();
   };
 
   const openEmojiPanel = (e: React.MouseEvent) => {
@@ -401,7 +450,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     if (!confirmDelete) return;
 
     const { error } = await supabase
-      .from('direct_messages' as any)
+      .from('direct_messages')
       .delete()
       .eq('channel_id', roomId);
     
@@ -441,7 +490,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   };
 
   const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
-  // Watermark logic: Find the index of the VERY LAST read message sent by me
   const lastReadIndexSentByMe = visibleMessages.reduce((lastIdx, msg, idx) => 
     (msg.sender_id === user?.id && (msg.is_read || msg.read_at)) ? idx : lastIdx, -1);
 
@@ -580,6 +628,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 const messageDate = new Date(message.created_at);
                 const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
                 const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+                const isAttachmentOnly = message.attachment_url && (
+                  !message.content || 
+                  message.content === 'Shared an image' || 
+                  message.content === 'Shared a video' || 
+                  message.content === 'Shared a file'
+                );
 
                 return (
                   <Fragment key={message.id}>
@@ -593,7 +647,6 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     </div>
                   )}
                   <div 
-                  ref={observeMessage}
                   data-message-id={message.id}
                   data-unread={!message.is_read && !message.read_at}
                   data-sender-id={message.sender_id}
@@ -605,7 +658,14 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   </Avatar>
                   <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} ${message.content.includes('_SHARE::') ? 'max-w-full' : 'max-w-[85%]'}`}>
                     <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                      <div className={`relative transition-all duration-300 ${message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground' : (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::') ? 'p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[270px] min-w-[200px]' : `${isSender ? 'bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md'}`)}`}>
+                      <div className={cn(
+                        "relative transition-all duration-300",
+                        message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
+                        (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[240px] min-w-[200px]" :
+                        isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
+                        isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md" : 
+                        "bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md"
+                      )}>
                         {!message.is_deleted && (
                           <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
                             <DropdownMenu>
@@ -655,117 +715,159 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           </p>
                         ) : (
                           <>
-                            {message.content.startsWith('POST_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
-                                  return <PostShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('PROFILE_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('PROFILE_SHARE::', ''));
-                                  return <ProfileShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('PITCH_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('PITCH_SHARE::', ''));
-                                  return <PitchShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('COMPANY_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('COMPANY_SHARE::', ''));
-                                  return <CompanyShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
-                                  return <MarketplaceShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
-                                  return <AnnouncementShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('VENDOR_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
-                                  return <VendorShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('PROJECT_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
-                                  return <ProjectShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.startsWith('CONTENT_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const shareData = JSON.parse(message.content.replace('CONTENT_SHARE::', ''));
-                                  return <ContentShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : (message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::')) ? (
-                              (() => {
-                                try {
-                                  const prefix = message.content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
-                                  const shareData = JSON.parse(message.content.replace(prefix, ''));
-                                  return <DiscussionShareCard {...shareData} />;
-                                } catch (e) {
-                                  return <p className="text-sm break-words">{message.content}</p>;
-                                }
-                              })()
-                            ) : message.content.includes('JOB_SHARE::') ? (
-                              (() => {
-                                try {
-                                  const parts = message.content.split('JOB_SHARE::');
-                                  const caption = parts[0].trim();
-                                  const jsonStr = parts[parts.length - 1].trim();
-                                  const shareData = JSON.parse(jsonStr);
-                                  return (
-                                    <div className="space-y-2">
-                                      {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
-                                      <JobShareCard {...shareData} />
+                            {message.attachment_url && (
+                              <div className={cn(
+                                "mb-1 rounded-lg overflow-hidden",
+                                (message.attachment_type === 'image' || message.attachment_type === 'video') ? "" : "bg-black/5 dark:bg-white/5 border border-white/10"
+                              )}>
+                                {message.attachment_type === 'image' ? (
+                                  <img 
+                                    src={message.attachment_url} 
+                                    alt="Attachment" 
+                                    className="max-w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-[1.02] transition-transform duration-300"
+                                    onClick={() => message.attachment_url && setSelectedImage(message.attachment_url)}
+                                  />
+                                ) : message.attachment_type === 'video' ? (
+                                  <div className="relative group cursor-pointer" onClick={() => message.attachment_url && setSelectedImage(message.attachment_url)}>
+                                    <video 
+                                      src={message.attachment_url} 
+                                      className="max-w-full h-auto max-h-[300px]"
+                                    />
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-all">
+                                      <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center text-black">
+                                        <Play className="h-6 w-6 fill-current" />
+                                      </div>
                                     </div>
-                                  );
-                                } catch (e) {
-                                  return <p className="text-sm break-words px-3 pt-2">{message.content}</p>;
-                                }
-                              })()
-                            ) : (
-                              <p className="text-sm break-words">{message.content}</p>
+                                  </div>
+                                ) : (
+                                  <a 
+                                    href={message.attachment_url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-3 text-primary hover:bg-primary/5 transition-colors"
+                                  >
+                                    <FileText className="h-8 w-8" />
+                                    <span className="text-xs font-bold uppercase tracking-wider">View Document</span>
+                                  </a>
+                                )}
+                              </div>
                             )}
+                            {message.content && 
+                             message.content !== 'Shared an image' && 
+                             message.content !== 'Shared a video' && 
+                             message.content !== 'Shared a file' && (
+                              message.content.startsWith('POST_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
+                                    return <PostShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('PROFILE_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('PROFILE_SHARE::', ''));
+                                    return <ProfileShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('PITCH_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('PITCH_SHARE::', ''));
+                                    return <PitchShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('COMPANY_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('COMPANY_SHARE::', ''));
+                                    return <CompanyShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                                    return <MarketplaceShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                                    return <AnnouncementShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('VENDOR_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
+                                    return <VendorShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('PROJECT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
+                                    return <ProjectShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.startsWith('CONTENT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(message.content.replace('CONTENT_SHARE::', ''));
+                                    return <ContentShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : (message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::')) ? (
+                                (() => {
+                                  try {
+                                    const prefix = message.content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+                                    const shareData = JSON.parse(message.content.replace(prefix, ''));
+                                    return <DiscussionShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-sm break-words">{message.content}</p>;
+                                  }
+                                })()
+                              ) : message.content.includes('JOB_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const parts = message.content.split('JOB_SHARE::');
+                                    const caption = parts[0].trim();
+                                    const jsonStr = parts[parts.length - 1].trim();
+                                    const shareData = JSON.parse(jsonStr);
+                                    return (
+                                      <div className="space-y-2">
+                                        {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+                                        <JobShareCard {...shareData} />
+                                      </div>
+                                    );
+                                  } catch (e) {
+                                    return <p className="text-sm break-words px-3 pt-2">{message.content}</p>;
+                                  }
+                                })()
+                              ) : (
+                                <p className="text-sm break-words">{message.content}</p>
+                              )
+                             )}
                           </>
                         )}
                       </div>
@@ -817,7 +919,57 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               </div>
             )}
             
+            {selectedFile && (
+              <div className="p-3 bg-muted/20 border-b border-border flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-300">
+                <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-white/10 shadow-xl bg-black">
+                  {selectedFile.type === 'image' ? (
+                    <img src={selectedFile.preview} alt="Preview" className="w-full h-full object-cover" />
+                  ) : selectedFile.type === 'video' ? (
+                    <video src={selectedFile.preview} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <FileText className="h-8 w-8 text-primary" />
+                    </div>
+                  )}
+                  <button 
+                    onClick={() => setSelectedFile(null)}
+                    className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-black text-foreground uppercase tracking-widest truncate">
+                    {selectedFile.file.name}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">
+                    {(selectedFile.file.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
+              </div>
+            )}
+            
             <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-1.5 bg-background">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+                className="hidden" 
+                accept="image/*,video/*"
+              />
+              
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-full text-muted-foreground"
+                title="Attach media"
+                disabled={uploading}
+              >
+                <Paperclip className="h-5 w-5" />
+              </Button>
+
               {/* WhatsApp-style toggle: keyboard icon when emoji open, emoji icon otherwise */}
               {showEmojiPicker ? (
                 <Button
@@ -827,6 +979,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   onClick={openKeyboard}
                   className="rounded-full text-primary bg-primary/10"
                   title="Open keyboard"
+                  disabled={uploading}
                 >
                   <Keyboard className="h-5 w-5" />
                 </Button>
@@ -845,6 +998,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   }}
                   className="rounded-full text-muted-foreground emoji-toggle-button"
                   title="Open emoji picker"
+                  disabled={uploading}
                 >
                   <Smile className="h-5 w-5" />
                 </Button>
@@ -862,8 +1016,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-10"
                 autoComplete="off"
               />
-              <Button type="submit" size="icon" className="rounded-full h-10 w-10 shrink-0" disabled={!newMessage.trim()}>
-                <Send className="h-5 w-5" />
+              <Button 
+                type="submit" 
+                size="icon" 
+                className="rounded-full h-10 w-10 shrink-0" 
+                disabled={(!newMessage.trim() && !selectedFile) || uploading}
+              >
+                {uploading ? (
+                  <div className="h-5 w-5 border-2 border-background border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="h-5 w-5" />
+                )}
               </Button>
             </form>
           </div>
@@ -890,6 +1053,37 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           </div>
         </>
       )}
+      {/* Lightbox Dialog */}
+      <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+        <DialogContent hideClose className="!p-0 !border-none !bg-transparent !shadow-none !max-w-none !w-screen !h-screen !left-0 !top-0 !translate-x-0 !translate-y-0 outline-none !z-[1001]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image Preview</DialogTitle>
+            <DialogDescription>Full size view of the shared image</DialogDescription>
+          </DialogHeader>
+          <div 
+            className="w-full h-full flex items-center justify-center bg-transparent cursor-zoom-out"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="relative max-w-[90vw] max-h-[90vh] cursor-default" onClick={(e) => e.stopPropagation()}>
+              {selectedImage && (
+                <img 
+                  src={selectedImage} 
+                  alt="Full preview" 
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+                />
+              )}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="absolute -top-3 -right-3 bg-black/50 hover:bg-black/80 text-white rounded-full h-8 w-8 z-[1100] transition-all shadow-lg border border-white/20"
+                onClick={() => setSelectedImage(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -45,17 +45,17 @@ export const ProfileShareCard = ({
             try {
                 const query = supabase.from('profiles').select('*');
                 if (id) query.eq('id', id);
-                else query.eq('username', initialUsername);
+                else query.eq('username', initialUsername || '');
 
                 const { data, error } = await query.single();
 
                 if (data && !error) {
                     setName(data.full_name || data.username || 'Anonymous');
-                    setAvatar(data.avatar_url);
-                    setCraft(data.craft);
-                    setUsername(data.username);
-                    setIsVerified(data.is_verified);
-                    setBio(data.bio);
+                    setAvatar(data.avatar_url || undefined);
+                    setCraft(data.craft || undefined);
+                    setUsername(data.username || undefined);
+                    setIsVerified(data.is_verified ?? undefined);
+                    setBio(data.bio || undefined);
                 }
             } catch (err) {
                 console.error('Error self-healing profile card:', err);

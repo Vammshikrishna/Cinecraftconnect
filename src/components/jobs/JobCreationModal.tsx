@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, Briefcase } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { JobType, ExperienceLevel, JOB_TYPES, EXPERIENCE_LEVELS } from '@/types/jobs';
+import { Job, JobType, ExperienceLevel, JOB_TYPES, EXPERIENCE_LEVELS } from '@/types/jobs';
 import { useMyPages } from '@/hooks/useCompanyPages';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { User, Building2 } from 'lucide-react';
@@ -33,7 +33,7 @@ interface JobCreationModalProps {
   defaultOpen?: boolean;
   defaultPageId?: string;
   triggerButton?: React.ReactNode;
-  jobToEdit?: any;
+  jobToEdit?: Job;
 }
 
 export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPageId = "user", triggerButton, jobToEdit }: JobCreationModalProps) => {
@@ -42,7 +42,7 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
   const { toast } = useToast();
   const { user } = useAuth();
   const { data: myPages } = useMyPages();
-  const [selectedPageId, setSelectedPageId] = useState<string | "user">(defaultPageId);
+  const [selectedPageId, setSelectedPageId] = useState<string | "user">(jobToEdit?.page_id || defaultPageId);
 
   useEffect(() => {
     if (defaultOpen) setIsOpen(true);
@@ -126,6 +126,8 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
     setLoading(true);
 
     try {
+      if (!user) return;
+
       const payload = {
         title: jobData.title,
         description: jobData.description,

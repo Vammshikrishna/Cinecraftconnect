@@ -12,24 +12,24 @@ export const useChatReadStatus = () => {
 
         try {
             if (type === 'dm') {
-                // Return to original stable logic for DMs
-                const { error } = await supabase
-                    .from('direct_messages' as any)
-                    .update({ is_read: true })
+                // Fetch the latest unread message from this partner to use its ID for the RPC
+                // The RPC 'mark_message_as_seen' marks all messages up to that timestamp as read.
+                const { data: latestMessage } = await (supabase.from('direct_messages') as any)
+                    .select('id')
                     .match({ receiver_id: user.id, sender_id: id })
-                    .eq('is_read', false);
-                
-                if (error) {
-                    // Fallback for different column naming
-                    await supabase
-                        .from('direct_messages' as any)
-                        .update({ is_read: true })
-                        .match({ recipient_id: user.id, sender_id: id })
-                        .eq('is_read', false);
+                    .eq('is_read', false)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (latestMessage) {
+                    await (supabase.rpc as any)('mark_message_as_seen', {
+                        p_message_id: latestMessage.id
+                    });
                 }
             } else if (type === 'project') {
                 await supabase
-                    .from('project_space_message_read_status' as any)
+                    .from('project_space_message_read_status')
                     .upsert({
                         project_space_id: id,
                         user_id: user.id,
@@ -37,7 +37,7 @@ export const useChatReadStatus = () => {
                     }, { onConflict: 'project_space_id,user_id' });
             } else if (type === 'discussion') {
               await supabase
-                  .from('room_message_read_status' as any)
+                  .from('room_message_read_status')
                   .upsert({
                       room_id: id,
                       user_id: user.id,

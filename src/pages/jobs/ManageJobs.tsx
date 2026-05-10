@@ -19,23 +19,23 @@ interface JobWithApplications {
     id: string;
     title: string;
     created_at: string | null;
-    is_active: boolean;
+    is_active: boolean | null;
     company_pages: {
         name: string;
         logo_url: string | null;
     } | null;
     applications: {
         id: string;
-        status: string;
+        status: string | null;
         cover_letter: string | null;
         resume_url: string | null;
         created_at: string | null;
         applicant_id: string;
         applicant: {
-            full_name: string;
-            username: string;
+            full_name: string | null;
+            username: string | null;
             avatar_url: string | null;
-        };
+        } | null;
     }[];
     [key: string]: any;
 }
@@ -55,15 +55,15 @@ const ManageJobs = () => {
                 { data: memberPages },
                 { data: adminPages }
             ] = await Promise.all([
-                supabase.from('company_pages' as any).select('id').eq('owner_id', user.id),
-                supabase.from('company_page_members' as any).select('page_id').eq('user_id', user.id),
-                supabase.from('company_page_admins' as any).select('page_id').eq('user_id', user.id)
+                supabase.from('company_pages').select('id').eq('owner_id', user.id),
+                supabase.from('company_page_members').select('page_id').eq('user_id', user.id),
+                supabase.from('company_page_admins').select('page_id').eq('user_id', user.id)
             ]);
             
             const pageIds = [
-                ...((ownedPages as any[])?.map(p => p.id) || []),
-                ...((memberPages as any[])?.map(p => p.page_id) || []),
-                ...((adminPages as any[])?.map(p => p.page_id) || [])
+                ...((ownedPages as { id: string }[])?.map(p => p.id) || []),
+                ...((memberPages as { page_id: string }[])?.map(p => p.page_id) || []),
+                ...((adminPages as { page_id: string }[])?.map(p => p.page_id) || [])
             ];
             
             // Remove duplicates
@@ -108,14 +108,14 @@ const ManageJobs = () => {
 
                 return {
                     ...job,
-                    applications: appsData.map(app => ({
+                    applications: (appsData || []).map(app => ({
                         ...app,
                         applicant: app.applicant as any
                     }))
-                };
+                } as JobWithApplications;
             }));
 
-            setJobs(jobsWithApps as any);
+            setJobs(jobsWithApps);
         } catch (error) {
             console.error('Error fetching jobs:', error);
             toast({
@@ -156,7 +156,7 @@ const ManageJobs = () => {
         try {
             const { error } = await supabase
                 .from('job_applications')
-                .update({ status: newStatus as any })
+                .update({ status: newStatus })
                 .eq('id', applicationId);
 
             if (error) throw error;
@@ -183,7 +183,7 @@ const ManageJobs = () => {
         }
     };
 
-    const handleToggleActive = async (jobId: string, currentStatus: boolean) => {
+    const handleToggleActive = async (jobId: string, currentStatus: boolean | null) => {
         try {
             const { error } = await supabase
                 .from('jobs')
@@ -303,7 +303,7 @@ const ManageJobs = () => {
                                     </div>
                                     <div className="flex sm:flex-col lg:flex-row items-center gap-3 shrink-0">
                                         <JobCreationModal 
-                                            jobToEdit={job}
+                                            jobToEdit={job as any}
                                             onJobCreated={fetchJobsAndApplications}
                                             triggerButton={
                                                 <Button variant="ghost" className="h-12 px-6 rounded-xl border border-border/50 hover:bg-muted/50 font-black uppercase tracking-widest text-[10px]">
@@ -357,8 +357,8 @@ const ManageJobs = () => {
                                                                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60 bg-muted/50 px-3 py-1 rounded-full">
                                                                         Applied {app.created_at ? formatDistanceToNow(new Date(app.created_at), { addSuffix: true }) : ''}
                                                                     </span>
-                                                                    <Badge className={`text-[10px] uppercase font-black tracking-widest border-none rounded-full px-4 py-1.5 shadow-sm ${getStatusColor(app.status)}`} variant="outline">
-                                                                        {app.status}
+                                                                    <Badge className={`text-[10px] uppercase font-black tracking-widest border-none rounded-full px-4 py-1.5 shadow-sm ${getStatusColor(app.status || 'pending')}`} variant="outline">
+                                                                        {app.status || 'pending'}
                                                                     </Badge>
                                                                 </div>
                                                             </div>

@@ -18,7 +18,7 @@ export const useUnreadMessages = () => {
     if (!user) return;
 
     try {
-      const { data: previews, error: previewError } = await supabase.rpc('get_unread_message_previews' as any);
+      const { data: previews, error: previewError } = await supabase.rpc('get_unread_message_previews');
       
       if (!previewError && Array.isArray(previews)) {
         // 1. DMs (Direct Messages)

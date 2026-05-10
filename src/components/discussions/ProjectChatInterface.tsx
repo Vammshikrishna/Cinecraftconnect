@@ -3,8 +3,16 @@ import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { MoreVertical, Reply, Trash2, ShieldBan, X } from 'lucide-react';
+import { MoreVertical, Reply, Trash2, X } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { MessageComposer } from './MessageComposer';
 import { PostShareCard } from '@/components/chat/PostShareCard';
@@ -31,14 +39,16 @@ interface Message {
   content: string;
   user_id: string;
   created_at: string;
-  is_deleted?: boolean;
-  reply_to_id?: string | null;
-  profiles?: {
+  is_deleted: boolean | null;
+  reply_to_id: string | null;
+  attachment_url: string | null;
+  attachment_type: string | null;
+  profiles: {
     username: string | null;
     full_name: string | null;
     avatar_url: string | null;
-  };
-  deleted_for_users?: string[];
+  } | null;
+  deleted_for_users: string[] | null;
 }
 
 interface ProjectChatInterfaceProps {
@@ -97,13 +107,14 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
   const { observeMessage } = useMessageSeen('project_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const { markAsRead } = useChatReadStatus();
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
 
   useEffect(() => {
     const fetchSpaceId = async () => {
       if (!projectId) return;
       const { data, error } = await supabase
-        .from('project_spaces' as any)
+        .from('project_spaces')
         .select('id')
         .eq('project_id', projectId)
         .limit(1)
@@ -122,8 +133,12 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         .single();
 
 
+      if (error) {
+        console.error('Error fetching messages:', error);
+        return;
+      }
       if (data) {
-        setSpaceId((data as any).id);
+        setSpaceId(data.id);
       } else {
 
         // We already fetched projectData above
@@ -131,7 +146,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         if (projectData && user && projectData.creator_id === user.id) {
 
           const { data: newSpace, error: createError } = await supabase
-            .from('project_spaces' as any)
+            .from('project_spaces')
             .insert({
               project_id: projectId,
               name: 'General'
@@ -140,7 +155,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
             .single();
 
           if (!createError && newSpace) {
-            setSpaceId((newSpace as any).id);
+            setSpaceId(newSpace.id);
             toast({ title: "Fixed", description: "Project space created automatically." });
           } else {
             console.error('Failed to create space:', createError);
@@ -162,7 +177,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       
       // Check if already a member
       const { data: existing, error: fetchError } = await supabase
-        .from('project_space_members' as any)
+        .from('project_space_members')
         .select('user_id')
         .eq('project_space_id', spaceId)
         .eq('user_id', user.id)
@@ -177,7 +192,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         // If not a member, check if they are the owner or an applicant to grant access
         // (For now, keeping it simple: anyone who can access the space UI gets added as a member)
         const { error: insertError } = await supabase
-          .from('project_space_members' as any)
+          .from('project_space_members')
           .insert({ 
             project_space_id: spaceId, 
             user_id: user.id 
@@ -197,11 +212,30 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
     const fetchReadStatuses = async () => {
       if (!spaceId) return;
-      const { data } = await supabase
-        .from('project_message_read_status' as any)
-        .select('user_id, last_read_at, profiles:user_id(full_name)')
+      const { data, error } = await (supabase.from('project_space_message_read_status') as any)
+        .select('user_id, last_read_at')
         .eq('project_space_id', spaceId);
-      if (data) setReadStatuses(data as any[]);
+      
+      if (error) {
+        console.error('Error fetching read statuses:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const userIds = data.map((rs: any) => rs.user_id);
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', userIds);
+          
+        const enrichedData = data.map((rs: any) => ({
+          ...rs,
+          profiles: profileData?.find((p: any) => p.id === rs.user_id) || { full_name: 'Unknown User' }
+        }));
+        setReadStatuses(enrichedData);
+      } else {
+        setReadStatuses([]);
+      }
     };
 
     fetchMessages();
@@ -215,12 +249,12 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         table: 'project_space_messages',
         filter: `project_space_id=eq.${spaceId}`
       }, () => {
-        fetchMessages();
+        fetchMessages(false);
       })
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'project_message_read_status',
+        table: 'project_space_message_read_status',
         filter: `project_space_id=eq.${spaceId}`
       }, () => {
         fetchReadStatuses();
@@ -288,7 +322,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     }
 
     const { data, error } = await supabase
-      .from('project_space_messages' as any)
+      .from('project_space_messages')
       .select(`
         id,
         content,
@@ -297,11 +331,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         is_deleted,
         reply_to_id,
         deleted_for_users,
-        profiles:user_id (
+        profiles!user_id (
           username,
           full_name,
           avatar_url
-        )
+        ),
+        attachment_url,
+        attachment_type
       `)
       .eq('project_space_id', spaceId)
       .order('created_at', { ascending: false })
@@ -310,7 +346,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     if (error) {
       console.error('Error fetching messages:', error);
     } else {
-      const fetchedMessages = (data as any) || [];
+      const fetchedMessages = data || [];
       const sortedMessages = [...fetchedMessages].sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
@@ -329,7 +365,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     const oldestMessageTimestamp = messages[0].created_at;
 
     const { data, error } = await supabase
-      .from('project_space_messages' as any)
+      .from('project_space_messages')
       .select(`
         id,
         content,
@@ -338,11 +374,13 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
         is_deleted,
         reply_to_id,
         deleted_for_users,
-        profiles:user_id (
+        profiles!user_id (
           username,
           full_name,
           avatar_url
-        )
+        ),
+        attachment_url,
+        attachment_type
       `)
       .eq('project_space_id', spaceId)
       .lt('created_at', oldestMessageTimestamp)
@@ -352,7 +390,7 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     if (error) {
       console.error('Error loading more messages:', error);
     } else {
-      const fetchedMessages = (data as any) || [];
+      const fetchedMessages = data || [];
       if (fetchedMessages.length > 0) {
         const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -366,20 +404,45 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     setLoadingMessages(false);
   };
 
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || sending || !user) return;
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleSendMessage = async (content: string, file?: File | null) => {
+    if ((!content.trim() && !file) || sending || !user || !spaceId) return;
 
     setSending(true);
+    setIsUploading(true);
     try {
-      const contentToSend = content.trim();
+      let attachmentUrl = null;
+      let attachmentType = null;
+
+      if (file) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('post-media')
+          .upload(filePath, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('post-media')
+          .getPublicUrl(filePath);
+
+        attachmentUrl = publicUrl;
+        attachmentType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+      }
 
       const { error } = await supabase
-        .from('project_space_messages' as any)
+        .from('project_space_messages')
         .insert([{
           project_space_id: spaceId,
           user_id: user?.id,
-          content: contentToSend,
-          reply_to_id: replyingTo?.id || null
+          content: content.trim() || `Shared ${attachmentType === 'image' ? 'an image' : attachmentType === 'video' ? 'a video' : 'a file'}`,
+          reply_to_id: replyingTo?.id || null,
+          attachment_url: attachmentUrl,
+          attachment_type: attachmentType
         }]);
 
       if (error) throw error;
@@ -394,13 +457,14 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
       });
     } finally {
       setSending(false);
+      setIsUploading(false);
     }
   };
 
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
     const { error } = await supabase
-      .from('project_space_messages' as any)
+      .from('project_space_messages')
       .delete()
       .eq('id', messageId)
       .eq('user_id', user.id);
@@ -428,114 +492,143 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     }
   };
 
-  const handleAttach = async (file: File) => {
-    if (!user || !projectId) return;
-    setSending(true);
-    try {
-      // Upload file reference
-      const contentToInsert = `Shared a file: ${file.name}`;
-
-      // Send message with file reference
-      const { error: msgError } = await supabase
-        .from('project_space_messages' as any)
-        .insert({
-          project_space_id: spaceId,
-          user_id: user.id,
-          content: contentToInsert
-        });
-
-      if (msgError) throw msgError;
-
-      toast({ title: "Success", description: "File uploaded successfully" });
-    } catch (error: any) {
-      console.error(error);
-      toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
-    } finally {
-      setSending(false);
-    }
-  };
 
 
 
 
 
-  const renderMessageContent = (content: string) => {
-    if (content.startsWith('POST_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('POST_SHARE::', ''));
-        return <PostShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('MARKETPLACE_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('MARKETPLACE_SHARE::', ''));
-        return <MarketplaceShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('ANNOUNCEMENT_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('ANNOUNCEMENT_SHARE::', ''));
-        return <AnnouncementShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('VENDOR_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('VENDOR_SHARE::', ''));
-        return <VendorShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('PROJECT_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('PROJECT_SHARE::', ''));
-        return <ProjectShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('PROFILE_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('PROFILE_SHARE::', ''));
-        return <ProfileShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('PITCH_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('PITCH_SHARE::', ''));
-        return <PitchShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('COMPANY_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('COMPANY_SHARE::', ''));
-        return <CompanyShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) {
-      try {
-        const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
-        const shareData = JSON.parse(content.replace(prefix, ''));
-        return <DiscussionShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.startsWith('CONTENT_SHARE::')) {
-      try {
-        const shareData = JSON.parse(content.replace('CONTENT_SHARE::', ''));
-        return <ContentShareCard {...shareData} />;
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    if (content.includes('JOB_SHARE::')) {
-      try {
-        const parts = content.split('JOB_SHARE::');
-        const caption = parts[0].trim();
-        const jsonStr = parts[parts.length - 1].trim();
-        const shareData = JSON.parse(jsonStr);
-        return (
-          <div className="space-y-2">
-            {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
-            <JobShareCard {...shareData} />
+  const renderMessageContent = (message: Message) => {
+    const { content, attachment_url, attachment_type } = message;
+    return (
+      <div className="space-y-2">
+        {attachment_url && (
+          <div className={cn(
+            "mb-1 rounded-lg overflow-hidden",
+            (attachment_type === 'image' || attachment_type === 'video') ? "" : "bg-black/5 dark:bg-white/5 border border-white/10"
+          )}>
+            {attachment_type === 'image' ? (
+              <img 
+                src={attachment_url} 
+                alt="Attachment" 
+                className="max-w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-[1.02] transition-transform duration-300"
+                onClick={() => setSelectedImage(attachment_url)}
+              />
+            ) : attachment_type === 'video' ? (
+              <div className="relative group cursor-pointer" onClick={() => setSelectedImage(attachment_url)}>
+                <video 
+                  src={attachment_url} 
+                  className="max-w-full h-auto max-h-[300px]"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-all">
+                  <div className="w-12 h-12 rounded-full bg-primary/80 flex items-center justify-center text-black">
+                    <Reply className="h-6 w-6" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <a 
+                href={attachment_url} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 text-primary hover:bg-primary/5 transition-colors"
+              >
+                <MoreVertical className="h-8 w-8" />
+                <span className="text-xs font-bold uppercase tracking-wider">View Attachment</span>
+              </a>
+            )}
           </div>
-        );
-      } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
-    }
-    return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>;
+        )}
+        {content.startsWith('POST_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('POST_SHARE::', ''));
+              return <PostShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('MARKETPLACE_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('MARKETPLACE_SHARE::', ''));
+              return <MarketplaceShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('ANNOUNCEMENT_SHARE::', ''));
+              return <AnnouncementShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('VENDOR_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('VENDOR_SHARE::', ''));
+              return <VendorShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('PROJECT_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('PROJECT_SHARE::', ''));
+              return <ProjectShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('PROFILE_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('PROFILE_SHARE::', ''));
+              return <ProfileShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('PITCH_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('PITCH_SHARE::', ''));
+              return <PitchShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('COMPANY_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('COMPANY_SHARE::', ''));
+              return <CompanyShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : (content.startsWith('DISCUSSION_SHARE::') || content.startsWith('ROOM_SHARE::')) ? (
+          (() => {
+            try {
+              const prefix = content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+              const shareData = JSON.parse(content.replace(prefix, ''));
+              return <DiscussionShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.startsWith('CONTENT_SHARE::') ? (
+          (() => {
+            try {
+              const shareData = JSON.parse(content.replace('CONTENT_SHARE::', ''));
+              return <ContentShareCard {...shareData} />;
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : content.includes('JOB_SHARE::') ? (
+          (() => {
+            try {
+              const parts = content.split('JOB_SHARE::');
+              const caption = parts[0].trim();
+              const jsonStr = parts[parts.length - 1].trim();
+              const shareData = JSON.parse(jsonStr);
+              return (
+                <div className="space-y-2">
+                  {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+                  <JobShareCard {...shareData} />
+                </div>
+              );
+            } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
+          })()
+        ) : (content && content !== 'Shared an image' && content !== 'Shared a video' && content !== 'Shared a file') ? (
+          <p className="text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</p>
+        ) : null}
+      </div>
+    );
   };
 
   const isShareContent = (content: string) =>
@@ -633,7 +726,14 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
                   <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                    <div className={`relative transition-all duration-300 ${(isShare && !message.is_deleted) ? 'p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10' : message.is_deleted ? 'bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground' : isOwn ? 'bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md' : 'bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md'}`}>
+                    <div className={cn(
+                      "relative transition-all duration-300",
+                      message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
+                      isShare ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
+                      (message.attachment_url && (!message.content || message.content === 'Shared an image' || message.content === 'Shared a video' || message.content === 'Shared a file')) ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
+                      isOwn ? "bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
+                      "bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
+                    )}>
                       {!isOwn && !message.is_deleted && (
                         <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
                           {message.profiles?.username || message.profiles?.full_name || 'User'}
@@ -663,13 +763,12 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
                           </div>
                         )
                       })()}
-
                       {message.is_deleted ? (
-                        <p className="text-sm italic text-muted-foreground flex items-center gap-1">
-                          <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
+                        <p className="text-sm italic opacity-70 flex items-center gap-1.5 py-0.5">
+                          This message was deleted
                         </p>
                       ) : (
-                        renderMessageContent(message.content)
+                        renderMessageContent(message)
                       )}
                     </div>
 
@@ -754,13 +853,45 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
           ) : (
             <MessageComposer
               onSend={handleSendMessage}
-              onAttach={handleAttach}
               disabled={sending}
+              isUploading={isUploading}
             />
           )}
         </div>
       </div>
+      <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+        <DialogContent hideClose className="!p-0 !border-none !bg-transparent !shadow-none !max-w-none !w-screen !h-screen !left-0 !top-0 !translate-x-0 !translate-y-0 outline-none !z-[1001]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Image Preview</DialogTitle>
+            <DialogDescription>Full size view of the shared image</DialogDescription>
+          </DialogHeader>
+          <div 
+            className="w-full h-full flex items-center justify-center bg-transparent cursor-zoom-out"
+            onClick={() => setSelectedImage(null)}
+          >
+            <div className="relative max-w-[90vw] max-h-[90vh] cursor-default" onClick={(e) => e.stopPropagation()}>
+              {selectedImage && (
+                <img 
+                  src={selectedImage} 
+                  alt="Full preview" 
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-300"
+                />
+              )}
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="absolute -top-3 -right-3 bg-black/50 hover:bg-black/80 text-white rounded-full h-8 w-8 z-[1100] transition-all shadow-lg border border-white/20"
+                onClick={() => setSelectedImage(null)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
+export default ProjectChatInterface;
 
