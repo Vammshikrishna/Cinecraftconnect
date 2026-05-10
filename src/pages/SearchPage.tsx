@@ -96,7 +96,7 @@ const SearchPage = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const initialQuery = searchParams.get('q') || '';
     const initialCategory = searchParams.get('category') || 'all';
-    
+
     const [query, setQuery] = useState(initialQuery);
     const [results, setResults] = useState<SearchResult[]>([]);
     const [exploreItems, setExploreItems] = useState<ExploreItem[]>([]);
@@ -104,7 +104,7 @@ const SearchPage = () => {
     const [activeCategory, setActiveCategory] = useState(initialCategory);
     const navigate = useNavigate();
     const { isFan } = useAccountType();
-    
+
     const availableCategories = CATEGORIES.filter(c => {
         if (!isFan) return true;
         return ['all', 'people', 'discussions', 'posts'].includes(c.id);
@@ -120,7 +120,7 @@ const SearchPage = () => {
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12)
             ];
-            
+
             const results = await Promise.allSettled(promises as any[]);
 
             const items: ExploreItem[] = [];
@@ -148,22 +148,22 @@ const SearchPage = () => {
                 author: p.author ? (Array.isArray(p.author) ? p.author[0] : p.author) : null,
                 type: 'post' as const
             })));
-            if (vendors) items.push(...vendors.map((v: any) => ({ 
-                ...v, 
-                description: v.description || undefined, 
-                logo_url: v.logo_url || undefined, 
+            if (vendors) items.push(...vendors.map((v: any) => ({
+                ...v,
+                description: v.description || undefined,
+                logo_url: v.logo_url || undefined,
                 category: v.category || v.specialization,
                 city: v.city || v.location,
                 phone: v.phone,
                 email: v.email,
-                type: 'vendor' as const 
+                type: 'vendor' as const
             })));
-            if (marketplace) items.push(...marketplace.map((m: any) => ({ 
-                ...m, 
-                description: m.description || undefined, 
+            if (marketplace) items.push(...marketplace.map((m: any) => ({
+                ...m,
+                description: m.description || undefined,
                 image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]),
-                listing_type: m.listing_type as 'equipment' | 'location', 
-                type: 'marketplace' as const 
+                listing_type: m.listing_type as 'equipment' | 'location',
+                type: 'marketplace' as const
             })));
 
             setExploreItems(items.sort(() => Math.random() - 0.5));
@@ -190,7 +190,7 @@ const SearchPage = () => {
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10)
             ];
-            
+
             const results = await Promise.allSettled(promises as any[]);
 
             const getData = (result: any): any[] | null => {
@@ -226,7 +226,7 @@ const SearchPage = () => {
     useEffect(() => {
         if (initialQuery) performSearch(initialQuery);
         else fetchExploreItems();
-        
+
         if (initialCategory !== activeCategory) {
             setActiveCategory(initialCategory);
         }
@@ -239,7 +239,7 @@ const SearchPage = () => {
         if (newQuery) params.q = newQuery;
         if (activeCategory !== 'all') params.category = activeCategory;
         setSearchParams(params);
-        
+
         if (newQuery) performSearch(newQuery);
         else fetchExploreItems();
     };
@@ -265,9 +265,9 @@ const SearchPage = () => {
             </div>
 
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
-                <PageHeader 
-                    title="Discovery" 
-                    subtitle="Global content grid synchronization engine. Find production partners, projects, and gear." 
+                <PageHeader
+                    title="Discovery"
+                    subtitle="Global content grid synchronization engine. Find production partners, projects, and gear."
                     Icon={Compass}
                     onBack={() => navigate('/feed', { state: { noScroll: true } })}
                     actions={
@@ -275,7 +275,7 @@ const SearchPage = () => {
                     }
                 />
 
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="relative max-w-2xl mx-auto mt-6 mb-8 group"
@@ -283,27 +283,26 @@ const SearchPage = () => {
                     <div className="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-secondary/10 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
                     <div className="relative">
                         <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-primary/60 group-focus-within:text-primary transition-colors duration-300" size={20} />
-                        <Input 
-                            type="search" 
+                        <Input
+                            type="search"
                             placeholder={isFan ? "Search people, posts, discussions..." : "Search projects, people, posts..."}
-                            className="pl-14 pr-6 py-6 text-base w-full bg-card/60 backdrop-blur-xl border border-border/50 focus:border-primary/50 rounded-2xl transition-all shadow-xl font-medium tracking-tight placeholder:text-muted-foreground/40 focus:ring-4 focus:ring-primary/5" 
-                            value={query} 
-                            onChange={handleSearch} 
-                            autoFocus={!query} 
+                            className="pl-14 pr-6 py-6 text-base w-full bg-card/60 backdrop-blur-xl border border-border/50 focus:border-primary/50 rounded-2xl transition-all shadow-xl font-medium tracking-tight placeholder:text-muted-foreground/40 focus:ring-4 focus:ring-primary/5"
+                            value={query}
+                            onChange={handleSearch}
+                            autoFocus={!query}
                         />
                     </div>
                 </motion.div>
 
                 <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4">
                     {availableCategories.map(category => (
-                        <button 
-                            key={category.id} 
-                            onClick={() => handleCategoryChange(category.id)} 
-                            className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${
-                                activeCategory === category.id 
-                                ? 'bg-primary text-primary-foreground shadow-[0_0_20px_rgba(var(--primary),0.3)] scale-105' 
-                                : 'bg-card/40 backdrop-blur-md border border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
-                            }`}
+                        <button
+                            key={category.id}
+                            onClick={() => handleCategoryChange(category.id)}
+                            className={`px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all duration-300 ${activeCategory === category.id
+                                    ? 'bg-primary text-primary-foreground shadow-[0_0_20px_rgba(var(--primary),0.3)] scale-105'
+                                    : 'bg-card/40 backdrop-blur-md border border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground'
+                                }`}
                         >
                             {category.label}
                         </button>

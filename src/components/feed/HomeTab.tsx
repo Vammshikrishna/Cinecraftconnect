@@ -40,13 +40,31 @@ interface HomeTabProps {
 import { useHomeFeed, HomeFeedData } from '@/hooks/useHomeFeed';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } from '@/hooks/useCompanyPages';
+import { useKeyboard } from '@/contexts/KeyboardContext';
 
-    const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
+const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user, profile } = useAuth();
     const navigate = useNavigate();
     const { isFan, accountType } = useAccountType();
     const queryClient = useQueryClient();
     const observerTarget = useRef<HTMLDivElement>(null);
+    const { isKeyboardVisible, setIsEmojiPickerOpen } = useKeyboard();
+
+    // Auto-dismiss keyboard on scroll (Instagram/LinkedIn style)
+    useEffect(() => {
+        const handleScroll = () => {
+            if (isKeyboardVisible) {
+                const activeEl = document.activeElement;
+                if (activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                    activeEl.blur();
+                }
+                setIsEmojiPickerOpen(false);
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [isKeyboardVisible, setIsEmojiPickerOpen]);
 
     const { data, isLoading: loading, refetch } = useHomeFeed();
     const { data: myPages } = useMyPages();

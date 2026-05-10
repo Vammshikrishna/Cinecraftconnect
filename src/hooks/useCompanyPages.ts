@@ -107,13 +107,13 @@ export function useToggleFollowPage() {
 
       // Snapshot the previous values
       const previousFollowing = queryClient.getQueryData(['page-following', pageId, user?.id]);
-      
+
       // Store all current company-page data for rollback
       const previousPagesData = queryClient.getQueriesData({ queryKey: ['company-page'] });
 
       // Optimistically update follow status
       queryClient.setQueryData(['page-following', pageId, user?.id], !isFollowing);
-      
+
       // Optimistically update all relevant company-page caches
       queryClient.setQueriesData({ queryKey: ['company-page'] }, (old: any) => {
         if (!old) return old;
@@ -284,27 +284,27 @@ export function useMyPages() {
     queryKey: ['my-pages', user?.id],
     queryFn: async () => {
       if (!user) return [];
-      
+
       // Fetch pages owned by user
       const ownedPagesPromise = supabase
         .from('company_pages' as any)
         .select('*')
         .eq('owner_id', user.id);
-        
+
       // Fetch pages where user is admin
       const adminPagesPromise = supabase
         .from('company_page_admins' as any)
         .select('company_pages(*)')
         .eq('user_id', user.id);
-        
+
       const [ownedRes, adminRes] = await Promise.all([ownedPagesPromise, adminPagesPromise]);
-      
+
       if (ownedRes.error) throw ownedRes.error;
       if (adminRes.error) throw adminRes.error;
-      
+
       const owned = ownedRes.data || [];
       const adminManaged = (adminRes.data || []).map((a: any) => a.company_pages).filter(Boolean);
-      
+
       // Combine and remove duplicates
       const allPages = [...owned, ...adminManaged];
       const uniquePagesMap = new Map();
@@ -313,10 +313,10 @@ export function useMyPages() {
           uniquePagesMap.set(p.id, p);
         }
       });
-      
+
       const uniquePages = Array.from(uniquePagesMap.values());
-      
-      return uniquePages.sort((a: any, b: any) => 
+
+      return uniquePages.sort((a: any, b: any) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       ) as unknown as CompanyPage[];
     },

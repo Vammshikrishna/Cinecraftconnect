@@ -19,15 +19,15 @@ interface MarketplaceShareCardProps {
     };
 }
 
-export const MarketplaceShareCard = ({ 
-    listingId, 
-    title: initialTitle, 
-    previewUrl: initialPreview, 
+export const MarketplaceShareCard = ({
+    listingId,
+    title: initialTitle,
+    previewUrl: initialPreview,
     price: initialPrice,
     description: initialDesc,
     category: initialCat,
     location: initialLoc,
-    author: initialAuthor 
+    author: initialAuthor
 }: MarketplaceShareCardProps) => {
     const [title, setTitle] = useState(initialTitle);
     const [previewUrl, setPreviewUrl] = useState(initialPreview);
@@ -51,14 +51,14 @@ export const MarketplaceShareCard = ({
 
                 if (data && !error) {
                     setTitle(data.title);
-                    setPrice(data.price_per_day || data.price);
-                    setPreviewUrl(data.images?.[0]);
-                    setDescription(data.description);
-                    setCategory(data.category);
-                    setLocation(data.location);
+                    setPrice(data.price_per_day);
+                    setPreviewUrl(data.images?.[0] || undefined);
+                    setDescription(data.description || undefined);
+                    setCategory(data.category || undefined);
+                    setLocation(data.location || undefined);
                     setAuthor({
                         username: data.profiles?.username || data.profiles?.full_name || 'Seller',
-                        avatar_url: data.profiles?.avatar_url
+                        avatar_url: data.profiles?.avatar_url || null
                     });
                 }
             } catch (err) {
@@ -70,8 +70,8 @@ export const MarketplaceShareCard = ({
     }, [listingId, initialPrice, initialDesc]);
 
     return (
-        <Link 
-            to={`/marketplace/${listingId}`} 
+        <Link
+            to={`/marketplace/${listingId}`}
             className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
         >
             {/* Visual Header - High Impact Media */}
@@ -90,7 +90,7 @@ export const MarketplaceShareCard = ({
 
                 {/* Glassmorphic Overlays */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
-                
+
                 {/* Category Badge - Top Left */}
                 {category && (
                     <div className="absolute top-2 left-2 px-2 py-0.5 bg-primary text-black text-[8px] font-black uppercase tracking-[0.2em] rounded-md shadow-2xl animate-in fade-in slide-in-from-left-2 duration-700">

@@ -10,25 +10,25 @@ export interface PitchCall {
     creator_id: string;
     title: string;
     project_type: string;
-    genre: string[];
-    subgenre?: string;
-    language: string[];
-    format?: string;
-    target_audience?: string;
-    budget_range?: string;
-    compensation?: string;
+    genre: string[] | null;
+    subgenre: string | null;
+    language: string[] | null;
+    format: string | null;
+    target_audience: string | null;
+    budget_range: string | null;
+    compensation: string | null;
     requirement_description: string;
-    tone?: string;
-    ref_films?: string;
-    deadline?: string;
-    is_open_to_debut: boolean;
-    is_regional_welcome: boolean;
-    rights_expectation?: string;
-    nda_required: boolean;
-    status: string;
-    is_published: boolean;
-    view_count: number;
-    attachments: any[];
+    tone: string | null;
+    ref_films: string | null;
+    deadline: string | null;
+    is_open_to_debut: boolean | null;
+    is_regional_welcome: boolean | null;
+    rights_expectation: string | null;
+    nda_required: boolean | null;
+    status: string | null;
+    is_published: boolean | null;
+    view_count: number | null;
+    attachments: any | null;
     is_saved?: boolean;
     submission_count?: number;
     profiles?: {
@@ -37,7 +37,7 @@ export interface PitchCall {
         avatar_url: string | null;
         craft: string | null;
         location: string | null;
-        is_verified?: boolean;
+        is_verified: boolean | null;
     };
 }
 
@@ -50,35 +50,35 @@ export interface PitchSubmission {
     title: string;
     logline: string;
     short_synopsis: string;
-    full_synopsis?: string;
-    genre?: string;
-    format?: string;
-    language?: string;
-    tone?: string;
-    why_fits?: string;
-    rights_owned: boolean;
-    is_original_work: boolean;
-    treatment_url?: string;
-    lookbook_url?: string;
-    moodboard_url?: string;
-    character_notes?: string;
-    pilot_outline?: string;
-    reference_links?: string[];
-    status: string;
-    nda_preferred: boolean;
-    seen_at?: string;
-    reviewed_at?: string;
-    shortlisted_at?: string;
+    full_synopsis: string | null;
+    genre: string | null;
+    format: string | null;
+    language: string | null;
+    tone: string | null;
+    why_fits: string | null;
+    rights_owned: boolean | null;
+    is_original_work: boolean | null;
+    treatment_url: string | null;
+    lookbook_url: string | null;
+    moodboard_url: string | null;
+    character_notes: string | null;
+    pilot_outline: string | null;
+    reference_links: string[] | null;
+    status: string | null;
+    nda_preferred: boolean | null;
+    seen_at: string | null;
+    reviewed_at: string | null;
+    shortlisted_at: string | null;
     profiles?: {
-        full_name: string;
-        avatar_url?: string;
-        username?: string;
-        craft?: string;
-        is_verified?: boolean;
+        full_name: string | null;
+        avatar_url: string | null;
+        username: string | null;
+        craft: string | null;
+        is_verified: boolean | null;
     };
     pitch_calls?: {
-        title: string;
-        project_type: string;
+        title: string | null;
+        project_type: string | null;
     };
 }
 
@@ -146,7 +146,7 @@ export const usePitchCalls = (filters?: Partial<FilterState>, searchQuery?: stri
                 savedIds = new Set((saved || []).map((s: any) => s.pitch_call_id));
             }
 
-            setPitchCalls((data || []).map((pc: any) => ({
+            setPitchCalls((data || []).map(pc => ({
                 ...pc,
                 is_saved: savedIds.has(pc.id),
             })));
@@ -203,7 +203,7 @@ export const useMyPitchSubmissions = () => {
             .select(`*, pitch_calls:pitch_call_id(title, project_type)`)
             .eq('submitter_id', user.id)
             .order('created_at', { ascending: false });
-        setSubmissions((data as any) || []);
+        setSubmissions(data || []);
         setLoading(false);
     }, [user?.id]);
 
@@ -221,7 +221,7 @@ export const useMyPitchSubmissions = () => {
                 { event: 'UPDATE', schema: 'public', table: 'pitch_submissions', filter: `submitter_id=eq.${user.id}` },
                 (payload) => {
                     setSubmissions(prev => prev.map(s =>
-                        s.id === payload.new.id ? { ...s, ...(payload.new as any) } : s
+                        s.id === (payload.new as any).id ? { ...s, ...(payload.new as Partial<PitchSubmission>) } : s
                     ));
                 }
             )
@@ -247,7 +247,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
                 .from('pitch_submissions')
                 .select(`
                     *,
-                    profiles:submitter_id(full_name, avatar_url, username, craft),
+                    profiles:submitter_id(full_name, avatar_url, username, craft, is_verified),
                     pitch_calls:pitch_call_id(title, project_type)
                 `)
                 .in(
@@ -264,7 +264,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
 
             const { data, error } = await query;
             if (error) throw error;
-            setSubmissions((data as any) || []);
+            setSubmissions(data as any || []);
         } catch (error) {
             console.error('Error fetching submissions:', error);
         } finally {
@@ -290,7 +290,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
                 (payload) => {
                     // Optimistic update: patch just the changed row without a full reload
                     setSubmissions(prev => prev.map(s =>
-                        s.id === payload.new.id ? { ...s, ...(payload.new as any) } : s
+                        s.id === (payload.new as any).id ? { ...s, ...(payload.new as Partial<PitchSubmission>) } : s
                     ));
                 }
             )
@@ -341,7 +341,7 @@ export const useCreatePitchCall = () => {
         try {
             const { data: created, error } = await supabase
                 .from('pitch_calls')
-                .insert({ ...data, creator_id: user.id })
+                .insert({ ...data, creator_id: user.id } as any)
                 .select()
                 .single();
             if (error) throw error;
@@ -370,7 +370,7 @@ export const useCreatePitchCall = () => {
                 submission_count: _sc,
                 view_count: _vc,
                 ...writableData 
-            } = data as any;
+            } = data;
 
             const { data: updated, error } = await supabase
                 .from('pitch_calls')
@@ -405,7 +405,7 @@ export const useSubmitPitch = () => {
         try {
             const { data: created, error } = await supabase
                 .from('pitch_submissions')
-                .insert({ ...data, submitter_id: user.id, submitted_at: new Date().toISOString() })
+                .insert({ ...data, submitter_id: user.id, submitted_at: new Date().toISOString() } as any)
                 .select()
                 .single();
             if (error) throw error;

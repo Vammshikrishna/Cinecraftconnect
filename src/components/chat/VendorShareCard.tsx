@@ -19,12 +19,12 @@ interface VendorShareCardProps {
     services_offered?: string[];
 }
 
-export const VendorShareCard = ({ 
-    vendorId, 
-    name: initialName, 
-    logoUrl: initialLogo, 
+export const VendorShareCard = ({
+    vendorId,
+    name: initialName,
+    logoUrl: initialLogo,
     bannerUrl: initialBanner,
-    category: initialCat, 
+    category: initialCat,
     location: initialLoc,
     description: initialDesc,
     phone: initialPhone,
@@ -63,18 +63,20 @@ export const VendorShareCard = ({
                     .single();
 
                 if (data && !error) {
-                    setName(data.business_name || data.name);
-                    setLogoUrl(data.logo_url);
-                    setBannerUrl(data.banner_url || data.logo_url); // Fallback to logo for banner
-                    setCategories(data.category || []);
-                    setLocation(data.location);
-                    setDescription(data.description);
-                    setPhone(data.phone);
-                    setEmail(data.email);
-                    setRating(data.average_rating || data.rating);
-                    setReviewCount(data.review_count);
-                    setIsVerified(data.is_verified);
-                    setServices(data.services_offered || []);
+                    const v = data;
+                    setName(v.business_name);
+                    setLogoUrl(v.logo_url || undefined);
+                    setBannerUrl((v.images?.[0] || v.logo_url) || undefined);
+                    setCategories(Array.isArray(v.category) ? v.category : v.category ? [v.category] : []);
+                    setLocation(v.location || undefined);
+                    setDescription(v.description || undefined);
+                    setPhone(v.phone || undefined);
+                    setEmail(v.email || undefined);
+                    // Use fallback values as these might come from a view/RPC in future
+                    setRating((v as any).average_rating || (v as any).rating || 0);
+                    setReviewCount((v as any).review_count || (v as any).reviewCount || 0);
+                    setIsVerified(v.is_verified || false);
+                    setServices(v.services_offered || []);
                 }
             } catch (err) {
                 console.error('Error self-healing vendor card:', err);
@@ -85,8 +87,8 @@ export const VendorShareCard = ({
     }, [vendorId, initialDesc, initialPhone, initialEmail, initialRating]);
 
     return (
-        <Link 
-            to={`/vendors/${vendorId}`} 
+        <Link
+            to={`/vendors/${vendorId}`}
             className="block w-full max-w-[240px] min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
         >
             {/* Premium Header: Banner + Floating Logo */}
@@ -160,7 +162,7 @@ export const VendorShareCard = ({
                         "{description}"
                     </p>
                 )}
-                
+
                 {services && services.length > 0 && (
                     <div className="flex flex-wrap gap-1 items-center justify-center animate-in fade-in duration-1000">
                         {services.slice(0, 3).map((svc, i) => (

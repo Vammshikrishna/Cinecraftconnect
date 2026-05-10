@@ -66,14 +66,16 @@ const PitchDetail = () => {
                         full_name,
                         avatar_url,
                         username,
-                        craft
+                        craft,
+                        location,
+                        is_verified
                     )
                 `)
                 .eq('id', pitchId)
                 .single();
 
             if (error) throw error;
-            setPitchCall(data as any);
+            setPitchCall(data);
 
             if (user) {
                 // Check if already submitted
@@ -120,11 +122,11 @@ const PitchDetail = () => {
         try {
             if (isSaved) {
                 await supabase.from('saved_pitch_calls').delete()
-                    .eq('user_id', user.id).eq('pitch_call_id', pitchId);
+                    .eq('user_id', user.id).eq('pitch_call_id', pitchId!);
             } else {
                 await supabase.from('saved_pitch_calls').insert({ 
                     user_id: user.id, 
-                    pitch_call_id: pitchId 
+                    pitch_call_id: pitchId!
                 });
             }
             setIsSaved(!isSaved);

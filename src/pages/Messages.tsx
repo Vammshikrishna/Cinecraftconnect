@@ -46,9 +46,9 @@ const Messages = () => {
   const [activePartnerData, setActivePartnerData] = useState<{ id: string; name: string; avatar: string } | null>(null);
 
   useEffect(() => {
-    const fetchConversations = async () => {
+    const fetchConversations = async (isInitial = true) => {
       if (!user) return;
-      setLoading(true);
+      if (isInitial) setLoading(true);
       const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
 
       if (error) {
@@ -74,8 +74,11 @@ const Messages = () => {
     fetchConversations();
 
     const subscription = supabase
-      .channel('public:direct_messages:messages_view')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, fetchConversations)
+      .channel('messages_sidebar_updates')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'direct_messages' }, 
+        () => fetchConversations(false)
+      )
       .subscribe();
 
     return () => {

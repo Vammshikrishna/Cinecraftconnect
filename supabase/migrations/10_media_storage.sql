@@ -36,3 +36,19 @@ CREATE POLICY "Project members view files" ON storage.objects FOR SELECT USING (
         AND user_id = auth.uid()
     )
 );
+
+-- 3. Post Media Policies
+DROP POLICY IF EXISTS "Public view post-media" ON storage.objects;
+CREATE POLICY "Public view post-media" ON storage.objects FOR SELECT USING ( bucket_id = 'post-media' );
+
+DROP POLICY IF EXISTS "Auth upload post-media" ON storage.objects;
+CREATE POLICY "Auth upload post-media" ON storage.objects FOR INSERT WITH CHECK ( 
+    bucket_id = 'post-media' AND 
+    auth.role() = 'authenticated' 
+);
+
+DROP POLICY IF EXISTS "Owner manage post-media" ON storage.objects;
+CREATE POLICY "Owner manage post-media" ON storage.objects FOR ALL USING ( 
+    bucket_id = 'post-media' AND 
+    owner = auth.uid() 
+);

@@ -103,7 +103,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 setBudgetMin(data.budget_min?.toString() || '');
                 setBudgetMax(data.budget_max?.toString() || '');
                 setIsPublic(data.is_public || false);
-                setImageUrl((data as any).image_url || null);
+                setImageUrl(data.image_url || null);
             }
         } catch (error: any) {
             toast({
@@ -141,7 +141,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
 
             const { error: updateError } = await supabase
                 .from('projects')
-                .update({ image_url: publicUrl } as any)
+                .update({ image_url: publicUrl })
                 .eq('id', projectId);
 
             if (updateError) throw updateError;
@@ -231,7 +231,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             if (spaces && spaces.length > 0) {
                 const spaceIds = spaces.map(s => s.id);
                 const { error } = await supabase
-                    .from('project_space_messages' as any)
+                    .from('project_space_messages')
                     .delete()
                     .in('project_space_id', spaceIds);
                 

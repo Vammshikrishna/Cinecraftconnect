@@ -1,4 +1,4 @@
--- 39_identity_hardening.sql
+ -- 39_identity_hardening.sql
 -- Fixes issues with profile metadata synchronization and RLS permissions
 
 -- 1. Enhance handle_new_user trigger to be more robust with metadata keys

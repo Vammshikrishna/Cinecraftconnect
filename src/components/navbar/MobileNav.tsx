@@ -15,6 +15,7 @@ import DiscussionRoomIcon from "@/components/icons/DiscussionRoomIcon";
 import VendorIcon from "@/components/icons/VendorIcon";
 import StudioPageIcon from "@/components/icons/StudioPageIcon";
 import { useKeyboard } from "@/contexts/KeyboardContext";
+import { useScrollDirection } from "@/hooks/useScrollDirection";
 
 export function MobileNav() {
   const location = useLocation();
@@ -22,8 +23,16 @@ export function MobileNav() {
   const { isFan } = useAccountType();
   const { hasUnreadDiscussions, hasUnreadProjects } = useUnreadMessages();
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
+  const scrollDirection = useScrollDirection();
+  
+  // Define chat-related paths where we DON'T want to hide the navbar on scroll
+  const isChatPage = location.pathname.startsWith('/messages') || 
+                    location.pathname.startsWith('/dm/') || 
+                    location.pathname.startsWith('/discussion-rooms/') ||
+                    location.pathname.endsWith('/space');
 
-  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen;
+  const isScrollingDown = !isChatPage && scrollDirection === 'down';
+  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen && !isScrollingDown;
 
   const isActive = (path: string) => {
     if (path === "/") {

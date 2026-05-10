@@ -12,9 +12,9 @@ interface AppLogoProps {
 }
 
 const sizeMap = {
-  sm: { icon: 24, text: 'text-base', gap: 'gap-1.5' },
-  md: { icon: 32, text: 'text-xl', gap: 'gap-2.5' },
-  lg: { icon: 48, text: 'text-3xl', gap: 'gap-3' },
+  sm: { icon: 20, text: 'text-sm', gap: 'gap-1' },
+  md: { icon: 28, text: 'text-base', gap: 'gap-1.5' },
+  lg: { icon: 40, text: 'text-2xl', gap: 'gap-2' },
 };
 
 /**
@@ -37,7 +37,7 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '' }: App
     <span className={`flex items-center ${s.gap} group ${className}`}>
       {LogoIcon}
       {showText && (
-        <span className={`text-base sm:text-lg md:${s.text} font-black tracking-tight whitespace-nowrap select-none flex items-center gap-1 sm:gap-1.5`}>
+        <span className={`text-[13px] sm:text-base md:${s.text} font-black tracking-tight whitespace-nowrap select-none flex items-center gap-0.5 sm:gap-1`}>
           <span className="text-foreground">CineCraft</span>
           <span className="text-primary">Connect</span>
         </span>

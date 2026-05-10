@@ -56,7 +56,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
 
         try {
             const [memberSpacesRes, ownedProjectsRes, roomsRes] = await Promise.all([
-                supabase.from('project_space_members' as any).select('project_space_id').eq('user_id', user.id),
+                supabase.from('project_space_members').select('project_space_id').eq('user_id', user.id),
                 supabase.from('projects').select('id').eq('creator_id', user.id),
                 supabase.from('discussion_rooms').select('id, title')
             ]);
@@ -81,13 +81,13 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             }
 
             // 2. Process Project Spaces
-            const knownSpaceIds = memberSpacesRes.data?.map((m: any) => m.project_space_id) || [];
-            const ownedProjectIds = ownedProjectsRes.data?.map((p: any) => p.id) || [];
+            const knownSpaceIds = memberSpacesRes.data?.map(m => m.project_space_id) || [];
+            const ownedProjectIds = ownedProjectsRes.data?.map(p => p.id) || [];
 
             let allSpaceIds = [...knownSpaceIds];
             if (ownedProjectIds.length > 0) {
                 const { data: spaces } = await supabase
-                    .from('project_spaces' as any)
+                    .from('project_spaces')
                     .select('id')
                     .in('project_id', ownedProjectIds);
                 if (spaces) allSpaceIds = Array.from(new Set([...allSpaceIds, ...spaces.map(s => s.id)]));
@@ -95,7 +95,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
 
             if (allSpaceIds.length > 0) {
                 const { data: spacesData } = await supabase
-                    .from('project_spaces' as any)
+                    .from('project_spaces')
                     .select('id, name, projects!inner(title)')
                     .in('id', allSpaceIds);
 
@@ -154,20 +154,20 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
 
             if (target.type === 'user') {
                 const channelId = [user.id, target.id].sort().join('-');
-                await supabase.from('direct_messages' as any).insert({
+                await supabase.from('direct_messages').insert({
                     content: messageContent,
                     sender_id: user.id,
                     channel_id: channelId,
-                    receiver_id: target.id
+                    recipient_id: target.id
                 });
             } else if (target.type === 'project') {
-                await supabase.from('project_space_messages' as any).insert({
+                await supabase.from('project_space_messages').insert({
                     project_space_id: target.id,
                     user_id: user.id,
                     content: messageContent
                 });
             } else if (target.type === 'room') {
-                await supabase.from('room_messages' as any).insert({
+                await supabase.from('room_messages').insert({
                     room_id: target.id,
                     user_id: user.id,
                     content: messageContent

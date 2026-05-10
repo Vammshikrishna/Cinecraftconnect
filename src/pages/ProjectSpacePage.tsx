@@ -1,4 +1,5 @@
 
+
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
@@ -53,13 +54,13 @@ const ProjectSpacePage = () => {
           .maybeSingle();
 
         if (projectError) throw projectError;
-        
+
         if (!projectData) {
           setError('Project not found');
           setLoading(false);
           return;
         }
-        
+
         setProject({ id: projectData.id, title: projectData.title, description: projectData.description });
 
       } catch (err) {

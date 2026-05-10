@@ -35,25 +35,24 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
             try {
                 const { data: postData } = await supabase
                     .from('posts')
-                    .select('content, media_url, media_items, profiles(username, full_name, avatar_url, is_verified)')
+                    .select('content, media_url, profiles(username, full_name, avatar_url, is_verified)')
                     .eq('id', postId)
                     .single();
 
                 if (postData) {
                     if (postData.profiles) {
-                        const profile = postData.profiles as any;
+                        const profile = Array.isArray(postData.profiles) ? postData.profiles[0] : postData.profiles;
                         setAuthor({
-                            username: profile.username,
-                            full_name: profile.full_name,
-                            avatar_url: profile.avatar_url,
-                            is_verified: profile.is_verified
+                            username: profile?.username || null,
+                            full_name: profile?.full_name || null,
+                            avatar_url: profile?.avatar_url || null,
+                            is_verified: profile?.is_verified || false
                         });
                     }
 
                     if (!text) setText(postData.content);
                     if (!preview) {
-                        const mediaItems = postData.media_items as any[];
-                        setPreview(postData.media_url || (mediaItems && mediaItems[0]?.url));
+                        setPreview(postData.media_url || undefined);
                     }
                 }
             } catch (err) {
@@ -72,13 +71,13 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         return videoExtensions.some(ext => url.toLowerCase().includes(ext)) || url.includes('video');
     };
 
-    const displayName = author?.full_name || author?.username || 'User';
+    // const displayName = author?.full_name || author?.username || 'User';
 
     return (
         <>
             <div
                 onClick={() => setIsOpen(true)}
-                className="block w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
+                className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
             >
                 {/* Header Section */}
                 <div className="p-3 flex items-center gap-2.5 bg-muted/50 backdrop-blur-md border-b border-white/10">

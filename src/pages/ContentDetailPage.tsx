@@ -64,7 +64,7 @@ const ContentDetailPage = () => {
                     .eq('tmdb_id', parseInt(id))
                     .maybeSingle();
 
-                if (ratingData) setUserRating((ratingData as any).rating);
+                if (ratingData) setUserRating(ratingData.rating);
             }
 
             // Load reviews

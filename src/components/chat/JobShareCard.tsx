@@ -18,15 +18,15 @@ interface JobShareCardProps {
     type?: string;
 }
 
-export const JobShareCard = ({ 
-    jobId, 
-    title: initialTitle, 
-    company: initialCompany, 
-    location: initialLocation, 
-    logoUrl: initialLogo, 
-    description: initialDesc, 
-    salary: initialSalary, 
-    type: initialType 
+export const JobShareCard = ({
+    jobId,
+    title: initialTitle,
+    company: initialCompany,
+    location: initialLocation,
+    logoUrl: initialLogo,
+    description: initialDesc,
+    salary: initialSalary,
+    type: initialType
 }: JobShareCardProps) => {
     const { isFan } = useAccountType();
     const [title, setTitle] = useState(initialTitle);
@@ -52,11 +52,16 @@ export const JobShareCard = ({
                 if (data && !error) {
                     setTitle(data.title);
                     setCompany(data.profiles?.full_name || data.profiles?.username || 'Studio');
-                    setLocation(data.location);
-                    setLogoUrl(data.profiles?.avatar_url);
-                    setDescription(data.description);
-                    setSalary(data.salary_range);
-                    setType(data.job_type);
+                    setLocation(data.location || undefined);
+                    setLogoUrl(data.profiles?.avatar_url || undefined);
+                    setDescription(data.description || undefined);
+                    const salaryText = data.salary_min && data.salary_max 
+                        ? `₹${data.salary_min.toLocaleString()} - ₹${data.salary_max.toLocaleString()}`
+                        : data.salary_min 
+                            ? `₹${data.salary_min.toLocaleString()}+` 
+                            : undefined;
+                    setSalary(salaryText);
+                    setType(data.type || undefined);
                 }
             } catch (err) {
                 console.error('Error self-healing job card:', err);
@@ -67,9 +72,9 @@ export const JobShareCard = ({
     }, [jobId, initialDesc, initialSalary]);
 
     return (
-        <Link 
-            to={`/jobs/${jobId}`} 
-            className="block w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+        <Link
+            to={`/jobs/${jobId}`}
+            className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
         >
             {/* Header Section - Identity & Urgency */}
             <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">

@@ -34,18 +34,19 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
             try {
                 const { data, error } = await supabase
                     .from('discussion_rooms')
-                    .select('*')
+                    .select('*, room_categories(name)')
                     .eq('id', roomId)
                     .single();
 
                 if (data && !error) {
                     setTitle(data.title);
-                    setDescription(data.description);
-                    setCategory(data.category);
+                    setDescription(data.description || undefined);
+                    const categoryData = (data as any).room_categories;
+                    setCategory(categoryData?.name || undefined);
                     setMemberCount(data.member_count || 0);
-                    setRoomType(data.room_type);
-                    setIsActive(data.is_active);
-                    setCreatedAt(data.created_at);
+                    setRoomType((data.room_type as any) || 'public');
+                    setIsActive(data.is_active || false);
+                    setCreatedAt(data.created_at || undefined);
                 }
             } catch (err) {
                 console.error('Error self-healing discussion card:', err);
@@ -58,7 +59,7 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
     return (
         <Link
             to={`/discussion-rooms/${roomId}`}
-            className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
         >
             {/* Compact Header */}
             <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">

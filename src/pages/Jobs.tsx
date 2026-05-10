@@ -71,10 +71,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
       // Apply Filters
       if (filterType !== 'all') {
-        query = query.eq('type', filterType as any);
+        query = query.eq('type', filterType);
       }
       if (filterExperience !== 'all') {
-        query = query.eq('experience_level', filterExperience as any);
+        query = query.eq('experience_level', filterExperience);
       }
 
       // Apply Sorting
@@ -113,7 +113,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
         .select('job_id')
         .eq('applicant_id', user.id);
       if (error) throw error;
-      const appliedIds = data.map(app => app.job_id);
+      const appliedIds = data.map(app => app.job_id).filter((id): id is string => !!id);
       setAppliedJobIds(appliedIds);
     } catch (error) {
       console.error('Error fetching applications:', error);
