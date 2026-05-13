@@ -157,19 +157,23 @@ const App = () => {
                 <SystemStatusBanner />
                 <Toaster />
                 <GlobalFeatures />
-                <AuthDebugPanel />
-                <VirtualizationDebugPanel />
-                <WorkerDebugPanel />
-                <MediaDebugPanel />
-                <TabCoordinationDebugPanel />
-                <PresenceDebugPanel />
-                <NetworkDebugPanel />
-                <RuntimeDebugPanel />
-                <PredictiveDebugPanel />
-                <EntropyDebugPanel />
-                <MasterRuntimeDashboard />
-                <VideoDebugPanel />
-                <ProductDebugPanel />
+                {import.meta.env.DEV && (
+                  <>
+                    <AuthDebugPanel />
+                    <VirtualizationDebugPanel />
+                    <WorkerDebugPanel />
+                    <MediaDebugPanel />
+                    <TabCoordinationDebugPanel />
+                    <PresenceDebugPanel />
+                    <NetworkDebugPanel />
+                    <RuntimeDebugPanel />
+                    <PredictiveDebugPanel />
+                    <EntropyDebugPanel />
+                    <MasterRuntimeDashboard />
+                    <VideoDebugPanel />
+                    <ProductDebugPanel />
+                  </>
+                )}
                 <ThemeSyncPrompt />
                 {!isLoading && (() => {
                   const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
