@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -11,15 +11,15 @@ interface BackButtonProps {
 }
 
 export const BackButton = ({ to, label = "BACK", className, onClick }: BackButtonProps) => {
-  const navigate = useNavigate();
+  const { goBack, push } = useAppNavigation();
 
   const handleClick = () => {
     if (onClick) {
       onClick();
     } else if (to) {
-      navigate(to, { state: { noScroll: true } });
+      push(to, { noScroll: true });
     } else {
-      navigate(-1);
+      goBack();
     }
   };
 

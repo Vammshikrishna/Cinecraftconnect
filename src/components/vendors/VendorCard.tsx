@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { LazyImage } from '@/components/performance/LazyImage';
 import { Vendor } from '@/types/marketplace';
 import { Badge } from '@/components/ui/badge';
@@ -11,8 +11,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useVendorMutation } from '@/hooks/mutations/useVendorMutation';
 
 interface VendorCardProps {
     vendor: Vendor;
@@ -20,11 +20,14 @@ interface VendorCardProps {
 }
 
 export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
+    const { push } = useAppNavigation();
     const logoUrl = vendor.logo_url || undefined;
     const { isAdmin } = useAppRole();
     const { toast } = useToast();
     const averageRating = vendor.average_rating || 0;
     const reviewCount = vendor.review_count || 0;
+
+    const { deleteVendor } = useVendorMutation();
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.preventDefault();
@@ -33,8 +36,7 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
         if (!confirm('Are you sure you want to delete this vendor?')) return;
         
         try {
-            const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
-            if (error) throw error;
+            await deleteVendor(vendor.id);
             toast({ title: "Success", description: "Vendor deleted successfully" });
         } catch (error: any) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -42,7 +44,7 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
     };
 
     return (
-        <Link to={`/vendors/${vendor.id}`} className="no-underline block group h-full relative">
+        <div onClick={() => push(`/vendors/${vendor.id}`)} className="no-underline block group h-full relative cursor-pointer">
             <div className="glass-card-premium h-full p-6 flex flex-col gap-5 transition-transform duration-500 hover:-translate-y-2">
                 {onDismiss && (
                     <button 
@@ -150,6 +152,6 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                 </div>
 
             </div>
-        </Link>
+        </div>
     );
 };

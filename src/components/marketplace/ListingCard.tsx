@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { LazyImage } from '@/components/performance/LazyImage';
 import { MarketplaceListing } from '@/types/marketplace';
 import { MapPin, Star, User, MoreVertical, Trash2, X } from 'lucide-react';
@@ -25,6 +25,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     const { isInternal } = useAppRole();
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const { push } = useAppNavigation();
     
     const isOwner = user?.id === listing.user_id;
     const canManage = isOwner || isInternal;
@@ -56,7 +57,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
     const reviewCount = listing.review_count || 0;
 
     return (
-        <Link to={`/marketplace/${listing.id}`} className="no-underline block group h-full">
+        <div onClick={() => push(`/marketplace/${listing.id}`)} className="no-underline block group h-full cursor-pointer">
             <div className="glass-card-premium h-full flex flex-col transition-transform duration-500 hover:-translate-y-2">
                 {/* Image Section */}
                 <div className="relative aspect-video overflow-hidden bg-muted flex-shrink-0">
@@ -171,6 +172,6 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                 </div>
 
             </div>
-        </Link>
+        </div>
     );
 };

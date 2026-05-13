@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Heart, MessageCircle, Share2, ChevronLeft, ChevronRight, MoreVertical, X } from 'lucide-react';
@@ -13,27 +13,57 @@ import { useToast } from '@/hooks/use-toast';
 import { JobShareCard } from './JobShareCard';
 import { FormattedText } from '@/components/ui/formatted-text';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import VerificationBadge from '../common/VerificationBadge';
+import { useRealtimePostStats } from '@/hooks/useRealtimePostStats';
+import { getOptimizedImage } from '@/utils/image-optimization';
 
 interface PostDialogProps {
     postId: string;
     isOpen: boolean;
     onOpenChange: (open: boolean) => void;
+    initialData?: any;
+    initialIndex?: number;
 }
 
-export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) => {
-    const [post, setPost] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-    const [viewIndex, setViewIndex] = useState(0);
+export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialIndex = 0 }: PostDialogProps) => {
+    const [post, setPost] = useState<any>(initialData || null);
+    const [loading, setLoading] = useState(!initialData);
+    const [viewIndex, setViewIndex] = useState(initialIndex);
     const [isLiking, setIsLiking] = useState(false);
     const { user } = useAuth();
     const { toast } = useToast();
     const [showShareSheet, setShowShareSheet] = useState(false);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    const scrollToComments = () => {
+        if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({
+                top: scrollContainerRef.current.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
+    };
+
+    // Real-time metrics
+    const { likeCount: displayLikeCount } = useRealtimePostStats(
+        postId, 
+        post?.like_count || 0, 
+        post?.comment_count || 0
+    );
 
     useEffect(() => {
         if (isOpen && postId) {
             fetchPost();
+            setViewIndex(initialIndex);
         }
-    }, [isOpen, postId]);
+    }, [isOpen, postId, initialIndex]);
+
+    // Sync with initialData if it changes (e.g. liked in feed)
+    useEffect(() => {
+        if (initialData) {
+            setPost(initialData);
+        }
+    }, [initialData]);
 
     const fetchPost = async () => {
         setLoading(true);
@@ -47,14 +77,28 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                         full_name,
                         username,
                         avatar_url,
-                        craft
+                        craft,
+                        is_verified
                     )
                 `)
                 .eq('id', postId)
                 .single();
 
             if (error) throw error;
-            setPost(data);
+
+            // Check if current user has liked this post
+            let userHasLiked = false;
+            if (user) {
+                const { data: likeData } = await supabase
+                    .from('post_likes')
+                    .select('id')
+                    .eq('post_id', postId)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                userHasLiked = !!likeData;
+            }
+
+            setPost({ ...data, user_has_liked: userHasLiked });
         } catch (error) {
             console.error('Error fetching post:', error);
         } finally {
@@ -65,12 +109,24 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
     const handleLike = async () => {
         if (!user || isLiking) return;
         setIsLiking(true);
+        
+        // Optimistic update
+        const isCurrentlyLiked = post?.user_has_liked || false;
+        setPost((prev: any) => ({
+            ...prev,
+            user_has_liked: !isCurrentlyLiked,
+            like_count: (prev?.like_count || 0) + (isCurrentlyLiked ? -1 : 1)
+        }));
+
         try {
-            const isCurrentlyLiked = false; // We should probably fetch this, but for now...
             await togglePostLike(postId, isCurrentlyLiked);
-            // Refresh post data to show new count
-            fetchPost();
         } catch (error) {
+            // Rollback
+            setPost((prev: any) => ({
+                ...prev,
+                user_has_liked: isCurrentlyLiked,
+                like_count: (prev?.like_count || 0) + (isCurrentlyLiked ? 1 : -1)
+            }));
             toast({ title: "Error", description: "Failed to like post", variant: "destructive" });
         } finally {
             setIsLiking(false);
@@ -82,9 +138,13 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
     if (loading || !post) {
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="max-w-4xl bg-black/90 backdrop-blur-xl border-none h-[80vh] flex items-center justify-center">
+                <DialogContent className="max-w-4xl bg-black border-none h-[80vh] flex flex-col items-center justify-center p-0 overflow-hidden rounded-3xl">
                     <DialogTitle className="sr-only">Loading Post</DialogTitle>
-                    <div className="text-white animate-pulse">Loading Premium Post...</div>
+                    <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black animate-pulse" />
+                    <div className="relative z-10 flex flex-col items-center gap-4">
+                        <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                        <div className="text-white/40 font-black tracking-[0.3em] text-[10px] uppercase">CineCraft Premium</div>
+                    </div>
                 </DialogContent>
             </Dialog>
         );
@@ -98,7 +158,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent aria-describedby={undefined} hideClose={true} className="max-w-7xl w-[95vw] sm:w-[95vw] md:w-[95vw] lg:w-full h-[98vh] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl z-[9999]">
+            <DialogContent aria-describedby={undefined} hideClose={true} className="max-w-7xl w-[95vw] sm:w-[95vw] md:w-[95vw] lg:w-full h-[98vh] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
                 <VisuallyHidden>
                     <DialogTitle>Media Viewer for {authorName}'s Post</DialogTitle>
                     <DialogDescription>Viewing images and interaction panel</DialogDescription>
@@ -108,11 +168,14 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                 <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-white dark:bg-zinc-900 flex items-center justify-between gap-2 z-[60] shrink-0 min-w-0">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                         <Avatar className="h-10 w-10 shrink-0 ring-2 ring-black/5 shadow-lg">
-                            <AvatarImage src={author.avatar_url || undefined} />
+                            <AvatarImage src={getOptimizedImage(author.avatar_url || '', { width: 80, height: 80 }) || undefined} />
                             <AvatarFallback className="bg-primary/10 text-primary font-bold">{initials}</AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col flex-1 min-w-0 font-outfit">
-                            <p className="font-black text-[15px] tracking-tight text-foreground truncate uppercase">{authorName}</p>
+                            <div className="flex items-center gap-1 truncate">
+                                <p className="font-black text-[15px] tracking-tight text-foreground truncate uppercase">{authorName}</p>
+                                {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                            </div>
                             <p className="text-[10px] text-muted-foreground uppercase tracking-[0.25em] font-black opacity-80 -mt-0.5 truncate">{author.craft || 'Creator'}</p>
                         </div>
                     </div>
@@ -139,7 +202,11 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                                 {currentItem.type === 'video' ? (
                                     <video src={currentItem.url} controls autoPlay className="w-full h-full object-contain" />
                                 ) : (
-                                    <img src={currentItem.url} alt="Post content" className="w-full h-full object-contain" />
+                                    <img 
+                                        src={getOptimizedImage(currentItem.url, { width: 1200 })} 
+                                        alt="Post content" 
+                                        className="w-full h-full object-contain" 
+                                    />
                                 )}
                             </div>
                         ) : post.content.includes('JOB_SHARE::') ? (
@@ -215,11 +282,14 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                         <div className="hidden lg:flex p-5 border-b border-border/10 items-center justify-between bg-card">
                             <div className="flex items-center gap-3">
                                 <Avatar className="h-11 w-11 ring-2 ring-primary/20">
-                                    <AvatarImage src={author.avatar_url || undefined} />
+                                    <AvatarImage src={getOptimizedImage(author.avatar_url || '', { width: 100, height: 100 }) || undefined} />
                                     <AvatarFallback className="bg-primary/10 text-primary font-bold">{initials}</AvatarFallback>
                                 </Avatar>
                                 <div>
-                                    <p className="font-bold text-sm tracking-tight">{authorName}</p>
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="font-bold text-sm tracking-tight">{authorName}</p>
+                                        {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
+                                    </div>
                                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Creator'}</p>
                                 </div>
                             </div>
@@ -233,31 +303,39 @@ export const PostDialog = ({ postId, isOpen, onOpenChange }: PostDialogProps) =>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4 sm:gap-6">
                                     <Button variant="ghost" size="icon" onClick={handleLike} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                                        <Heart className={`h-6 w-6 sm:h-7 sm:w-7 ${post.like_count > 0 ? 'fill-red-500 text-red-500' : ''}`} />
+                                        <Heart className={`h-6 w-6 sm:h-7 sm:w-7 transition-all duration-300 ${post.user_has_liked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        onClick={scrollToComments}
+                                        className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto"
+                                    >
                                         <MessageCircle className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
                                     <Button variant="ghost" size="icon" onClick={() => setShowShareSheet(true)} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
                                         <Share2 className="h-6 w-6 sm:h-7 sm:w-7" />
                                     </Button>
                                 </div>
-                                <p className="font-black text-sm sm:text-base tracking-tight">{post.like_count || 0} Likes</p>
+                                <p className="font-black text-sm sm:text-base tracking-tight">{displayLikeCount || 0} Likes</p>
                             </div>
                         </div>
 
                         {/* Content & Comments */}
-                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar bg-background">
+                        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar bg-background">
                             <div className="flex gap-3.5 items-start">
                                 <Avatar className="h-8 w-8 shrink-0">
-                                    <AvatarImage src={author.avatar_url || undefined} />
+                                    <AvatarImage src={getOptimizedImage(author.avatar_url || '', { width: 64, height: 64 }) || undefined} />
                                     <AvatarFallback>{initials}</AvatarFallback>
                                 </Avatar>
                                 <div className="flex-1 min-w-0">
                                     <div className="text-[14px] leading-relaxed">
-                                        <span className="font-bold text-foreground mr-1.5 tracking-tight hover:underline cursor-pointer">
-                                            {author?.username || authorName.toLowerCase().replace(/\s/g, '')}
+                                    <div className="inline-flex items-center gap-1 mr-1.5">
+                                        <span className="font-bold text-foreground tracking-tight hover:underline cursor-pointer">
+                                            {authorName}
                                         </span>
+                                        {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                                    </div>
                                         {post.content.includes('JOB_SHARE::') ? (
                                             (() => {
                                                 try {

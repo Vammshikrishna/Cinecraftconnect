@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import EnhancedRealTimeChat from '@/components/chat/EnhancedRealTimeChat';
@@ -16,9 +17,11 @@ const ChatPage = () => {
   const { user } = useAuth();
   const { conversationId, userId } = useParams<{ conversationId: string; userId: string }>();
   const activeId = conversationId || userId;
-  const navigate = useNavigate();
-  const [partner, setPartner] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { push } = useAppNavigation();
+  const location = useLocation();
+  const initialState = location.state as { partner?: Profile } | null;
+  const [partner, setPartner] = useState<Profile | null>(initialState?.partner || null);
+  const [loading, setLoading] = useState(!initialState?.partner);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,6 +32,7 @@ const ChatPage = () => {
     }
 
     const fetchPartnerProfile = async (partnerId: string) => {
+      // If we have initial data, we can skip or do a background refresh
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, is_verified')
@@ -74,7 +78,7 @@ const ChatPage = () => {
         partnerName={partner.full_name}
         partnerAvatarUrl={partner.avatar_url}
         partnerIsVerified={partner.is_verified}
-        onBackClick={() => navigate('/messages', { state: { noScroll: true } })}
+        onBackClick={() => push('/messages', { noScroll: true })}
       />
     </div>
   );

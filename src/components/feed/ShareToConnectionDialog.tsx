@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,25 +75,14 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
             const postLink = `${window.location.origin}/feed?post=${postId}`;
             const messageContent = `Check out this post: ${postLink}`;
 
-            const { error: sendError } = await supabase.from('direct_messages' as any).insert({
+            const { error: sendError } = await supabase.from('direct_messages').insert({
                 content: messageContent,
                 sender_id: user.id,
                 channel_id: channelId,
                 receiver_id: recipientId
             });
 
-            if (sendError && sendError.message?.includes('receiver_id')) {
-                // Fallback to legacy recipient_id
-                const { error: fallbackError } = await supabase.from('direct_messages' as any).insert({
-                    content: messageContent,
-                    sender_id: user.id,
-                    channel_id: channelId,
-                    recipient_id: recipientId
-                });
-                if (fallbackError) throw fallbackError;
-            } else if (sendError) {
-                throw sendError;
-            }
+            if (sendError) throw sendError;
 
             setSentTo(prev => new Set(prev).add(recipientId));
             toast({

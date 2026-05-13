@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import {
   MessageCircle,
   CheckSquare,
@@ -53,7 +53,7 @@ export const ProjectSpace = ({
   projectTitle,
   projectDescription,
 }: ProjectSpaceProps) => {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { isInternal, loading: roleLoading } = useAppRole();
   const { toast } = useToast();
@@ -245,9 +245,9 @@ export const ProjectSpace = ({
 
   useEffect(() => {
     if (!checkingAccess && !roleLoading && userRole === 'guest' && requestStatus !== 'approved' && !isInternal) {
-      navigate(`/projects/${projectId}`, { replace: true });
+      push(`/projects/${projectId}`, { noScroll: true });
     }
-  }, [checkingAccess, roleLoading, userRole, requestStatus, projectId, navigate, isInternal]);
+  }, [checkingAccess, roleLoading, userRole, requestStatus, projectId, push, isInternal]);
 
   const [requestNote, setRequestNote] = useState('');
 
@@ -364,36 +364,47 @@ export const ProjectSpace = ({
 
 
     // ... (rest of renderContent switch)
-    switch (activeSection) {
-      case 'call':
-        return (
-          <div id="project-call-container" className="flex-1 w-full bg-[#09090b] relative">
-             {/* LiveKitCallContainer portals here */}
-          </div>
-        );
-      case 'chat':
-        return <ProjectChatInterface projectId={projectId} />;
-      case 'tasks':
-        return <Tasks project_id={resolvedSpaceId} />; // Uses project_space_id
-      case 'files':
-        return <Files project_id={resolvedSpaceId} />; // Schema shows it references project_spaces(id)
-      case 'call-sheet':
-        return <CallSheet project_id={resolvedSpaceId} />; // Schema shows it references project_spaces(id)
-      case 'shot-list':
-        return <ShotList project_id={resolvedSpaceId} />; // Aligned with the project-space pattern
-      case 'legal-docs':
-        return <LegalDocs project_id={resolvedSpaceId} />; // Table uses project_id referencing project_spaces
-      case 'budget-sched':
-        return <BudgetSched project_id={resolvedSpaceId} />; // Table uses project_id referencing project_spaces
-      case 'team':
-        return <Team project_id={resolvedSpaceId} />; // Table uses project_id renamed to project_space_id
-      case 'applicants':
-        return <ProjectApplicants projectId={projectId} />;
-      case 'settings':
-        return <ProjectSettings projectId={projectId} />;
-      default:
-        return <div className="flex items-center justify-center h-full"><p className="text-muted-foreground">Select a section</p></div>;
-    }
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden relative">
+        {/* Persistent Sections (Hidden but Mounted) */}
+        <ProjectChatInterface 
+          projectId={projectId} 
+          isActive={activeSection === 'chat'}
+        />
+        
+        <div className={cn("flex-1 flex flex-col", activeSection !== 'call' && "hidden")}>
+           <div id="project-call-container" className="flex-1 w-full bg-[#09090b] relative">
+              {/* LiveKitCallContainer portals here */}
+           </div>
+        </div>
+
+        {/* Dynamic Sections (Standard Switch) */}
+        {(() => {
+          switch (activeSection) {
+            case 'tasks':
+              return <Tasks project_id={resolvedSpaceId} />;
+            case 'files':
+              return <Files project_id={resolvedSpaceId} />;
+            case 'call-sheet':
+              return <CallSheet project_id={resolvedSpaceId} />;
+            case 'shot-list':
+              return <ShotList project_id={resolvedSpaceId} />;
+            case 'legal-docs':
+              return <LegalDocs project_id={resolvedSpaceId} />;
+            case 'budget-sched':
+              return <BudgetSched project_id={resolvedSpaceId} />;
+            case 'team':
+              return <Team project_id={resolvedSpaceId} />;
+            case 'applicants':
+              return <ProjectApplicants projectId={projectId} />;
+            case 'settings':
+              return <ProjectSettings projectId={projectId} />;
+            default:
+              return null;
+          }
+        })()}
+      </div>
+    );
   };
 
   if (checkingAccess || roleLoading) {
@@ -408,7 +419,7 @@ export const ProjectSpace = ({
     return (
       <div className="h-screen w-screen bg-background flex flex-col p-4">
         {/* Guest View Dialog */}
-        <Dialog open={true} onOpenChange={(open) => { if (!open) navigate('/projects', { state: { noScroll: true } }); }}>
+        <Dialog open={true} onOpenChange={(open) => { if (!open) push('/projects', { noScroll: true }); }}>
           <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
             <DialogHeader className="sr-only">
               <DialogTitle>Access Restricted</DialogTitle>
@@ -459,7 +470,7 @@ export const ProjectSpace = ({
               )}
             </div>
             <div className="flex flex-row justify-end space-x-2 w-full">
-              <Button variant="outline" onClick={() => navigate('/projects', { state: { noScroll: true } })} className="flex-1">
+              <Button variant="outline" onClick={() => push('/projects', { noScroll: true })} className="flex-1">
                 Cancel
               </Button>
               {requestStatus === 'none' ? (
@@ -497,7 +508,7 @@ export const ProjectSpace = ({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate('/projects', { state: { noScroll: true } })}
+            onClick={() => push('/projects', { noScroll: true })}
             className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -585,7 +596,7 @@ export const ProjectSpace = ({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate('/projects', { state: { noScroll: true } })}
+              onClick={() => push('/projects', { noScroll: true })}
               className="h-8 w-8 rounded-full hover:bg-white/10 shrink-0 text-muted-foreground hover:text-primary transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />

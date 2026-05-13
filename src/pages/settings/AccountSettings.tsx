@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const AccountSettings = () => {
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { signOut, user } = useAuth();
     const { toast } = useToast();
     const [isSigningOut, setIsSigningOut] = useState(false);
@@ -117,7 +118,7 @@ const AccountSettings = () => {
                 title: "Signed out successfully",
                 description: "You have been signed out of your account.",
             });
-            navigate('/auth');
+            push('/auth', { noScroll: true });
         } catch (error) {
             toast({
                 title: "Error",
@@ -154,7 +155,7 @@ const AccountSettings = () => {
 
             // Log out and redirect
             await signOut();
-            navigate('/auth');
+            push('/auth', { noScroll: true });
             
         } catch (error: any) {
             console.error('Error deleting account:', error);

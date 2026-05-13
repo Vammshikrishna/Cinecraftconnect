@@ -18,14 +18,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/common/PageHeader';
 
 import { useAccountType } from '@/hooks/useAccountType';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import SEO from '@/components/common/SEO';
 import { useAppRole } from '@/hooks/useAppRole';
 
 const Marketplace = () => {
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { isFan } = useAccountType();
     const { isInternal } = useAppRole();
     
@@ -38,9 +38,9 @@ const Marketplace = () => {
     // Redirect fans
     useEffect(() => {
         if (isFan) {
-            navigate('/pricing');
+            push('/pricing');
         }
-    }, [isFan, navigate]);
+    }, [isFan, push]);
 
     if (!flagsLoading && !isEnabled('marketplace_enabled')) {
         return (

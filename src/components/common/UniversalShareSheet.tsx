@@ -158,7 +158,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                     content: messageContent,
                     sender_id: user.id,
                     channel_id: channelId,
-                    recipient_id: target.id
+                    receiver_id: target.id
                 });
             } else if (target.type === 'project') {
                 await supabase.from('project_space_messages').insert({

@@ -357,7 +357,7 @@ export type Database = {
           created_at: string
           id: string
           is_read: boolean | null
-          recipient_id: string
+          receiver_id: string
           sender_id: string
           channel_id: string | null
           reply_to_id: string | null
@@ -372,7 +372,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_read?: boolean | null
-          recipient_id?: string
+          receiver_id?: string
           sender_id: string
           channel_id?: string | null
           reply_to_id?: string | null
@@ -387,7 +387,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_read?: boolean | null
-          recipient_id?: string
+          receiver_id?: string
           sender_id?: string
           channel_id?: string | null
           reply_to_id?: string | null

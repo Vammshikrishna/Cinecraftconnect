@@ -111,6 +111,7 @@ export const useHomeFeed = () => {
             return lastPage[lastPage.length - 1].created_at;
         },
         staleTime: 1000 * 60 * 2,
+        placeholderData: (previousData) => previousData,
     });
 
     // 3. User Likes Query
@@ -141,20 +142,26 @@ export const useHomeFeed = () => {
 
         const postsChannel = supabase
             .channel('posts_updates')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts' }, (payload: any) => {
-                queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
-                    if (!old) return old;
-                    return {
-                        ...old,
-                        pages: old.pages.map((page: any[]) =>
-                            page.map((post: any) =>
-                                post.id === payload.new.id
-                                    ? { ...post, ...payload.new }
-                                    : post
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload: any) => {
+                if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
+                    // Refetch the whole feed to get joined data (author profiles, etc.)
+                    queryClient.invalidateQueries({ queryKey: ['home-feed-posts', user.id] });
+                    queryClient.invalidateQueries({ queryKey: ['home-feed-static', user.id] });
+                } else if (payload.eventType === 'UPDATE') {
+                    queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
+                        if (!old) return old;
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any[]) =>
+                                page.map((post: any) =>
+                                    post.id === payload.new.id
+                                        ? { ...post, ...payload.new }
+                                        : post
+                                )
                             )
-                        )
-                    };
-                });
+                        };
+                    });
+                }
             })
             .subscribe();
 
@@ -191,7 +198,8 @@ export const useHomeFeed = () => {
 
     return {
         data: combinedData,
-        isLoading: staticDataQuery.isLoading || infinitePostsQuery.isLoading,
+        isLoading: (staticDataQuery.isLoading && !staticDataQuery.data) || (infinitePostsQuery.isLoading && !infinitePostsQuery.data),
+        isFetching: staticDataQuery.isFetching || infinitePostsQuery.isFetching,
         isError: staticDataQuery.isError || infinitePostsQuery.isError,
         refetch: () => {
             staticDataQuery.refetch();

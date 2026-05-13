@@ -25,5 +25,26 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": "off",
     },
+  },
+  {
+    files: [
+      "src/components/**/*.{ts,tsx}",
+      "src/pages/**/*.{ts,tsx}",
+      "src/screens/**/*.{ts,tsx}",
+      "src/widgets/**/*.{ts,tsx}"
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/integrations/supabase/client",
+              message: "[ARCHITECTURE VIOLATION] Direct Supabase access is forbidden in the UI layer. Use a mutation adapter (e.g. usePostMutation) from src/hooks/mutations or a query hook instead.",
+            },
+          ],
+        },
+      ],
+    },
   }
 );

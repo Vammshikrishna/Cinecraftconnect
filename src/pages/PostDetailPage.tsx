@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { BackButton } from '@/components/common/BackButton';
 import PostCard from '@/components/feed/PostCard';
@@ -8,7 +9,7 @@ import { formatDistanceToNow } from 'date-fns';
 
 const PostDetailPage = () => {
     const { postId } = useParams<{ postId: string }>();
-    const navigate = useNavigate();
+    const { goBack } = useAppNavigation();
     const [post, setPost] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
@@ -94,7 +95,7 @@ const PostDetailPage = () => {
                     share_count={post.share_count || 0}
                     createdAt={post.created_at}
                     tags={post.tags}
-                    onDelete={() => navigate('/', { state: { noScroll: true } })}
+                    onDelete={() => goBack()}
                 />
             </div>
         </div>

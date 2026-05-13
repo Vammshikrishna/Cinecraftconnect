@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useKeyboard } from '@/contexts/KeyboardContext';
@@ -63,7 +64,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   const [categories, setCategories] = useState<Category[]>([]);
   const [activeCallRoomIds, setActiveCallRoomIds] = useState<string[]>([]);
   const { roomId } = useParams<{ roomId: string }>();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
@@ -221,7 +222,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       });
       return;
     }
-    navigate(`/discussion-rooms/${room.id}`);
+    push(`/discussion-rooms/${room.id}`);
   };
 
 
@@ -231,7 +232,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       document.activeElement.blur();
     }
     setRooms(prevRooms => [newRoom, ...prevRooms]);
-    navigate(`/discussion-rooms/${newRoom.id}`);
+    push(`/discussion-rooms/${newRoom.id}`);
   };
 
   const handleRoomUpdated = (roomId: string, newTitle: string, newDescription: string) => {
@@ -240,9 +241,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
   const handleRoomDelete = (roomId: string) => {
     setRooms(prevRooms => prevRooms.filter(r => r.id !== roomId));
-    if (activeRoom?.id === roomId) {
-      navigate('/discussion-rooms', { state: { noScroll: true } });
-    }
+      push('/discussion-rooms', { noScroll: true });
   }
 
   const filteredAndSortedRooms = useMemo(() => {
@@ -454,7 +453,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               roomType={activeRoom.room_type}
               roomSettings={activeRoom.settings}
               onClose={() => {
-                navigate('/discussion-rooms', { state: { noScroll: true } });
+                push('/discussion-rooms', { noScroll: true });
               }}
               onRoomUpdated={handleRoomUpdated}
               showBackButton={isInCall && !isCallMinimized}
@@ -477,7 +476,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
             </div>
             <h2 className="text-xl font-bold mb-2">Private Room</h2>
             <p className="text-muted-foreground text-sm mb-6">This is a private discussion room. You need an explicit invitation from the creator to join.</p>
-            <button onClick={() => navigate('/discussion-rooms', { state: { noScroll: true } })} className="text-primary text-sm font-medium hover:underline">← Back to all rooms</button>
+            <button onClick={() => push('/discussion-rooms', { noScroll: true })} className="text-primary text-sm font-medium hover:underline">← Back to all rooms</button>
           </div>
         </div>
       );
@@ -497,7 +496,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           categories={categories}
           roomType={activeRoom.room_type}
           roomSettings={activeRoom.settings}
-          onClose={() => navigate('/discussion-rooms', { state: { noScroll: true } })}
+          onClose={() => push('/discussion-rooms', { noScroll: true })}
           onRoomUpdated={handleRoomUpdated}
         />
       </div>

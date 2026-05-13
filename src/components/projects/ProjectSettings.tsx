@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Loader2, Save, Trash2, ChevronRight, MessageCircle, Wallet, CircleUser, ArrowLeft, Lock, Film, Camera } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -36,7 +36,7 @@ interface ProjectSettingsProps {
 const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     const { isInternal } = useAppRole();
     const { toast } = useToast();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -208,7 +208,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 title: "Project Deleted",
                 description: "The project has been permanently deleted.",
             });
-            navigate('/projects');
+            push('/projects');
         } catch (error: any) {
             toast({
                 title: "Error",

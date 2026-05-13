@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { motion } from "framer-motion";
 import { 
   MapPin, Briefcase, CheckCircle, 
@@ -36,7 +37,7 @@ const JobDetail = () => {
   const { user } = useAuth();
   const { isInternal } = useAppRole();
   const { toast } = useToast();
-  const navigate = useNavigate();
+    const { push, goBack } = useAppNavigation();
   const isOwner = user?.id === job?.posted_by;
 
   const fetchJobDetail = async () => {
@@ -95,7 +96,7 @@ const JobDetail = () => {
         description: "Failed to load job details.",
         variant: "destructive",
       });
-      navigate("/jobs", { state: { noScroll: true } });
+      goBack();
     } finally {
       setLoading(false);
     }
@@ -193,11 +194,11 @@ const JobDetail = () => {
 
       <main className="max-w-7xl mx-auto px-4 md:px-8 pt-16 md:pt-28 relative z-10">
         <div className="hidden md:block mb-6">
-          <BackButton label="BACK TO JOBS" to="/jobs" />
+          <BackButton label="BACK TO JOBS" />
         </div>
         {/* Mobile Header Icons - Now integrated into the hero for better flow */}
         <div className="md:hidden flex items-center justify-between mb-2">
-          <BackButton label="BACK TO JOBS" to="/jobs" />
+          <BackButton label="BACK TO JOBS" />
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full h-10 w-10">
               <Share2 size={20} />
@@ -233,7 +234,7 @@ const JobDetail = () => {
                     </Avatar>
                   </div>
                   <div className="flex flex-col">
-                    <h3 className="text-xl font-black text-foreground hover:text-primary transition-all cursor-pointer" onClick={() => job.company_pages && navigate(`/pages/${job.company_pages.slug}`)}>
+                    <h3 className="text-xl font-black text-foreground hover:text-primary transition-all cursor-pointer" onClick={() => job.company_pages && push(`/pages/${job.company_pages.slug}`)}>
                       {job.company_pages?.name || job.company}
                     </h3>
                   </div>
@@ -270,7 +271,7 @@ const JobDetail = () => {
                 {/* Desktop-only Action Row: LinkedIn Style */}
                 <div className="hidden md:flex flex-row items-center gap-3 pt-6 border-t border-border/20 mt-6">
                   {isOwner ? (
-                    <Button onClick={() => navigate('/jobs/manage')} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-lg">
+                    <Button onClick={() => push('/jobs/manage')} size="lg" className="h-14 px-12 rounded-full bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-lg">
                       <Settings className="mr-2 h-5 w-5" /> Manage Job
                     </Button>
                   ) : isApplied ? (
@@ -492,7 +493,7 @@ const JobDetail = () => {
       <div className="lg:hidden fixed bottom-[calc(env(safe-area-inset-bottom)+70px)] left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-transform duration-500">
         <div className="flex items-center gap-3">
           {isOwner ? (
-            <Button onClick={() => navigate('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
+            <Button onClick={() => push('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
               <Settings className="mr-1.5 h-3.5 w-3.5" /> Manage Job
             </Button>
           ) : isApplied ? (

@@ -11,7 +11,8 @@ import { Job } from "@/types/jobs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatDistanceToNow } from "date-fns";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccountType } from "@/hooks/useAccountType";
 import { useAppRole } from "@/hooks/useAppRole";
@@ -46,7 +47,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -312,7 +313,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    onClick={() => navigate(`/jobs/${job.id}`)}
+                    onClick={() => push(`/jobs/${job.id}`)}
                     className="group glass-card-premium p-4 md:p-8 cursor-pointer relative overflow-hidden"
                   >
                     {/* Hover Glow */}
@@ -385,7 +386,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                           {(isOwner || isInternal) ? (
                             <Button 
                               variant="ghost" 
-                              onClick={(e) => { e.stopPropagation(); navigate("/jobs/manage"); }} 
+                              onClick={(e) => { e.stopPropagation(); push("/jobs/manage"); }} 
                               className="w-full h-14 rounded-2xl border border-border/50 hover:bg-muted/20 font-bold uppercase tracking-widest text-xs"
                             >
                               Manage Listing

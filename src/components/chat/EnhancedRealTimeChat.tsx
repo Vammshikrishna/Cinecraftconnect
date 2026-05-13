@@ -23,7 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
 import { useGlobalCall } from '@/contexts/CallContext';
@@ -109,7 +109,7 @@ const getUserColor = (userId: string) => {
 
 const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { onlineUserIds } = usePresence();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -295,6 +295,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       ).subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Successfully subscribed to real-time chat for room:', roomId);
+        } else if (status === 'CLOSED') {
+          console.log('Real-time chat channel closed for room:', roomId);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Error in real-time chat channel for room:', roomId);
+          // Try to re-fetch manually as fallback
+          fetchMessagesRef.current(false);
         }
       });
 
@@ -360,7 +366,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       content: contentToSend,
       sender_id: user.id,
       channel_id: roomId,
-      recipient_id: partnerId,
+      receiver_id: partnerId,
       reply_to_id: replyingTo?.id || null,
       attachment_url: attachmentUrl,
       attachment_type: attachmentType
@@ -371,6 +377,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       setUploading(false);
       return;
     }
+
+    // Immediately fetch to show the message instantly for the sender
+    fetchMessages(false);
 
     setNewMessage('');
     setSelectedFile(null);
@@ -504,7 +513,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           {partnerName && (
             <div 
               className="flex items-center gap-3 cursor-pointer group/partner"
-              onClick={() => navigate(`/profile/${partnerId}`)}
+              onClick={() => push(`/profile/${partnerId}`)}
             >
               <Avatar className="transition-transform group-hover/partner:scale-110">
                 <AvatarImage src={partnerAvatarUrl} />
@@ -577,7 +586,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 <DropdownMenuLabel className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Chat Settings</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-border/50" />
                 
-                <DropdownMenuItem onClick={() => navigate(`/profile/${partnerId}`)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-primary/10 transition-colors">
+                <DropdownMenuItem onClick={() => push(`/profile/${partnerId}`)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-primary/10 transition-colors">
                     <User className="h-4 w-4 text-primary" />
                     <span>View Profile</span>
                 </DropdownMenuItem>

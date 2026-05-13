@@ -21,8 +21,8 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Briefcase } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useJobMutation } from '@/hooks/mutations/useJobMutation';
 import { Job, JobType, ExperienceLevel, JOB_TYPES, EXPERIENCE_LEVELS } from '@/types/jobs';
 import { useMyPages } from '@/hooks/useCompanyPages';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -42,6 +42,7 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
   const { toast } = useToast();
   const { user } = useAuth();
   const { data: myPages } = useMyPages();
+  const { createJob, updateJob } = useJobMutation();
   const [selectedPageId, setSelectedPageId] = useState<string | "user">(jobToEdit?.page_id || defaultPageId);
 
   useEffect(() => {
@@ -143,15 +144,13 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
       };
 
       if (jobToEdit?.id) {
-          const { error } = await supabase.from('jobs').update(payload).eq('id', jobToEdit.id);
-          if (error) throw error;
+          await updateJob(jobToEdit.id, payload);
           toast({
             title: "Job Updated Successfully!",
             description: "Your job posting has been updated.",
           });
       } else {
-          const { error } = await supabase.from('jobs').insert(payload);
-          if (error) throw error;
+          await createJob(payload);
           toast({
             title: "Job Posted Successfully!",
             description: "Your job posting has been created and is now live.",

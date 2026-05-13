@@ -1,6 +1,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
@@ -24,7 +25,7 @@ const Messages = () => {
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const { conversationId, userId } = useParams<{ conversationId: string; userId: string }>();
   const activePartnerId = conversationId || userId;
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
 
   // Global blur on mount/route change to kill any background focus triggers
   useEffect(() => {
@@ -148,7 +149,7 @@ const Messages = () => {
 
   const handleStartChat = (id: string) => {
     setIsNewChatOpen(false);
-    navigate(`/messages/${id}`);
+    push(`/messages/${id}`);
   };
 
   return (
@@ -294,7 +295,7 @@ const Messages = () => {
               partnerId={activePartnerData.id}
               partnerName={activePartnerData.name}
               partnerAvatarUrl={activePartnerData.avatar}
-              onBackClick={() => navigate('/messages', { state: { noScroll: true } })}
+              onBackClick={() => push('/messages', { noScroll: true })}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-1000">

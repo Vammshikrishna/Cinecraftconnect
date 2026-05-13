@@ -206,6 +206,18 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                 postId={postId}
                 isOpen={isOpen}
                 onOpenChange={setIsOpen}
+                initialData={{
+                    id: postId,
+                    content: text,
+                    media_url: preview,
+                    media_type: isVideo(preview) ? 'video' : 'image',
+                    profiles: {
+                        full_name: author?.full_name,
+                        username: author?.username,
+                        avatar_url: author?.avatar_url,
+                        is_verified: author?.is_verified
+                    }
+                }}
             />
         </>
     );

@@ -1,13 +1,14 @@
-import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Share2, Bookmark, Flag, Plus } from "lucide-react";
+import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Bookmark, Flag, Plus } from "lucide-react";
 import ReportDialog from "../common/ReportDialog";
 import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Link } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
+import { PostDialog } from "../chat/PostDialog";
 import { useToast } from "@/hooks/use-toast";
 import { togglePostLike } from "@/services/postService";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,7 +20,6 @@ import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { cn } from "@/lib/utils";
 import { getOptimizedImage } from "@/utils/image-optimization";
-import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { StaffBadge } from "../internal/shared/StaffBadge";
 import {
   DropdownMenu,
@@ -116,6 +116,7 @@ const PostCard = ({
   const [isLiking, setIsLiking] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { push } = useAppNavigation();
 
   // Edit/Delete State
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -243,8 +244,8 @@ const PostCard = ({
     const isRightSwipe = distance < -50;
 
     if (isViewer) {
-      if (isLeftSwipe && viewIndex < max - 1) nextMedia(max);
-      if (isRightSwipe && viewIndex > 0) prevMedia(max);
+      // In viewer (PostDialog) we don't handle swiping here anymore
+      // But we still need this for inline if we use it
     } else {
       if (isLeftSwipe && currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
       if (isRightSwipe && currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
@@ -275,39 +276,17 @@ const PostCard = ({
   };
 
   const handleWheel = (e: React.WheelEvent, max: number, isViewer: boolean = false) => {
-    // Only react to significant horizontal scrolling
     if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 20) {
-      if (wheelTimeout.current) return; // Cooldown active
-
+      if (wheelTimeout.current) return;
       if (e.deltaX > 0) {
-        // Swipe left
-        if (isViewer) {
-          if (viewIndex < max - 1) nextMedia(max);
-        } else {
-          if (currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
-        }
+        if (!isViewer && currentMediaIndex < max - 1) setCurrentMediaIndex(prev => prev + 1);
       } else {
-        // Swipe right
-        if (isViewer) {
-          if (viewIndex > 0) prevMedia(max);
-        } else {
-          if (currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
-        }
+        if (!isViewer && currentMediaIndex > 0) setCurrentMediaIndex(prev => prev - 1);
       }
-
-      // 400ms cooldown to prevent flying through images
       wheelTimeout.current = setTimeout(() => {
         wheelTimeout.current = null;
       }, 400);
     }
-  };
-
-  const nextMedia = (max: number) => {
-    setViewIndex((prev) => (prev + 1) % max);
-  };
-
-  const prevMedia = (max: number) => {
-    setViewIndex((prev) => (prev - 1 + max) % max);
   };
 
   const isLiked = currentUserLiked || false;
@@ -673,9 +652,12 @@ const PostCard = ({
         <div className="relative">
           {/* Header - Padded */}
           <div className="flex items-center px-3 lg:px-4 py-2 lg:py-3">
-            <Link
-              to={pageInfo ? `/pages/${pageInfo.slug}` : (author.id ? `/profile/${author.id}` : '#')}
-              className="hover:opacity-80 transition-opacity relative z-10"
+            <div
+              onClick={() => {
+                const path = pageInfo ? `/pages/${pageInfo.slug}` : (author.id ? `/profile/${author.id}` : '#');
+                if (path !== '#') push(path);
+              }}
+              className="hover:opacity-80 transition-opacity relative z-10 cursor-pointer"
             >
               <Avatar className={`h-8 w-8 lg:h-9 lg:w-9 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
                 <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || "/placeholder.svg"} className={pageInfo ? 'rounded-lg' : ''} />
@@ -683,25 +665,25 @@ const PostCard = ({
                   {pageInfo ? pageInfo.name.charAt(0) : author.initials}
                 </AvatarFallback>
               </Avatar>
-            </Link>
+            </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
                 <div className="truncate">
                   {pageInfo ? (
                     <div className="flex items-center gap-1.5 truncate">
-                      <Link to={`/pages/${pageInfo.slug}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
+                      <div onClick={() => push(`/pages/${pageInfo.slug}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{pageInfo.name}</p>
                         {pageInfo.is_verified && <VerificationBadge size="sm" />}
-                      </Link>
+                      </div>
                     </div>
                   ) : author.id ? (
-                      <Link to={`/profile/${author.id}`} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate">
+                      <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
                         {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
                         {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
                           <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
                         )}
-                      </Link>
+                      </div>
                   ) : (
                     <p className="font-semibold truncate text-[13px] lg:text-[14px] uppercase">{author.name}</p>
                   )}
@@ -843,14 +825,16 @@ const PostCard = ({
               {tags && tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pb-1">
                   {tags.map((tag) => (
-                    <Link 
+                    <div 
                       key={tag} 
-                      to={`/search?q=${encodeURIComponent(tag)}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        push(`/search?q=${encodeURIComponent(tag)}`);
+                      }}
                       className="text-[11px] lg:text-[12px] font-semibold text-primary/80 hover:underline cursor-pointer bg-primary/5 px-2 py-0.5 rounded-full relative z-10"
-                      onClick={(e) => e.stopPropagation()}
                     >
                       #{tag}
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}
@@ -946,306 +930,31 @@ const PostCard = ({
           )}
         </AnimatePresence>
 
-        {/* Full-screen Media Viewer with Interaction Panel */}
-        <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-          <DialogContent hideClose aria-describedby={undefined} className="max-w-7xl w-full h-full lg:w-[95vw] lg:h-[95vh] p-0 gap-0 bg-background border-none">
-            <VisuallyHidden>
-              <DialogTitle>Media Viewer for {author.name}'s Post</DialogTitle>
-              <DialogDescription>
-                Viewing images and interact with this post
-              </DialogDescription>
-            </VisuallyHidden>
-            {(() => {
-              const items = Array.isArray(mediaItems) && mediaItems.length > 0 ? mediaItems : (mediaUrl ? [{ url: mediaUrl, type: (hasImage ? 'image' : 'video') as 'image' | 'video' }] : []);
-              const currentItem = items[viewIndex];
-              const hasMultiple = items.length > 1;
-              return (
-                <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
-                  {/* Mobile Author Header (Hidden on Desktop) */}
-                  <div className="lg:hidden py-4 px-4 border-b border-border/10 bg-background/95 backdrop-blur-2xl flex items-center justify-between z-[60] shrink-0">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="h-10 w-10 ring-2 ring-foreground/5 shadow-xl">
-                        <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
-                          {author.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-1.5">
-                          <p className="font-black text-sm md:text-base tracking-tight text-foreground">{author.name}</p>
-                          {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
-                        </div>
-                        <p className="text-[10px] text-foreground/40 font-bold uppercase tracking-widest -mt-0.5">{author.craft || 'Artist'}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
-                            <MoreVertical className="h-5 w-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
-                          {user?.id === authorId || isAdmin ? (
-                            <>
-                              <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
-                                <Edit className="mr-2 h-4 w-4" />
-                                <span>Edit Post</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                <span>Delete Post</span>
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <>
-                              <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
-                                <Share2 className="mr-2 h-4 w-4" />
-                                <span>Share Link</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
-                                <Flag className="mr-2 h-4 w-4" />
-                                <span>Report Post</span>
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsViewOpen(false)}
-                        className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full"
-                      >
-                        <X className="h-5 w-5" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  {/* Media Section: Left panel (Flexible) */}
-                  <div
-                    className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none cursor-grab active:cursor-grabbing"
-                    onTouchStart={handleTouchStart}
-                    onTouchMove={handleTouchMove}
-                    onTouchEnd={() => processSwipe(items.length, true)}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={() => processSwipe(items.length, true)}
-                    onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, true); }}
-                    onWheel={(e) => handleWheel(e, items.length, true)}
-                  >
-
-                    {/* Multimedia Controls */}
-                    {hasMultiple && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute left-2 lg:left-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
-                          onClick={(e) => { e.stopPropagation(); prevMedia(items.length); }}
-                        >
-                          <ChevronLeft className="h-6 w-6 lg:h-8 lg:w-8" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 z-50 text-white bg-black/30 hover:bg-black/50 rounded-full opacity-100 lg:opacity-0 group-hover/viewer:opacity-100 transition-opacity h-10 w-10 lg:h-12 lg:w-12 backdrop-blur-sm"
-                          onClick={(e) => { e.stopPropagation(); nextMedia(items.length); }}
-                        >
-                          <ChevronRight className="h-6 w-6 lg:h-8 lg:w-8" />
-                        </Button>
-
-                        {/* Dots (Instagram Style Overlaid) */}
-                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 flex gap-1.5 px-2.5 py-1 rounded-full bg-black/20 backdrop-blur-[2px]">
-                          {items.map((_, i) => (
-                            <div
-                              key={i}
-                              className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === viewIndex ? 'bg-primary scale-125 w-3' : 'bg-white/40'}`}
-                            />
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    {/* Display Media: Full width on mobile */}
-                    <div className="h-full w-full flex items-center justify-center p-0 lg:p-8">
-                      {currentItem?.type === 'video' ? (
-                        <video
-                          key={currentItem.url}
-                          src={currentItem.url}
-                          controls
-                          autoPlay
-                          className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
-                        />
-                      ) : (
-                        <img
-                          key={currentItem?.url}
-                          src={currentItem?.url}
-                          alt="Media in viewer"
-                          className="w-full h-full lg:max-h-full lg:max-w-full object-contain shadow-2xl"
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Interaction Panel: Right panel (Fixed width on desktop, dynamic on mobile) */}
-                  <div className="w-full lg:w-[420px] flex flex-col bg-card border-l border-border/10 shrink-0 h-fit max-h-[45vh] lg:h-full lg:max-h-none overflow-hidden shadow-[-20px_0_40px_rgba(0,0,0,0.3)] order-2 lg:order-none z-10">
-                    {/* Post Header (Desktop) */}
-                    <div className="hidden lg:flex py-5 px-3 border-b border-border/10 items-center justify-between shrink-0 bg-background/95 backdrop-blur-3xl">
-                      <div className="flex items-center gap-3 font-outfit">
-                        <Avatar className="h-11 w-11 ring-2 ring-foreground/5 shadow-2xl">
-                          <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                          <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">{author.initials}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <p className="font-black text-[15px] tracking-tight text-foreground leading-tight uppercase font-outfit">{author.name}</p>
-                            {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
-                          </div>
-                          <p className="text-[10px] text-foreground/40 font-black uppercase tracking-[0.25em] -mt-0.5">{author.craft || 'Artist'}</p>
-                        </div>
-                      </div>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full">
-                            <MoreVertical className="h-5 w-5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-[180px] bg-card/95 backdrop-blur-xl border-border/10">
-                          {user?.id === authorId || isAdmin ? (
-                            <>
-                              <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="focus:bg-foreground/10 cursor-pointer py-2.5">
-                                <Edit className="mr-2 h-4 w-4" />
-                                <span>Edit Post</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => setIsDeleteOpen(true)} className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                <span>Delete Post</span>
-                              </DropdownMenuItem>
-                            </>
-                          ) : (
-                            <>
-                              <DropdownMenuItem className="focus:bg-foreground/10 cursor-pointer py-2.5">
-                                <Share2 className="mr-2 h-4 w-4" />
-                                <span>Share Link</span>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="focus:bg-red-500/20 focus:text-red-500 text-red-500 cursor-pointer py-2.5">
-                                <Flag size={16} className="mr-2 h-4 w-4" />
-                                <span>Report Post</span>
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setIsViewOpen(false)}
-                        className="h-8 w-8 text-foreground hover:bg-foreground/5 rounded-full ml-1"
-                      >
-                        <X className="h-5 w-5" />
-                      </Button>
-                    </div>
-
-                    {/* Actions (Like, Comment, etc.) - ALWAYS AT TOP FOR MOBILE UNDER MEDIA, TOP OF RIGHT FOR DESKTOP */}
-                    <div className="p-4 lg:p-5 border-b border-border/10 bg-background/50 backdrop-blur-2xl shrink-0 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-6">
-                          <Button variant="ghost" size="icon" onClick={handleLike} disabled={isLiking} className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                            <Heart className={`h-7 w-7 transition-all duration-300 ${isLiked ? 'fill-red-500 text-red-500 scale-110' : 'hover:text-red-500'}`} />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                            <MessageCircle className="h-7 w-7 hover:text-primary transition-colors duration-300" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="hover:scale-125 transition-transform hover:bg-transparent p-0 h-auto">
-                            <Share2 className="h-7 w-7 hover:text-primary transition-colors duration-300" />
-                          </Button>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-base font-black tracking-tight">{displayLikeCount} Likes</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Scrollable Content */}
-                    <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6 custom-scrollbar scroll-smooth bg-background/30">
-                      {content && (
-                        <div className="flex gap-3.5 items-start">
-                          <Avatar className="h-9 w-9 shrink-0 shadow-sm border border-white/10 ring-1 ring-primary/10">
-                            <AvatarImage src={author.avatar || "/placeholder.svg"} />
-                            <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">{author.initials}</AvatarFallback>
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="text-[14px] leading-relaxed">
-                              <div className="flex items-center gap-1">
-                                  <span className="font-bold text-foreground tracking-tight hover:underline cursor-pointer uppercase">
-                                    {author.name}
-                                  </span>
-                                {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
-                              </div>
-                              <div className="block">
-                                <div 
-                                  ref={contentRef}
-                                  className={cn(
-                                    "block text-foreground/90 leading-relaxed",
-                                    !isExpanded && "line-clamp-3 overflow-hidden"
-                                  )}
-                                >
-                                  {content.includes('JOB_SHARE::') ? (
-                                    (() => {
-                                      try {
-                                        const parts = content.split('JOB_SHARE::');
-                                        const caption = parts[0].trim();
-                                        return caption ? <FormattedText text={caption} /> : null;
-                                      } catch (e) {
-                                        return <FormattedText text={content} />;
-                                      }
-                                    })()
-                                  ) : (
-                                    <FormattedText text={content} />
-                                  )}
-                                </div>
-                                {shouldShowMore && (
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setIsExpanded(!isExpanded);
-                                    }} 
-                                    className="text-primary text-[11px] font-semibold hover:underline mt-1 block"
-                                  >
-                                    {isExpanded ? "see less" : "...more"}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            <p className="text-[10px] text-muted-foreground/60 mt-2.5 flex items-center gap-1.5 uppercase tracking-widest font-medium">
-                              {timeAgo}
-                              <span className="opacity-40 ml-1.5 cursor-pointer hover:text-foreground transition-colors font-bold tracking-widest text-[9px]">See translation</span>
-                            </p>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-4">
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground/40 px-1 border-b border-white/5 pb-2">Conversation Thread</h4>
-                        <CommentSection postId={id} />
-                      </div>
-                    </div>
-
-                    {/* Timestamp ONLY footer */}
-                    <div className="p-3 border-t border-border/10 bg-background/90 backdrop-blur-2xl shrink-0 opacity-80">
-                      <p className="text-[9px] text-muted-foreground/50 uppercase tracking-[0.4em] font-black text-center py-1">
-                        PUBLISHED {new Date(createdAt || new Date()).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-
-            })()}
-          </DialogContent>
-        </Dialog>
+        <PostDialog 
+          postId={id}
+          isOpen={isViewOpen}
+          onOpenChange={setIsViewOpen}
+          initialIndex={viewIndex}
+          initialData={{
+            id,
+            content,
+            created_at: createdAt,
+            like_count,
+            comment_count,
+            user_has_liked: currentUserLiked,
+            media_items: mediaItems,
+            media_url: mediaUrl,
+            media_type: hasImage ? 'image' : (hasVideo ? 'video' : null),
+            profiles: {
+              id: authorId || author.id,
+              full_name: author.name,
+              username: author.name.toLowerCase().replace(/\s/g, ''),
+              avatar_url: author.avatar,
+              craft: author.role,
+              is_verified: author.isVerified
+            }
+          }}
+        />
       </div>
     </>
   );

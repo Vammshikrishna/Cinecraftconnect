@@ -53,6 +53,7 @@ interface Message {
 
 interface ProjectChatInterfaceProps {
   projectId: string;
+  isActive?: boolean;
 }
 
 const SENDER_COLORS = [
@@ -90,7 +91,7 @@ const formatTimestamp = (timestamp: string) => {
   return format(date, 'p');
 };
 
-export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) => {
+export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChatInterfaceProps) => {
   const { user } = useAuth();
   const { isInternal } = useAppRole();
   const { toast } = useToast();
@@ -264,7 +265,15 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [spaceId]);
+  }, [spaceId, isActive]);
+
+  // Re-sync when tab becomes active
+  useEffect(() => {
+    if (isActive && spaceId) {
+      fetchMessages(false);
+      scrollToBottom('auto');
+    }
+  }, [isActive, spaceId]);
 
   // Handle scroll to top for pagination
   const handleScroll = useCallback(() => {
@@ -276,16 +285,19 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
     }
   }, [loadingMessages, hasMore, spaceId]);
 
-  const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
-    if (scrollContainerRef.current) {
-      const el = scrollContainerRef.current;
-      if (behavior === 'smooth') {
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-      } else {
-        el.scrollTop = el.scrollHeight;
+  const scrollToBottom = useCallback((behavior: 'smooth' | 'auto' = 'smooth') => {
+    // Small timeout to ensure the DOM has calculated the new height after un-hiding
+    setTimeout(() => {
+      if (scrollContainerRef.current) {
+        const el = scrollContainerRef.current;
+        if (behavior === 'smooth') {
+          el.scrollTo({ top: el.scrollHeight + 1000, behavior: 'smooth' });
+        } else {
+          el.scrollTop = el.scrollHeight + 1000;
+        }
       }
-    }
-  };
+    }, 50);
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -649,7 +661,10 @@ export const ProjectChatInterface = ({ projectId }: ProjectChatInterfaceProps) =
 
   // Otherwise show chat interface
   return (
-    <div className="flex flex-col h-full bg-background relative overflow-hidden">
+    <div className={cn(
+      "flex-col h-full bg-background relative overflow-hidden",
+      isActive ? "flex" : "hidden"
+    )}>
       {/* Global call handles everything now, no local LiveKitCallContainer needed here */}
 
 

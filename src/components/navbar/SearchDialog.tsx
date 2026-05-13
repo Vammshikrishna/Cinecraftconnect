@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -25,7 +25,7 @@ interface SearchResult {
 type SearchFilter = 'all' | 'user' | 'project' | 'post';
 
 const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -96,10 +96,10 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
   const handleResultClick = (result: SearchResult) => {
     onOpenChange(false);
     switch (result.type) {
-      case 'user': return navigate(`/profile/view?user=${result.id}`);
-      case 'project': return navigate(`/projects/${result.id}/space`);
-      case 'post': return navigate(`/feed?highlight=${result.id}`);
-      case 'hashtag': return navigate(`/feed?tag=${result.id}`);
+      case 'user': return push(`/profile/view?user=${result.id}`);
+      case 'project': return push(`/projects/${result.id}/space`);
+      case 'post': return push(`/feed?highlight=${result.id}`);
+      case 'hashtag': return push(`/feed?tag=${result.id}`);
     }
   };
 

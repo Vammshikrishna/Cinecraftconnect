@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import VerificationBadge from '../common/VerificationBadge';
 import { getOptimizedImage } from '@/utils/image-optimization';
@@ -26,7 +26,7 @@ export const ProfileShareCard = ({
     is_verified: initialVerified,
     bio: initialBio
 }: ProfileShareCardProps) => {
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const [name, setName] = useState(initialName);
     const [avatar, setAvatar] = useState(initialAvatar);
     const [craft, setCraft] = useState(initialCraft);
@@ -74,7 +74,7 @@ export const ProfileShareCard = ({
             e.preventDefault();
             e.stopPropagation();
         } else if (!(e.target instanceof HTMLAnchorElement)) {
-            navigate(`/profile/${profileLink}`);
+            push(`/profile/${profileLink}`);
         }
     };
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { Monitor, Smartphone, Tablet, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { motion } from 'framer-motion';
 
 interface DesktopOnlyGuardProps {
@@ -15,7 +15,7 @@ interface DesktopOnlyGuardProps {
  */
 const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
   const isLargeScreen = useMediaQuery('(min-width: 600px)');
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
 
   if (!isLargeScreen) {
     return (
@@ -50,7 +50,7 @@ const DesktopOnlyGuard = ({ children }: DesktopOnlyGuardProps) => {
           <div className="flex flex-col gap-3">
             <Button 
               className="w-full rounded-xl h-11 font-bold gap-2" 
-              onClick={() => navigate('/feed')}
+              onClick={() => push('/feed')}
             >
               <ChevronLeft className="w-4 h-4" />
               Back to Feed

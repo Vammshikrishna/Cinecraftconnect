@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useConnections } from '@/hooks/useConnections';
 import { formatDistanceToNow } from 'date-fns';
@@ -44,7 +44,7 @@ import { useKeyboard } from '@/contexts/KeyboardContext';
 
 const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user, profile } = useAuth();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { isFan, accountType } = useAccountType();
     const queryClient = useQueryClient();
     const observerTarget = useRef<HTMLDivElement>(null);
@@ -66,7 +66,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [isKeyboardVisible, setIsEmojiPickerOpen]);
 
-    const { data, isLoading: loading, refetch } = useHomeFeed();
+    const { data, isLoading: loading, isFetching, refetch } = useHomeFeed();
     const { data: myPages } = useMyPages();
     const { data: allPages } = useCompanyPages();
     const { data: followedPageIds } = useFollowedPageIds();
@@ -139,6 +139,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
         return name.split(' ').map((word: string) => word[0]).join('').toUpperCase().slice(0, 2);
     };
 
+    // Show skeletons ONLY if we have no data at all
     if (loading && feedData.posts.length === 0) {
         return (
             <div className="space-y-8 pt-4">
@@ -351,7 +352,17 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     ].filter(section => section.hasData && (!isFan || !['projects', 'network', 'marketplace', 'vendors'].includes(section.id)));
 
     return (
-        <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-6">
+        <div className="relative">
+            {/* Subtle background refresh indicator */}
+            {isFetching && !loading && (
+                <div className="fixed bottom-24 right-8 z-50 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="bg-primary/90 text-primary-foreground px-4 py-2 rounded-full text-xs font-bold shadow-lg backdrop-blur-md border border-white/20 flex items-center gap-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Refreshing Feed</span>
+                    </div>
+                </div>
+            )}
+            <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-6">
             {/* Main Feed Column */}
             <div className="w-full max-w-[680px] space-y-6">
                 <div className="px-1 sm:px-4">
@@ -470,7 +481,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 <div className="flex items-center justify-between px-1">
                     <div 
                         className="flex items-center gap-3 cursor-pointer group"
-                        onClick={() => navigate('/profile')}
+                        onClick={() => push('/profile')}
                     >
                         <Avatar className="h-10 w-10 border border-border group-hover:border-primary/50 transition-colors">
                             <AvatarImage src={profile?.avatar_url || user?.user_metadata?.avatar_url || ''} alt={profile?.full_name || 'User'} className="object-cover" />
@@ -489,7 +500,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         </div>
                     </div>
                     <button 
-                        onClick={() => navigate('/settings/account')}
+                        onClick={() => push('/settings/account')}
                         className="text-primary text-xs font-bold hover:opacity-80"
                     >
                         Switch
@@ -503,7 +514,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                             <span className="text-[13px] font-bold text-muted-foreground">Your Companies</span>
                             {myPages.length > 3 && (
                                 <button 
-                                    onClick={() => navigate('/pages')}
+                                    onClick={() => push('/pages')}
                                     className="text-foreground text-[11px] font-bold hover:opacity-80"
                                 >
                                     See All
@@ -515,7 +526,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                 <div 
                                     key={page.id}
                                     className="flex items-center justify-between px-1 bg-primary/5 p-2.5 rounded-xl border border-primary/10 cursor-pointer hover:bg-primary/10 transition-all group"
-                                    onClick={() => navigate(`/pages/${page.slug}`)}
+                                    onClick={() => push(`/pages/${page.slug}`)}
                                 >
                                     <div className="flex items-center gap-3">
                                         <Avatar className="h-8 w-8 border border-border/50 group-hover:border-primary/50 transition-colors">
@@ -545,7 +556,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                     <div className="flex items-center justify-between px-1">
                         <span className="text-[13px] font-bold text-muted-foreground">Suggestions for you</span>
                         <button 
-                            onClick={() => navigate('/network')}
+                            onClick={() => push('/network')}
                             className="text-foreground text-[11px] font-bold hover:opacity-80"
                         >
                             See All
@@ -568,7 +579,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                 <div key={conn.id} className="flex items-center justify-between">
                                     <div 
                                         className="flex items-center gap-2.5 cursor-pointer group"
-                                        onClick={() => navigate(`/profile/${conn.username || conn.id}`)}
+                                        onClick={() => push(`/profile/${conn.username || conn.id}`)}
                                     >
                                         <Avatar className="h-8 w-8 border border-border/50 group-hover:border-primary/50 transition-colors">
                                             <AvatarImage src={conn.avatar_url || ''} className="object-cover" />
@@ -620,7 +631,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         <div className="flex items-center justify-between px-1">
                             <span className="text-[13px] font-bold text-muted-foreground">Suggested Pages</span>
                             <button 
-                                onClick={() => navigate('/pages')}
+                                onClick={() => push('/pages')}
                                 className="text-foreground text-[11px] font-bold hover:opacity-80"
                             >
                                 See All
@@ -638,7 +649,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                 <div key={page.id} className="flex items-center justify-between">
                                     <div 
                                         className="flex items-center gap-2.5 cursor-pointer group"
-                                        onClick={() => navigate(`/pages/${page.slug}`)}
+                                        onClick={() => push(`/pages/${page.slug}`)}
                                     >
                                         <Avatar className="h-7 w-7 border border-border/50 group-hover:border-primary/50 transition-colors">
                                             <AvatarImage src={page.logo_url || ''} className="object-cover" />
@@ -670,6 +681,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
             </aside>
         </div>
+    </div>
     );
 };
 

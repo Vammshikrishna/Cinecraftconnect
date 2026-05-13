@@ -1,7 +1,8 @@
 
 
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { ProjectSpace } from '@/components/projects/ProjectSpace';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
@@ -20,17 +21,19 @@ interface Project {
 
 const ProjectSpacePage = () => {
   const { projectId } = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
-  const [project, setProject] = useState<Project | null>(null);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const initialState = location.state as { project?: Project } | null;
+  const [project, setProject] = useState<Project | null>(initialState?.project || null);
+  const [loading, setLoading] = useState(!initialState?.project);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isFan && !isInternal) {
-      navigate('/pricing');
+      push('/pricing');
       return;
     }
 

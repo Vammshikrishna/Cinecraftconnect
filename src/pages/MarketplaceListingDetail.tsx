@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { MarketplaceListing } from '@/types/marketplace';
 import { Button } from '@/components/ui/button';
@@ -24,7 +25,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
-    const navigate = useNavigate();
+    const { push, goBack } = useAppNavigation();
     const { toast } = useToast();
     const { user } = useAuth();
     const [listing, setListing] = useState<MarketplaceListing | null>(null);
@@ -83,7 +84,7 @@ const MarketplaceListingDetail = () => {
                 description: 'Failed to load listing details',
                 variant: 'destructive'
             });
-            navigate('/marketplace', { state: { noScroll: true } });
+            goBack();
         } finally {
             setLoading(false);
         }
@@ -100,7 +101,7 @@ const MarketplaceListingDetail = () => {
         }
 
         if (listing && listing.profiles && (listing.profiles as any).id) {
-            navigate(`/messages/${(listing.profiles as any).id}`);
+            push(`/messages/${(listing.profiles as any).id}`);
         }
     };
 
@@ -120,7 +121,7 @@ const MarketplaceListingDetail = () => {
                 title: 'Listing deleted',
                 description: 'Your listing has been removed successfully.'
             });
-            navigate('/marketplace', { state: { noScroll: true } });
+            goBack();
         } catch (error) {
             console.error('Error deleting listing:', error);
             toast({
@@ -168,7 +169,7 @@ const MarketplaceListingDetail = () => {
                             )}
                         </div>
                     }
-                    onBack={() => navigate('/marketplace', { state: { noScroll: true } })}
+                    onBack={() => goBack()}
                     actions={
                         <div className="flex gap-2">
                             {(isOwner || isInternal) ? (

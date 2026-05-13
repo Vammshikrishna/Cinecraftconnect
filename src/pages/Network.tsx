@@ -14,11 +14,11 @@ import { PageHeader } from '@/components/common/PageHeader';
 import SEO from '@/components/common/SEO';
 
 import { useAccountType } from "@/hooks/useAccountType";
-import { useNavigate } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 
 const Network = () => {
   const { user: currentUser } = useAuth();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { isFan } = useAccountType();
   
   const [searchQuery, setSearchQuery] = useState("");
@@ -28,7 +28,7 @@ const Network = () => {
   // Redirect fans
   useState(() => {
     if (isFan) {
-      navigate('/pricing');
+      push('/pricing');
     }
   });
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import AppLogo from '@/components/common/AppLogo';
 import { Button } from '@/components/ui/button';
@@ -35,18 +36,26 @@ const FORM_FIELDS = {
 
 const Auth = () => {
   const location = useLocation();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [isLogin, setIsLogin] = useState(location.pathname !== '/register');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
 
   const currentFields = isLogin ? FORM_FIELDS.LOGIN : FORM_FIELDS.SIGNUP;
 
   const handleAuthAction = async (action: 'signIn' | 'signUp') => {
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const waitSeconds = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      setErrors({ form: `Too many attempts. Please try again in ${waitSeconds} seconds.` });
+      return;
+    }
+
     const schema = action === 'signIn' ? loginSchema : signUpSchema;
     const result = schema.safeParse(formData);
 
@@ -68,8 +77,24 @@ const Auth = () => {
         : await signUp(formData.email, formData.password);
 
       if (error) {
-        setErrors({ form: error.message });
+        if (action === 'signIn') {
+          const newAttempts = failedAttempts + 1;
+          setFailedAttempts(newAttempts);
+          
+          if (newAttempts >= 3) {
+             const delaySeconds = 15 * Math.pow(2, newAttempts - 3);
+             setLockoutUntil(Date.now() + delaySeconds * 1000);
+             setErrors({ form: `Too many failed attempts. Account locked for ${delaySeconds} seconds for security.` });
+             console.warn(`[SECURITY] Suspicious auth activity: ${newAttempts} failed logins for ${formData.email}`);
+          } else {
+             setErrors({ form: error.message });
+          }
+        } else {
+          setErrors({ form: error.message });
+        }
       } else {
+        setFailedAttempts(0);
+        setLockoutUntil(null);
         if (action === 'signIn') {
           toast({ title: "Welcome back!", description: "You have successfully signed in." });
           
@@ -85,13 +110,13 @@ const Auth = () => {
               const roleStr = roleData?.role as string | undefined;
 
               if (roleStr === 'super_admin') {
-                navigate('/super-admin', { replace: true });
+                push('/super-admin', { noScroll: true });
                 return;
               } else if (roleStr === 'admin') {
-                navigate('/admin', { replace: true });
+                push('/admin', { noScroll: true });
                 return;
               } else if (roleStr === 'moderator') {
-                navigate('/moderation', { replace: true });
+                push('/moderation', { noScroll: true });
                 return;
               }
             }
@@ -99,10 +124,10 @@ const Auth = () => {
             console.error("Error checking role after sign in", e);
           }
           
-          navigate('/feed', { replace: true });
+          push('/feed', { noScroll: true });
         } else {
           toast({ title: "Account created!", description: "Please complete your profile." });
-          navigate('/complete-profile', { replace: true });
+          push('/complete-profile', { noScroll: true });
           setFormData({ email: '', password: '' });
         }
       }

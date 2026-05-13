@@ -13,7 +13,7 @@ import {
   Briefcase,
   Bookmark
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useState, useEffect } from 'react';
@@ -50,7 +50,7 @@ interface ProjectDetailDialogProps {
 }
 
 export function ProjectDetailDialog({ project: initialProject, open, onOpenChange }: ProjectDetailDialogProps) {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { toast } = useToast();
   const [project, setProject] = useState(initialProject);
@@ -118,7 +118,7 @@ export function ProjectDetailDialog({ project: initialProject, open, onOpenChang
             <Separator />
 
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
-              <Button className="flex-1" onClick={() => { onOpenChange(false); navigate(`/projects/${project.id}/space`); }}>
+              <Button className="flex-1" onClick={() => { onOpenChange(false); push(`/projects/${project.id}/space`); }}>
                 <Briefcase className="mr-2 h-4 w-4" />
                 {isOwner ? 'Manage ProjectSpace' : 'View ProjectSpace'}
               </Button>

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Share2, Users, Hash, Bell, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ interface FeedDiscussionCardProps {
 }
 
 const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) => {
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { unreadDiscussionIds } = useUnreadMessages();
     const hasUnread = unreadDiscussionIds.includes(discussion.id);
 
@@ -34,7 +34,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
     };
 
     const handleCardClick = () => {
-        navigate(`/discussion-rooms/${discussion.id}`);
+        push(`/discussion-rooms/${discussion.id}`);
     };
 
     const handleShare = (e: React.MouseEvent) => {

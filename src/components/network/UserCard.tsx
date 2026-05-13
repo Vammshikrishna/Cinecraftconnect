@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -52,6 +52,7 @@ interface UserCardProps {
 }
 
 const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject, onCancelRequest, onRemoveConnection, onDismiss }) => {
+  const { push } = useAppNavigation();
   const { user: currentUser } = useAuth();
   const status = user.connection_status || 'none';
 
@@ -129,7 +130,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
       <div className="w-full flex flex-col items-center">
         {/* Avatar Section */}
         <div className="mb-2 relative">
-          <Link to={`/profile/${user.id}`} className="block relative group/avatar">
+          <div onClick={() => push(`/profile/${user.id}`)} className="block relative group/avatar cursor-pointer">
             <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-500" />
             <Avatar className="h-24 w-24 sm:h-24 sm:w-24 border-2 border-border shadow-xl scale-100 group-hover/avatar:scale-105 transition-transform duration-500 ring-4 ring-background/50">
               <AvatarImage src={getOptimizedImage(user.avatar_url, { width: 200, height: 200 }) || undefined} alt={user.full_name || 'User'} className="object-cover" />
@@ -137,17 +138,17 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
                 {getInitials(user.full_name || user.username)}
               </AvatarFallback>
             </Avatar>
-          </Link>
+          </div>
         </div>
  
         {/* Name and Info */}
         <div className="space-y-0.5 mb-2 w-full">
-          <Link to={`/profile/${user.id}`} className="block">
+          <div onClick={() => push(`/profile/${user.id}`)} className="block cursor-pointer">
             <h3 className="font-bold text-[15px] text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-tight pt-1 flex items-center justify-center gap-1 uppercase">
               {user.full_name || user.username}
               {(user.is_verified || user.username?.toLowerCase().includes('vamshi') || user.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
             </h3>
-          </Link>
+          </div>
           
           <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
             <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-1.5 py-0 h-4 text-[9px] font-bold uppercase tracking-tighter">
@@ -185,11 +186,9 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
                 size="sm"
                 variant="secondary"
                 className="flex-1 bg-primary/5 hover:bg-primary/10 text-primary border border-primary/10 transition-all text-[9px] sm:text-[10px] font-bold px-2 h-8"
-                asChild
+                onClick={() => push(`/messages/${user.id}`)}
               >
-                <Link to={`/messages/${user.id}`}>
-                  <MessageCircle size={11} className="mr-1 sm:mr-1.5" /> Message
-                </Link>
+                <MessageCircle size={11} className="mr-1 sm:mr-1.5" /> Message
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -205,11 +204,12 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
                     <UserX className="mr-2 h-4 w-4" />
                     Remove Connection
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="text-xs font-bold cursor-pointer" asChild>
-                    <Link to={`/profile/${user.id}`} className="flex items-center w-full">
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      View Profile
-                    </Link>
+                  <DropdownMenuItem 
+                    className="text-xs font-bold cursor-pointer" 
+                    onClick={() => push(`/profile/${user.id}`)}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    View Profile
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

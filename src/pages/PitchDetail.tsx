@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 import { motion } from "framer-motion";
 import { 
   Megaphone, Calendar, Share2, Bookmark, 
@@ -52,7 +53,7 @@ const PitchDetail = () => {
     
     const { user } = useAuth();
     const { toast } = useToast();
-    const navigate = useNavigate();
+    const { push, goBack } = useAppNavigation();
 
     const fetchPitchDetail = async () => {
         if (!pitchId) return;
@@ -103,7 +104,7 @@ const PitchDetail = () => {
                 description: "Failed to load pitch details.",
                 variant: "destructive",
             });
-            navigate("/pitch", { state: { noScroll: true } });
+            goBack();
         } finally {
             setLoading(false);
         }
@@ -430,14 +431,14 @@ const PitchDetail = () => {
                                     <Button 
                                         variant="outline" 
                                         className="w-full h-12 rounded-xl font-bold"
-                                        onClick={() => navigate(`/dm/${pitchCall.creator_id}`)}
+                                        onClick={() => push(`/dm/${pitchCall.creator_id}`)}
                                     >
                                         <MessageSquare className="h-4 w-4 mr-2" /> Message to call creator
                                     </Button>
                                     <Button 
                                         variant="ghost" 
                                         className="w-full h-12 rounded-xl font-bold text-muted-foreground"
-                                        onClick={() => navigate(`/profile/${pitchCall.creator_id}`)}
+                                        onClick={() => push(`/profile/${pitchCall.creator_id}`)}
                                     >
                                         View Full Profile
                                     </Button>

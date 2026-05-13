@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -49,7 +50,7 @@ const getInitials = (name: string) => {
 
 const CompanyPageDetail = () => {
   const { slug } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -203,7 +204,7 @@ const CompanyPageDetail = () => {
       const { error } = await (supabase as any).from('company_pages').delete().eq('id', page.id);
       if (error) throw error;
       toast({ title: "Page deleted", description: "The company page has been removed successfully." });
-      navigate('/pages', { state: { noScroll: true } });
+      push('/pages', { noScroll: true });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
@@ -552,7 +553,11 @@ const CompanyPageDetail = () => {
                ) : (
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {jobs.map((job: any) => (
-                      <Link key={job.id} to="/jobs" className="group block bg-card/40 border border-border/60 hover:border-primary/40 rounded-[2.5rem] p-8 transition-all hover:shadow-2xl hover:shadow-primary/5">
+                      <div 
+                        key={job.id} 
+                        onClick={() => push('/jobs')} 
+                        className="group block bg-card/40 border border-border/60 hover:border-primary/40 rounded-[2.5rem] p-8 transition-all hover:shadow-2xl hover:shadow-primary/5 cursor-pointer"
+                      >
                         <div className="flex flex-col h-full justify-between">
                           <div>
                             <div className="flex justify-between items-start mb-4">
@@ -578,7 +583,7 @@ const CompanyPageDetail = () => {
                              </span>
                           </div>
                         </div>
-                      </Link>
+                      </div>
                     ))}
                  </div>
                )}
@@ -606,10 +611,10 @@ const CompanyPageDetail = () => {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {members.map((member) => (
-                    <Link 
+                    <div 
                       key={member.id} 
-                      to={`/profile/${member.user_id}`} 
-                      className="group bg-card/40 border border-border/60 hover:border-primary/30 rounded-[2.5rem] p-6 text-center transition-all hover:shadow-2xl"
+                      onClick={() => push(`/profile/${member.user_id}`)} 
+                      className="group bg-card/40 border border-border/60 hover:border-primary/30 rounded-[2.5rem] p-6 text-center transition-all hover:shadow-2xl cursor-pointer"
                     >
                       <div className="relative mx-auto mb-6 inline-block">
                         <div className="absolute inset-0 bg-gradient-to-br from-primary to-primary/20 rounded-[2rem] blur-xl opacity-0 group-hover:opacity-30 transition-opacity" />
@@ -629,7 +634,7 @@ const CompanyPageDetail = () => {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground font-bold uppercase tracking-[0.2em]">{member.title || 'Studio Member'}</p>
-                    </Link>
+                    </div>
                   ))}
                 </div>
               )}

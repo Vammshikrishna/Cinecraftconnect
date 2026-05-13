@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,7 +22,7 @@ type AccountType = 'fan' | 'creator' | 'studio';
 export const ProfileCompletion = () => {
     const { user, profile } = useAuth();
     const { toast } = useToast();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
 
     // Step 0 = choose account type, 1 = basic info, 2 = optional details
     const [step, setStep] = useState(0);
@@ -34,9 +34,9 @@ export const ProfileCompletion = () => {
             const destination = profile?.role === 'super_admin' ? '/super-admin' : 
                                profile?.role === 'admin' ? '/admin' : 
                                profile?.role === 'moderator' ? '/moderation' : '/feed';
-            navigate(destination, { replace: true });
+            push(destination, { noScroll: true });
         }
-    }, [profile, navigate]);
+    }, [profile, push]);
     const [loading, setLoading] = useState(false);
     const [checkingUsername, setCheckingUsername] = useState(false);
     const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);

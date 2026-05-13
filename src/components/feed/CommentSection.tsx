@@ -12,6 +12,7 @@ import { useRealtimeComments } from "@/hooks/useRealtimeComments";
 import { useAppRole } from "@/hooks/useAppRole";
 import { Trash2, MoreHorizontal, Smile } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useCommentMutation } from "@/hooks/mutations/useCommentMutation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -40,6 +41,7 @@ const CommentSection = ({ postId }: { postId: string }) => {
   const [localEmojiOpen, setLocalEmojiOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const { addComment, deleteComment } = useCommentMutation();
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -160,40 +162,27 @@ const CommentSection = ({ postId }: { postId: string }) => {
     setLocalEmojiOpen(false);
     setIsEmojiPickerOpen(false);
 
-      const { data: commentData, error } = await supabase.from("post_comments" as any).insert({
-        post_id: postId,
-        user_id: user.id,
-        content: originalNewComment.trim(),
-        parent_id: replyTo?.id || null,
-      }).select().single();
-  
-     if (error) {
-       toast({ title: "Failed to add comment", description: error.message, variant: "destructive" });
-       setComments((prev) => prev.filter((c) => c.id !== tempId)); // Rollback
-       setNewComment(originalNewComment);
-     } else {
-       if (mentionedIds.size > 0 && commentData) {
-         const mentionsToInsert = Array.from(mentionedIds).map(mentionedId => ({
-           mentioner_id: user.id,
-           mentioned_id: mentionedId,
-           related_id: postId,
-           related_type: 'post'
-         }));
-         
-         await supabase.from('mentions' as any).insert(mentionsToInsert as any);
-        }
-        setMentionedIds(new Set());
-        setReplyTo(null);
-      }
+    try {
+      await addComment(postId, originalNewComment.trim(), { 
+        parentId: replyTo?.id, 
+        mentions: mentionedIds.size > 0 ? Array.from(mentionedIds) : undefined 
+      });
+      setMentionedIds(new Set());
+      setReplyTo(null);
+    } catch (error: any) {
+      toast({ title: "Failed to add comment", description: error.message, variant: "destructive" });
+      setComments((prev) => prev.filter((c) => c.id !== tempId)); // Rollback
+      setNewComment(originalNewComment);
+    }
   };
 
   const handleDeleteComment = async (commentId: string) => {
     const originalComments = [...comments];
     setComments((prev) => prev.filter((c) => c.id !== commentId));
 
-    const { error } = await supabase.from("post_comments" as any).delete().eq("id", commentId);
-
-    if (error) {
+    try {
+      await deleteComment(commentId);
+    } catch (error: any) {
       toast({ title: "Failed to delete comment", description: error.message, variant: "destructive" });
       setComments(originalComments);
     }
