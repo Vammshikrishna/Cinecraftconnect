@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Heart, MessageCircle, Users, Activity, Layers, Play, Grid3x3, ChevronLeft, ChevronRight, Share2, ArrowRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +37,7 @@ type ResultItem = {
   tags?: string[];
 };
 const SearchResults = ({ query, filters }: SearchResultsProps) => {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [results, setResults] = useState<ResultItem[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [selectedPost, setSelectedPost] = useState<ResultItem | null>(null);
@@ -187,7 +187,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
       {(projects.length > 0 || discussions.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {projects.map((project: any) => (
-            <Card key={project.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => navigate(`/projects/${project.id}/space`)}>
+            <Card key={project.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => push(`/projects/${project.id}/space`)}>
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-blue-500/10 text-blue-400 border-blue-500/20 px-2 py-0">Project</Badge>
@@ -217,7 +217,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
           ))}
 
           {discussions.map((room: any) => (
-            <Card key={room.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => navigate(`/discussion-rooms/${room.id}`)}>
+            <Card key={room.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => push(`/discussion-rooms/${room.id}`)}>
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-primary/10 text-green-400 border-primary/20 px-2 py-0">Live Discussion</Badge>

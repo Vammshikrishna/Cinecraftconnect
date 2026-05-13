@@ -1,8 +1,8 @@
-
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Camera, Film, Music, Brush, Scissors, Mic, Users, Laptop } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { PageHeader } from "@/components/common/PageHeader";
 
 // Expanded crafts information with descriptions
@@ -50,7 +50,7 @@ const craftsInfo = [
 ];
 
 const AllCraftsPage = () => {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
 
   return (
     <div className="min-h-screen bg-background selection:bg-primary/30">
@@ -64,7 +64,7 @@ const AllCraftsPage = () => {
           title="The 24 Film Crafts" 
           subtitle="Filmmaking is a collaborative art form that brings together a diverse range of specialized crafts. Each craft contributes unique skills to the magic of cinema." 
           Icon={Film}
-          onBack={() => navigate('/feed', { state: { noScroll: true } })}
+          onBack={() => push('/feed', { noScroll: true })}
         />
 
         <div className="max-w-6xl mx-auto mt-12">

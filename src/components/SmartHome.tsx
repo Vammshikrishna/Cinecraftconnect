@@ -1,20 +1,21 @@
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useEffect } from 'react';
 import Index from '@/pages/Index';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 
 const SmartHome = () => {
   const { user, isLoading } = useAuth();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const location = useLocation();
 
   // Redirect authenticated users to feed if they're on landing page
   useEffect(() => {
     if (user && location.pathname === '/') {
-      navigate('/feed', { replace: true });
+      push('/feed', { noScroll: true });
     }
-  }, [user, location.pathname, navigate]);
+  }, [user, location.pathname, push]);
 
   // Show loading spinner while checking auth state
   if (isLoading) {

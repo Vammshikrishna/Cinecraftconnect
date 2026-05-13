@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format } from 'date-fns';
 import { usePresence } from '@/hooks/usePresence';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useMessageMutation } from '@/hooks/mutations/useMessageMutation';
 
 interface Message {
   id: string;
@@ -38,6 +39,7 @@ export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { onlineUserIds } = usePresence(`convo:${threadId}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { sendMessage, deleteMessage } = useMessageMutation();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -94,31 +96,15 @@ export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
     e.preventDefault();
     if (!newMessage.trim() || !user) return;
 
-    const { error } = await supabase.from('messages').insert({
-      conversation_id: threadId,
-      sender_id: user.id,
-      content: newMessage.trim(),
-      reply_to_id: replyingTo?.id || null
-    });
-
-    if (error) console.error('Error sending message', error);
-    else {
-      setNewMessage('');
-      setReplyingTo(null);
-    }
+    await sendMessage(threadId, newMessage.trim(), { replyToId: replyingTo?.id });
+    
+    setNewMessage('');
+    setReplyingTo(null);
   };
 
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
-    const { error } = await supabase
-      .from('messages')
-      .update({ is_deleted: true, content: 'This message was deleted' })
-      .eq('id', messageId)
-      .eq('sender_id', user.id);
-    
-    if (error) {
-      console.error('Error undoing message:', error);
-    }
+    await deleteMessage(messageId);
   };
 
   if (loading) return <div className="p-4"><EnhancedSkeleton className="h-full w-full" /></div>;

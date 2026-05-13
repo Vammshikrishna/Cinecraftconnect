@@ -41,6 +41,7 @@ import { JobShareCard } from '@/components/chat/JobShareCard';
 import { useMessageSeen } from '@/hooks/useMessageSeen';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 import VerificationBadge from '../common/VerificationBadge';
+import { useRoomMessageMutation } from '@/hooks/mutations/useRoomMessageMutation';
 
 interface DiscussionChatInterfaceProps {
   roomId: string;
@@ -106,6 +107,7 @@ export const DiscussionChatInterface = ({
 
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const { markAsRead } = useChatReadStatus();
+  const { sendRoomMessage, deleteRoomMessage } = useRoomMessageMutation();
 
   // Global Call state
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize } = useGlobalCall();
@@ -387,12 +389,35 @@ export const DiscussionChatInterface = ({
           }
         })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_message_read_status', filter: `room_id=eq.${roomId}` }, fetchReadStatuses)
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to discussion room chat:', roomId);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Error subscribing to discussion room chat:', roomId);
+          fetchMessages(false); // Fallback
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [roomId, fetchMessages, isAtBottom, user?.id]);
+
+  // Listen for mutation queue status changes to refresh UI when a message is successfully synced
+  useEffect(() => {
+    const handleMutationStatusChange = (event: any) => {
+      const { state } = event.detail;
+      if (state === 'COMPLETED' || state === 'FAILED') {
+        // Refresh messages when a background sync completes
+        fetchMessages(false);
+      }
+    };
+
+    window.addEventListener('mutation_status_change', handleMutationStatusChange);
+    return () => {
+      window.removeEventListener('mutation_status_change', handleMutationStatusChange);
+    };
+  }, [fetchMessages]);
 
   const [isUploading, setIsUploading] = useState(false);
 
@@ -423,18 +448,16 @@ export const DiscussionChatInterface = ({
         mediaType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
       }
 
-      const { error } = await supabase.from('room_messages').insert({
-        content: content || `Shared ${mediaType === 'image' ? 'an image' : mediaType === 'video' ? 'a video' : 'a file'}`,
-        user_id: user.id,
-        room_id: roomId,
-        reply_to_id: replyingTo?.id || null,
-        media_url: mediaUrl,
-        media_type: mediaType
-      });
+      await sendRoomMessage(
+        roomId, 
+        content || `Shared ${mediaType === 'image' ? 'an image' : mediaType === 'video' ? 'a video' : 'a file'}`,
+        { replyToId: replyingTo?.id, mediaUrl, mediaType }
+      );
 
-      if (error) throw error;
       setReplyingTo(null);
-      fetchMessages();
+      // We don't fetch immediately because sendRoomMessage is an offline mutation
+      // The useEffect listening to mutation_status_change will handle the refresh
+      // or the optimistic update will be shown (if implemented in mutationQueue)
       setTimeout(() => scrollToBottom(), 100);
       stopTyping();
     } catch (err) {
@@ -448,19 +471,12 @@ export const DiscussionChatInterface = ({
   const handleUndoMessage = async (messageId: string) => {
     if (!user) return;
 
-    // Only admins or the sender can delete
-    const query = supabase.from('room_messages').delete().eq('id', messageId);
-    if (!isAdmin) {
-      query.eq('user_id', user.id);
-    }
-
-    const { error } = await query;
-
-    if (error) {
+    try {
+      await deleteRoomMessage(messageId);
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    } catch (error) {
       console.error('Error undoing message:', error);
       toast({ title: "Error", description: "Failed to delete message", variant: "destructive" });
-    } else {
-      setMessages(prev => prev.filter(m => m.id !== messageId));
     }
   };
 

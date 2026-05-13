@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ChatList } from '@/components/chat/ChatList';
@@ -26,7 +26,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 const ChatsList = () => {
   const { user } = useAuth();
   const { isFan } = useAccountType();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -111,7 +111,7 @@ const ChatsList = () => {
 
   const handleStartChat = (userId: string) => {
     setIsNewChatOpen(false);
-    navigate(`/messages/${userId}`);
+    push(`/messages/${userId}`);
   };
 
   const filteredConversations = conversations.filter(c =>

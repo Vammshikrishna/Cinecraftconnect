@@ -7,12 +7,12 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { User, Mail, LogOut, Palette } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 
 export const AccountSettings = () => {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const handleSignOut = async () => {
@@ -23,7 +23,7 @@ export const AccountSettings = () => {
         title: "Signed out successfully",
         description: "You have been signed out of your account.",
       });
-      navigate('/auth');
+      push('/auth');
     } catch (error) {
       toast({
         title: "Error",

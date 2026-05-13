@@ -10,7 +10,7 @@ import {
     ThumbsDown, Check, ChevronRight, Clock, Shield
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 
 interface SubmissionReviewDialogProps {
@@ -31,14 +31,14 @@ const STATUS_ACTIONS = [
 ];
 
 export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateStatus }: SubmissionReviewDialogProps) => {
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const avatarUrl = getSafeImageUrl(submission.profiles?.avatar_url || null);
     const initials = (submission.profiles?.full_name || 'W').split(' ').map(n => n[0]).join('').toUpperCase();
-    const statusInfo = PITCH_STATUS_LABELS[submission.status] || { label: submission.status, color: '' };
+    const statusInfo = PITCH_STATUS_LABELS[submission.status || 'submitted'];
 
     const handleStartCollaboration = () => {
         // Navigate to DM with the writer
-        navigate(`/dm/${submission.submitter_id}`);
+        push(`/dm/${submission.submitter_id}`);
         onClose();
     };
 

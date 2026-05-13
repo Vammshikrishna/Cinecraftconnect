@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Bell, Check, X, Archive, Settings, Filter } from 'lucide-react';
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PageHeader } from '@/components/common/PageHeader';
 import { getNotificationIcon as getIcon, getDisplayMessage } from '@/lib/chat-utils';
+import { useNotificationMutation } from '@/hooks/mutations/useNotificationMutation';
 
 interface Notification {
   id: string;
@@ -49,6 +50,7 @@ const EnhancedNotificationsCenter = () => {
   const [sortBy, setSortBy] = useState('newest');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { toast } = useToast();
+  const { markAsRead: mutateMarkAsRead, markAllAsRead: mutateMarkAllAsRead, deleteNotification: mutateDeleteNotification, resolveNotificationAction } = useNotificationMutation();
 
   useEffect(() => {
     let mounted = true;
@@ -113,8 +115,7 @@ const EnhancedNotificationsCenter = () => {
     try {
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
       setUnreadCount(prev => Math.max(0, prev - 1));
-      const { error } = await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-      if (error) throw error;
+      await mutateMarkAsRead(id);
     } catch (error) {
       // Background operation failure handled gracefully
     }
@@ -124,12 +125,7 @@ const EnhancedNotificationsCenter = () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const { error } = await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('user_id', user.id)
-        .eq('is_read', false);
-      if (error) throw error;
+      await mutateMarkAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
       toast({
@@ -144,8 +140,7 @@ const EnhancedNotificationsCenter = () => {
   const deleteNotification = async (id: string) => {
     try {
       setNotifications(prev => prev.filter(n => n.id !== id));
-      const { error } = await supabase.from('notifications').delete().eq('id', id);
-      if (error) throw error;
+      await mutateDeleteNotification(id);
       toast({
         title: "Dismissed",
         description: "Notification removed"
@@ -169,23 +164,12 @@ const EnhancedNotificationsCenter = () => {
     try {
       const { type, related_id } = notification;
       
-      if (type === 'project_invite' || type === 'project_application') {
-        const table = type === 'project_invite' ? 'project_space_join_requests' : 'project_applications';
-        const status = action === 'accept' ? 'approved' : 'rejected';
-        
-        const { error } = await supabase
-          .from(table as any)
-          .update({ status })
-          .eq('id', related_id as string);
-        
-        if (error) throw error;
-      } else if (type === 'new_follower') {
-          if (action === 'accept') {
-              await supabase.from('user_connections' as any).update({ status: 'accepted' }).eq('id', related_id as string);
-          } else {
-              await supabase.from('user_connections' as any).delete().eq('id', related_id as string);
-          }
-      }
+      await resolveNotificationAction({
+        notificationId: notification.id,
+        type,
+        relatedId: related_id as string,
+        action
+      });
 
       await markAsRead(notification.id);
       

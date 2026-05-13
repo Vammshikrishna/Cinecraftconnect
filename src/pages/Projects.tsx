@@ -1,6 +1,6 @@
 
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -94,15 +94,15 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   const ProjectCard = ({ project }: { project: Project }) => {
     const isBookmarked = project.is_bookmarked;
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { unreadProjectIds } = useUnreadMessages();
     const hasUnread = unreadProjectIds.includes(project.id);
 
     const handleCardClick = () => {
       if (project.is_member || isInternal) {
-        navigate(`/projects/${project.id}/space`);
+        push(`/projects/${project.id}/space`);
       } else {
-        navigate(`/projects/${project.id}`);
+        push(`/projects/${project.id}`);
       }
     };
 

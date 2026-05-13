@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Home, Film, Briefcase, Users, MoreHorizontal, ShoppingBag, BookOpen, Megaphone, Star, Lightbulb } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -16,6 +16,7 @@ import VendorIcon from "@/components/icons/VendorIcon";
 import StudioPageIcon from "@/components/icons/StudioPageIcon";
 import { useKeyboard } from "@/contexts/KeyboardContext";
 import { useScrollDirection } from "@/hooks/useScrollDirection";
+import { useAppNavigation } from "@/contexts/NavigationContext";
 
 export function MobileNav() {
   const location = useLocation();
@@ -24,6 +25,7 @@ export function MobileNav() {
   const { hasUnreadDiscussions, hasUnreadProjects } = useUnreadMessages();
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const scrollDirection = useScrollDirection();
+  const { push, resetTo, lastTabPaths } = useAppNavigation();
   
   // Define chat-related paths where we DON'T want to hide the navbar on scroll
   const isChatPage = location.pathname.startsWith('/messages') || 
@@ -39,6 +41,17 @@ export function MobileNav() {
       return location.pathname === path;
     }
     return location.pathname.startsWith(path);
+  };
+
+  const handleTabClick = (to: string) => {
+    if (isActive(to)) {
+      // If already on this tab, reset to root to clear stack
+      resetTo(to);
+    } else {
+      // Restore last visited path in this tab or go to root
+      const targetPath = lastTabPaths[to] || to;
+      push(targetPath);
+    }
   };
 
   const creatorNavItems = [
@@ -83,9 +96,9 @@ export function MobileNav() {
         >
           <div className="flex items-center justify-around py-1 md:py-2 px-2 md:px-4">
             {navItems.map(({ to, icon: Icon, label }) => (
-              <Link
+              <button
                 key={to}
-                to={to}
+                onClick={() => handleTabClick(to)}
                 className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isActive(to) ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   }`}
               >
@@ -98,7 +111,7 @@ export function MobileNav() {
                 {isActive(to) && (
                   <div className="w-1 h-1 bg-primary rounded-full mt-0.5 md:mt-1 animate-scale-in" />
                 )}
-              </Link>
+              </button>
             ))}
 
             {/* More dropdown for additional items */}
@@ -114,47 +127,47 @@ export function MobileNav() {
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
-                <DropdownMenuItem asChild>
-                  <Link to="/pitch" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/pitch')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <Lightbulb size={18} />
                     <span>Pitch</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/ratings" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/ratings')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <Star size={18} />
                     <span>Ratings</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/announcements" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/announcements')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <Megaphone size={18} />
                     <span>Announcements</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/learn" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/learn')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <BookOpen size={18} />
                     <span>Learn</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/marketplace" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/marketplace')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <ShoppingBag size={18} />
                     <span>Marketplace</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/vendors" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/vendors')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <VendorIcon size={18} />
                     <span>Vendors</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/pages" className="flex items-center gap-3 cursor-pointer">
+                <DropdownMenuItem onClick={() => handleTabClick('/pages')}>
+                  <div className="flex items-center gap-3 cursor-pointer w-full">
                     <StudioPageIcon size={18} />
                     <span>Pages</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

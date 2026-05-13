@@ -3,7 +3,8 @@ import { useState, useCallback, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Search, Compass } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { ExploreGrid } from '@/components/search/ExploreGrid';
 import { ExploreItem, ExploreItemType } from '@/components/search/ExploreCard';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -102,7 +103,7 @@ const SearchPage = () => {
     const [exploreItems, setExploreItems] = useState<ExploreItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [activeCategory, setActiveCategory] = useState(initialCategory);
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { isFan } = useAccountType();
 
     const availableCategories = CATEGORIES.filter(c => {
@@ -269,7 +270,7 @@ const SearchPage = () => {
                     title="Discovery"
                     subtitle="Global content grid synchronization engine. Find production partners, projects, and gear."
                     Icon={Compass}
-                    onBack={() => navigate('/feed', { state: { noScroll: true } })}
+                    onBack={() => push('/feed', { noScroll: true })}
                     actions={
                         <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
                     }

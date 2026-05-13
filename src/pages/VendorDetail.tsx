@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Vendor } from '@/types/marketplace';
 import { Button } from '@/components/ui/button';
@@ -24,7 +25,7 @@ import { Trash2 } from 'lucide-react';
 
 const VendorDetail = () => {
     const { id } = useParams<{ id: string }>();
-    const navigate = useNavigate();
+    const { push, goBack } = useAppNavigation();
     const { toast } = useToast();
     const { user } = useAuth();
     const [vendor, setVendor] = useState<Vendor | null>(null);
@@ -57,7 +58,7 @@ const VendorDetail = () => {
                     description: 'Vendor not found',
                     variant: 'destructive'
                 });
-                navigate('/vendors', { state: { noScroll: true } });
+                goBack();
             }
         } catch (error: any) {
             console.error('Error fetching vendor details:', error);
@@ -66,7 +67,7 @@ const VendorDetail = () => {
                 description: 'Failed to load vendor details',
                 variant: 'destructive'
             });
-            navigate('/vendors', { state: { noScroll: true } });
+            goBack();
         } finally {
             setLoading(false);
         }
@@ -83,7 +84,7 @@ const VendorDetail = () => {
         }
 
         if (vendor && vendor.owner_id) {
-            navigate(`/messages/${vendor.owner_id}`);
+            push(`/messages/${vendor.owner_id}`);
         } else {
             toast({
                 title: 'Error',
@@ -100,7 +101,7 @@ const VendorDetail = () => {
             const { error } = await supabase.from('vendors').delete().eq('id', vendor.id);
             if (error) throw error;
             toast({ title: "Vendor Deleted", description: "The vendor profile has been successfully removed." });
-            navigate('/vendors', { state: { noScroll: true } });
+            goBack();
         } catch (error: any) {
             toast({ title: "Error", description: error.message, variant: "destructive" });
         }
@@ -141,7 +142,7 @@ const VendorDetail = () => {
                             )}
                         </div>
                     }
-                    onBack={() => navigate('/vendors', { state: { noScroll: true } })}
+                    onBack={() => goBack()}
                     actions={
                         <div className="flex gap-2">
                             <Button variant="outline" size="icon" className="rounded-xl border-border/50" onClick={() => setShowShareSheet(true)}>

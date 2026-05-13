@@ -9,15 +9,15 @@ import Spinner from '@/components/Spinner';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import CommentSection from './CommentSection';
-
+import { useLikeMutation } from '@/hooks/mutations/useLikeMutation';
 const FollowingFeedTab = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showComments, setShowComments] = useState<{ [key: number]: boolean }>({});
+  const [showComments, setShowComments] = useState<{ [key: string]: boolean }>({});
   const { toast } = useToast();
-  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
-  const [likingPosts, setLikingPosts] = useState<Set<number>>(new Set());
+  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const { toggleLike } = useLikeMutation();
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -65,65 +65,12 @@ const FollowingFeedTab = () => {
     };
   }, [toast]);
 
-  const handleLike = async (postId: number) => {
-    if (likingPosts.has(postId)) return;
-
-    let user;
-    try {
-        const { data, error: authError } = await supabase.auth.getUser();
-        if (authError) throw authError;
-        if (!data?.user) {
-            toast({ title: "Authentication required", description: "You need to be logged in to like a post.", variant: "destructive" });
-            return;
-        }
-        user = data.user;
-    } catch (error: any) {
-        console.error("Authentication error:", error);
-        toast({ title: "Authentication failed", description: error.message || "Could not verify your session.", variant: "destructive" });
-        return;
-    }
-
+  const handleLike = async (postId: string) => {
     const isLiked = likedPosts.has(postId);
-    const originalLikedPosts = new Set(likedPosts);
-
-    setLikingPosts(prev => new Set(prev).add(postId));
-
-    // Optimistic UI update
-    setPosts(prevPosts =>
-      prevPosts.map(post =>
-        post.id === postId ? { ...post, likes: (post.likes || 0) + (isLiked ? -1 : 1) } : post
-      )
-    );
-    setLikedPosts(prev => {
-      const newSet = new Set(prev);
-      if (isLiked) newSet.delete(postId);
-      else newSet.add(postId);
-      return newSet;
-    });
-
-    const { error: dbError } = isLiked
-        ? await supabase.from('post_likes').delete().match({ post_id: postId, user_id: user.id })
-        : await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
-
-    if (dbError) {
-      // Rollback on error
-      setPosts(prevPosts =>
-        prevPosts.map(post =>
-          post.id === postId ? { ...post, likes: (post.likes || 0) + (isLiked ? 1 : -1) } : post
-        )
-      );
-      setLikedPosts(originalLikedPosts);
-      toast({ title: `Failed to ${isLiked ? 'unlike' : 'like'} post`, description: dbError.message, variant: "destructive" });
-    }
-
-    setLikingPosts(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(postId);
-      return newSet;
-    });
+    await toggleLike(postId, isLiked);
   };
 
-  const toggleComments = (postId: number) => {
+  const toggleComments = (postId: string) => {
     setShowComments(prev => ({ ...prev, [postId]: !prev[postId] }));
   };
 
@@ -142,11 +89,11 @@ const FollowingFeedTab = () => {
           <CardHeader>
             <div className="flex items-center gap-4">
               <Avatar>
-                <AvatarImage src={post.author?.avatar} alt={post.author?.name} />
-                <AvatarFallback>{post.author?.name?.charAt(0)}</AvatarFallback>
+                <AvatarImage src={post.profiles?.avatar_url || ''} alt={post.profiles?.full_name || post.profiles?.username || ''} />
+                <AvatarFallback>{(post.profiles?.full_name || post.profiles?.username || 'U').charAt(0)}</AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-semibold">{post.author?.name}</p>
+                <p className="font-semibold">{post.profiles?.full_name || post.profiles?.username}</p>
                 <p className="text-sm text-muted-foreground">{new Date(post.created_at).toLocaleTimeString()}</p>
               </div>
             </div>
@@ -155,14 +102,14 @@ const FollowingFeedTab = () => {
             <p className="mb-4">{post.content}</p>
             <div className="flex items-center justify-between text-muted-foreground">
               <div className="flex items-center gap-4">
-                <Button variant="ghost" size="sm" className="flex items-center gap-2" onClick={() => handleLike(post.id)} disabled={likingPosts.has(post.id)}>
-                  <ThumbsUp size={16} fill={likedPosts.has(post.id) ? 'currentColor' : 'none'} /> {post.likes || 0}
+                <Button variant="ghost" size="sm" className="flex items-center gap-2" onClick={() => handleLike(post.id)}>
+                  <ThumbsUp size={16} fill={likedPosts.has(post.id) ? 'currentColor' : 'none'} /> {post.like_count || 0}
                 </Button>
                 <Button variant="ghost" size="sm" className="flex items-center gap-2" onClick={() => toggleComments(post.id)}>
-                  <MessageCircle size={16} /> {post.comments_count || 0}
+                  <MessageCircle size={16} /> {post.comment_count || 0}
                 </Button>
               </div>
-              <ShareButton postId={post.id} />
+              <ShareButton postId={post.id} shareCount={post.share_count || 0} author={post.profiles as any} />
             </div>
             {showComments[post.id] && (
               <div className="mt-4">

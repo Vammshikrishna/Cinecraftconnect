@@ -6,11 +6,14 @@ import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import StudioPageIcon from '@/components/icons/StudioPageIcon';
 
+import { useQueryClient } from '@tanstack/react-query';
+
 const NavLinks = () => {
   const location = useLocation();
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { hasUnreadDiscussions, hasUnreadProjects } = useUnreadMessages();
+  const queryClient = useQueryClient();
 
   // Function to check if a path is active
   const isActive = (path: string) => {
@@ -47,6 +50,23 @@ const NavLinks = () => {
     return false;
   };
 
+  // Prefetch data on hover for instant feel
+  const handlePrefetch = (path: string) => {
+    if (path === '/feed') {
+      // Prefetching feed static data
+      queryClient.prefetchQuery({
+        queryKey: ['home-feed-static', user?.id],
+        staleTime: 1000 * 60 * 5,
+      });
+    } else if (path === '/projects') {
+      queryClient.prefetchQuery({
+        queryKey: ['projects', user?.id],
+        staleTime: 1000 * 60 * 5,
+      });
+    }
+    // Add other prefetch logic as needed
+  };
+
   return (
     <nav className="flex items-center gap-1 w-full">
       <div className="flex items-center gap-1 min-w-max">
@@ -54,6 +74,7 @@ const NavLinks = () => {
           <Link
             key={path}
             to={path}
+            onMouseEnter={() => handlePrefetch(path)}
             className={`nav-item px-2 lg:px-2 xl:px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative group whitespace-nowrap flex items-center gap-2 ${isActive(path) ? 'nav-item-active' : 'nav-item-inactive'
               }`}
           >

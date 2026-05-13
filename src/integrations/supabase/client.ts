@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Database } from './database.types'
+import { secureStorageEngine } from '@/lib/auth/secureStorage';
 
 // Use environment variables for Supabase configuration.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -15,6 +16,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, 
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,
+        storage: secureStorageEngine,
     },
     realtime: {
         params: {

@@ -3,6 +3,9 @@ import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
 import { useGlobalNotifications } from '@/hooks/useGlobalNotifications';
+import { ConsistencyDebugPanel } from '@/devtools/ConsistencyDebugPanel';
+import { OrchestrationDebugPanel } from '@/devtools/OrchestrationDebugPanel';
+import { HydrationDebugPanel } from '@/devtools/HydrationDebugPanel';
 
 /**
  * This component handles global features that should be active
@@ -28,6 +31,15 @@ const GlobalFeatures = () => {
             
             {/* Render the Back to Top button */}
             <BackToTop />
+
+            {/* Development-only Consistency and Orchestration Debug Panels */}
+            {import.meta.env.DEV && (
+              <>
+                <ConsistencyDebugPanel />
+                <OrchestrationDebugPanel />
+                <HydrationDebugPanel />
+              </>
+            )}
         </>
     );
 };

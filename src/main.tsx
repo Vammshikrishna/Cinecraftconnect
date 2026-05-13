@@ -6,8 +6,7 @@ import { ThemeProvider } from "./components/theme-provider.tsx";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { persistQueryClient } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+
 
 // Suppress specific verbose library logs
 const originalLog = console.log;
@@ -42,7 +41,9 @@ console.warn = (...args: any[]) => {
   originalWarn.apply(console, args);
 };
 
-const queryClient = new QueryClient({
+import { initPersistor } from '@/lib/cache/persistQueryClient';
+
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 10, // 10 minutes (increased for better mobile experience)
@@ -53,15 +54,8 @@ const queryClient = new QueryClient({
   },
 });
 
-const persister = createSyncStoragePersister({
-  storage: window.localStorage,
-});
-
-persistQueryClient({
-  queryClient,
-  persister,
-  maxAge: 1000 * 60 * 60 * 24, // 24 hours persistence
-});
+// Initialize safe, versioned persistence
+initPersistor(queryClient);
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

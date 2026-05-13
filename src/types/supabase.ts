@@ -208,7 +208,7 @@ export type Database = {
           created_at: string
           id: string
           read_at: string | null
-          recipient_id: string
+          receiver_id: string
           sender_id: string
         }
         Insert: {
@@ -217,7 +217,7 @@ export type Database = {
           created_at?: string
           id?: string
           read_at?: string | null
-          recipient_id: string
+          receiver_id: string
           sender_id: string
         }
         Update: {
@@ -226,13 +226,13 @@ export type Database = {
           created_at?: string
           id?: string
           read_at?: string | null
-          recipient_id?: string
+          receiver_id?: string
           sender_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "direct_messages_recipient_id_fkey"
-            columns: ["recipient_id"]
+            foreignKeyName: "direct_messages_receiver_id_fkey"
+            columns: ["receiver_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

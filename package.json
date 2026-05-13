@@ -8,15 +8,22 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
+    "lint:arch": "eslint \"src/components/**/*.{ts,tsx}\" \"src/pages/**/*.{ts,tsx}\" \"src/screens/**/*.{ts,tsx}\" \"src/widgets/**/*.{ts,tsx}\" --max-warnings=0",
     "preview": "vite preview",
     "supabase:gen-types": "supabase gen types typescript --local > src/integrations/supabase/types.ts",
-    "test": "vitest"
+    "test": "vitest",
+    "test:mutations": "vitest run src/tests/mutations",
+    "test:realtime": "vitest run src/tests/realtime"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "^8.0.0",
     "@capacitor/android": "^8.0.2",
     "@capacitor/app": "^8.1.0",
     "@capacitor/cli": "^8.0.2",
     "@capacitor/core": "^8.0.2",
+    "@capacitor/device": "^8.0.2",
+    "@capacitor/network": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.1",
     "@hookform/resolvers": "^3.9.0",
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.2.0",

@@ -1,6 +1,6 @@
 import { Star, Users, X } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import { useAppRole } from '@/hooks/useAppRole';
 import { LazyImage } from '@/components/performance/LazyImage';
@@ -38,14 +38,14 @@ const languageNames: Record<string, string> = {
 
 const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 'movie', onDismiss }: FeedRatingCardProps) => {
     const [hoverRating, setHoverRating] = useState<number | null>(null);
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { isInternal } = useAppRole();
 
     const displayRating = hoverRating ?? rating.user_rating ?? 0;
     const language = rating.original_language ? (languageNames[rating.original_language] || rating.original_language.toUpperCase()) : null;
 
     const handleCardClick = () => {
-        navigate(`/content/${contentType}/${rating.id}`);
+        push(`/content/${contentType}/${rating.id}`);
     };
 
     if (variant === 'vertical') {

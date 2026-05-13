@@ -19,13 +19,13 @@ import { PageHeader } from '@/components/common/PageHeader';
 
 
 import { useAccountType } from '@/hooks/useAccountType';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAppRole } from '@/hooks/useAppRole';
 
 
 const Vendors = () => {
     const { toast } = useToast();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { isFan } = useAccountType();
     const { isInternal } = useAppRole();
     const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -36,9 +36,9 @@ const Vendors = () => {
     // Redirect fans
     useEffect(() => {
         if (isFan) {
-            navigate('/pricing');
+            push('/pricing');
         }
-    }, [isFan, navigate]);
+    }, [isFan, push]);
 
 
 

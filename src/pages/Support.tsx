@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 
 interface SupportTicket {
   id: string;
@@ -45,7 +45,7 @@ interface SupportTicket {
 const SupportPage = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { isModerator, isAdmin, isSuperAdmin } = useAppRole();
   const isStaff = isModerator || isAdmin || isSuperAdmin;
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
@@ -184,7 +184,7 @@ const SupportPage = () => {
           title="Support Hub"
           subtitle="How can the CineCraft Team help you today?"
           Icon={LifeBuoy}
-          onBack={() => navigate('/settings', { state: { noScroll: true } })}
+          onBack={() => push('/settings', { noScroll: true })}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-8">
@@ -364,7 +364,7 @@ const SupportPage = () => {
                         animate={{ opacity: 1, y: 0 }}
                         whileHover={{ scale: 1.01 }}
                         className="p-4 bg-card rounded-2xl border border-border/50 shadow-sm flex items-center justify-between cursor-pointer group"
-                        onClick={() => navigate(`/support/ticket/${ticket.id}`)}
+                        onClick={() => push(`/support/ticket/${ticket.id}`)}
                       >
                         <div className="flex gap-4 items-start">
                           <div className={`p-2 rounded-xl ${ticket.status === 'open' ? 'bg-orange-500/10 text-orange-600' : 'bg-slate-500/10 text-slate-600'}`}>
@@ -424,7 +424,7 @@ const SupportPage = () => {
                     Access deep governance tools to manage tickets and platform health.
                   </p>
                   <Button
-                    onClick={() => navigate('/admin')}
+                    onClick={() => push('/admin')}
                     variant="outline"
                     className="w-full rounded-xl border-primary/30 hover:bg-primary/10 text-primary font-bold shadow-sm"
                   >
@@ -440,15 +440,15 @@ const SupportPage = () => {
                 Resources
               </h4>
               <ul className="space-y-3">
-                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => navigate('/documentation')}>
+                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/documentation')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Documentation</span>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
                 </li>
-                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => navigate('/community-guidelines')}>
+                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/community-guidelines')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Community Guidelines</span>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
                 </li>
-                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => navigate('/safety-center')}>
+                <li className="text-sm flex items-center justify-between group cursor-pointer" onClick={() => push('/safety-center')}>
                   <span className="text-muted-foreground group-hover:text-foreground transition-colors font-medium">Safety Center</span>
                   <ChevronRight className="w-4 h-4 text-muted-foreground/50 group-hover:text-primary transition-all" />
                 </li>

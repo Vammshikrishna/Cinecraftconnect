@@ -1,5 +1,5 @@
 
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bell, Shield, Eye, Download,
@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { BackButton } from '@/components/common/BackButton';
 
 const SettingsPage = () => {
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
 
   const settingsSections = [
     {
@@ -115,7 +115,7 @@ const SettingsPage = () => {
               <Card
                 key={section.id}
                 className="cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-[1.02] hover:border-primary/50 group rounded-2xl border-border/50"
-                onClick={() => navigate(section.path)}
+                onClick={() => push(section.path)}
               >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -38,7 +39,7 @@ interface Project {
 
 const ProjectDetailPage = () => {
   const { projectId } = useParams();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { toast } = useToast();
   const { isInternal } = useAppRole();
@@ -93,7 +94,7 @@ const ProjectDetailPage = () => {
 
             // Auto-redirect if member or owner
             if (isMemberRes || isOwner || isInternal) {
-              navigate(`/projects/${projectId}/space`, { replace: true });
+              push(`/projects/${projectId}/space`, { noScroll: true });
               return; // Exit early
             }
           }
@@ -132,7 +133,7 @@ const ProjectDetailPage = () => {
     return (
       <div className="flex h-screen items-center justify-center flex-col gap-4">
         <h2 className="text-2xl font-bold">Project Not Found</h2>
-        <Button onClick={() => navigate('/projects', { state: { noScroll: true } })}>View All Projects</Button>
+        <Button onClick={() => push('/projects', { noScroll: true })}>View All Projects</Button>
       </div>
     );
   }
@@ -162,7 +163,7 @@ const ProjectDetailPage = () => {
               {(isOwner || isMember || isInternal) ? (
                 <Button 
                   className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
-                  onClick={() => navigate(`/projects/${project.id}/space`)}
+                  onClick={() => push(`/projects/${project.id}/space`)}
                 >
                   <Briefcase className="mr-2 h-4 w-4" />
                   {isOwner ? 'Manage Workspace' : isInternal ? 'Enter Workspace (Staff)' : 'Enter Workspace'}

@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { MultiStepForm } from '@/components/ui/multi-step-form';
@@ -27,7 +27,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
   const { user } = useAuth();
   const { isInternal } = useAppRole();
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   useEffect(() => {
@@ -199,7 +199,7 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
         });
 
         if (newProject) {
-          navigate(`/projects/${newProject.id}/space`);
+          push(`/projects/${newProject.id}/space`);
         }
       }
 

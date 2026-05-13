@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -70,7 +71,7 @@ const PublicProfile = () => {
   const { userId } = useParams();
   const [profile, setProfile] = useState<Profile | null>(null);
   useRecordView(profile?.id);
-  const navigate = useNavigate();
+  const { push } = useAppNavigation();
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const { isAdmin, isInternal } = useAppRole();
@@ -88,14 +89,14 @@ const PublicProfile = () => {
   useEffect(() => {
     if (userId) {
       if (user && userId === user.id) {
-        navigate('/profile', { state: { noScroll: true } });
+        push('/profile', { noScroll: true });
         return;
       }
       fetchProfile();
     } else {
       setLoading(false);
     }
-  }, [userId, user, navigate]);
+  }, [userId, user, push]);
 
   const fetchProfile = async () => {
     setLoading(true);
@@ -151,7 +152,7 @@ const PublicProfile = () => {
       
       // Check if this is the user's own profile (resolved by username)
       if (user && data.id === user.id) {
-        navigate('/profile', { state: { noScroll: true } });
+        push('/profile', { noScroll: true });
         return;
       }
 
@@ -494,8 +495,11 @@ const PublicProfile = () => {
                           <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Connect</Button>
                         )}
                         {connectionStatus === 'connected' && (
-                          <Button asChild className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                            <Link to={`/messages/${profile.id}`} className="flex items-center justify-center"><MessageCircle className="mr-2 h-3 w-3" />Message</Link>
+                          <Button 
+                            className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                            onClick={() => push(`/messages/${profile.id}`)}
+                          >
+                            <MessageCircle className="mr-2 h-3 w-3" />Message
                           </Button>
                         )}
                       </div>
@@ -511,7 +515,7 @@ const PublicProfile = () => {
                   <Button
                     variant="outline"
                     className="h-9 w-9 p-0 border-primary/20 hover:bg-primary/10 hover:text-primary rounded-lg"
-                    onClick={() => navigate(`/admin/users?id=${profile.id}`)}
+                    onClick={() => push(`/admin/users?id=${profile.id}`)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>

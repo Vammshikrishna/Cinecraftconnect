@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Button } from '@/components/ui/button';
 import Footer from '@/components/Footer';
 
@@ -13,7 +13,7 @@ interface LegalPageLayoutProps {
 }
 
 const LegalPageLayout = ({ children, title, subtitle, icon, lastUpdated }: LegalPageLayoutProps) => {
-  const navigate = useNavigate();
+  const { goBack } = useAppNavigation();
 
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden pt-20">
@@ -47,7 +47,7 @@ const LegalPageLayout = ({ children, title, subtitle, icon, lastUpdated }: Legal
         >
           <Button 
             variant="ghost" 
-            onClick={() => navigate(-1)}
+            onClick={() => goBack()}
             className="mb-10 group hover:bg-primary/5"
           >
             <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" />

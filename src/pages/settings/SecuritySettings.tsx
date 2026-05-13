@@ -44,9 +44,9 @@ const SecuritySettings = () => {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <Label className="text-base font-medium">Active Sessions</Label>
-                                    <p className="text-sm text-muted-foreground mt-1">Manage your login sessions</p>
+                                    <p className="text-sm text-muted-foreground mt-1">Manage your trusted devices and logins</p>
                                 </div>
-                                <Button variant="outline" disabled>View</Button>
+                                <Button variant="outline" onClick={() => window.location.href = '/settings/sessions'}>View</Button>
                             </div>
                         </CardContent>
                     </Card>

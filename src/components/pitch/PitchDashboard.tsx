@@ -11,7 +11,7 @@ import { Search, FileText, Clock, MessageSquare, ChevronRight } from 'lucide-rea
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 
 const STATUS_FILTERS = [
     { value: 'all', label: 'All' },
@@ -113,7 +113,7 @@ export const CallCreatorPitchInbox = () => {
             ) : (
                 <div className="space-y-3">
                     {filtered.map(submission => {
-                        const statusInfo = PITCH_STATUS_LABELS[submission.status];
+                        const statusInfo = PITCH_STATUS_LABELS[submission.status || 'submitted'];
                         const avatarUrl = getSafeImageUrl(submission.profiles?.avatar_url || null);
                         const initials = (submission.profiles?.full_name || 'W').split(' ').map(n => n[0]).join('').toUpperCase();
                         return (
@@ -176,7 +176,7 @@ export const CallCreatorPitchInbox = () => {
 // ─── WRITER'S PITCH TRACKER ──────────────────────────────────────────────────
 export const WriterPitchTracker = () => {
     const { submissions, loading } = useMyPitchSubmissions();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
 
     if (loading) return (
         <div className="grid gap-3">
@@ -189,14 +189,14 @@ export const WriterPitchTracker = () => {
             <FileText className="h-12 w-12 mx-auto mb-4 opacity-30" />
             <p className="font-bold">No pitches submitted yet</p>
             <p className="text-xs mt-1">Browse pitch calls and submit your first pitch to see it here</p>
-            <Button className="mt-4" onClick={() => navigate('/pitch')}>Browse Pitch Calls</Button>
+            <Button className="mt-4" onClick={() => push('/pitch')}>Browse Pitch Calls</Button>
         </div>
     );
 
     return (
         <div className="space-y-3">
             {submissions.map(sub => {
-                const statusInfo = PITCH_STATUS_LABELS[sub.status];
+                const statusInfo = PITCH_STATUS_LABELS[sub.status || 'submitted'];
                 return (
                     <div key={sub.id} className="bg-card border border-border rounded-xl p-4">
                         <div className="flex items-start justify-between gap-3">
@@ -219,7 +219,7 @@ export const WriterPitchTracker = () => {
                                     <Button
                                         size="sm"
                                         className="mt-2 text-xs"
-                                        onClick={() => navigate(`/dm/${sub.pitch_call_id}`)}
+                                        onClick={() => push(`/dm/${sub.pitch_call_id}`)}
                                     >
                                         <MessageSquare className="h-3 w-3 mr-1" /> Collaborate
                                     </Button>

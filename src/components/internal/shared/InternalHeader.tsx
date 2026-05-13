@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import AppLogo from '@/components/common/AppLogo';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAppRole } from '@/hooks/useAppRole';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -24,7 +24,7 @@ interface InternalHeaderProps {
 }
 
 const InternalHeader: React.FC<InternalHeaderProps> = ({ title, subtitle, role }) => {
-  const navigate = useNavigate();
+   const { push } = useAppNavigation();
   const { role: userRole } = useAppRole();
   const { signOut, user } = useAuth();
 
@@ -55,16 +55,16 @@ const InternalHeader: React.FC<InternalHeaderProps> = ({ title, subtitle, role }
       <div className="flex items-center gap-4">
         {/* Internal Navigation Shortcuts */}
         <div className="hidden lg:flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border/50">
-          <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => navigate('/moderation')}>
+          <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => push('/moderation')}>
             <Shield className="w-3.5 h-3.5" /> MOD
           </Button>
           {(userRole === 'admin' || userRole === 'super_admin') && (
-            <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => navigate('/admin')}>
+            <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => push('/admin')}>
               <Activity className="w-3.5 h-3.5" /> OPS
             </Button>
           )}
           {userRole === 'super_admin' && (
-            <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => navigate('/super-admin')}>
+            <Button variant="ghost" size="sm" className="h-8 px-3 rounded-lg text-[10px] font-bold gap-1.5" onClick={() => push('/super-admin')}>
               <Terminal className="w-3.5 h-3.5" /> ROOT
             </Button>
           )}
@@ -97,7 +97,7 @@ const InternalHeader: React.FC<InternalHeaderProps> = ({ title, subtitle, role }
                 <p className="text-[10px] text-muted-foreground font-medium">{user?.email}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="rounded-xl px-3 py-2 cursor-pointer gap-2" onClick={() => navigate('/settings')}>
+              <DropdownMenuItem className="rounded-xl px-3 py-2 cursor-pointer gap-2" onClick={() => push('/settings')}>
                 <Settings className="w-4 h-4" />
                 <span className="text-sm font-medium">Internal Settings</span>
               </DropdownMenuItem>

@@ -14,7 +14,7 @@ import VerificationBadge from '@/components/common/VerificationBadge';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { getSafeImageUrl } from '@/services/tmdb';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useToast } from '@/hooks/use-toast';
 
 const FORMAT_LABELS: Record<string, string> = {
@@ -46,7 +46,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
     const [showShare, setShowShare] = useState(false);
     const [localSaved, setLocalSaved] = useState(pitchCall.is_saved);
     const { user } = useAuth();
-    const navigate = useNavigate();
+    const { push } = useAppNavigation();
     const { toast } = useToast();
 
     const isExpired = pitchCall.deadline && isPast(parseISO(pitchCall.deadline));
@@ -60,7 +60,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
     };
 
     const handlePitchNow = () => {
-        if (!user) { navigate('/auth'); return; }
+        if (!user) { push('/auth'); return; }
         if (!canSubmit) {
             toast({ title: 'Not eligible', description: 'Only writers, directors, and creators can submit pitches.', variant: 'destructive' });
             return;
@@ -74,7 +74,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                onClick={() => navigate(`/pitch/${pitchCall.id}`)}
+                onClick={() => push(`/pitch/${pitchCall.id}`)}
                 className="bg-card border border-border rounded-2xl overflow-hidden hover:shadow-lg hover:border-primary/20 transition-all duration-300 group cursor-pointer"
             >
                 {/* Header accent */}
@@ -85,7 +85,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                     <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3" onClick={(e) => {
                             e.stopPropagation();
-                            navigate(`/profile/${pitchCall.creator_id}`);
+                            push(`/profile/${pitchCall.creator_id}`);
                         }}>
                             <Avatar className="h-10 w-10 ring-2 ring-primary/20">
                                 <AvatarImage src={avatarUrl || undefined} />
