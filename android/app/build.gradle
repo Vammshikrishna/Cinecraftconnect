@@ -16,8 +16,34 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        release {
+            def localProperties = new Properties()
+            def localPropertiesFile = rootProject.file('local.properties')
+            if (localPropertiesFile.exists()) {
+                localPropertiesFile.withReader('UTF-8') { reader ->
+                    localProperties.load(reader)
+                }
+            }
+
+            def mKeystoreFile = localProperties.getProperty('RELEASE_STORE_FILE') ?: (project.hasProperty('RELEASE_STORE_FILE') ? RELEASE_STORE_FILE : null)
+            def mKeystorePassword = localProperties.getProperty('RELEASE_STORE_PASSWORD') ?: (project.hasProperty('RELEASE_STORE_PASSWORD') ? RELEASE_STORE_PASSWORD : null)
+            def mKeyAlias = localProperties.getProperty('RELEASE_KEY_ALIAS') ?: (project.hasProperty('RELEASE_KEY_ALIAS') ? RELEASE_KEY_ALIAS : null)
+            def mKeyPassword = localProperties.getProperty('RELEASE_KEY_PASSWORD') ?: (project.hasProperty('RELEASE_KEY_PASSWORD') ? RELEASE_KEY_PASSWORD : null)
+
+            if (mKeystoreFile != null) {
+                storeFile file(mKeystoreFile)
+                storePassword mKeystorePassword
+                keyAlias mKeyAlias
+                keyPassword mKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
