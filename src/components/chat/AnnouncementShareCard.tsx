@@ -9,7 +9,7 @@ interface AnnouncementShareCardProps {
 
 export const AnnouncementShareCard = ({ title, content }: AnnouncementShareCardProps) => {
     return (
-        <div className="w-full max-w-[270px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 group relative active:scale-[0.98] shadow-2xl border border-white/10">
+        <div className="w-full max-w-[200px] sm:max-w-[270px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 group relative active:scale-[0.98] shadow-2xl border border-white/10">
             {/* Compact Header */}
             <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">

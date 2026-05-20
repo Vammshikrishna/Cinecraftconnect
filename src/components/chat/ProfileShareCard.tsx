@@ -82,7 +82,7 @@ export const ProfileShareCard = ({
         <div 
             onClick={handleNavigate}
             className={cn(
-                "group relative glass-card-premium flex flex-col items-center text-center p-6 transition-all duration-500 hover:-translate-y-2 w-full max-w-[280px] min-w-[220px] min-h-[320px] justify-between overflow-hidden select-none rounded-2xl border border-white/10 shadow-2xl",
+                "group relative glass-card-premium flex flex-col items-center text-center p-6 transition-all duration-500 hover:-translate-y-2 w-full max-w-[210px] sm:max-w-[280px] min-w-[170px] sm:min-w-[220px] min-h-[320px] justify-between overflow-hidden select-none rounded-2xl border border-white/10 shadow-2xl",
                 !isValidLink ? "cursor-default opacity-75 grayscale-[0.5]" : "cursor-pointer active:scale-[0.98]"
             )}
         >

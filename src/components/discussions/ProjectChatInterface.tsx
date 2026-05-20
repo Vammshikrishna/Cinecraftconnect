@@ -15,6 +15,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { MessageComposer } from './MessageComposer';
+import { TypingIndicator } from './TypingIndicator';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { PostShareCard } from '@/components/chat/PostShareCard';
 import { MarketplaceShareCard } from '@/components/chat/MarketplaceShareCard';
 import { AnnouncementShareCard } from '@/components/chat/AnnouncementShareCard';
@@ -49,6 +51,7 @@ interface Message {
     avatar_url: string | null;
   } | null;
   deleted_for_users: string[] | null;
+  status?: 'pending' | 'sent' | 'error';
 }
 
 interface ProjectChatInterfaceProps {
@@ -92,10 +95,15 @@ const formatTimestamp = (timestamp: string) => {
 };
 
 export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChatInterfaceProps) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isInternal } = useAppRole();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef(messages);
+  const channelRef = useRef<any>(null);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [sending, setSending] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -104,12 +112,101 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
   const lastScrollHeight = useRef<number>(0);
   const isInitialLoad = useRef(true);
   const [spaceId, setSpaceId] = useState<string | null>(null);
+  const { typingUsers, startTyping, stopTyping } = useTypingIndicator(spaceId || '');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const { observeMessage } = useMessageSeen('project_messages');
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const { markAsRead } = useChatReadStatus();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
+
+  const fetchMessages = useCallback(async (isNewRoom = true) => {
+    if (!spaceId) return;
+
+    if (isNewRoom) {
+      setLoadingMessages(true);
+      isInitialLoad.current = true;
+    }
+
+    const { data, error } = await supabase
+      .from('project_space_messages')
+      .select(`
+        id,
+        content,
+        user_id,
+        created_at,
+        is_deleted,
+        reply_to_id,
+        deleted_for_users,
+        profiles!user_id (
+          username,
+          full_name,
+          avatar_url
+        ),
+        attachment_url,
+        attachment_type
+      `)
+      .eq('project_space_id', spaceId)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      console.error('Error fetching messages:', error);
+    } else {
+      const fetchedMessages = data || [];
+      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      setMessages(prev => {
+        const pending = prev.filter(m => m.status === 'pending');
+        const uniquePending = pending.filter(pm => 
+          !sortedMessages.some(sm => sm.user_id === pm.user_id && sm.content === pm.content)
+        );
+        return [...sortedMessages, ...uniquePending];
+      });
+      setHasMore(fetchedMessages.length === 30);
+    }
+    setLoadingMessages(false);
+  }, [spaceId]);
+
+  const fetchReadStatuses = useCallback(async () => {
+    if (!spaceId) return;
+    const { data, error } = await (supabase.from('project_space_message_read_status') as any)
+      .select('user_id, last_read_at')
+      .eq('project_space_id', spaceId);
+    
+    if (error) {
+      console.error('Error fetching read statuses:', error);
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const userIds = data.map((rs: any) => rs.user_id);
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+        
+      const enrichedData = data.map((rs: any) => ({
+        ...rs,
+        profiles: profileData?.find((p: any) => p.id === rs.user_id) || { full_name: 'Unknown User' }
+      }));
+      setReadStatuses(enrichedData);
+    } else {
+      setReadStatuses([]);
+    }
+  }, [spaceId]);
+
+  const fetchMessagesRef = useRef(fetchMessages);
+  const fetchReadStatusesRef = useRef(fetchReadStatuses);
+
+  useEffect(() => {
+    fetchMessagesRef.current = fetchMessages;
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    fetchReadStatusesRef.current = fetchReadStatuses;
+  }, [fetchReadStatuses]);
 
   useEffect(() => {
     const fetchSpaceId = async () => {
@@ -211,56 +308,156 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
   useEffect(() => {
     if (!spaceId) return;
 
-    const fetchReadStatuses = async () => {
-      if (!spaceId) return;
-      const { data, error } = await (supabase.from('project_space_message_read_status') as any)
-        .select('user_id, last_read_at')
-        .eq('project_space_id', spaceId);
-      
-      if (error) {
-        console.error('Error fetching read statuses:', error);
-        return;
-      }
+    fetchMessagesRef.current();
+    fetchReadStatusesRef.current();
 
-      if (data && data.length > 0) {
-        const userIds = data.map((rs: any) => rs.user_id);
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', userIds);
-          
-        const enrichedData = data.map((rs: any) => ({
-          ...rs,
-          profiles: profileData?.find((p: any) => p.id === rs.user_id) || { full_name: 'Unknown User' }
-        }));
-        setReadStatuses(enrichedData);
-      } else {
-        setReadStatuses([]);
+    const handleProjectMessageChange = async (payload: any) => {
+      if (payload.eventType === 'INSERT') {
+        const newMsg = payload.new;
+        const isMyMessage = newMsg.user_id === user?.id;
+
+        // If it's my message, find the pending one and update it
+        setMessages(prev => {
+          const hasAlready = prev.some(m => m.id === newMsg.id);
+          if (hasAlready) return prev;
+
+          // Find if we have a pending optimistic message with matching content
+          const pendingIdx = prev.findIndex(m => m.status === 'pending' && m.user_id === newMsg.user_id && m.content === newMsg.content);
+
+          if (pendingIdx !== -1) {
+            // Update the pending message
+            const updated = [...prev];
+            updated[pendingIdx] = {
+              ...updated[pendingIdx],
+              id: newMsg.id,
+              created_at: newMsg.created_at,
+              status: undefined // clear pending status
+            };
+            return updated;
+          }
+
+          // Otherwise, construct and append
+          // Try to get profile from existing messages
+          const existingMsgWithProfile = prev.find(m => m.user_id === newMsg.user_id && m.profiles);
+          if (existingMsgWithProfile) {
+            const appended = [...prev, {
+              id: newMsg.id,
+              content: newMsg.content,
+              created_at: newMsg.created_at,
+              user_id: newMsg.user_id,
+              is_deleted: newMsg.is_deleted,
+              reply_to_id: newMsg.reply_to_id,
+              attachment_url: newMsg.attachment_url,
+              attachment_type: newMsg.attachment_type,
+              profiles: existingMsgWithProfile.profiles,
+              deleted_for_users: newMsg.deleted_for_users || []
+            }];
+            return appended;
+          }
+
+          // If profile not found, we will append it dynamically after fetching
+          return prev;
+        });
+
+        // If my message, scroll to bottom
+        if (isMyMessage) {
+          setTimeout(() => scrollToBottom(), 100);
+        } else {
+          // If not my message, check if we need to fetch profile
+          const hasProfile = messagesRef.current.some(m => m.user_id === newMsg.user_id && m.profiles);
+          if (!hasProfile) {
+            try {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('id, username, full_name, avatar_url')
+                .eq('id', newMsg.user_id)
+                .single();
+
+              if (profileData) {
+                setMessages(prev => {
+                  const hasAlready = prev.some(m => m.id === newMsg.id);
+                  if (hasAlready) {
+                    // Update profile for the message that was already added
+                    return prev.map(m => m.id === newMsg.id ? { ...m, profiles: profileData } : m);
+                  }
+                  return [...prev, {
+                    id: newMsg.id,
+                    content: newMsg.content,
+                    created_at: newMsg.created_at,
+                    user_id: newMsg.user_id,
+                    is_deleted: newMsg.is_deleted,
+                    reply_to_id: newMsg.reply_to_id,
+                    attachment_url: newMsg.attachment_url,
+                    attachment_type: newMsg.attachment_type,
+                    profiles: profileData,
+                    deleted_for_users: newMsg.deleted_for_users || []
+                  }];
+                });
+              }
+            } catch (err) {
+              console.error('Error fetching profile for real-time project message:', err);
+            }
+          }
+
+          setTimeout(() => scrollToBottom(), 100);
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedMsg = payload.new;
+        setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
+          ...m,
+          content: updatedMsg.content,
+          is_deleted: updatedMsg.is_deleted,
+          attachment_url: updatedMsg.attachment_url,
+          attachment_type: updatedMsg.attachment_type,
+          deleted_for_users: updatedMsg.deleted_for_users || []
+        } : m));
+      } else if (payload.eventType === 'DELETE') {
+        const deletedId = payload.old.id;
+        setMessages(prev => prev.filter(m => m.id !== deletedId));
       }
     };
 
-    fetchMessages();
-    fetchReadStatuses();
-
     const channel = supabase
-      .channel(`project_messages:${spaceId}`)
+      .channel(`project_messages-v2:${spaceId}`)
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+         const newMsg = payload.payload;
+         handleProjectMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'project_space_messages',
         filter: `project_space_id=eq.${spaceId}`
-      }, () => {
-        fetchMessages(false);
-      })
+      }, handleProjectMessageChange)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'project_space_messages',
+        filter: `project_space_id=eq.${spaceId}`
+      }, handleProjectMessageChange)
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'project_space_messages',
+        filter: `project_space_id=eq.${spaceId}`
+      }, handleProjectMessageChange)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'project_space_message_read_status',
         filter: `project_space_id=eq.${spaceId}`
       }, () => {
-        fetchReadStatuses();
+        fetchReadStatusesRef.current();
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to project space chat:', spaceId);
+          channelRef.current = channel;
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Error subscribing to project space chat:', spaceId);
+          fetchMessagesRef.current(false); // Fallback
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -325,48 +522,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
     }
   }, [spaceId, messages.length, markAsRead, user]);
 
-  const fetchMessages = async (isNewRoom = true) => {
-    if (!spaceId) return;
 
-    if (isNewRoom) {
-      setLoadingMessages(true);
-      isInitialLoad.current = true;
-    }
-
-    const { data, error } = await supabase
-      .from('project_space_messages')
-      .select(`
-        id,
-        content,
-        user_id,
-        created_at,
-        is_deleted,
-        reply_to_id,
-        deleted_for_users,
-        profiles!user_id (
-          username,
-          full_name,
-          avatar_url
-        ),
-        attachment_url,
-        attachment_type
-      `)
-      .eq('project_space_id', spaceId)
-      .order('created_at', { ascending: false })
-      .limit(30);
-
-    if (error) {
-      console.error('Error fetching messages:', error);
-    } else {
-      const fetchedMessages = data || [];
-      const sortedMessages = [...fetchedMessages].sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      setMessages(sortedMessages);
-      setHasMore(fetchedMessages.length === 30);
-    }
-    setLoadingMessages(false);
-  };
 
   const loadMoreMessages = async () => {
     if (!spaceId || loadingMessages || !hasMore || messages.length === 0) return;
@@ -444,6 +600,49 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
 
         attachmentUrl = publicUrl;
         attachmentType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+      }
+
+      // Create optimistic message
+      const tempId = `temp-${Date.now()}`;
+      const optimisticMessage: Message = {
+        id: tempId,
+        content: content.trim() || `Shared ${attachmentType === 'image' ? 'an image' : attachmentType === 'video' ? 'a video' : 'a file'}`,
+        created_at: new Date().toISOString(),
+        user_id: user.id,
+        reply_to_id: replyingTo?.id || null,
+        attachment_url: attachmentUrl,
+        attachment_type: attachmentType,
+        profiles: {
+          username: profile?.username || user.email?.split('@')[0] || 'me',
+          full_name: profile?.full_name || user.user_metadata?.full_name || 'Me',
+          avatar_url: profile?.avatar_url || user.user_metadata?.avatar_url || null
+        },
+        is_deleted: false,
+        deleted_for_users: [],
+        status: 'pending'
+      };
+
+      // Add to messages local state immediately!
+      setMessages(prev => [...prev, optimisticMessage]);
+      setTimeout(() => scrollToBottom(), 50);
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: {
+             id: optimisticMessage.id,
+             content: optimisticMessage.content,
+             created_at: optimisticMessage.created_at,
+             user_id: optimisticMessage.user_id,
+             reply_to_id: optimisticMessage.reply_to_id,
+             attachment_url: optimisticMessage.attachment_url,
+             attachment_type: optimisticMessage.attachment_type,
+             is_deleted: false,
+             deleted_for_users: [],
+             profiles: optimisticMessage.profiles
+          }
+        });
       }
 
       const { error } = await supabase
@@ -731,7 +930,11 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                 ref={observeMessage}
                 data-message-id={message.id}
                 data-sender-id={message.user_id}
-                className={`flex gap-3 mb-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isOwn ? 'flex-row-reverse' : ''}`}
+                className={cn(
+                  "flex gap-3 mb-2 group animate-in fade-in slide-in-from-bottom-2 duration-300",
+                  isOwn ? 'flex-row-reverse' : '',
+                  message.status === 'pending' && 'opacity-60 saturate-50'
+                )}
               >
                 <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
                   <AvatarImage src={message.profiles?.avatar_url || undefined} />
@@ -861,16 +1064,21 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
             </button>
           </div>
         )}
-      <div className="p-0 border-t border-border">{isInternal ? (
+      <div className="p-0 border-t border-border relative">{isInternal ? (
             <div className="p-4 bg-muted/30 text-center text-xs text-muted-foreground italic border-t border-border/50">
               Internal staff cannot send messages in project spaces.
             </div>
           ) : (
-            <MessageComposer
-              onSend={handleSendMessage}
-              disabled={sending}
-              isUploading={isUploading}
-            />
+            <>
+              <TypingIndicator typingUsers={typingUsers} />
+              <MessageComposer
+                onSend={handleSendMessage}
+                disabled={sending}
+                isUploading={isUploading}
+                onTyping={startTyping}
+                onStopTyping={stopTyping}
+              />
+            </>
           )}
         </div>
       </div>

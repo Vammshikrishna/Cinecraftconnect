@@ -8,16 +8,22 @@ interface TypingUser {
 }
 
 export const useTypingIndicator = (roomId: string) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<any>(null);
+  const lastTrackedRef = useRef<number>(0);
 
   useEffect(() => {
     if (!user || !roomId) return;
 
-    // Subscribe to typing events via Supabase Realtime
-    const channel = supabase.channel(`typing-${roomId}`);
+    const channel = supabase.channel(`typing-${roomId}`, {
+      config: {
+        presence: {
+          key: user.id,
+        },
+      },
+    });
 
     channel
       .on('presence', { event: 'sync' }, () => {
@@ -37,13 +43,9 @@ export const useTypingIndicator = (roomId: string) => {
 
         setTypingUsers(typing);
       })
-      .on('presence', { event: 'join' }, () => {
-
-      })
-      .on('presence', { event: 'leave' }, () => {
-
-      })
-      .subscribe(async (status) => {
+      .on('presence', { event: 'join' }, () => {})
+      .on('presence', { event: 'leave' }, () => {})
+      .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           channelRef.current = channel;
         }
@@ -54,42 +56,41 @@ export const useTypingIndicator = (roomId: string) => {
     };
   }, [roomId, user]);
 
+  const stopTyping = useCallback(() => {
+    if (!channelRef.current) return;
+
+    channelRef.current.untrack();
+    lastTrackedRef.current = 0;
+
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
   const startTyping = useCallback(async () => {
     if (!user || !channelRef.current) return;
 
-    // Get user profile for display name
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .single();
-
-    // Track presence
-    await channelRef.current.track({
-      user_id: user.id,
-      full_name: profile?.full_name || 'Anonymous',
-    });
+    const now = Date.now();
+    // Throttle tracking calls to once every 2 seconds to prevent WebSocket flooding
+    if (now - lastTrackedRef.current > 2000) {
+      lastTrackedRef.current = now;
+      await channelRef.current.track({
+        user_id: user.id,
+        full_name: profile?.full_name || 'Anonymous',
+      });
+    }
 
     // Clear existing timeout
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
 
-    // Auto-stop typing after 3 seconds
+    // Auto-stop typing after 4 seconds of inactivity
     timeoutRef.current = setTimeout(() => {
       stopTyping();
-    }, 3000);
-  }, [user]);
-
-  const stopTyping = useCallback(() => {
-    if (!channelRef.current) return;
-
-    channelRef.current.untrack();
-
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-  }, []);
+    }, 4000);
+  }, [user, profile, stopTyping]);
 
   return {
     typingUsers,

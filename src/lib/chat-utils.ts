@@ -44,6 +44,9 @@ export const getDisplayMessage = (content: string) => {
 
 export const getNotificationIcon = (type: string) => {
     switch (type) {
+        case 'new_message':
+        case 'message':
+            return '💬';
         case 'like': return '❤️';
         case 'comment': return '💬';
         case 'new_follower': return '👤';

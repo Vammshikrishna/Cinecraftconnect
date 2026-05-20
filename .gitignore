@@ -32,3 +32,11 @@ supabase/.temp/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Keystores & Build Artifacts
+*.keystore
+*.jks
+*.apk
+
+# Google Services / Firebase Config
+google-services.json
