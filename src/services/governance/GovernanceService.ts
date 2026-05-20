@@ -29,7 +29,12 @@ export class GovernanceService {
    * Captures a snapshot of an entity for rollback purposes.
    */
   private static async captureSnapshot(table: string, id: string) {
-    const { data } = await (supabase as any).from(table as any).select('*').eq('id', id).single();
+    const keyColumn = table === 'user_roles' ? 'user_id' : 'id';
+    const { data } = await (supabase as any)
+      .from(table as any)
+      .select('*')
+      .eq(keyColumn, id)
+      .maybeSingle();
     return data;
   }
 

@@ -43,6 +43,8 @@ import { DiscussionShareCard } from './DiscussionShareCard';
 import { usePresence } from '@/hooks/usePresence';
 import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 import VerificationBadge from '../common/VerificationBadge';
+import { TypingIndicator } from '../discussions/TypingIndicator';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 
 
 interface Message {
@@ -108,10 +110,15 @@ const getUserColor = (userId: string) => {
 };
 
 const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { push } = useAppNavigation();
   const { onlineUserIds } = usePresence();
+  const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId || '');
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -273,25 +280,85 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   useEffect(() => {
     if (!roomId) return;
 
+    const handleDirectMessageChange = async (payload: any) => {
+      if (payload.eventType === 'INSERT') {
+        const newMsg = payload.new;
+        const isMyMessage = newMsg.sender_id === user?.id;
+
+        setMessages(prev => {
+          const hasAlready = prev.some(m => m.id === newMsg.id);
+          if (hasAlready) return prev;
+
+          const sender_profile = isMyMessage ? {
+            full_name: profile?.full_name || user?.user_metadata?.full_name || 'You',
+            avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || '',
+            is_verified: profile?.is_verified || false
+          } : {
+            full_name: partnerName || '',
+            avatar_url: partnerAvatarUrl || '',
+            is_verified: partnerIsVerified || false
+          };
+
+          let replied_to_message = undefined;
+          if (newMsg.reply_to_id) {
+            const repliedMsg = prev.find(m => m.id === newMsg.reply_to_id);
+            if (repliedMsg) {
+               replied_to_message = {
+                 id: repliedMsg.id,
+                 content: repliedMsg.content,
+                 is_deleted: repliedMsg.is_deleted,
+                 sender_profile: repliedMsg.sender_profile
+               };
+            }
+          }
+
+          const appended: Message = {
+            id: newMsg.id,
+            content: newMsg.content,
+            created_at: newMsg.created_at,
+            sender_id: newMsg.sender_id,
+            is_deleted: newMsg.is_deleted,
+            reply_to_id: newMsg.reply_to_id,
+            attachment_url: newMsg.attachment_url,
+            attachment_type: newMsg.attachment_type,
+            deleted_for_users: newMsg.deleted_for_users || [],
+            sender_profile: sender_profile,
+            replied_to_message: replied_to_message
+          };
+          return [...prev, appended];
+        });
+
+        setTimeout(() => scrollToBottom(), 100);
+
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedMsg = payload.new;
+        setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
+          ...m,
+          content: updatedMsg.content,
+          is_deleted: updatedMsg.is_deleted,
+          attachment_url: updatedMsg.attachment_url,
+          attachment_type: updatedMsg.attachment_type,
+          deleted_for_users: updatedMsg.deleted_for_users || []
+        } : m));
+      } else if (payload.eventType === 'DELETE') {
+        const deletedId = payload.old.id;
+        setMessages(prev => prev.filter(m => m.id !== deletedId));
+      }
+    };
+
     const channel = supabase
       .channel(`chat-v4-${roomId}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
-        () => {
-          setTimeout(() => fetchMessagesRef.current(false), 150);
-        }
+        handleDirectMessageChange
       )
       .on('postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
-        () => {
-          setTimeout(() => fetchMessagesRef.current(false), 150);
-        }
+        handleDirectMessageChange
       )
       .on('postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
-        () => {
-          setTimeout(() => fetchMessagesRef.current(false), 150);
-        }
+        handleDirectMessageChange
       ).subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Successfully subscribed to real-time chat for room:', roomId);
@@ -351,6 +418,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     e.preventDefault();
     if ((newMessage.trim() === '' && !selectedFile) || !user || !roomId) return;
 
+    stopTyping();
     setUploading(true);
     let attachmentUrl = null;
     let attachmentType = null;
@@ -670,7 +738,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       <div className={cn(
                         "relative transition-all duration-300",
                         message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
-                        (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[240px] min-w-[200px]" :
+                        (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px]" :
                         isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
                         isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md" : 
                         "bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md"
@@ -957,7 +1025,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 </div>
               </div>
             )}
-            
+            <TypingIndicator typingUsers={typingUsers} />
             <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-1.5 bg-background">
               <input 
                 type="file" 
@@ -1015,7 +1083,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               <Input
                 ref={inputRef}
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
+                onChange={(e) => {
+                  setNewMessage(e.target.value);
+                  startTyping();
+                }}
+                onBlur={() => stopTyping()}
                 onFocus={() => {
                   if (showEmojiPicker) {
                     setTimeout(() => setShowEmojiPicker(false), 200);

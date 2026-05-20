@@ -126,7 +126,7 @@ export const PitchShareCard = ({
     return (
         <Link 
             to={`/pitch/${id}`}
-            className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
         >
             {/* Compact Header - Identity & Status */}
             <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">

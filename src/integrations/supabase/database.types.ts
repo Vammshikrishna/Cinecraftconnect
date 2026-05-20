@@ -849,6 +849,7 @@ export type Database = {
           is_banned: boolean | null
           is_internal: boolean | null
           cover_image_url: string | null
+          push_token: string | null
         }
         Insert: {
           account_type?: 'fan' | 'creator' | null
@@ -866,6 +867,7 @@ export type Database = {
           is_banned?: boolean | null
           is_internal?: boolean | null
           cover_image_url?: string | null
+          push_token?: string | null
         }
         Update: {
           account_type?: 'fan' | 'creator' | null
@@ -883,6 +885,7 @@ export type Database = {
           is_banned?: boolean | null
           is_internal?: boolean | null
           cover_image_url?: string | null
+          push_token?: string | null
         }
         Relationships: []
       }

@@ -296,7 +296,13 @@ const StaffRoleMatrix: React.FC<StaffRoleMatrixProps> = ({ staff, onPromote, onR
                   <Input 
                     placeholder="admin_john" 
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => {
+                      const sanitized = e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9_]/g, '')
+                        .slice(0, 20);
+                      setUsername(sanitized);
+                    }}
                     className="rounded-2xl bg-muted/50 border-border/50"
                   />
                 </div>

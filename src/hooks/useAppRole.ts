@@ -55,7 +55,7 @@ export const useAppRole = (): UseAppRoleReturn => {
     };
 
     fetchRole();
-  }, [user]);
+  }, [user?.id]);
 
   return {
     role,

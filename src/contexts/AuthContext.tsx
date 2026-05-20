@@ -44,6 +44,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [authState, setAuthState] = useState<AuthState>('BOOTSTRAPPING');
   const initializedRef = useRef(false);
   const isInitializingRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // 1. Initial bootstrap
@@ -51,6 +52,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (session) {
         setSession(session);
         setUser(session.user);
+        lastUserIdRef.current = session.user.id;
         transitionTo('AUTHENTICATED', 'bootstrap_found_session');
       } else {
         setIsLoading(false);
@@ -68,11 +70,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     initAuthBroadcast((msg) => {
        if (msg.type === 'LOGOUT_DETECTED') {
            console.log('[AUTH] Logout detected in another tab. Syncing...');
-           window.location.reload();
+           if (lastUserIdRef.current !== null) {
+               window.location.reload();
+           }
        }
        if (msg.type === 'LOGIN_DETECTED') {
            console.log('[AUTH] Login detected in another tab. Syncing...');
-           window.location.reload();
+           // Only reload if the logged in user is DIFFERENT from our current active session
+           if (lastUserIdRef.current !== msg.userId) {
+               window.location.reload();
+           }
        }
     });
 
@@ -82,8 +89,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           if (session) {
+              supabase.realtime.setAuth(session.access_token);
               transitionTo('AUTHENTICATED', `onAuthStateChange_${event}`);
-              broadcastAuthEvent({ type: 'LOGIN_DETECTED', userId: session.user.id, generation: getCurrentGeneration() });
+              
+              // Only broadcast if the user ID has actually changed (prevents focus/visibility event storm loops)
+              if (lastUserIdRef.current !== session.user.id) {
+                  const previousId = lastUserIdRef.current;
+                  lastUserIdRef.current = session.user.id;
+                  
+                  // Only broadcast if it is an explicit sign-in transition, or we were previously logged out,
+                  // avoiding storming other tabs during silent initial tab boots
+                  if (previousId !== null || event === 'SIGNED_IN') {
+                      broadcastAuthEvent({ type: 'LOGIN_DETECTED', userId: session.user.id, generation: getCurrentGeneration() });
+                  }
+              }
               eventBus.publish('AUTH_LOGIN', { userId: session.user.id, generation: getCurrentGeneration() }, 'CRITICAL');
           }
       }
@@ -95,6 +114,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (event === 'SIGNED_OUT') {
         transitionTo('UNAUTHENTICATED', 'onAuthStateChange_SIGNED_OUT');
         setProfile(null);
+        lastUserIdRef.current = null;
         sessionManager.destroy();
         syncManager.destroy();
         mutationQueue.clear();

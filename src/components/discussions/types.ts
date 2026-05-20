@@ -19,6 +19,7 @@ export interface Message {
     is_verified?: boolean | null;
   };
   deleted_for_users?: string[];
+  status?: 'pending' | 'sent' | 'error';
 }
 
 export interface Call {

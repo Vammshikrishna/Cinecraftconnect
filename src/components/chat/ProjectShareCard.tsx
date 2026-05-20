@@ -58,7 +58,7 @@ export const ProjectShareCard = ({
     return (
         <Link
             to={`/projects/${projectId}/space`}
-            className="block w-full max-w-[280px] min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
+            className="block w-full max-w-[210px] sm:max-w-[280px] min-w-[170px] sm:min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
         >
             {/* Visual Header */}
             <div

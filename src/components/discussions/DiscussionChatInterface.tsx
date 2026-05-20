@@ -93,9 +93,14 @@ export const DiscussionChatInterface = ({
   showBackButton,
   roomSettings
 }: DiscussionChatInterfaceProps) => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef(messages);
+  const channelRef = useRef<any>(null);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -291,7 +296,13 @@ export const DiscussionChatInterface = ({
       const sortedMessages = [...fetchedMessages].sort((a, b) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
-      setMessages(sortedMessages);
+      setMessages(prev => {
+        const pending = prev.filter(m => m.status === 'pending');
+        const uniquePending = pending.filter(pm => 
+          !sortedMessages.some(sm => sm.user_id === pm.user_id && sm.content === pm.content)
+        );
+        return [...sortedMessages, ...uniquePending];
+      });
       setHasMore(fetchedMessages.length === 30);
     } finally {
       setLoading(false);
@@ -371,37 +382,181 @@ export const DiscussionChatInterface = ({
     }
   }, [roomId, messages.length, markAsRead, user]);
 
+  const isAtBottomRef = useRef(isAtBottom);
   useEffect(() => {
-    const channel = supabase
-      .channel(`chat-room:${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages', filter: `room_id=eq.${roomId}` },
-        (payload) => {
-          const isMyMessage = payload.new && (payload.new as any).user_id === user?.id;
-          fetchMessages(false);
-          if (isMyMessage) {
-            setTimeout(() => scrollToBottom(), 300);
-          } else {
-            if (isAtBottom) {
-              setTimeout(() => scrollToBottom(), 300);
-            } else {
-              setUnreadCount(prev => prev + 1);
+    isAtBottomRef.current = isAtBottom;
+  }, [isAtBottom]);
+
+  const fetchMessagesRef = useRef(fetchMessages);
+  const fetchReadStatusesRef = useRef(fetchReadStatuses);
+
+  useEffect(() => {
+    fetchMessagesRef.current = fetchMessages;
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    fetchReadStatusesRef.current = fetchReadStatuses;
+  }, [fetchReadStatuses]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const handleRoomMessageChange = async (payload: any) => {
+      if (payload.eventType === 'INSERT') {
+        const newMsg = payload.new;
+        const isMyMessage = newMsg.user_id === user?.id;
+
+        // If it's my message, find the pending one and update it
+        setMessages(prev => {
+          const hasAlready = prev.some(m => m.id === newMsg.id);
+          if (hasAlready) return prev;
+
+          // Find if we have a pending optimistic message with matching content
+          const pendingIdx = prev.findIndex(m => m.status === 'pending' && m.user_id === newMsg.user_id && m.content === newMsg.content);
+
+          if (pendingIdx !== -1) {
+            // Update the pending message
+            const updated = [...prev];
+            updated[pendingIdx] = {
+              ...updated[pendingIdx],
+              id: newMsg.id,
+              created_at: newMsg.created_at,
+              status: undefined // clear pending status
+            };
+            return updated;
+          }
+
+          // Otherwise, construct and append
+          // Try to get profile from existing messages
+          const existingMsgWithProfile = prev.find(m => m.user_id === newMsg.user_id && m.profiles);
+          if (existingMsgWithProfile) {
+            const appended = [...prev, {
+              id: newMsg.id,
+              content: newMsg.content,
+              created_at: newMsg.created_at,
+              user_id: newMsg.user_id,
+              is_deleted: newMsg.is_deleted,
+              reply_to_id: newMsg.reply_to_id,
+              media_url: newMsg.media_url,
+              media_type: newMsg.media_type,
+              profiles: existingMsgWithProfile.profiles,
+              deleted_for_users: newMsg.deleted_for_users || []
+            }];
+            return appended;
+          }
+
+          // If profile not found, we will append it dynamically after fetching
+          return prev;
+        });
+
+        // If my message, scroll to bottom
+        if (isMyMessage) {
+          setTimeout(() => scrollToBottom(), 100);
+        } else {
+          // If not my message, check if we need to fetch profile
+          const hasProfile = messagesRef.current.some(m => m.user_id === newMsg.user_id && m.profiles);
+          if (!hasProfile) {
+            try {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('id, username, full_name, avatar_url, is_verified')
+                .eq('id', newMsg.user_id)
+                .single();
+
+              if (profileData) {
+                setMessages(prev => {
+                  const hasAlready = prev.some(m => m.id === newMsg.id);
+                  if (hasAlready) {
+                    // Update profile for the message that was already added
+                    return prev.map(m => m.id === newMsg.id ? { ...m, profiles: profileData as any } : m);
+                  }
+                  return [...prev, {
+                    id: newMsg.id,
+                    content: newMsg.content,
+                    created_at: newMsg.created_at,
+                    user_id: newMsg.user_id,
+                    is_deleted: newMsg.is_deleted,
+                    reply_to_id: newMsg.reply_to_id,
+                    media_url: newMsg.media_url,
+                    media_type: newMsg.media_type,
+                    profiles: profileData as any,
+                    deleted_for_users: newMsg.deleted_for_users || []
+                  }];
+                });
+              }
+            } catch (err) {
+              console.error('Error fetching profile for real-time message:', err);
             }
           }
-        })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_message_read_status', filter: `room_id=eq.${roomId}` }, fetchReadStatuses)
+
+          if (isAtBottomRef.current) {
+            setTimeout(() => scrollToBottom(), 100);
+          } else {
+            setUnreadCount(prev => prev + 1);
+          }
+        }
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedMsg = payload.new;
+        setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
+          ...m,
+          content: updatedMsg.content,
+          is_deleted: updatedMsg.is_deleted,
+          media_url: updatedMsg.media_url,
+          media_type: updatedMsg.media_type,
+          deleted_for_users: updatedMsg.deleted_for_users || []
+        } : m));
+      } else if (payload.eventType === 'DELETE') {
+        const deletedId = payload.old.id;
+        setMessages(prev => prev.filter(m => m.id !== deletedId));
+      }
+    };
+
+    const channel = supabase
+      .channel(`chat-room-v2:${roomId}`)
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+         const newMsg = payload.payload;
+         handleRoomMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'room_messages',
+        filter: `room_id=eq.${roomId}`
+      }, handleRoomMessageChange)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'room_messages',
+        filter: `room_id=eq.${roomId}`
+      }, handleRoomMessageChange)
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: 'room_messages',
+        filter: `room_id=eq.${roomId}`
+      }, handleRoomMessageChange)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'room_message_read_status',
+        filter: `room_id=eq.${roomId}`
+      }, () => {
+        fetchReadStatusesRef.current();
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Successfully subscribed to discussion room chat:', roomId);
+          channelRef.current = channel;
         } else if (status === 'CHANNEL_ERROR') {
           console.error('Error subscribing to discussion room chat:', roomId);
-          fetchMessages(false); // Fallback
+          fetchMessagesRef.current(false);
         }
       });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [roomId, fetchMessages, isAtBottom, user?.id]);
+  }, [roomId, user?.id]);
 
   // Listen for mutation queue status changes to refresh UI when a message is successfully synced
   useEffect(() => {
@@ -448,6 +603,50 @@ export const DiscussionChatInterface = ({
         mediaType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
       }
 
+      // Create optimistic message
+      const tempId = `temp-${Date.now()}`;
+      const optimisticMessage: Message = {
+        id: tempId,
+        content: content || `Shared ${mediaType === 'image' ? 'an image' : mediaType === 'video' ? 'a video' : 'a file'}`,
+        created_at: new Date().toISOString(),
+        user_id: user.id,
+        reply_to_id: replyingTo?.id || null,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        profiles: {
+          id: user.id,
+          username: profile?.username || user.email?.split('@')[0] || 'me',
+          full_name: profile?.full_name || user.user_metadata?.full_name || 'Me',
+          avatar_url: profile?.avatar_url || user.user_metadata?.avatar_url || null,
+          is_verified: profile?.is_verified || false
+        },
+        status: 'pending'
+      };
+
+      // Add to messages local state immediately!
+      setMessages(prev => [...prev, optimisticMessage]);
+      setTimeout(() => scrollToBottom(), 50);
+
+      // Broadcast the message instantly to connected clients bypassing Postgres RLS limitations
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: {
+             id: optimisticMessage.id,
+             content: optimisticMessage.content,
+             created_at: optimisticMessage.created_at,
+             user_id: optimisticMessage.user_id,
+             reply_to_id: optimisticMessage.reply_to_id,
+             media_url: optimisticMessage.media_url,
+             media_type: optimisticMessage.media_type,
+             is_deleted: false,
+             deleted_for_users: [],
+             profiles: optimisticMessage.profiles
+          }
+        });
+      }
+
       await sendRoomMessage(
         roomId, 
         content || `Shared ${mediaType === 'image' ? 'an image' : mediaType === 'video' ? 'a video' : 'a file'}`,
@@ -455,10 +654,6 @@ export const DiscussionChatInterface = ({
       );
 
       setReplyingTo(null);
-      // We don't fetch immediately because sendRoomMessage is an offline mutation
-      // The useEffect listening to mutation_status_change will handle the refresh
-      // or the optimistic update will be shown (if implemented in mutationQueue)
-      setTimeout(() => scrollToBottom(), 100);
       stopTyping();
     } catch (err) {
       console.error("Error sending message:", err);
@@ -934,7 +1129,11 @@ export const DiscussionChatInterface = ({
                       <div
                         ref={observeMessage}
                         data-message-id={message.id}
-                        className={`flex gap-3 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSender ? 'flex-row-reverse' : 'flex-row'}`}
+                        className={cn(
+                          "flex gap-3 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300",
+                          isSender ? 'flex-row-reverse' : 'flex-row',
+                          message.status === 'pending' && 'opacity-60 saturate-50'
+                        )}
                       >
                         <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
                           <AvatarImage src={message.profiles?.avatar_url || undefined} />
@@ -1044,7 +1243,7 @@ export const DiscussionChatInterface = ({
           )}
 
           <div className={cn(
-            "p-0 transition-colors duration-300",
+            "p-0 transition-colors duration-300 relative",
             isEmojiPickerOpen ? "bg-[#161618]" : "bg-background"
           )}>
             {replyingTo && (

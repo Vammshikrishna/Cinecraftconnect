@@ -13,6 +13,7 @@ class SyncManager {
   private isInitialized = false;
   private currentUserId: string | null = null;
   private isBackgrounded = false;
+  private networkListener: ((connected: boolean) => void) | null = null;
 
   public get isAppBackgrounded() {
     return this.isBackgrounded;
@@ -30,6 +31,15 @@ class SyncManager {
     networkSync.initialize();
     bindLifecycleSync();
 
+    if (!this.networkListener) {
+      this.networkListener = (connected) => {
+        if (connected) {
+          this.triggerNetworkResumeSync();
+        }
+      };
+      networkSync.addListener(this.networkListener);
+    }
+
     // Trigger an initial cache warming burst on login/startup
     this.triggerForegroundSync();
   }
@@ -42,6 +52,11 @@ class SyncManager {
     this.isInitialized = false;
     this.currentUserId = null;
     syncQueue.clear();
+
+    if (this.networkListener) {
+      networkSync.removeListener(this.networkListener);
+      this.networkListener = null;
+    }
   }
 
   /**

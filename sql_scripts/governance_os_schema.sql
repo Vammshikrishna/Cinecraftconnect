@@ -13,8 +13,9 @@ CREATE TABLE IF NOT EXISTS public.gov_audit_ledger (
     target_type TEXT NOT NULL,
     reason TEXT,
     payload JSONB DEFAULT '{}'::jsonb,
-    prev_state JSONB DEFAULT '{}'::jsonb,
-    new_state JSONB DEFAULT '{}'::jsonb
+    before_state JSONB DEFAULT '{}'::jsonb,
+    after_state JSONB DEFAULT '{}'::jsonb,
+    scope JSONB DEFAULT '{"global": true}'::jsonb
 );
 
 -- 2. Approval Queue (Maker-Checker System)
@@ -55,29 +56,41 @@ ALTER TABLE public.gov_approval_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.gov_entity_relationships ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Audit Log Visibility
+DROP POLICY IF EXISTS "Staff can view audit logs" ON public.gov_audit_ledger;
 CREATE POLICY "Staff can view audit logs" ON public.gov_audit_ledger
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND role IN ('moderator', 'admin', 'super_admin')
+            SELECT 1 FROM public.user_roles 
+            WHERE user_id = auth.uid() AND role IN ('moderator', 'admin', 'super_admin')
+        )
+    );
+
+DROP POLICY IF EXISTS "Staff can insert audit logs" ON public.gov_audit_ledger;
+CREATE POLICY "Staff can insert audit logs" ON public.gov_audit_ledger
+    FOR INSERT WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.user_roles 
+            WHERE user_id = auth.uid() AND role IN ('moderator', 'admin', 'super_admin')
         )
     );
 
 -- Policy: Approval Queue Management
+DROP POLICY IF EXISTS "Staff can manage approval queue" ON public.gov_approval_queue;
 CREATE POLICY "Staff can manage approval queue" ON public.gov_approval_queue
     FOR ALL USING (
         EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND role IN ('moderator', 'admin', 'super_admin')
+            SELECT 1 FROM public.user_roles 
+            WHERE user_id = auth.uid() AND role IN ('moderator', 'admin', 'super_admin')
         )
     );
 
 -- Policy: Relationship Mapping (Internal Only)
+DROP POLICY IF EXISTS "Staff can view relationship data" ON public.gov_entity_relationships;
 CREATE POLICY "Staff can view relationship data" ON public.gov_entity_relationships
     FOR SELECT USING (
         EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
+            SELECT 1 FROM public.user_roles 
+            WHERE user_id = auth.uid() AND role IN ('admin', 'super_admin')
         )
     );
 

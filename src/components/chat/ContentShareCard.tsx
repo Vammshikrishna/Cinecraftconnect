@@ -47,7 +47,7 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
     return (
         <Link 
             to={`/content/${type}/${id}`}
-            className="block w-full max-w-[220px] min-w-[180px] bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5"
+            className="block w-full max-w-[160px] sm:max-w-[220px] min-w-[130px] sm:min-w-[180px] bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5"
         >
             {/* Poster Image */}
             <div className="relative aspect-[2/3] overflow-hidden">

@@ -2,7 +2,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
-import { useGlobalNotifications } from '@/hooks/useGlobalNotifications';
+import { useGlobalNotifications } from '@/hooks/useGlobalNotifications.tsx';
 import { ConsistencyDebugPanel } from '@/devtools/ConsistencyDebugPanel';
 import { OrchestrationDebugPanel } from '@/devtools/OrchestrationDebugPanel';
 import { HydrationDebugPanel } from '@/devtools/HydrationDebugPanel';

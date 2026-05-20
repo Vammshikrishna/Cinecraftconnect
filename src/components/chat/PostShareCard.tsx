@@ -77,7 +77,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         <>
             <div
                 onClick={() => setIsOpen(true)}
-                className="block w-full max-w-[240px] min-w-[200px] glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
+                className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
             >
                 {/* Header Section */}
                 <div className="p-3 flex items-center gap-2.5 bg-muted/50 backdrop-blur-md border-b border-white/10">

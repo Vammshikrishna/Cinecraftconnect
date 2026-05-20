@@ -14,6 +14,13 @@ const config: CapacitorConfig = {
       splashFullScreen: true,
       splashImmersive: true,
     },
+    LocalNotifications: {
+      smallIcon: "ic_stat_icon_default",
+      iconColor: "#FF4B33"
+    },
+    PushNotifications: {
+      presentationOptions: ["badge"],
+    },
   },
 };
 

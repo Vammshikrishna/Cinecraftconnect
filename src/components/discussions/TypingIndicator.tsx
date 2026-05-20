@@ -28,7 +28,7 @@ export const TypingIndicator = ({ typingUsers }: TypingIndicatorProps) => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 10 }}
-        className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
+        className="absolute bottom-full left-0 right-0 flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground pointer-events-none z-10"
       >
         <div className="flex gap-1">
           <motion.div
