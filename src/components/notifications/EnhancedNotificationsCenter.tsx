@@ -55,60 +55,15 @@ const EnhancedNotificationsCenter = () => {
   useEffect(() => {
     let mounted = true;
     const fetchNotifications = async () => {
-      try {
-        if (!user) {
-          setNotifications([]);
-          setLoading(false);
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (!mounted) return;
-        if (error) {
-          toast({
-            title: "Error",
-            description: "Failed to load notifications",
-            variant: "destructive"
-          });
-        } else {
-          setNotifications(data || []);
-          setUnreadCount((data || []).filter(n => !n.is_read).length);
-        }
-      } catch (error) {
-        // Silent error since toast describes fetch failure above
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+      if (mounted) {
+        setNotifications([]);
+        setUnreadCount(0);
+        setLoading(false);
       }
     };
 
     fetchNotifications();
-    
-    if (user) {
-      const channel = supabase
-        .channel(`notifications_center_${user.id}`)
-        .on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`
-        }, () => {
-          if (mounted) fetchNotifications();
-        })
-        .subscribe();
-
-      return () => {
-        mounted = false;
-        supabase.removeChannel(channel);
-      };
-    }
+    return () => { mounted = false; };
   }, [user, toast]);
 
   const markAsRead = async (id: string) => {

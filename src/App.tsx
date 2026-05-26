@@ -10,6 +10,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import GlobalFeatures from "@/components/GlobalFeatures";
+import { PremiumNotificationOverlay } from "@/components/notifications/PremiumNotificationOverlay";
 import ThemeSyncPrompt from "@/components/theme/ThemeSyncPrompt";
 import DesktopOnlyGuard from "@/components/DesktopOnlyGuard";
 import { SystemStatusBanner } from "@/components/internal/shared/SystemStatusBanner";
@@ -156,6 +157,7 @@ const App = () => {
                 <ScrollToTop />
                 <SystemStatusBanner />
                 <Toaster />
+                <PremiumNotificationOverlay />
                 <GlobalFeatures />
                 {import.meta.env.DEV && (
                   <>

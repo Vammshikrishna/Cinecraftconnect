@@ -67,12 +67,25 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
 
   const uploadLogo = async (): Promise<string | null> => {
     if (!logo || !user) return null;
-    const ext = logo.name.split('.').pop();
-    const fileName = `pages/${user.id}/logo-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('avatars').upload(fileName, logo);
-    if (error) return null;
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
-    return publicUrl;
+    try {
+      const { compressImage } = await import('@/utils/imageCompression');
+      const compressedLogo = await compressImage(logo);
+
+      const ext = compressedLogo.name.split('.').pop();
+      const fileName = `pages/${user.id}/logo-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, compressedLogo, {
+          cacheControl: '31536000',
+          upsert: false
+        });
+      if (error) return null;
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      return publicUrl;
+    } catch (e) {
+      console.error("Error compressing/uploading logo:", e);
+      return null;
+    }
   };
 
   const toggleIndustry = (industry: string) => {

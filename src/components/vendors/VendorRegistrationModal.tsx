@@ -74,12 +74,18 @@ export const VendorRegistrationModal = ({
     const uploadLogo = async (): Promise<string | null> => {
         if (!logo || !user) return null;
 
-        const fileExt = logo.name.split('.').pop();
+        const { compressImage } = await import('@/utils/imageCompression');
+        const compressedLogo = await compressImage(logo);
+
+        const fileExt = compressedLogo.name.split('.').pop();
         const fileName = `${user.id}/logo-${Date.now()}.${fileExt}`;
 
         const { error } = await supabase.storage
             .from('vendor-images')
-            .upload(fileName, logo);
+            .upload(fileName, compressedLogo, {
+                cacheControl: '31536000',
+                upsert: false
+            });
 
         if (error) throw error;
 

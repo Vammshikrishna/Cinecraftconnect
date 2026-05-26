@@ -338,7 +338,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           is_deleted: updatedMsg.is_deleted,
           attachment_url: updatedMsg.attachment_url,
           attachment_type: updatedMsg.attachment_type,
-          deleted_for_users: updatedMsg.deleted_for_users || []
+          deleted_for_users: updatedMsg.deleted_for_users || [],
+          is_read: updatedMsg.is_read,
+          read_at: updatedMsg.read_at
         } : m));
       } else if (payload.eventType === 'DELETE') {
         const deletedId = payload.old.id;
@@ -392,13 +394,24 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   const uploadMedia = async (file: File): Promise<string | null> => {
     try {
-      const fileExt = file.name.split('.').pop();
+      const isImage = file.type.startsWith('image/');
+      let fileToUpload = file;
+      
+      if (isImage) {
+        const { compressImage } = await import('@/utils/imageCompression');
+        fileToUpload = await compressImage(file);
+      }
+      
+      const fileExt = fileToUpload.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
       const filePath = `${user?.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('post-media')
-        .upload(filePath, file);
+        .upload(filePath, fileToUpload, {
+          cacheControl: '31536000',
+          upsert: false
+        });
 
       if (uploadError) throw uploadError;
 

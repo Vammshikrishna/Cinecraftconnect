@@ -4,7 +4,7 @@ import {
   Film, Users, Briefcase, ShoppingBag,
   Sparkles, Shield, Globe, Lock, Star,
   ArrowRight, Camera, Mic, Headphones,
-  Play, Zap
+  Play, Zap, WifiOff
 } from 'lucide-react';
 import { motion, useScroll, useTransform, useInView } from 'framer-motion';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
@@ -109,6 +109,21 @@ const TypewriterRole = () => {
    Main Landing Page
    ───────────────────────────────────────────── */
 const Index = () => {
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   const heroRef = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: heroRef,
@@ -246,9 +261,11 @@ const Index = () => {
             transition={{ duration: 0.6 }}
             className="inline-flex items-center gap-2 glass-card px-3 sm:px-5 py-1.5 sm:py-2.5 rounded-full mb-6 sm:mb-8"
           >
-            <div className="w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className={`w-1.5 sm:w-2 h-1.5 sm:h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-ping'}`} />
             <span className="text-[10px] sm:text-sm font-medium text-muted-foreground tracking-wide">
-              Now open for the entertainment community worldwide
+              {isOnline 
+                ? 'Now open for the entertainment community worldwide' 
+                : 'Offline Mode Active — Browsing CineCraft Connect offline'}
             </span>
           </motion.div>
 
@@ -286,18 +303,33 @@ const Index = () => {
             transition={{ duration: 0.6, delay: 0.45 }}
             className="flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <Link to="/register">
-              <button className="glass-button-primary px-8 py-4 text-base font-semibold hover-scale click-effect group flex items-center gap-2">
-                Join the Community
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-              </button>
-            </Link>
-            <Link to="/auth">
-              <button className="glass-button px-8 py-4 text-base font-semibold hover-scale click-effect flex items-center gap-2">
-                <Play className="h-4 w-4" />
-                Sign In
-              </button>
-            </Link>
+            {isOnline ? (
+              <>
+                <Link to="/register">
+                  <button className="glass-button-primary px-8 py-4 text-base font-semibold hover-scale click-effect group flex items-center gap-2">
+                    Join the Community
+                    <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                </Link>
+                <Link to="/auth">
+                  <button className="glass-button px-8 py-4 text-base font-semibold hover-scale click-effect flex items-center gap-2">
+                    <Play className="h-4 w-4" />
+                    Sign In
+                  </button>
+                </Link>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <button 
+                  onClick={() => alert("You are currently offline. Please connect to the internet to create an account or sign in.")}
+                  className="glass-button px-8 py-4 text-base font-semibold opacity-60 flex items-center gap-2 cursor-not-allowed"
+                >
+                  <WifiOff className="h-4 w-4 text-amber-500" />
+                  Offline Mode (Sign In Paused)
+                </button>
+                <span className="text-xs text-muted-foreground">Reconnect to access your workspace</span>
+              </div>
+            )}
           </motion.div>
 
           {/* Trust line */}

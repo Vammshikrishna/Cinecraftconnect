@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
+import { PushNotifications } from '@capacitor/push-notifications';
 import { Tables } from '@/integrations/supabase/database.types';
 import { bootstrapAuthSequence } from '@/lib/app/bootstrapApp';
 import { forceSoftLogout } from '@/lib/auth/sessionRecovery';
@@ -68,49 +71,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // 3. Cross-tab coordination
     initAuthBroadcast((msg) => {
-       if (msg.type === 'LOGOUT_DETECTED') {
-           console.log('[AUTH] Logout detected in another tab. Syncing...');
-           if (lastUserIdRef.current !== null) {
-               window.location.reload();
-           }
-       }
-       if (msg.type === 'LOGIN_DETECTED') {
-           console.log('[AUTH] Login detected in another tab. Syncing...');
-           // Only reload if the logged in user is DIFFERENT from our current active session
-           if (lastUserIdRef.current !== msg.userId) {
-               window.location.reload();
-           }
-       }
+      if (msg.type === 'LOGOUT_DETECTED') {
+        console.log('[AUTH] Logout detected in another tab. Syncing...');
+        if (lastUserIdRef.current !== null) {
+          window.location.reload();
+        }
+      }
+      if (msg.type === 'LOGIN_DETECTED') {
+        console.log('[AUTH] Login detected in another tab. Syncing...');
+        // Only reload if the logged in user is DIFFERENT from our current active session
+        if (lastUserIdRef.current !== msg.userId) {
+          window.location.reload();
+        }
+      }
     });
 
     // 4. Auth state subscription (State ONLY, no side effects here)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: onAuthStateChange status: ${event}`);
-      
+
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-          if (session) {
-              supabase.realtime.setAuth(session.access_token);
-              transitionTo('AUTHENTICATED', `onAuthStateChange_${event}`);
-              
-              // Only broadcast if the user ID has actually changed (prevents focus/visibility event storm loops)
-              if (lastUserIdRef.current !== session.user.id) {
-                  const previousId = lastUserIdRef.current;
-                  lastUserIdRef.current = session.user.id;
-                  
-                  // Only broadcast if it is an explicit sign-in transition, or we were previously logged out,
-                  // avoiding storming other tabs during silent initial tab boots
-                  if (previousId !== null || event === 'SIGNED_IN') {
-                      broadcastAuthEvent({ type: 'LOGIN_DETECTED', userId: session.user.id, generation: getCurrentGeneration() });
-                  }
-              }
-              eventBus.publish('AUTH_LOGIN', { userId: session.user.id, generation: getCurrentGeneration() }, 'CRITICAL');
+        if (session) {
+          supabase.realtime.setAuth(session.access_token);
+          transitionTo('AUTHENTICATED', `onAuthStateChange_${event}`);
+
+          // Only broadcast if the user ID has actually changed (prevents focus/visibility event storm loops)
+          if (lastUserIdRef.current !== session.user.id) {
+            const previousId = lastUserIdRef.current;
+            lastUserIdRef.current = session.user.id;
+
+            // Only broadcast if it is an explicit sign-in transition, or we were previously logged out,
+            // avoiding storming other tabs during silent initial tab boots
+            if (previousId !== null || event === 'SIGNED_IN') {
+              broadcastAuthEvent({ type: 'LOGIN_DETECTED', userId: session.user.id, generation: getCurrentGeneration() });
+            }
           }
+          eventBus.publish('AUTH_LOGIN', { userId: session.user.id, generation: getCurrentGeneration() }, 'CRITICAL');
+        }
       }
 
       setSession(session);
       setUser(session?.user ?? null);
       console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: onAuthStateChange_processed eventType: ${event} hasSession: ${!!session}`);
-      
+
       if (event === 'SIGNED_OUT') {
         transitionTo('UNAUTHENTICATED', 'onAuthStateChange_SIGNED_OUT');
         setProfile(null);
@@ -134,8 +137,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const initializeAuthSystems = async (session: Session, user: User) => {
         // Prevent parallel execution
         if (isInitializingRef.current || initializedRef.current) {
-            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: initialization_skipped reason: ${isInitializingRef.current ? 'already_running' : 'already_initialized'}`);
-            return;
+          console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: initialization_skipped reason: ${isInitializingRef.current ? 'already_running' : 'already_initialized'}`);
+          return;
         }
 
         // Start new generation for this initialization attempt
@@ -143,54 +146,121 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isInitializingRef.current = true;
 
         console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: effect_init_start generation: ${generation}`);
-        
+
         try {
-            // 1. Device Binding (Ensure DB record exists before validation)
-            await bindSessionToDevice(session);
-            
-            // Safety check: is this still the current generation?
-            if (getCurrentGeneration() !== generation) {
-                console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_binding`);
-                return;
-            }
+          // 1. Device Binding (Ensure DB record exists before validation)
+          await bindSessionToDevice(session);
 
-            // 2. Register Offline Mutation Handlers
-            registerAllMutationHandlers();
+          // Safety check: is this still the current generation?
+          if (getCurrentGeneration() !== generation) {
+            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_binding`);
+            return;
+          }
 
-            // 3. Centralized Session Management (Realtime/Validation)
-            // sessionManager.initialize now handles its own background listeners to prevent deadlock
-            await sessionManager.initialize(session);
+          // 2. Register Offline Mutation Handlers
+          registerAllMutationHandlers();
 
-            // Safety check again
-            if (getCurrentGeneration() !== generation) {
-                console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_manager`);
-                return;
-            }
+          // 3. Centralized Session Management (Realtime/Validation)
+          // sessionManager.initialize now handles its own background listeners to prevent deadlock
+          await sessionManager.initialize(session);
 
-            // 4. Global Sync Engine (Hydration)
-            // We now orchestrate these via the progressive boot pipeline
-            startupOrchestrator.onStage(BootStage.CRITICAL_REALTIME, () => {
-              syncManager.initialize(user.id);
-              mutationQueue.initialize(user.id);
+          // Safety check again
+          if (getCurrentGeneration() !== generation) {
+            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_manager`);
+            return;
+          }
+
+          // 4. Global Sync Engine (Hydration)
+          // We now orchestrate these via the progressive boot pipeline
+          startupOrchestrator.onStage(BootStage.CRITICAL_REALTIME, () => {
+            syncManager.initialize(user.id);
+            mutationQueue.initialize(user.id);
+          });
+
+          await realtimeManager.initialize(user.id);
+
+          // Register Capacitor Push Notifications on mobile devices
+          if (Capacitor.isNativePlatform()) {
+            // 1. Request notifications permissions
+            PushNotifications.requestPermissions().then((result) => {
+              if (result.receive === 'granted') {
+                // 2. Register with FCM
+                PushNotifications.register();
+              } else {
+                console.warn('[PUSH REGISTRATION] Permission denied by user');
+              }
+            }).catch(err => {
+              console.error('[PUSH REGISTRATION] Error requesting permissions:', err);
             });
 
-            await realtimeManager.initialize(user.id);
-            
-            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: effect_init_complete generation: ${generation}`);
-            
-            // Release the UI gate ASAP - Move this to INTERACTIVE_SHELL stage
-            startupOrchestrator.onStage(BootStage.INTERACTIVE_SHELL, () => {
-              markBootstrapReady();
-              eventBus.publish('AUTH_BOOTSTRAP_COMPLETE', { userId: user.id, generation }, 'CRITICAL');
+            // 3. Handle registration token
+            PushNotifications.addListener('registration', async (tokenInfo) => {
+              const token = tokenInfo.value;
+              console.log('[PUSH REGISTRATION] FCM Token registered:', token);
+
+              // Store locally
+              await Preferences.set({ key: 'fcm_token', value: token });
+              // CRITICAL: Save user_id to CapacitorStorage so FCMService.java can read it and block stray notifications!
+              await Preferences.set({ key: 'user_id', value: user.id });
               
-              // Tell scheduler we are transitioning out of startup if we are deep into the stages
-              startupOrchestrator.onStage(BootStage.IDLE_INITIALIZATION, () => {
-                mainThreadScheduler.setStartupPhase(false);
-              });
+              // Save username for the notification SubText (Instagram-style account indicator)
+              const displayUsername = profile?.username || profile?.full_name?.replace(/\s+/g, '').toLowerCase() || user.email?.split('@')[0] || '';
+              await Preferences.set({ key: 'username', value: displayUsername });
+
+              // Sync with Supabase user_push_tokens table
+              const { error } = await supabase
+                .from('user_push_tokens' as any)
+                .upsert({
+                  user_id: user.id,
+                  token: token,
+                  device_id: 'android-device',
+                  platform: 'android',
+                  active: true,
+                  last_seen: new Date().toISOString()
+                }, {
+                  onConflict: 'user_id,token'
+                });
+
+              if (error) {
+                console.warn('[PUSH REGISTRATION] user_push_tokens table sync failed. Trying profiles.push_token fallback...', error);
+              } else {
+                console.log('[PUSH REGISTRATION] Successfully synced token to user_push_tokens.');
+              }
+
+              // Dual Storage / Migration Fallback: Also save to profiles table
+              const { error: profileError } = await supabase
+                .from('profiles')
+                .update({ push_token: token })
+                .eq('id', user.id);
+
+              if (profileError) {
+                console.error('[PUSH REGISTRATION] profiles table sync failed:', profileError);
+              } else {
+                console.log('[PUSH REGISTRATION] Successfully synced token to profiles.');
+              }
             });
 
-            // Start the orchestrator if not already started
-            startupOrchestrator.initialize();
+            // 4. Handle registration errors
+            PushNotifications.addListener('registrationError', (error) => {
+              console.error('[PUSH REGISTRATION] Registration error:', error);
+            });
+          }
+
+          console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: effect_init_complete generation: ${generation}`);
+
+          // Release the UI gate ASAP - Move this to INTERACTIVE_SHELL stage
+          startupOrchestrator.onStage(BootStage.INTERACTIVE_SHELL, () => {
+            markBootstrapReady();
+            eventBus.publish('AUTH_BOOTSTRAP_COMPLETE', { userId: user.id, generation }, 'CRITICAL');
+
+            // Tell scheduler we are transitioning out of startup if we are deep into the stages
+            startupOrchestrator.onStage(BootStage.IDLE_INITIALIZATION, () => {
+              mainThreadScheduler.setStartupPhase(false);
+            });
+          });
+
+          // Start the orchestrator if not already started
+          startupOrchestrator.initialize();
         } catch (err) {
           // Still release the barrier to prevent system hanging, 
           // even if some subsystems failed to init.
@@ -199,8 +269,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         } finally {
           // Only the LATEST generation should turn off the loading spinner
           if (getCurrentGeneration() === generation) {
-              setIsLoading(false);
-              initializedRef.current = true;
+            setIsLoading(false);
+            initializedRef.current = true;
           }
           isInitializingRef.current = false;
         }
@@ -219,13 +289,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           .select('*, user_roles(role)')
           .eq('id', user.id)
           .single();
-        
+
         if (error) {
           console.error('Error fetching profile:', error);
         } else {
           const rawRole = (data as any).user_roles;
-          const role = Array.isArray(rawRole) 
-            ? (rawRole[0]?.role || 'user') 
+          const role = Array.isArray(rawRole)
+            ? (rawRole[0]?.role || 'user')
             : (rawRole?.role || 'user');
 
           const profileWithRole = {
@@ -280,6 +350,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signOut = async () => {
+    if (user?.id && Capacitor.isNativePlatform()) {
+      try {
+        await supabase
+          .from('profiles')
+          .update({ push_token: null })
+          .eq('id', user.id);
+        console.log('[PUSH REGISTRATION] Removed push token from database profile during sign out.');
+      } catch (err) {
+        console.warn('[PUSH REGISTRATION] Failed to remove push token on sign out:', err);
+      }
+    }
     await forceSoftLogout();
     setUser(null);
     setSession(null);

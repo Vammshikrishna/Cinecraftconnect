@@ -606,7 +606,7 @@ export type Database = {
         }
         Relationships: []
       }
-      notifications: {
+       notifications: {
         Row: {
           action_url: string | null
           created_at: string
@@ -620,6 +620,7 @@ export type Database = {
           related_id: string | null
           related_type: string | null
           title: string
+          trigger_user_id: string | null
           type: string
           updated_at: string
           user_id: string
@@ -637,6 +638,7 @@ export type Database = {
           related_id?: string | null
           related_type?: string | null
           title: string
+          trigger_user_id?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -654,6 +656,7 @@ export type Database = {
           related_id?: string | null
           related_type?: string | null
           title?: string
+          trigger_user_id?: string | null
           type?: string
           updated_at?: string
           user_id?: string

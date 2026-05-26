@@ -29,6 +29,8 @@ import { useAppRole } from '@/hooks/useAppRole';
 import VerificationBadge from '../common/VerificationBadge';
 import { getOptimizedImage } from '@/utils/image-optimization';
 
+import { useCachedImage } from '@/hooks/useCachedImage';
+
 interface UserCardProps {
   user: {
     id: string;
@@ -55,6 +57,8 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
   const { push } = useAppNavigation();
   const { user: currentUser } = useAuth();
   const status = user.connection_status || 'none';
+  const avatarUrl = getOptimizedImage(user.avatar_url, { width: 200, height: 200 }) || undefined;
+  const cachedAvatar = useCachedImage(avatarUrl);
 
   const getInitials = (name: string | null | undefined): string => {
     if (!name) return 'U';
@@ -133,7 +137,7 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
           <div onClick={() => push(`/profile/${user.id}`)} className="block relative group/avatar cursor-pointer">
             <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-500" />
             <Avatar className="h-24 w-24 sm:h-24 sm:w-24 border-2 border-border shadow-xl scale-100 group-hover/avatar:scale-105 transition-transform duration-500 ring-4 ring-background/50">
-              <AvatarImage src={getOptimizedImage(user.avatar_url, { width: 200, height: 200 }) || undefined} alt={user.full_name || 'User'} className="object-cover" />
+              <AvatarImage src={cachedAvatar} alt={user.full_name || 'User'} className="object-cover" />
               <AvatarFallback className="bg-primary/10 text-primary text-xl font-black">
                 {getInitials(user.full_name || user.username)}
               </AvatarFallback>

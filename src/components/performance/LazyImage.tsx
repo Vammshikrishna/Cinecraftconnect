@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useCachedImage } from '@/hooks/useCachedImage';
 
 interface LazyImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   src: string;
@@ -22,6 +23,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   const [isInView, setIsInView] = useState(false);
   const [hasError, setHasError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
+  const cachedSrc = useCachedImage(isInView ? src : '');
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -56,9 +58,9 @@ export const LazyImage: React.FC<LazyImageProps> = ({
         <Skeleton className={cn("absolute inset-0", skeletonClassName)} />
       )}
       
-      {isInView && (
+      {isInView && cachedSrc && (
         <img
-          src={hasError ? fallback : src}
+          src={hasError ? fallback : cachedSrc}
           alt={alt}
           onLoad={handleLoad}
           onError={handleError}

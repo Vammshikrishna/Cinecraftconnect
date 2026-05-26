@@ -82,17 +82,28 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
 
     try {
       if (file) {
-        const fileExt = file.name.split('.').pop();
+        const isImage = file.type.startsWith('image/');
+        let fileToUpload = file;
+
+        if (isImage) {
+          const { compressImage } = await import('@/utils/imageCompression');
+          fileToUpload = await compressImage(file);
+        }
+
+        const fileExt = fileToUpload.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from('portfolio-media')
-          .upload(fileName, file);
+          .upload(fileName, fileToUpload, {
+            cacheControl: '31536000',
+            upsert: false
+          });
 
         if (uploadError) throw uploadError;
 
         const { data: urlData } = supabase.storage.from('portfolio-media').getPublicUrl(fileName);
         media_url = urlData.publicUrl;
-        media_type = file.type;
+        media_type = fileToUpload.type;
       }
 
       const itemData = {

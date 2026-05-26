@@ -125,13 +125,19 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Unauthenticated");
 
-            const fileExt = file.name.split('.').pop();
+            const { compressImage } = await import('@/utils/imageCompression');
+            const compressedFile = await compressImage(file);
+
+            const fileExt = compressedFile.name.split('.').pop();
             const fileName = `${user.id}-${Date.now()}.${fileExt}`;
             const filePath = `projects/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
                 .from('portfolios')
-                .upload(filePath, file);
+                .upload(filePath, compressedFile, {
+                    cacheControl: '31536000',
+                    upsert: false
+                });
 
             if (uploadError) throw uploadError;
 

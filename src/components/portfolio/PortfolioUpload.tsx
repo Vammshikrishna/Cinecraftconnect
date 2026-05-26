@@ -105,10 +105,21 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`;
+        const mediaTypeResult = getMediaType(file);
+
+        // Compress image if it is an image
+        let fileToUpload = file;
+        if (mediaTypeResult === 'image') {
+          const { compressImage } = await import('@/utils/imageCompression');
+          fileToUpload = await compressImage(file);
+        }
 
         const { error: uploadError } = await supabase.storage
           .from('portfolios')
-          .upload(filePath, file);
+          .upload(filePath, fileToUpload, {
+            cacheControl: '31536000',
+            upsert: false,
+          });
 
         if (uploadError) throw uploadError;
 
@@ -117,7 +128,7 @@ export const PortfolioUpload = ({ onSuccess, onCancel }: PortfolioUploadProps) =
           .getPublicUrl(filePath);
 
         mediaUrl = urlData.publicUrl;
-        mediaType = getMediaType(file);
+        mediaType = mediaTypeResult;
       }
 
       // Insert portfolio item

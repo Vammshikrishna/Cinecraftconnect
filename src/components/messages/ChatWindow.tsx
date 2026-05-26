@@ -11,6 +11,7 @@ import { format } from 'date-fns';
 import { usePresence } from '@/hooks/usePresence';
 import { useAppRole } from '@/hooks/useAppRole';
 import { useMessageMutation } from '@/hooks/mutations/useMessageMutation';
+import { useCachedImage } from '@/hooks/useCachedImage';
 
 interface Message {
   id: string;
@@ -29,6 +30,16 @@ interface ChatWindowProps {
   threadId: string;
   onBack?: () => void;
 }
+
+const MessageAvatar = ({ src, name }: { src?: string | null; name: string }) => {
+  const cachedSrc = useCachedImage(src || undefined);
+  return (
+    <Avatar className="h-8 w-8">
+      <AvatarImage src={cachedSrc} />
+      <AvatarFallback>{name[0] || 'U'}</AvatarFallback>
+    </Avatar>
+  );
+};
 
 export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
   const { user } = useAuth();
@@ -130,10 +141,10 @@ export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
           <div key={msg.id} className={`flex items-start gap-3 group ${isSender ? 'flex-row-reverse' : ''}`}>
             {!isSender && (
               <div className="relative flex-shrink-0">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={msg.profiles?.avatar_url || undefined} />
-                  <AvatarFallback>{msg.profiles?.full_name?.[0] || 'U'}</AvatarFallback>
-                </Avatar>
+                <MessageAvatar 
+                  src={msg.profiles?.avatar_url} 
+                  name={msg.profiles?.full_name || 'User'} 
+                />
                 {onlineUserIds.includes(msg.user_id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
               </div>
             )}

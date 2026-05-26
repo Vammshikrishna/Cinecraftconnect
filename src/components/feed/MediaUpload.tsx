@@ -36,10 +36,20 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
             const fileName = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
             const filePath = `posts/${fileName}`;
 
+            // Compress image if it is an image
+            let fileToUpload = file;
+            if (type === 'image') {
+                const { compressImage } = await import('@/utils/imageCompression');
+                fileToUpload = await compressImage(file);
+            }
+
             // Upload file to storage
             const { error: uploadError } = await supabase.storage
                 .from('portfolios')
-                .upload(filePath, file);
+                .upload(filePath, fileToUpload, {
+                    cacheControl: '31536000',
+                    upsert: false,
+                });
 
             if (uploadError) {
                 throw uploadError;

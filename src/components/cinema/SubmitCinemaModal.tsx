@@ -42,14 +42,20 @@ export const SubmitCinemaModal = ({ isOpen, onClose, onSuccess }: SubmitCinemaMo
     const handleUpload = async (file: File, type: 'poster' | 'backdrop' | 'gallery') => {
         if (!user) return "";
         
-        const fileExt = file.name.split('.').pop();
+        const { compressImage } = await import('@/utils/imageCompression');
+        const compressedFile = await compressImage(file);
+
+        const fileExt = compressedFile.name.split('.').pop();
         const fileName = `${user.id}/${Date.now()}_${type}.${fileExt}`;
         const filePath = `cinema/${fileName}`;
 
         // Note: Using 'project-assets' bucket. Ensure it exists or update bucket name.
         const { error: uploadError } = await supabase.storage
             .from('project-assets')
-            .upload(filePath, file);
+            .upload(filePath, compressedFile, {
+                cacheControl: '31536000',
+                upsert: false
+            });
 
         if (uploadError) {
             console.error(`Error uploading ${type}:`, uploadError);

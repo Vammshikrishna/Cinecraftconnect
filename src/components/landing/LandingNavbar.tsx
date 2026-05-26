@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Menu, X } from 'lucide-react';
+import { ArrowRight, Menu, X, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,6 +8,20 @@ import AppLogo from '@/components/common/AppLogo';
 
 const LandingNavbar = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const navLinks = [
     { name: 'Features', href: '/features' },
@@ -21,6 +35,12 @@ const LandingNavbar = () => {
       animate={{ opacity: 1, y: 0 }}
       className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-6 py-3 sm:py-4"
     >
+      {!isOnline && (
+        <div className="max-w-7xl mx-auto mb-2.5 text-center py-2 px-4 bg-amber-500/90 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl backdrop-blur-md shadow-md flex items-center justify-center gap-2 border border-amber-400/20">
+          <WifiOff size={14} className="animate-pulse" />
+          <span>Offline Mode active — browsing features is enabled, but login/registration is paused.</span>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto flex items-center justify-between glass-card p-1 sm:p-1.5 px-3 sm:px-6 rounded-2xl border-border/30 backdrop-blur-xl bg-background/60">
         <AppLogo size="sm" />
 

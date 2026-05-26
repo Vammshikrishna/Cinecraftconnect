@@ -22,10 +22,6 @@ export const getOptimizedImage = (url: string | null | undefined, options: Image
   // If not a Supabase URL, return as is
   if (!url.includes('supabase.co')) return url;
 
-  // We use the standard public object URL
-  // While Supabase transformation technically uses /render/image/, 
-  // it requires the service to be enabled. Using standard URLs with 
-  // query params is safer and avoids breaking images if the service is inactive.
   const optimizedUrl = url;
 
   // Default options

@@ -111,11 +111,16 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
       let avatar_url = profile.avatar_url;
 
       if (avatarFile) {
-        const fileExt = avatarFile.name.split('.').pop();
+        const { compressImage } = await import('@/utils/imageCompression');
+        const compressedAvatar = await compressImage(avatarFile, 400, 400, 0.8); // avatar can be smaller (400x400)
+        const fileExt = compressedAvatar.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from('avatars')
-          .upload(fileName, avatarFile);
+          .upload(fileName, compressedAvatar, {
+            cacheControl: '31536000',
+            upsert: false,
+          });
 
         if (uploadError) {
           loadingToast.dismiss();
@@ -129,11 +134,16 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
 
       let cover_image_url = profile.cover_image_url;
       if (coverFile) {
-        const fileExt = coverFile.name.split('.').pop();
+        const { compressImage } = await import('@/utils/imageCompression');
+        const compressedCover = await compressImage(coverFile, 1200, 400, 0.75); // cover can be wider but lower height/quality
+        const fileExt = compressedCover.name.split('.').pop();
         const fileName = `cover-${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
           .from('avatars') // Using avatars bucket for both for now, or consider a 'covers' bucket
-          .upload(fileName, coverFile);
+          .upload(fileName, compressedCover, {
+            cacheControl: '31536000',
+            upsert: false,
+          });
 
         if (!uploadError) {
           const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);

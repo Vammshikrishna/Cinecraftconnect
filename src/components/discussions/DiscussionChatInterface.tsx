@@ -297,11 +297,28 @@ export const DiscussionChatInterface = ({
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
       setMessages(prev => {
-        const pending = prev.filter(m => m.status === 'pending');
-        const uniquePending = pending.filter(pm => 
-          !sortedMessages.some(sm => sm.user_id === pm.user_id && sm.content === pm.content)
+        const baseMessages = isNewRoom ? [] : prev;
+        const pending = baseMessages.filter(m => m.status === 'pending');
+        
+        const messagesMap = new Map();
+        baseMessages.forEach(m => {
+          if (m.status !== 'pending') {
+            messagesMap.set(m.id, m);
+          }
+        });
+        
+        sortedMessages.forEach(m => {
+          messagesMap.set(m.id, m);
+        });
+        
+        const mergedMessages = Array.from(messagesMap.values()).sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
-        return [...sortedMessages, ...uniquePending];
+        
+        const uniquePending = pending.filter(pm => 
+          !mergedMessages.some(sm => sm.user_id === pm.user_id && sm.content === pm.content)
+        );
+        return [...mergedMessages, ...uniquePending];
       });
       setHasMore(fetchedMessages.length === 30);
     } finally {
@@ -404,12 +421,16 @@ export const DiscussionChatInterface = ({
     const handleRoomMessageChange = async (payload: any) => {
       if (payload.eventType === 'INSERT') {
         const newMsg = payload.new;
-        const isMyMessage = newMsg.user_id === user?.id;
 
         // If it's my message, find the pending one and update it
         setMessages(prev => {
           const hasAlready = prev.some(m => m.id === newMsg.id);
           if (hasAlready) return prev;
+
+          // Ignore delayed broadcasts of our own optimistic messages to prevent duplicates
+          if (String(newMsg.id).startsWith('temp-') && newMsg.user_id === user?.id) {
+            return prev;
+          }
 
           // Find if we have a pending optimistic message with matching content
           const pendingIdx = prev.findIndex(m => m.status === 'pending' && m.user_id === newMsg.user_id && m.content === newMsg.content);
@@ -427,34 +448,52 @@ export const DiscussionChatInterface = ({
           }
 
           // Otherwise, construct and append
-          // Try to get profile from existing messages
-          const existingMsgWithProfile = prev.find(m => m.user_id === newMsg.user_id && m.profiles);
-          if (existingMsgWithProfile) {
-            const appended = [...prev, {
-              id: newMsg.id,
-              content: newMsg.content,
-              created_at: newMsg.created_at,
-              user_id: newMsg.user_id,
-              is_deleted: newMsg.is_deleted,
-              reply_to_id: newMsg.reply_to_id,
-              media_url: newMsg.media_url,
-              media_type: newMsg.media_type,
-              profiles: existingMsgWithProfile.profiles,
-              deleted_for_users: newMsg.deleted_for_users || []
-            }];
-            return appended;
+          // Construct and append immediately for instant UI update
+          const hasProfileIncluded = !!newMsg.profiles;
+          let finalProfile = null;
+          
+          if (hasProfileIncluded) {
+            finalProfile = newMsg.profiles;
+          } else if (newMsg.user_id === user?.id) {
+            finalProfile = {
+              username: profile?.username || user?.email?.split('@')[0] || 'me',
+              full_name: profile?.full_name || user?.user_metadata?.full_name || 'Me',
+              avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || null
+            };
+          } else {
+            const existingMsgWithProfile = prev.find(m => m.user_id === newMsg.user_id && m.profiles);
+            if (existingMsgWithProfile) {
+              finalProfile = existingMsgWithProfile.profiles;
+            } else {
+              // Fallback generic profile until fetched
+              finalProfile = {
+                full_name: 'Unknown User',
+                avatar_url: null
+              };
+            }
           }
-
-          // If profile not found, we will append it dynamically after fetching
-          return prev;
+          
+          return [...prev, {
+            id: newMsg.id,
+            content: newMsg.content,
+            created_at: newMsg.created_at,
+            user_id: newMsg.user_id,
+            is_deleted: newMsg.is_deleted,
+            reply_to_id: newMsg.reply_to_id,
+            media_url: newMsg.media_url,
+            media_type: newMsg.media_type,
+            profiles: finalProfile as any,
+            deleted_for_users: newMsg.deleted_for_users || [],
+            status: newMsg.status
+          }];
         });
 
-        // If my message, scroll to bottom
-        if (isMyMessage) {
-          setTimeout(() => scrollToBottom(), 100);
-        } else {
-          // If not my message, check if we need to fetch profile
-          const hasProfile = messagesRef.current.some(m => m.user_id === newMsg.user_id && m.profiles);
+        setTimeout(() => scrollToBottom(), 100);
+
+        // Fetch profile if it wasn't included and we didn't have it cached
+        if (!newMsg.profiles && newMsg.user_id !== user?.id) {
+          const hasProfile = messagesRef.current.some(m => m.user_id === newMsg.user_id && m.profiles && m.profiles.full_name !== 'Unknown User');
+          
           if (!hasProfile) {
             try {
               const { data: profileData } = await supabase
@@ -464,34 +503,14 @@ export const DiscussionChatInterface = ({
                 .single();
 
               if (profileData) {
-                setMessages(prev => {
-                  const hasAlready = prev.some(m => m.id === newMsg.id);
-                  if (hasAlready) {
-                    // Update profile for the message that was already added
-                    return prev.map(m => m.id === newMsg.id ? { ...m, profiles: profileData as any } : m);
-                  }
-                  return [...prev, {
-                    id: newMsg.id,
-                    content: newMsg.content,
-                    created_at: newMsg.created_at,
-                    user_id: newMsg.user_id,
-                    is_deleted: newMsg.is_deleted,
-                    reply_to_id: newMsg.reply_to_id,
-                    media_url: newMsg.media_url,
-                    media_type: newMsg.media_type,
-                    profiles: profileData as any,
-                    deleted_for_users: newMsg.deleted_for_users || []
-                  }];
-                });
+                setMessages(prev => prev.map(m => m.user_id === newMsg.user_id ? { ...m, profiles: profileData as any } : m));
               }
             } catch (err) {
               console.error('Error fetching profile for real-time message:', err);
             }
           }
 
-          if (isAtBottomRef.current) {
-            setTimeout(() => scrollToBottom(), 100);
-          } else {
+          if (!isAtBottomRef.current) {
             setUnreadCount(prev => prev + 1);
           }
         }
@@ -553,7 +572,16 @@ export const DiscussionChatInterface = ({
         }
       });
 
+    const handleWindowMessage = (e: any) => {
+      const newMsg = e.detail;
+      if (newMsg.room_id === roomId) {
+        handleRoomMessageChange({ eventType: 'INSERT', new: newMsg });
+      }
+    };
+    window.addEventListener('room_message_received', handleWindowMessage);
+
     return () => {
+      window.removeEventListener('room_message_received', handleWindowMessage);
       supabase.removeChannel(channel);
     };
   }, [roomId, user?.id]);
@@ -575,23 +603,36 @@ export const DiscussionChatInterface = ({
   }, [fetchMessages]);
 
   const [isUploading, setIsUploading] = useState(false);
+  const sendingRef = useRef(false);
 
   const handleSendMessage = async (content: string, file?: File | null) => {
-    if (!user || !roomId) return;
+    if (!user || !roomId || sendingRef.current) return;
     
+    sendingRef.current = true;
     setIsUploading(true);
     try {
       let mediaUrl = null;
       let mediaType = null;
 
       if (file) {
-        const fileExt = file.name.split('.').pop();
+        const isImage = file.type.startsWith('image/');
+        let fileToUpload = file;
+
+        if (isImage) {
+          const { compressImage } = await import('@/utils/imageCompression');
+          fileToUpload = await compressImage(file);
+        }
+
+        const fileExt = fileToUpload.name.split('.').pop();
         const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
         const filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage
           .from('post-media')
-          .upload(filePath, file);
+          .upload(filePath, fileToUpload, {
+            cacheControl: '31536000',
+            upsert: false
+          });
 
         if (uploadError) throw uploadError;
 
@@ -600,7 +641,7 @@ export const DiscussionChatInterface = ({
           .getPublicUrl(filePath);
 
         mediaUrl = publicUrl;
-        mediaType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+        mediaType = fileToUpload.type.startsWith('image/') ? 'image' : fileToUpload.type.startsWith('video/') ? 'video' : 'other';
       }
 
       // Create optimistic message
@@ -642,7 +683,8 @@ export const DiscussionChatInterface = ({
              media_type: optimisticMessage.media_type,
              is_deleted: false,
              deleted_for_users: [],
-             profiles: optimisticMessage.profiles
+             profiles: optimisticMessage.profiles,
+             status: 'pending'
           }
         });
       }
@@ -659,6 +701,7 @@ export const DiscussionChatInterface = ({
       console.error("Error sending message:", err);
       toast({ title: "Error", description: "Failed to send message", variant: "destructive" });
     } finally {
+      sendingRef.current = false;
       setIsUploading(false);
     }
   };

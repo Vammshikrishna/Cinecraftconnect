@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { PremiumNotification, premiumNotificationManager } from '@/lib/notifications/premiumNotificationManager';
 import { useNavigate } from 'react-router-dom';
 import { getNotificationIcon } from '@/lib/chat-utils';
+import { User } from 'lucide-react';
 
 interface PremiumNotificationCardProps {
   notification: PremiumNotification;
 }
 
-export const PremiumNotificationCard: React.FC<PremiumNotificationCardProps> = ({ notification }) => {
+export const PremiumNotificationCard = React.forwardRef<HTMLDivElement, PremiumNotificationCardProps>(({ notification }, ref) => {
   const navigate = useNavigate();
 
   const handleTap = () => {
@@ -23,6 +24,7 @@ export const PremiumNotificationCard: React.FC<PremiumNotificationCardProps> = (
 
   return (
     <motion.div
+      ref={ref}
       layout
       initial={{ opacity: 0, y: -50, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -53,19 +55,23 @@ export const PremiumNotificationCard: React.FC<PremiumNotificationCardProps> = (
             src={notification.avatarUrl}
             alt=""
             className="w-11 h-11 rounded-full object-cover border border-primary/20"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+              if (fallback) fallback.classList.remove('hidden');
+            }}
           />
-        ) : (
-          <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center text-lg font-bold text-primary">
-            {notification.senderName ? notification.senderName.charAt(0).toUpperCase() : iconEmoji}
-          </div>
-        )}
+        ) : null}
+        
+        {/* Fallback silhouette if no avatarUrl or image fails to load */}
+        <div className={`avatar-fallback w-11 h-11 rounded-full bg-zinc-100 dark:bg-zinc-800 border border-border flex items-center justify-center text-muted-foreground ${notification.avatarUrl ? 'hidden' : ''}`}>
+          <User className="w-5 h-5 text-zinc-400 dark:text-zinc-500" />
+        </div>
         
         {/* Badge in corner of avatar */}
-        {notification.avatarUrl && (
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-background border border-border/40 rounded-full flex items-center justify-center text-xs shadow-sm">
-            {iconEmoji}
-          </div>
-        )}
+        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-background border border-border/40 rounded-full flex items-center justify-center text-[10px] shadow-sm">
+          {iconEmoji}
+        </div>
       </div>
 
       {/* Content */}
@@ -87,4 +93,4 @@ export const PremiumNotificationCard: React.FC<PremiumNotificationCardProps> = (
       <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-muted-foreground/20 rounded-full" />
     </motion.div>
   );
-};
+});
