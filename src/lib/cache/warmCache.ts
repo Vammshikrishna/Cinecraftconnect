@@ -30,28 +30,9 @@ class WarmCacheEngine {
     });
   }
 
-  public async prefetchUnreadNotificationsCount(userId: string) {
-    if (!networkSync.isConnected) return;
-
-    import('@/lib/startup/startupOrchestrator').then(({ startupOrchestrator, BootStage }) => {
-      startupOrchestrator.onStage(BootStage.DEFERRED_SYSTEMS, async () => {
-        console.log('[WarmCacheEngine] Executing deferred prefetch for Notifications');
-        await queryClient.prefetchQuery({
-          queryKey: ['unread_notifications', userId],
-          queryFn: async () => {
-            const { count, error } = await supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', userId)
-              .eq('is_read', false);
-            
-            if (error) throw error;
-            return count || 0;
-          },
-          staleTime: 1000 * 60, // 1 minute fresh
-        });
-      });
-    });
+  public async prefetchUnreadNotificationsCount() {
+    // Disabled since legacy notifications table was dropped.
+    // Future implementation will aggregate from specialized tables.
   }
 
   public async prefetchActiveChats(userId: string) {

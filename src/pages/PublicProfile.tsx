@@ -41,6 +41,7 @@ import { useAppRole } from '@/hooks/useAppRole';
 import { Pencil } from 'lucide-react';
 import SEO from '@/components/common/SEO';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { useCachedImage } from '@/hooks/useCachedImage';
 import { BackButton } from '@/components/common/BackButton';
 
 interface Profile {
@@ -85,6 +86,11 @@ const PublicProfile = () => {
   const [followersCount, setFollowersCount] = useState(0);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
+
+  const coverUrl = profile?.cover_image_url ? getOptimizedImage(profile.cover_image_url, { height: 400 }) : '';
+  const cachedCover = useCachedImage(coverUrl);
+  const avatarUrl = profile?.avatar_url ? getOptimizedImage(profile.avatar_url, { width: 400, height: 400 }) : '';
+  const cachedAvatar = useCachedImage(avatarUrl);
 
   useEffect(() => {
     if (userId) {
@@ -320,7 +326,7 @@ const PublicProfile = () => {
           <div className="relative w-full h-[clamp(120px,20vh,220px)] overflow-hidden">
             {profile.cover_image_url ? (
               <img 
-                src={getOptimizedImage(profile.cover_image_url, { height: 400 })} 
+                src={cachedCover} 
                 alt="Cover" 
                 className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" 
               />
@@ -340,7 +346,7 @@ const PublicProfile = () => {
                   <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-700" />
                   <Avatar className="w-[clamp(130px,22vw,180px)] h-[clamp(130px,22vw,180px)] border-[5px] border-background shadow-xl relative z-10">
                     <AvatarImage 
-                      src={getOptimizedImage(profile.avatar_url, { width: 400, height: 400 })} 
+                      src={cachedAvatar} 
                       alt={profile.username || 'User'} 
                       className="object-cover" 
                     />

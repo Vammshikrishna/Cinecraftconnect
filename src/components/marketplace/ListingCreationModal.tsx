@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -132,14 +132,19 @@ export const ListingCreationModal = ({
 
     const uploadImages = async (): Promise<string[]> => {
         const uploadedUrls: string[] = [];
+        const { compressImage } = await import('@/utils/imageCompression');
 
         for (const image of newImages) {
-            const fileExt = image.name.split('.').pop();
+            const compressedImage = await compressImage(image);
+            const fileExt = compressedImage.name.split('.').pop();
             const fileName = `${user?.id}/${Date.now()}-${Math.random()}.${fileExt}`;
 
             const { error } = await supabase.storage
                 .from('marketplace-images')
-                .upload(fileName, image);
+                .upload(fileName, compressedImage, {
+                    cacheControl: '31536000',
+                    upsert: false
+                });
 
             if (error) throw error;
 

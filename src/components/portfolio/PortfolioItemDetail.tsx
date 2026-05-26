@@ -19,7 +19,7 @@ export const PortfolioItemDetail = ({ item, isOpen, onOpenChange }: PortfolioIte
     if (item.media_type?.startsWith('image')) {
       return <img src={item.media_url} alt={item.title} className="rounded-lg object-cover w-full h-auto" />;
     } else if (item.media_type?.startsWith('video')) {
-      return <video src={item.media_url} controls className="rounded-lg w-full" />;
+      return <video src={item.media_url} controls preload="metadata" className="rounded-lg w-full" />;
     } else {
       return <a href={item.media_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">View File</a>;
     }

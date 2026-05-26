@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 export type ChatType = 'dm' | 'project' | 'discussion';
 
@@ -11,6 +13,10 @@ export const useChatReadStatus = () => {
         if (!user || !id) return;
 
         try {
+            if (Capacitor.isNativePlatform()) {
+                await Preferences.remove({ key: 'push_history_' + id });
+            }
+
             if (type === 'dm') {
                 // Fetch the latest unread message from this partner to use its ID for the RPC
                 // The RPC 'mark_message_as_seen' marks all messages up to that timestamp as read.

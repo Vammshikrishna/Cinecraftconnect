@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/dropdown-menu.tsx";
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { getDisplayMessage } from '@/lib/chat-utils';
@@ -62,65 +61,29 @@ const NotificationsDropdown = () => {
     if (!user) return;
 
     const fetchNotifications = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .neq('type', 'new_message') // Exclude message notifications - they show in MessageSquare icon
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (error) throw error;
-        setNotifications((data || []) as Notification[]);
-        setUnreadCount(data?.filter(n => !n.is_read).length || 0);
-      } catch (error) {
-        // Silent error for background fetch
-      } finally {
-        setLoading(false);
-      }
+      setLoading(false);
+      setNotifications([]);
+      setUnreadCount(0);
     };
 
     fetchNotifications();
 
-    if (user?.id) {
-      const channel = supabase
-        .channel(`nav_notifications_${user.id}`)
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'notifications', 
-          filter: `user_id=eq.${user.id}` 
-        }, () => fetchNotifications())
-        .subscribe();
-
-      return () => { supabase.removeChannel(channel); };
-    }
+    // Removed legacy notification table subscription since the table was dropped
+    return () => {};
   }, [user?.id]);
 
   const markAsRead = async (notificationId: string) => {
     const notification = notifications.find(n => n.id === notificationId);
     if (notification && !notification.is_read) {
-      try {
-        await supabase.from('notifications').update({ is_read: true }).eq('id', notificationId);
         setNotifications(notifications.map(n => n.id === notificationId ? { ...n, is_read: true } : n));
         setUnreadCount(prev => Math.max(0, prev - 1));
-      } catch (error) {
-        // Silent error for mark-as-read
-      }
     }
   };
 
   const markAllAsRead = async () => {
     if (!user || unreadCount === 0) return;
-    try {
-      await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
-      setNotifications(notifications.map(n => ({ ...n, is_read: true })));
-      setUnreadCount(0);
-    } catch (error) {
-      // Silent error for mark-all-read
-    }
+    setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
   };
 
   const NotificationItem = ({ notification }: { notification: Notification }) => (

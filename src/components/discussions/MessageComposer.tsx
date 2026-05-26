@@ -34,6 +34,8 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const sendingRef = useRef(false);
+
   // Kill any auto-focus on mount
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -46,11 +48,14 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
 
   const handleSend = async () => {
     if (!content.trim() && !selectedFile) return;
+    if (sendingRef.current) return;
+    
     setError(null);
     try {
       if (content.trim()) {
         messageSchema.parse({ content });
       }
+      sendingRef.current = true;
       setSending(true);
       onStopTyping?.();
       await onSend(content, selectedFile);
@@ -64,6 +69,7 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
         setError('Failed to send message');
       }
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };

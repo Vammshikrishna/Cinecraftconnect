@@ -41,12 +41,23 @@ export function JobApplicationModal({ isOpen, onOpenChange, jobId, jobTitle, onS
             let resumeUrl = null;
 
             if (portfolioFile) {
-                const fileExt = portfolioFile.name.split('.').pop();
+                const isImage = portfolioFile.type.startsWith('image/');
+                let fileToUpload = portfolioFile;
+
+                if (isImage) {
+                    const { compressImage } = await import('@/utils/imageCompression');
+                    fileToUpload = await compressImage(portfolioFile);
+                }
+
+                const fileExt = fileToUpload.name.split('.').pop();
                 const filePath = `${user.id}/${crypto.randomUUID()}.${fileExt}`;
 
                 const { error: uploadError } = await supabase.storage
                     .from('resumes')
-                    .upload(filePath, portfolioFile);
+                    .upload(filePath, fileToUpload, {
+                        cacheControl: '31536000',
+                        upsert: false
+                    });
 
                 if (uploadError) throw uploadError;
 

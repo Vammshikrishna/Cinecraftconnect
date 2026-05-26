@@ -16,6 +16,7 @@ import VerificationBadge from '@/components/common/VerificationBadge';
 import { MoreVertical, Trash2, Edit2, Heart, MessageCircle, Share2, Play, Grid3x3, X, ChevronLeft, ChevronRight, Layers, Plus, Loader2 } from 'lucide-react';
 import { cn } from "@/lib/utils";
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { LazyImage } from '@/components/performance/LazyImage';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,21 +105,30 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
+      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+      let fileToUpload = file;
+
+      if (mediaType === 'image') {
+        const { compressImage } = await import('@/utils/imageCompression');
+        fileToUpload = await compressImage(file);
+      }
+
+      const fileExt = fileToUpload.name.split('.').pop();
+      const fileName = `${user.id}/${Date.now()}_${fileToUpload.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
       const filePath = `posts/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('portfolios')
-        .upload(filePath, file);
+        .upload(filePath, fileToUpload, {
+          cacheControl: '31536000',
+          upsert: false,
+        });
 
       if (uploadError) throw uploadError;
 
       const { data } = supabase.storage
         .from('portfolios')
         .getPublicUrl(filePath);
-
-      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
       
       setEditMediaItems(prev => [...prev, { url: data.publicUrl, type: mediaType as 'image' | 'video' }]);
       
@@ -409,9 +419,10 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                   <video
                     src={post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url}
                     className="w-full h-full object-cover"
+                    preload="none"
                   />
                 ) : (
-                  <img
+                  <LazyImage
                     src={getOptimizedImage(post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url, { width: 400, height: 400 })}
                     alt="Post"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
@@ -669,6 +680,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                               className="w-full h-full object-contain transition-all duration-700 animate-in fade-in"
                               autoPlay={i === currentMediaIndex}
                               playsInline
+                              preload="metadata"
                             />
                           ) : (
                             <img
@@ -939,7 +951,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       <div key={idx} className="relative group/edit flex-shrink-0">
                         <div className="w-24 h-24 rounded-lg overflow-hidden ring-1 ring-white/10 shadow-lg bg-black/40">
                           {item.type === 'video' ? (
-                            <video src={item.url} className="w-full h-full object-cover" />
+                            <video src={item.url} preload="none" className="w-full h-full object-cover" />
                           ) : (
                             <img src={item.url} alt="" className="w-full h-full object-cover" />
                           )}

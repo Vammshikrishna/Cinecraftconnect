@@ -63,21 +63,30 @@ const PostActionsDialogs = ({
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
+      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+      let fileToUpload = file;
+
+      if (mediaType === 'image') {
+        const { compressImage } = await import('@/utils/imageCompression');
+        fileToUpload = await compressImage(file);
+      }
+
+      const fileExt = fileToUpload.name.split('.').pop();
+      const fileName = `${userId}/${Date.now()}_${fileToUpload.name.replace(/[^a-zA-Z0-9.]/g, '_')}.${fileExt}`;
       const filePath = `posts/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('portfolios')
-        .upload(filePath, file);
+        .upload(filePath, fileToUpload, {
+          cacheControl: '31536000',
+          upsert: false,
+        });
 
       if (uploadError) throw uploadError;
 
       const { data } = supabase.storage
         .from('portfolios')
         .getPublicUrl(filePath);
-
-      const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
       
       setEditMediaItems(prev => [...prev, { url: data.publicUrl, type: mediaType as 'image' | 'video' }]);
       
@@ -206,7 +215,7 @@ const PostActionsDialogs = ({
                     ) : (
                       <div className="w-full h-full bg-black/40 flex items-center justify-center relative">
                         <Play className="w-6 h-6 text-white fill-white opacity-50" />
-                        <video src={item.url} className="w-full h-full object-cover absolute inset-0 opacity-40" />
+                        <video src={item.url} preload="none" className="w-full h-full object-cover absolute inset-0 opacity-40" />
                       </div>
                     )}
 

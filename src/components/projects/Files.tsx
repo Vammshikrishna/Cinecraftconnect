@@ -103,12 +103,23 @@ const Files = ({ project_id }: FilesProps) => {
         setUploading(true);
 
         try {
-            const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
+            const isImage = selectedFile.type.startsWith('image/');
+            let fileToUpload = selectedFile;
+
+            if (isImage) {
+                const { compressImage } = await import('@/utils/imageCompression');
+                fileToUpload = await compressImage(selectedFile);
+            }
+
+            const fileName = `${Date.now()}-${fileToUpload.name.replace(/\s+/g, '_')}`;
             const filePath = `${project_id}/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
                 .from('project-files')
-                .upload(filePath, selectedFile);
+                .upload(filePath, fileToUpload, {
+                    cacheControl: '31536000',
+                    upsert: false
+                });
 
             if (uploadError) throw uploadError;
 
@@ -391,6 +402,7 @@ const Files = ({ project_id }: FilesProps) => {
                                 src={previewFile.signedUrl || previewFile.url} 
                                 controls 
                                 className="max-w-full max-h-full rounded-xl shadow-2xl animate-in fade-in duration-500" 
+                                preload="metadata"
                             />
                         ) : (
                             <div className="flex flex-col items-center gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

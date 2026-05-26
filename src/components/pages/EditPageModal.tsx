@@ -52,14 +52,20 @@ export function EditPageModal({ page, open, onOpenChange }: EditPageModalProps) 
 
     setIsLoading(true);
     try {
-      const fileExt = file.name.split(".").pop();
+      const { compressImage } = await import('@/utils/imageCompression');
+      const compressedFile = await compressImage(file);
+
+      const fileExt = compressedFile.name.split(".").pop();
       const fileName = `${Math.random()}.${fileExt}`;
       const folder = type === 'logo' ? 'company-logos' : 'company-covers';
       const filePath = `${folder}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("company_assets")
-        .upload(filePath, file);
+        .upload(filePath, compressedFile, {
+          cacheControl: '31536000',
+          upsert: false
+        });
 
       if (uploadError) throw uploadError;
 

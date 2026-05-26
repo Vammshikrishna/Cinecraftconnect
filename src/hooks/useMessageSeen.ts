@@ -61,7 +61,7 @@ export const useMessageSeen = (tableType: MessageTableType = 'direct_messages') 
                         const messageId = entry.target.getAttribute('data-message-id');
                         const isIncoming = entry.target.getAttribute('data-sender-id') !== user.id;
 
-                        if (messageId && isIncoming) {
+                        if (messageId && !messageId.startsWith('temp-') && isIncoming) {
                             seenQueue.current.add(messageId);
                             debouncedFlush();
                         }

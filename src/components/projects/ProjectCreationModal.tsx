@@ -123,12 +123,18 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     try {
       let imageUrl: string | undefined = undefined;
       if (projectImage) {
-        const fileExt = projectImage.name.split('.').pop();
+        const { compressImage } = await import('@/utils/imageCompression');
+        const compressedImage = await compressImage(projectImage);
+
+        const fileExt = compressedImage.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const filePath = `projects/${fileName}`;
         const { error: uploadError } = await supabase.storage
           .from('portfolios')
-          .upload(filePath, projectImage);
+          .upload(filePath, compressedImage, {
+            cacheControl: '31536000',
+            upsert: false
+          });
 
         if (uploadError) throw uploadError;
 

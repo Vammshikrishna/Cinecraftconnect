@@ -5,27 +5,35 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { cn } from '@/lib/utils';
 import { usePresence } from '@/hooks/usePresence';
+import { useCachedImage } from '@/hooks/useCachedImage';
 
 interface Thread {
-  id: string;
-  subject?: string;
-  last_message: {
-    content: string;
-    created_at: string;
-  };
-  participants: {
-    profiles: {
-      id: string;
-      full_name: string;
-      avatar_url: string;
-    };
-  }[];
+  conversation_id: string;
+  last_message_content: string;
+  last_message_created_at: string;
+  last_message_sender_id: string;
+  other_user_id: string;
+  other_user_full_name: string;
+  other_user_avatar_url: string;
+  other_user_username: string;
+  other_user_craft?: string;
+  unread_count: number;
 }
 
 interface ConversationListProps {
   onSelectThread: (threadId: string) => void;
   isCollapsed: boolean;
 }
+
+const ThreadAvatar = ({ src, name, className }: { src?: string; name: string; className?: string }) => {
+  const cachedSrc = useCachedImage(src);
+  return (
+    <Avatar className={className}>
+      <AvatarImage src={cachedSrc} />
+      <AvatarFallback>{name[0] || 'U'}</AvatarFallback>
+    </Avatar>
+  );
+};
 
 export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationListProps) => {
   const { user } = useAuth();
@@ -38,7 +46,7 @@ export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationLi
 
     const fetchThreads = async () => {
       setLoading(true);
-      const { data, error } = await supabase.rpc('get_user_message_threads', { p_user_id: user.id });
+      const { data, error } = await (supabase.rpc as any)('get_user_message_threads', { p_user_id: user.id });
 
       if (error) {
         console.error('Error fetching message threads', error);
@@ -70,31 +78,30 @@ export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationLi
   return (
     <div className="space-y-1">
       {threads.map(thread => {
-        const otherParticipants = thread.participants.filter(p => p.profiles.id !== user?.id);
-        const displayName = otherParticipants.map(p => p.profiles.full_name).join(', ') || 'Me';
-        const isOnline = otherParticipants.some(p => onlineUserIds.includes(p.profiles.id));
+        const displayName = thread.other_user_full_name || thread.other_user_username || 'User';
+        const isOnline = onlineUserIds.includes(thread.other_user_id);
 
         return (
           <button
-            key={thread.id}
-            onClick={() => onSelectThread(thread.id)}
+            key={thread.conversation_id}
+            onClick={() => onSelectThread(thread.conversation_id)}
             className={cn(
               'w-full text-left p-2 rounded-lg transition-colors hover:bg-muted',
-              // Add active state styling later
             )}
           >
             <div className="flex items-center gap-3">
               <div className="relative">
-                <Avatar className={cn(isCollapsed && 'h-8 w-8')}>
-                  <AvatarImage src={otherParticipants[0]?.profiles.avatar_url} />
-                  <AvatarFallback>{displayName[0]}</AvatarFallback>
-                </Avatar>
+                <ThreadAvatar 
+                  src={thread.other_user_avatar_url} 
+                  name={displayName} 
+                  className={cn(isCollapsed && 'h-8 w-8')}
+                />
                 {isOnline && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-background rounded-full" />}
               </div>
               {!isCollapsed && (
                 <div className="flex-1 truncate">
                   <p className="font-semibold truncate">{displayName}</p>
-                  <p className="text-sm text-muted-foreground truncate">{thread.last_message.content}</p>
+                  <p className="text-sm text-muted-foreground truncate">{thread.last_message_content}</p>
                 </div>
               )}
             </div>

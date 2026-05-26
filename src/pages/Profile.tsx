@@ -17,6 +17,7 @@ import { SavedPosts } from '@/components/profile/SavedPosts';
 import EditProfileForm from '@/components/profile/EditProfileForm';
 import { formatURL } from '@/lib/utils';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { useCachedImage } from '@/hooks/useCachedImage';
 import {
   Briefcase,
   Globe,
@@ -55,6 +56,11 @@ const ProfilePage = () => {
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
+
+  const coverUrl = profile?.cover_image_url ? getOptimizedImage(profile.cover_image_url, { width: 1200, quality: 90 }) : '';
+  const cachedCover = useCachedImage(coverUrl);
+  const avatarUrl = profile?.avatar_url ? getOptimizedImage(profile.avatar_url, { width: 400, height: 400 }) : '';
+  const cachedAvatar = useCachedImage(avatarUrl);
 
   const fetchCounts = useCallback(async () => {
     if (!user) return;
@@ -258,7 +264,7 @@ const ProfilePage = () => {
           <div className="relative w-full h-[clamp(120px,20vh,220px)] overflow-hidden">
             {profile.cover_image_url ? (
               <img 
-                src={getOptimizedImage(profile.cover_image_url, { width: 1200, quality: 90 })} 
+                src={cachedCover} 
                 alt="Cover" 
                 className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" 
               />
@@ -278,7 +284,7 @@ const ProfilePage = () => {
                   <div className="absolute inset-0 bg-primary/20 rounded-full blur-2xl opacity-0 group-hover/avatar:opacity-100 transition-opacity duration-700" />
                   <Avatar className="w-[clamp(130px,22vw,180px)] h-[clamp(130px,22vw,180px)] border-[5px] border-background shadow-xl relative z-10">
                     <AvatarImage 
-                      src={getOptimizedImage(profile.avatar_url, { width: 400, height: 400 }) || ''} 
+                      src={cachedAvatar || ''} 
                       alt={profile.username || 'User'} 
                       className="object-cover" 
                     />

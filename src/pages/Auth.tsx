@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
-import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, WifiOff } from 'lucide-react';
 import AppLogo from '@/components/common/AppLogo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,6 +46,20 @@ const Auth = () => {
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const currentFields = isLogin ? FORM_FIELDS.LOGIN : FORM_FIELDS.SIGNUP;
 
@@ -175,6 +189,14 @@ const Auth = () => {
                   <AlertDescription>{errors.form}</AlertDescription>
                 </Alert>
               )}
+              {!isOnline && (
+                <Alert className="border-amber-500/20 bg-amber-500/10 text-amber-500">
+                  <WifiOff className="h-4 w-4 text-amber-500" />
+                  <AlertDescription className="text-xs">
+                    You are offline. Reconnect to sign in or create an account.
+                  </AlertDescription>
+                </Alert>
+              )}
               {currentFields.map(({ name, placeholder, type, icon: Icon }) => (
                 <div key={name} className="space-y-2">
                   <div className="relative">
@@ -185,14 +207,14 @@ const Auth = () => {
                       value={formData[name as keyof typeof formData]}
                       onChange={e => handleInputChange(name, e.target.value)}
                       className="pl-10 pr-10"
-                      disabled={isLoading}
+                      disabled={isLoading || !isOnline}
                     />
                     {type === 'password' && (
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        disabled={isLoading}
+                        disabled={isLoading || !isOnline}
                       >
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
@@ -201,8 +223,8 @@ const Auth = () => {
                   {errors[name] && <p className="text-sm text-destructive">{errors[name]}</p>}
                 </div>
               ))}
-              <Button type="submit" className="w-full hover-glow" disabled={isLoading}>
-                {isLoading ? 'Please wait...' : isLogin ? 'Sign In' : 'Create Account'}
+              <Button type="submit" className="w-full hover-glow" disabled={isLoading || !isOnline}>
+                {isLoading ? 'Please wait...' : !isOnline ? 'Connection Required' : isLogin ? 'Sign In' : 'Create Account'}
               </Button>
             </form>
             <div className="mt-6 text-center">

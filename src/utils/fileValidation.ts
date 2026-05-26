@@ -99,18 +99,25 @@ export const uploadFileToSupabase = async (
 
   try {
     const { supabase } = await import('@/integrations/supabase/client');
+    const { compressImage } = await import('./imageCompression');
+    
+    // Compress image if it is an image file
+    let fileToUpload = file;
+    if (validation.fileType === 'image') {
+      fileToUpload = await compressImage(file);
+    }
     
     // Generate unique filename
     const timestamp = Date.now();
     const randomString = Math.random().toString(36).substring(7);
-    const extension = file.name.split('.').pop();
+    const extension = fileToUpload.name.split('.').pop();
     const filename = `${timestamp}-${randomString}.${extension}`;
     const fullPath = `${path}/${filename}`;
 
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(fullPath, file, {
-        cacheControl: '3600',
+      .upload(fullPath, fileToUpload, {
+        cacheControl: '31536000',
         upsert: false,
       });
 

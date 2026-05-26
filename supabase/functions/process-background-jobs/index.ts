@@ -93,9 +93,8 @@ Deno.serve(async (req: Request) => {
 
 
       try {
-        switch (jobType) {
           case "send_notification":
-            await processNotificationJob(supabase, payload);
+            console.warn("Legacy notification job ignored");
             break;
           case "generate_analytics":
             await processAnalyticsJob(supabase, payload);
@@ -151,20 +150,6 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// deno-lint-ignore no-explicit-any
-async function processNotificationJob(supabase: SupabaseClient<any>, payload: Record<string, unknown>) {
-  const userId = payload?.user_id;
-  const notificationData = (payload?.notification_data ?? {}) as Record<string, unknown>;
-  if (!userId) throw new Error("Missing user_id in payload");
-
-  const res = await supabase.from("notifications").insert({
-    user_id: userId,
-    ...notificationData,
-    created_at: new Date().toISOString(),
-  });
-
-  if (res.error) throw res.error;
-}
 
 // deno-lint-ignore no-explicit-any
 async function processAnalyticsJob(supabase: SupabaseClient<any>, payload: Record<string, unknown>) {

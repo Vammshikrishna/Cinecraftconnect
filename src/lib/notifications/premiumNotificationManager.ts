@@ -9,6 +9,7 @@ export interface PremiumNotification {
   timestamp: Date;
   actionUrl?: string;
   senderName?: string;
+  count?: number;
 }
 
 type NotificationListener = (notifications: PremiumNotification[]) => void;
@@ -16,6 +17,7 @@ type NotificationListener = (notifications: PremiumNotification[]) => void;
 class PremiumNotificationManager {
   private queue: PremiumNotification[] = [];
   private listeners = new Set<NotificationListener>();
+  private timeoutMap = new Map<string, any>();
   private nextId = 1;
 
   public async addNotification(notification: Omit<PremiumNotification, 'id' | 'timestamp'>) {
@@ -23,6 +25,12 @@ class PremiumNotificationManager {
 
     // 1. Skip if empty message or invalid
     if (!notification.title || !notification.description) return;
+
+    // 1.5. Suppress if user is already looking at the exact same screen (e.g. active chat)
+    if (typeof window !== 'undefined' && notification.actionUrl && window.location.pathname === notification.actionUrl) {
+      console.log('🔕 [Notification Manager] Suppressed toast for active screen:', notification.actionUrl);
+      return;
+    }
 
     // 2. Suppress/Deduplicate repeated identical notifications within 3 seconds (Debouncing)
     const isDuplicate = this.queue.some(
@@ -33,12 +41,7 @@ class PremiumNotificationManager {
     );
     if (isDuplicate) return;
 
-    // 3. Stacking Limit: Max 3 active popups
-    if (this.queue.length >= 3) {
-      this.queue.shift(); // Remove the oldest
-    }
-
-    // 4. Adapt Notification Intensity based on Battery & Network
+    // 3. Adapt Notification Intensity based on Battery & Network
     let vibrationPattern = [100, 50, 100];
     let enableHaptics = true;
     let dismissDelay = 5000;
@@ -67,10 +70,52 @@ class PremiumNotificationManager {
       console.warn('Adaptive Governor failed to check device metrics:', e);
     }
 
+    // 4. Microsoft Teams Style Grouping: Update existing toast if from the same chat
+    const existingIndex = this.queue.findIndex(n => n.actionUrl === notification.actionUrl && notification.actionUrl);
+    if (existingIndex !== -1) {
+      const existing = this.queue[existingIndex];
+      const newCount = (existing.count || 1) + 1;
+      
+      // Strip any existing counter from title before adding the new one
+      const baseTitle = notification.title.replace(/ \(\d+\)$/, '');
+      
+      const updatedNotification: PremiumNotification = {
+          ...existing,
+          description: notification.description, // Show newest text
+          timestamp: new Date(),
+          count: newCount,
+          title: `${baseTitle} (${newCount})` // Add (2), (3) to title
+      };
+      
+      this.queue[existingIndex] = updatedNotification;
+      this.notify();
+      
+      // Reset the auto-dismiss timer
+      if (this.timeoutMap.has(existing.id)) {
+          clearTimeout(this.timeoutMap.get(existing.id));
+      }
+      const timerId = setTimeout(() => {
+          this.removeNotification(existing.id);
+      }, dismissDelay);
+      this.timeoutMap.set(existing.id, timerId);
+      
+      // Re-trigger haptics
+      if (enableHaptics && Capacitor.isNativePlatform()) {
+        try { if ('vibrate' in navigator) navigator.vibrate(vibrationPattern); } catch(e){}
+      }
+      return;
+    }
+
+    // 5. Stacking Limit: Max 3 active popups for DIFFERENT chats
+    if (this.queue.length >= 3) {
+      this.queue.shift(); // Remove the oldest
+    }
+
     const newNotification: PremiumNotification = {
       ...notification,
       id: `${Date.now()}-${this.nextId++}`,
       timestamp: new Date(),
+      count: 1
     };
 
     this.queue.push(newNotification);
@@ -88,17 +133,24 @@ class PremiumNotificationManager {
     }
 
     // Auto dismiss
-    setTimeout(() => {
+    const timerId = setTimeout(() => {
       this.removeNotification(newNotification.id);
     }, dismissDelay);
+    this.timeoutMap.set(newNotification.id, timerId);
   }
 
   public removeNotification(id: string) {
+    if (this.timeoutMap.has(id)) {
+        clearTimeout(this.timeoutMap.get(id));
+        this.timeoutMap.delete(id);
+    }
     this.queue = this.queue.filter(n => n.id !== id);
     this.notify();
   }
 
   public clearAll() {
+    this.timeoutMap.forEach(timer => clearTimeout(timer));
+    this.timeoutMap.clear();
     this.queue = [];
     this.notify();
   }

@@ -2,9 +2,12 @@ import { Link } from 'react-router-dom';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from '@/contexts/AuthContext';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { useCachedImage } from '@/hooks/useCachedImage';
 
 const UserProfileMenu = () => {
   const { profile } = useAuth();
+  const avatarUrl = getOptimizedImage(profile?.avatar_url, { width: 96, height: 96 });
+  const cachedAvatar = useCachedImage(avatarUrl);
 
   const getInitials = (name: string | null | undefined) => {
     if (!name) return 'U';
@@ -22,7 +25,7 @@ const UserProfileMenu = () => {
     <Link to="/profile" className="rounded-full">
       <Avatar className="h-8 w-8 cursor-pointer hover:ring-2 hover:ring-primary transition-all">
         {profile?.avatar_url && (
-          <AvatarImage src={getOptimizedImage(profile.avatar_url, { width: 96, height: 96 })} alt={displayName} />
+          <AvatarImage src={cachedAvatar} alt={displayName} />
         )}
         <AvatarFallback className="bg-primary text-primary-foreground">
           {getInitials(displayName)}
