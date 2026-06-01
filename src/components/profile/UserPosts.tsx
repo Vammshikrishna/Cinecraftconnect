@@ -208,7 +208,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
     const checkLike = async () => {
       const { data } = await supabase
-        .from('likes')
+        .from('post_likes')
         .select('id')
         .eq('post_id', selectedPost.id)
         .eq('user_id', user.id)
@@ -309,7 +309,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       if (isLiked) {
         // Unlike
         const { error: deleteError } = await supabase
-          .from('likes')
+          .from('post_likes')
           .delete()
           .eq('post_id', selectedPost.id)
           .eq('user_id', user.id);
@@ -341,7 +341,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       } else {
         // Like
         const { error: insertError } = await supabase
-          .from('likes')
+          .from('post_likes')
           .insert({ post_id: selectedPost.id, user_id: user.id });
 
         if (!insertError) {

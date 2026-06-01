@@ -14,6 +14,8 @@ import { PremiumNotificationOverlay } from "@/components/notifications/PremiumNo
 import ThemeSyncPrompt from "@/components/theme/ThemeSyncPrompt";
 import DesktopOnlyGuard from "@/components/DesktopOnlyGuard";
 import { SystemStatusBanner } from "@/components/internal/shared/SystemStatusBanner";
+import { OfflineBanner } from "@/components/offline/OfflineBanner";
+import { CookieConsentBanner } from "@/components/gdpr/CookieConsentBanner";
 import { MaintenanceGuard } from "@/components/MaintenanceGuard";
 import { FeatureGuard } from "@/components/FeatureGuard";
 import { PlatformFlagsProvider } from "@/contexts/PlatformFlagsContext";
@@ -53,7 +55,6 @@ const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Network = lazy(() => import("./pages/Network"));
 const NotFound = lazy(() => import("./pages/NotFound"));
-const LearningPortal = lazy(() => import("./pages/LearningPortal"));
 const CraftPage = lazy(() => import("./pages/CraftPage"));
 const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
 const SetupAdmin = lazy(() => import("./pages/admin/SetupAdmin"));
@@ -70,10 +71,14 @@ const SoundSettings = lazy(() => import("./pages/settings/SoundSettings"));
 const DataSettings = lazy(() => import("./pages/settings/DataSettings"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
 const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
+const AvailabilityCalendar = lazy(() => import("./pages/profile/AvailabilityCalendar"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
+const Wishlist = lazy(() => import("./pages/Wishlist"));
+const SharedWishlist = lazy(() => import("./pages/SharedWishlist"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const VendorDetail = lazy(() => import("./pages/VendorDetail"));
+const VendorServiceDetail = lazy(() => import("./pages/VendorServiceDetail"));
 const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
 const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
@@ -90,6 +95,7 @@ const Support = lazy(() => import("./pages/Support"));
 const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
 const Pitch = lazy(() => import("./pages/Pitch"));
 const PitchDetail = lazy(() => import("./pages/PitchDetail"));
+
 
 // Legal Pages
 const PrivacyPolicy = lazy(() => import("./pages/legal/PrivacyPolicy"));
@@ -133,17 +139,10 @@ const App = () => {
   }, [isNative]);
 
   useEffect(() => {
-    if (isNative) {
-      // Once auth initialization completes, we begin the transition out
-      if (!isLoading) {
-        // Reduced cinematic duration for faster perceived startup
-        const timer = setTimeout(() => {
-          setShowCustomSplash(false);
-        }, 1200);
-        return () => clearTimeout(timer);
-      }
+    if (isNative && !isLoading) {
+      setShowCustomSplash(false);
     }
-  }, [isLoading]);
+  }, [isLoading, isNative]);
 
   return (
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
@@ -155,7 +154,9 @@ const App = () => {
             <CallProvider>
               <PresenceProvider>
                 <ScrollToTop />
+                <OfflineBanner />
                 <SystemStatusBanner />
+                <CookieConsentBanner />
                 <Toaster />
                 <PremiumNotificationOverlay />
                 <GlobalFeatures />
@@ -205,6 +206,7 @@ const App = () => {
                           <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
                           <Route path="/profile/:userId" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                          <Route path="/profile/availability" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />
                           <Route path="/projects" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/projects/:projectId" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/projects/:projectId/space" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard></ProtectedRoute>} />
@@ -217,7 +219,6 @@ const App = () => {
                               <SetupAdmin />
                             </DesktopOnlyGuard>
                           } />
-                          <Route path="/learn" element={<LearningPortal />} />
                           <Route path="/discussion-rooms" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled" fallbackTitle="Discussions Offline"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/messages" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute>} />
@@ -237,9 +238,12 @@ const App = () => {
                           <Route path="/settings/account" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
                           <Route path="/complete-profile" element={<ProtectedRoute><CompleteProfile /></ProtectedRoute>} />
                           <Route path="/marketplace" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled" fallbackTitle="Marketplace Disabled"><Marketplace /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/marketplace/wishlist" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><Wishlist /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/marketplace/wishlist/shared/:token" element={<SharedWishlist />} />
                           <Route path="/marketplace/:listingId" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
                           <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
+                          <Route path="/vendors/services/:id" element={<ProtectedRoute><VendorServiceDetail /></ProtectedRoute>} />
                           <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
                           <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
                           <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
@@ -254,6 +258,7 @@ const App = () => {
                           <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
                           <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
                           <Route path="/support/ticket/:ticketId" element={<ProtectedRoute><SupportTicketDetail /></ProtectedRoute>} />
+
 
                           {/* Public Legal Routes */}
                           <Route path="/privacy" element={<PrivacyPolicy />} />

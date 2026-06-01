@@ -10,7 +10,7 @@ interface TypingUser {
 export const useTypingIndicator = (roomId: string) => {
   const { user, profile } = useAuth();
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timeoutRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
   const lastTrackedRef = useRef<number>(0);
 

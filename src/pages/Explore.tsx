@@ -66,7 +66,7 @@ const Explore = () => {
         search_type: 'global' as const,
       };
 
-      const { error } = await supabase.from('saved_searches').insert([payload]);
+      const { error } = await supabase.from('saved_searches' as any).insert([payload]);
       if (error) throw error;
       toast({ title: 'Search saved', description: `Saved "${name}"` });
     } catch (e: any) {

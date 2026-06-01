@@ -82,7 +82,7 @@ const ProjectsTab = () => {
               key={project.id}
               project={{
                 id: project.id,
-                name: project.title,
+                title: project.title,
                 description: project.description,
                 status: project.status,
                 location: project.location,

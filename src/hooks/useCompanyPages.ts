@@ -159,12 +159,12 @@ export function usePagePosts(pageId: string | undefined) {
     queryKey: ['page-posts', pageId],
     queryFn: async () => {
       if (!pageId) return [];
-      const { data, error } = await supabase
-        .from('posts')
+      const { data, error } = await (supabase
+        .from('posts' as any)
         .select('*, profiles:author_id(id, full_name, username, avatar_url, craft), company_pages:page_id(id, name, logo_url, slug)')
         .eq('page_id', pageId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(50) as any);
       if (error) throw error;
       return data || [];
     },

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { AccessToken } from "https://esm.sh/livekit-server-sdk@2.1.2?target=deno";
 import { corsHeaders } from "../_shared/cors.ts";
+import { handleRateLimit } from "../_shared/rateLimit.ts";
 
 
 
@@ -10,6 +11,12 @@ serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // Apply rate limiting: Limit token generation to 20 calls per minute
+  const rateLimit = await handleRateLimit(req, "livekit-token", 20, 60000);
+  if (!rateLimit.allowed) {
+    return rateLimit.response!;
+  }
+
   try {
     const { roomName, participantName } = await req.json();
 
@@ -17,7 +24,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Missing roomName or participantName" }),
         {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, ...rateLimit.headers, "Content-Type": "application/json" },
           status: 400,
         }
       );
@@ -46,13 +53,13 @@ serve(async (req) => {
     const token = await at.toJwt();
 
     return new Response(JSON.stringify({ token }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, ...rateLimit.headers, "Content-Type": "application/json" },
       status: 200,
     });
   } catch (err) {
     console.error("Error generating LiveKit token:", err);
     return new Response(JSON.stringify({ error: err.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, ...rateLimit.headers, "Content-Type": "application/json" },
       status: 500,
     });
   }

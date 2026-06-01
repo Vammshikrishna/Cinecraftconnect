@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { runtimeTelemetry } from '@/lib/runtime/runtimeTelemetry';
 import { deviceIntelligence } from '@/lib/runtime/deviceIntelligence';
 import { runtimeFairness } from '@/lib/runtime/runtimeFairness';
+import * as Sentry from '@sentry/react';
 
 /**
  * DEV-ONLY: Visualization of global runtime health, fairness, and device intelligence.
@@ -70,7 +71,7 @@ export const RuntimeDebugPanel: React.FC = () => {
           </span>
         </div>
 
-        <div className="pt-2 border-t border-white/10">
+        <div className="pt-2 border-t border-white/10 space-y-2">
           <div className="flex justify-between">
             <span className="text-white/40">Suppressions:</span>
             <span>{metrics.governorSuppressions}</span>
@@ -79,6 +80,19 @@ export const RuntimeDebugPanel: React.FC = () => {
             <span className="text-white/40">Recovery Count:</span>
             <span>{metrics.sustainedLoadRecoveryCount}</span>
           </div>
+          <button
+            onClick={() => {
+              try {
+                throw new Error("CineCraft Connect Sentry Diagnostic Test Error");
+              } catch (error) {
+                Sentry.captureException(error);
+                alert("Sentry exception captured! Check your Sentry Dashboard.");
+              }
+            }}
+            className="w-full bg-red-600/80 hover:bg-red-700 text-white font-bold py-1 px-2 rounded cursor-pointer mt-2 text-[10px] text-center"
+          >
+            Trigger Sentry Error
+          </button>
         </div>
       </div>
     </div>

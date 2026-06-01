@@ -74,7 +74,7 @@ const AdminDashboard = () => {
   };
 
   const fetchUsers = async () => {
-    let q = (supabase as any).from('profiles').select('*').limit(50);
+    let q = (supabase as any).from('profiles').select('id, username, full_name, avatar_url, account_type, is_verified, is_banned').limit(50);
     if (searchQuery) q = q.ilike('username', `%${searchQuery}%`);
     const { data } = await q;
     if (data) setUsers(data);

@@ -10,15 +10,15 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 interface ProjectResult {
   id: string; // Changed to string as project_spaces id is uuid
   name: string;
-  description: string;
+  description: string | null;
   type: 'project';
 }
 
 interface UserResult {
   id: string;
-  username: string;
-  full_name: string;
-  avatar_url: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
   type: 'user';
 }
 
@@ -83,12 +83,12 @@ const GlobalSearch = () => {
                   ) : (
                     <Link to={`/profile/${result.id}`} className="flex items-center gap-4 p-4 hover:bg-gray-700">
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={result.avatar_url} />
-                        <AvatarFallback>{result.username.charAt(0).toUpperCase()}</AvatarFallback>
+                        <AvatarImage src={result.avatar_url || undefined} />
+                        <AvatarFallback>{(result.username || 'U').charAt(0).toUpperCase()}</AvatarFallback>
                       </Avatar>
                       <div>
-                        <h4 className="font-bold">{result.full_name}</h4>
-                        <p className="text-sm text-gray-400">@{result.username}</p>
+                        <h4 className="font-bold">{result.full_name || 'Anonymous'}</h4>
+                        <p className="text-sm text-gray-400">@{result.username || ''}</p>
                       </div>
                     </Link>
                   )}

@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Briefcase } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -60,7 +61,8 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
         salary_min: jobToEdit.salary_min ? String(jobToEdit.salary_min) : '',
         salary_max: jobToEdit.salary_max ? String(jobToEdit.salary_max) : '',
         experience_level: jobToEdit.experience_level || '' as ExperienceLevel,
-        requirements: jobToEdit.requirements || ''
+        requirements: jobToEdit.requirements || '',
+        auto_close_on_hire: jobToEdit.auto_close_on_hire || false
       });
       setSelectedPageId(jobToEdit.page_id || "user");
     } else if (!jobToEdit && isOpen) {
@@ -73,7 +75,8 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
         salary_min: '',
         salary_max: '',
         experience_level: '' as ExperienceLevel,
-        requirements: ''
+        requirements: '',
+        auto_close_on_hire: false
       });
       setSelectedPageId(defaultPageId);
     }
@@ -88,7 +91,8 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
     salary_min: '',
     salary_max: '',
     experience_level: '' as ExperienceLevel,
-    requirements: ''
+    requirements: '',
+    auto_close_on_hire: false
   });
 
   const handlePageChange = (value: string) => {
@@ -139,6 +143,7 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
         salary_max: jobData.salary_max ? parseFloat(jobData.salary_max) : null,
         experience_level: jobData.experience_level || 'mid',
         requirements: jobData.requirements,
+        auto_close_on_hire: jobData.auto_close_on_hire,
         posted_by: user.id,
         page_id: selectedPageId === "user" ? null : selectedPageId
       };
@@ -168,7 +173,8 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
             salary_min: '',
             salary_max: '',
             experience_level: '' as ExperienceLevel,
-            requirements: ''
+            requirements: '',
+            auto_close_on_hire: false
           });
       }
 
@@ -349,6 +355,18 @@ export const JobCreationModal = ({ onJobCreated, defaultOpen = false, defaultPag
               onChange={(e) => setJobData(prev => ({ ...prev, requirements: e.target.value }))}
               className="min-h-[100px]"
             />
+          </div>
+
+          <div className="flex items-center space-x-3 py-2">
+            <Switch 
+              id="auto-close" 
+              checked={jobData.auto_close_on_hire}
+              onCheckedChange={(checked) => setJobData(prev => ({ ...prev, auto_close_on_hire: checked }))}
+            />
+            <div className="space-y-1">
+              <Label htmlFor="auto-close" className="font-bold">Auto-close position when filled</Label>
+              <p className="text-xs text-muted-foreground">Automatically close this listing when you mark an applicant's status as Hire.</p>
+            </div>
           </div>
 
           <DialogFooter className="flex gap-2">

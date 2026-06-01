@@ -1,3 +1,4 @@
+import "@/lib/sentry";
 import React, { Suspense } from "react";
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
@@ -5,7 +6,8 @@ import { AuthProvider } from "./contexts/AuthContext.tsx";
 import { ThemeProvider } from "./components/theme-provider.tsx";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import './index.css';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from "@/lib/queryClient";
 
 
 // Suppress specific verbose library logs
@@ -43,16 +45,6 @@ console.warn = (...args: any[]) => {
 
 import { initPersistor } from '@/lib/cache/persistQueryClient';
 
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 10, // 10 minutes (increased for better mobile experience)
-      gcTime: 1000 * 60 * 60 * 24, // 24 hours (keep in memory longer)
-      retry: 1,
-      refetchOnWindowFocus: false, // Prevent lag when switching tabs
-    },
-  },
-});
 
 // Initialize safe, versioned persistence
 initPersistor(queryClient);

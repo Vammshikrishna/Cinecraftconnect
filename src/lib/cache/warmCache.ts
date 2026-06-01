@@ -1,4 +1,4 @@
-import { queryClient } from '@/main';
+import { queryClient } from '@/lib/queryClient';
 import { supabase } from '@/integrations/supabase/client';
 import { networkSync } from '../sync/networkAwareSync';
 
@@ -17,7 +17,7 @@ class WarmCacheEngine {
           queryFn: async () => {
             const { data, error } = await supabase
               .from('posts')
-              .select('*, profiles(*)')
+              .select('*, profiles(id, username, full_name, avatar_url, is_verified, is_internal, craft)')
               .order('created_at', { ascending: false })
               .limit(10);
             
@@ -30,7 +30,7 @@ class WarmCacheEngine {
     });
   }
 
-  public async prefetchUnreadNotificationsCount() {
+  public async prefetchUnreadNotificationsCount(userId?: string) {
     // Disabled since legacy notifications table was dropped.
     // Future implementation will aggregate from specialized tables.
   }

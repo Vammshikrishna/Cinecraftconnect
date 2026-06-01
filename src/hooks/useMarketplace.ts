@@ -28,7 +28,11 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
 
             // Apply filters manually since we aren't using the RPC
             if (activeTab !== 'all') {
-                query = query.eq('listing_type', activeTab);
+                if (activeTab === 'bundle') {
+                    query = query.eq('is_bundle', true);
+                } else {
+                    query = query.eq('listing_type', activeTab as any).eq('is_bundle', false);
+                }
             }
             if (filters.category) {
                 query = query.eq('category', filters.category);

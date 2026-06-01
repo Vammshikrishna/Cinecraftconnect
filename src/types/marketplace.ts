@@ -1,5 +1,6 @@
-export type ListingType = 'equipment' | 'location';
+export type ListingType = 'equipment' | 'location' | 'bundle';
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed';
+export type EquipmentCondition = 'Mint' | 'Excellent' | 'Good' | 'Fair';
 
 export interface MarketplaceListing {
     id: string;
@@ -15,6 +16,11 @@ export interface MarketplaceListing {
     specifications: Record<string, any>;
     availability_calendar: Record<string, any>;
     is_active: boolean;
+    is_bundle?: boolean;
+    bundle_items?: MarketplaceListing[];
+    condition_grade?: EquipmentCondition;
+    condition_score?: number;
+    admin_flagged?: boolean;
     created_at: string;
     updated_at: string;
     profiles?: {
@@ -73,12 +79,41 @@ export interface Vendor {
     review_count?: number;
 }
 
+export interface VendorService {
+    id: string;
+    vendor_id: string;
+    title: string;
+    description: string;
+    day_rate: number;
+    coverage_area: string;
+    min_booking_days: number;
+    production_types: string[];
+    crew_capacity?: number;
+    service_checklist: any[];
+    images: string[];
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export const PRODUCTION_TYPES = [
+    'Feature Film',
+    'Commercial',
+    'Music Video',
+    'TV Series',
+    'Short Film',
+    'Event',
+    'Documentary'
+];
+
 export interface MarketplaceReview {
     id: string;
     listing_id?: string;
     vendor_id?: string;
+    booking_id?: string;
     reviewer_id: string;
     rating: number;
+    condition_rating?: number;
     review_text: string;
     created_at: string;
     profiles?: {
@@ -138,3 +173,20 @@ export const VENDOR_CATEGORIES = [
 export type EquipmentCategory = typeof EQUIPMENT_CATEGORIES[number];
 export type LocationCategory = typeof LOCATION_CATEGORIES[number];
 export type VendorCategory = typeof VENDOR_CATEGORIES[number];
+
+export interface MarketplaceWishlist {
+    id: string;
+    user_id: string;
+    listing_id: string;
+    created_at: string;
+    marketplace_listings?: MarketplaceListing;
+}
+
+export interface GearAlert {
+    id: string;
+    user_id: string;
+    category?: string;
+    keyword?: string;
+    max_price?: number;
+    created_at: string;
+}

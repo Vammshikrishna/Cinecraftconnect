@@ -79,7 +79,7 @@ export function MobileNav() {
   };
 
   // More-menu paths used for active-state detection
-  const commonMorePaths = ["/ratings", "/announcements", "/learn", "/marketplace", "/vendors", "/pages", "/messages", "/dm", "/pitch"];
+  const commonMorePaths = ["/ratings", "/announcements", "/marketplace", "/vendors", "/pages", "/messages", "/dm", "/pitch", "/contracts"];
   const allMorePaths = commonMorePaths;
   const isMoreActive = allMorePaths.some(p => location.pathname.startsWith(p));
 
@@ -145,12 +145,7 @@ export function MobileNav() {
                     <span>Announcements</span>
                   </div>
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleTabClick('/learn')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <BookOpen size={18} />
-                    <span>Learn</span>
-                  </div>
-                </DropdownMenuItem>
+
                 <DropdownMenuItem onClick={() => handleTabClick('/marketplace')}>
                   <div className="flex items-center gap-3 cursor-pointer w-full">
                     <ShoppingBag size={18} />

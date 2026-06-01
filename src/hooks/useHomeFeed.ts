@@ -31,31 +31,31 @@ export const useHomeFeed = () => {
                 .from('announcements')
                 .select('*, company_pages:publisher_page_id(id, name, logo_url, slug), profiles:author_id(full_name, username)')
                 .order('posted_at', { ascending: false })
-                .limit(25);
+                .limit(10);
 
             const projectsPromise = supabase
                 .from('projects')
                 .select('*, creator:creator_id(full_name, avatar_url)')
                 .order('created_at', { ascending: false })
-                .limit(25);
+                .limit(10);
 
             const discussionsPromise = supabase
                 .from('discussion_rooms')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(25);
+                .limit(10);
 
             const marketplacePromise = supabase
                 .from('marketplace_listings')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(25);
+                .limit(10);
 
             const vendorsPromise = supabase
                 .from('vendors')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(25);
+                .limit(10);
 
             const connectionsPromise = user?.id
                 ? supabase
@@ -64,7 +64,7 @@ export const useHomeFeed = () => {
                     .neq('id', user.id)
                     .eq('is_internal', false)
                     .order('updated_at', { ascending: false, nullsFirst: false })
-                    .limit(25)
+                    .limit(10)
                 : Promise.resolve({ data: [], error: null });
 
             const [
@@ -183,10 +183,14 @@ export const useHomeFeed = () => {
         return infinitePostsQuery.data?.pages.flat() || [];
     }, [infinitePostsQuery.data]);
 
-    const combinedData: HomeFeedData | undefined = useMemo(() => {
-        if (!staticDataQuery.data) return undefined;
+    const combinedData: HomeFeedData = useMemo(() => {
         return {
-            ...staticDataQuery.data,
+            announcements: staticDataQuery.data?.announcements || [],
+            projects: staticDataQuery.data?.projects || [],
+            discussions: staticDataQuery.data?.discussions || [],
+            marketplace: staticDataQuery.data?.marketplace || [],
+            vendors: staticDataQuery.data?.vendors || [],
+            connections: staticDataQuery.data?.connections || [],
             posts,
             ratings: ratingsQuery.data || [],
             likedPostIds: Array.isArray(likesQuery.data) ? likesQuery.data : [],
@@ -198,7 +202,8 @@ export const useHomeFeed = () => {
 
     return {
         data: combinedData,
-        isLoading: (staticDataQuery.isLoading && !staticDataQuery.data) || (infinitePostsQuery.isLoading && !infinitePostsQuery.data),
+        isLoading: infinitePostsQuery.isLoading && !infinitePostsQuery.data,
+        isStaticLoading: staticDataQuery.isLoading && !staticDataQuery.data,
         isFetching: staticDataQuery.isFetching || infinitePostsQuery.isFetching,
         isError: staticDataQuery.isError || infinitePostsQuery.isError,
         refetch: () => {

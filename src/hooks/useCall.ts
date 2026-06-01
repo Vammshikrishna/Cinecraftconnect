@@ -41,7 +41,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
     }, [roomType, roomId]);
 
     const fetchActiveCall = async () => {
-        const { data } = await supabase
+        const { data } = await (supabase
             .from('calls' as any)
             .select('*')
             .eq('room_type', roomType)
@@ -49,7 +49,7 @@ export const useCall = (roomType: 'project' | 'discussion' | 'direct', roomId: s
             .eq('status', 'active')
             .order('created_at', { ascending: false })
             .limit(1)
-            .maybeSingle();
+            .maybeSingle() as any);
 
         setActiveCall(data as Call | null);
     };

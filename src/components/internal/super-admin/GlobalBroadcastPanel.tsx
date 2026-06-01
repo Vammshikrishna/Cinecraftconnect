@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { STORAGE_BUCKETS, buildUserFilePath } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -98,18 +99,19 @@ export default function GlobalBroadcastPanel() {
 
     setIsUploadingImage(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `announcement-images/${fileName}`;
+      const filePath = buildUserFilePath(
+        `announcement-images/${user.id}`,
+        file.name
+      );
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from(STORAGE_BUCKETS.AVATARS)
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
+        .from(STORAGE_BUCKETS.AVATARS)
         .getPublicUrl(filePath);
 
       setImageUrl(publicUrl);

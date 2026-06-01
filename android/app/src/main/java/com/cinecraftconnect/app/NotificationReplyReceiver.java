@@ -56,6 +56,11 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
+                
+                String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+                        .getString("supabase_anon_key", "REDACTED_ANON_KEY");
+                conn.setRequestProperty("Authorization", "Bearer " + anonKey);
+                
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();
@@ -92,6 +97,11 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
+                
+                String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+                        .getString("supabase_anon_key", "REDACTED_ANON_KEY");
+                conn.setRequestProperty("Authorization", "Bearer " + anonKey);
+                
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();

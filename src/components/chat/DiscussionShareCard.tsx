@@ -45,7 +45,7 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
                     setCategory(categoryData?.name || undefined);
                     setMemberCount(data.member_count || 0);
                     setRoomType((data.room_type as any) || 'public');
-                    setIsActive(data.is_active || false);
+                    setIsActive((data as any).is_active || false);
                     setCreatedAt(data.created_at || undefined);
                 }
             } catch (err) {

@@ -6,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
-import { Loader2, Save, Trash2, ChevronRight, MessageCircle, Wallet, CircleUser, ArrowLeft, Lock, Film, Camera } from 'lucide-react';
+import { Loader2, Save, Trash2, ChevronRight, MessageCircle, Wallet, CircleUser, ArrowLeft, Lock, Film, Camera, Search, Check } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import {
@@ -20,6 +20,15 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
     Select,
     SelectContent,
@@ -58,6 +67,14 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     const [step, setStep] = useState<'basis' | 'financials' | 'privacy' | 'danger'>('basis');
     const [isMenu, setIsMenu] = useState(true);
 
+    const [originalStatus, setOriginalStatus] = useState('active');
+    const [showWrapDialog, setShowWrapDialog] = useState(false);
+    const [crewList, setCrewList] = useState<{ user_id: string; full_name: string; role: string; avatar_url: string; selected: boolean }[]>([]);
+    const [loadingCrew, setLoadingCrew] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<{ id: string; full_name: string; username: string; avatar_url: string }[]>([]);
+    const [searchingUsers, setSearchingUsers] = useState(false);
+
     const openStep = (target: 'basis' | 'financials' | 'privacy' | 'danger') => {
         setStep(target);
         setIsMenu(false);
@@ -75,6 +92,152 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
         ];
         const index = Array.from(id).reduce((acc, char) => acc + char.charCodeAt(0), 0) % gradients.length;
         return gradients[index];
+    };
+
+    const fetchSpaceMembers = async () => {
+        try {
+            setLoadingCrew(true);
+            const { data: space } = await supabase
+                .from('project_spaces')
+                .select('id')
+                .eq('project_id', projectId)
+                .maybeSingle();
+
+            if (!space) {
+                setCrewList([]);
+                return;
+            }
+
+            const { data: members, error } = await supabase
+                .from('project_space_members' as any)
+                .select(`
+                    user_id,
+                    role,
+                    profiles:user_id (
+                        full_name,
+                        avatar_url
+                    )
+                `)
+                .eq('project_space_id', space.id);
+
+            if (error) throw error;
+
+            const formatted = members?.map((m: any) => ({
+                user_id: m.user_id,
+                full_name: m.profiles?.full_name || 'Anonymous',
+                role: m.role || 'Crew',
+                avatar_url: m.profiles?.avatar_url || '',
+                selected: true,
+            })) || [];
+
+            setCrewList(formatted);
+        } catch (error) {
+            console.error('Error fetching space members:', error);
+        } finally {
+            setLoadingCrew(false);
+        }
+    };
+
+    const searchExternalUsers = async () => {
+        if (!searchQuery.trim()) return;
+        setSearchingUsers(true);
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, full_name, username, avatar_url')
+                .ilike('full_name', `%${searchQuery}%`)
+                .limit(5);
+
+            if (error) throw error;
+
+            const existingIds = crewList.map(c => c.user_id);
+            const filtered = (data || [])
+                .filter(u => !existingIds.includes(u.id))
+                .map(u => ({
+                    id: u.id,
+                    full_name: u.full_name || u.username || 'Anonymous',
+                    username: u.username || '',
+                    avatar_url: u.avatar_url || ''
+                }));
+
+            setSearchResults(filtered);
+        } catch (error) {
+            console.error('Error searching users:', error);
+        } finally {
+            setSearchingUsers(false);
+        }
+    };
+
+    const addExternalCrew = (user: any) => {
+        setCrewList(prev => [...prev, {
+            user_id: user.id,
+            full_name: user.full_name,
+            role: 'Crew',
+            avatar_url: user.avatar_url,
+            selected: true
+        }]);
+        setSearchResults(prev => prev.filter(u => u.id !== user.id));
+        setSearchQuery('');
+    };
+
+    const handleConfirmWrap = async () => {
+        setSaving(true);
+        try {
+            const { error: updateError } = await supabase
+                .from('projects')
+                .update({
+                    title,
+                    description,
+                    status: 'completed',
+                    location,
+                    genre: genre.split(',').map(g => g.trim()).filter(g => g),
+                    start_date: startDate || null,
+                    end_date: endDate || null,
+                    budget_min: budgetMin ? parseFloat(budgetMin) : null,
+                    budget_max: budgetMax ? parseFloat(budgetMax) : null,
+                    is_public: isPublic,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', projectId);
+
+            if (updateError) throw updateError;
+
+            const selectedCrew = crewList.filter(c => c.selected);
+            if (selectedCrew.length > 0) {
+                const { data: { user: currentUser } } = await supabase.auth.getUser();
+                const creditsToInsert = selectedCrew.map(c => ({
+                    project_id: projectId,
+                    project_title: title,
+                    user_id: c.user_id,
+                    role: c.role,
+                    verifier_id: currentUser?.id || null
+                }));
+
+                const { error: creditsError } = await supabase
+                    .from('project_credits')
+                    .insert(creditsToInsert);
+
+                if (creditsError) {
+                    console.error('Error saving credits:', creditsError);
+                }
+            }
+
+            toast({
+                title: "Project Wrapped!",
+                description: "Project completed and verified crew credits published.",
+            });
+            setOriginalStatus('completed');
+            setStatus('completed');
+            setShowWrapDialog(false);
+        } catch (error: any) {
+            toast({
+                title: "Error",
+                description: error.message || "Failed to wrap project settings",
+                variant: "destructive"
+            });
+        } finally {
+            setSaving(false);
+        }
     };
 
     useEffect(() => {
@@ -96,6 +259,7 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                 setDescription(data.description || '');
 
                 setStatus(data.status || 'active');
+                setOriginalStatus(data.status || 'active');
                 setLocation(data.location || '');
                 setGenre(data.genre ? data.genre.join(', ') : '');
                 setStartDate(data.start_date || '');
@@ -162,6 +326,12 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     };
 
     const handleSave = async () => {
+        if (status === 'completed' && originalStatus !== 'completed') {
+            await fetchSpaceMembers();
+            setShowWrapDialog(true);
+            return;
+        }
+
         setSaving(true);
         try {
             const finalDescription = description;
@@ -661,6 +831,128 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                     </Card>
                 </div>
             )}
+
+            <Dialog open={showWrapDialog} onOpenChange={setShowWrapDialog}>
+                <DialogContent className="sm:max-w-2xl bg-card border-border rounded-[32px] p-8 max-h-[85vh] overflow-y-auto no-scrollbar">
+                    <DialogHeader>
+                        <DialogTitle className="text-2xl font-black tracking-tight text-foreground uppercase flex items-center gap-2">
+                            <Film className="h-6 w-6 text-primary" /> Wrap Project & Tag Crew
+                        </DialogTitle>
+                        <DialogDescription className="text-muted-foreground text-sm font-medium">
+                            Officially wrap the production of "{title}". Tag the crew members below to publish locked verified credits directly to their profiles.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-6 py-4">
+                        <div className="space-y-2">
+                            <Label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Tag Additional Crew Members</Label>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search by name to credit other users..."
+                                    className="bg-background/50 border-border h-12 rounded-xl"
+                                    onKeyDown={(e) => e.key === 'Enter' && searchExternalUsers()}
+                                />
+                                <Button onClick={searchExternalUsers} disabled={searchingUsers} className="bg-primary text-primary-foreground h-12 rounded-xl px-4">
+                                    <Search className="h-4 w-4" />
+                                </Button>
+                            </div>
+
+                            {searchResults.length > 0 && (
+                                <div className="space-y-2 max-h-40 overflow-y-auto mt-2 bg-background/30 p-2 rounded-xl border border-border/40">
+                                    {searchResults.map(user => (
+                                        <div key={user.id} className="flex items-center justify-between p-2 hover:bg-accent/40 rounded-lg transition-colors">
+                                            <div className="flex items-center gap-3">
+                                                {user.avatar_url ? (
+                                                    <img src={user.avatar_url} alt={user.full_name} className="h-8 w-8 rounded-full object-cover" />
+                                                ) : (
+                                                    <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xs">
+                                                        {user.full_name[0].toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <p className="text-sm font-bold text-foreground">{user.full_name}</p>
+                                                    <p className="text-[10px] text-muted-foreground">@{user.username}</p>
+                                                </div>
+                                            </div>
+                                            <Button size="sm" onClick={() => addExternalCrew(user)} className="bg-primary/20 text-primary hover:bg-primary/30 border border-primary/20 rounded-lg text-xs font-bold py-1 h-8">
+                                                Add Credit
+                                            </Button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="space-y-3">
+                            <Label className="text-[10px] font-black text-primary uppercase tracking-widest ml-1">Credits Roll</Label>
+                            {loadingCrew ? (
+                                <div className="text-center py-6 text-muted-foreground">Loading crew list...</div>
+                            ) : crewList.length === 0 ? (
+                                <div className="text-center py-6 text-muted-foreground text-xs italic bg-background/20 rounded-2xl border border-dashed border-border/50">
+                                    No crew members to tag. Wrap anyway or search above.
+                                </div>
+                            ) : (
+                                <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
+                                    {crewList.map((crew, idx) => (
+                                        <div key={crew.user_id + '-' + idx} className="flex items-center justify-between gap-4 p-4 bg-background/30 border border-border/50 rounded-2xl hover:border-primary/20 transition-all">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <Checkbox
+                                                    checked={crew.selected}
+                                                    onCheckedChange={(checked) => {
+                                                        setCrewList(prev => prev.map((c, i) => i === idx ? { ...c, selected: !!checked } : c));
+                                                    }}
+                                                    className="data-[state=checked]:bg-primary rounded"
+                                                />
+                                                {crew.avatar_url ? (
+                                                    <img src={crew.avatar_url} alt={crew.full_name} className="h-9 w-9 rounded-full object-cover shrink-0" />
+                                                ) : (
+                                                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
+                                                        {crew.full_name[0].toUpperCase()}
+                                                    </div>
+                                                )}
+                                                <span className="font-bold text-sm text-foreground truncate">{crew.full_name}</span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                                <Label className="text-[9px] font-black text-muted-foreground uppercase tracking-widest shrink-0">Credit Role:</Label>
+                                                <Input
+                                                    value={crew.role}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setCrewList(prev => prev.map((c, i) => i === idx ? { ...c, role: val } : c));
+                                                    }}
+                                                    placeholder="Role (e.g. Producer)"
+                                                    disabled={!crew.selected}
+                                                    className="bg-background border-border h-10 w-44 rounded-xl text-xs font-semibold focus-visible:ring-primary/20"
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2 mt-6">
+                        <Button 
+                            variant="ghost" 
+                            onClick={() => setShowWrapDialog(false)}
+                            className="h-12 rounded-xl font-bold"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleConfirmWrap}
+                            disabled={saving}
+                            className="bg-primary hover:bg-primary/95 text-white font-black text-xs uppercase tracking-widest px-8 h-12 rounded-xl shadow-lg shadow-primary/20"
+                        >
+                            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Wrap & Publish Credits"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

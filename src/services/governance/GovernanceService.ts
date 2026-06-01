@@ -30,9 +30,13 @@ export class GovernanceService {
    */
   private static async captureSnapshot(table: string, id: string) {
     const keyColumn = table === 'user_roles' ? 'user_id' : 'id';
-    const { data } = await (supabase as any)
-      .from(table as any)
-      .select('*')
+    let query = (supabase as any).from(table as any);
+    if (table === 'profiles') {
+      query = query.select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags');
+    } else {
+      query = query.select('*');
+    }
+    const { data } = await query
       .eq(keyColumn, id)
       .maybeSingle();
     return data;

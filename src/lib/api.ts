@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 export const fetchJoinRequests = async (roomId: string) => {
   // First, fetch the join requests for the given room
   const { data: requests, error: requestsError } = await supabase
-    .from('room_join_requests')
+    .from('room_join_requests' as any)
     .select('id, created_at, status, user_id')
     .eq('room_id', roomId)
     .eq('status', 'pending');
@@ -17,7 +17,7 @@ export const fetchJoinRequests = async (roomId: string) => {
   }
 
   // Next, extract the user IDs from the requests
-  const userIds = requests.map(req => req.user_id);
+  const userIds = (requests as any[]).map(req => req.user_id);
 
   // Then, fetch the profiles for those user IDs
   const { data: profiles, error: profilesError } = await supabase
@@ -30,13 +30,17 @@ export const fetchJoinRequests = async (roomId: string) => {
   }
 
   // Create a map of profiles by user ID for easy lookup
-  const profilesById = profiles.reduce((acc, profile) => {
-    acc[profile.id] = profile;
+  const profilesById = (profiles as any[]).reduce((acc, profile) => {
+    acc[profile.id] = {
+      id: profile.id,
+      username: profile.username || '',
+      avatar_url: profile.avatar_url || '',
+    };
     return acc;
   }, {} as { [key: string]: { id: string; username: string; avatar_url: string; } });
 
   // Finally, combine the requests with their corresponding profiles
-  const data = requests.map(req => ({
+  const data = (requests as any[]).map(req => ({
     ...req,
     profiles: profilesById[req.user_id] || null
   }));
@@ -52,7 +56,7 @@ export const approveJoinRequest = async (requestId: number, userId: string, room
   }
 
   // Delete the join request
-  const { error: requestError } = await supabase.from('room_join_requests').delete().eq('id', requestId);
+  const { error: requestError } = await supabase.from('room_join_requests' as any).delete().eq('id', requestId);
   if (requestError) {
     // Note: In a production app, you might want to handle the case where the user was added but the request wasn't deleted.
     // This could involve a transaction or a cleanup job.
@@ -63,7 +67,7 @@ export const approveJoinRequest = async (requestId: number, userId: string, room
 };
 
 export const denyJoinRequest = async (requestId: number) => {
-  const { error } = await supabase.from('room_join_requests').delete().eq('id', requestId);
+  const { error } = await supabase.from('room_join_requests' as any).delete().eq('id', requestId);
   if (error) {
     throw new Error(`Failed to deny join request: ${error.message}`);
   }

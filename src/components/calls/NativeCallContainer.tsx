@@ -240,10 +240,10 @@ export const NativeCallContainer = ({ roomId, onLeave, roomName = 'Team Discussi
         const fetchMembers = async () => {
             // If we are in a project call, fetch project members
             if (projectId) {
-                const { data: members, error } = await supabase
-                    .from('project_members')
+                const { data: members, error } = await (supabase
+                    .from('project_members' as any)
                     .select('user_id, profiles(id, username, avatar_url)')
-                    .eq('project_id', projectId);
+                    .eq('project_id', projectId) as any);
 
                 if (members && !error) {
                     const mapped = members.map((m: any) => ({
@@ -257,10 +257,10 @@ export const NativeCallContainer = ({ roomId, onLeave, roomName = 'Team Discussi
             // Otherwise, default to discussion room members if roomId is present (and not a project call)
             else if (roomId) {
                 // Ensure we don't try to query room_members with a non-discussion UUID (though handled by projectId check above)
-                const { data: members, error } = await supabase
-                    .from('room_members')
+                const { data: members, error } = await (supabase
+                    .from('room_members' as any)
                     .select('user_id, profiles(id, username, avatar_url)')
-                    .eq('room_id', roomId);
+                    .eq('room_id', roomId) as any);
 
                 if (members && !error) {
                     const mapped = members.map((m: any) => ({
@@ -281,12 +281,12 @@ export const NativeCallContainer = ({ roomId, onLeave, roomName = 'Team Discussi
             if (!user) return;
 
             // Check if there's an active call and who created it
-            const { data: call } = await supabase
-                .from('calls')
+            const { data: call } = await (supabase
+                .from('calls' as any)
                 .select('started_by')
                 .eq('room_id', roomId)
                 .eq('status', 'active')
-                .maybeSingle();
+                .maybeSingle() as any);
 
             if (call) {
                 const creatorId = (call as any).started_by;

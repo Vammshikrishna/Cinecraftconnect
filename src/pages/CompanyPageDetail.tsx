@@ -123,7 +123,7 @@ const CompanyPageDetail = () => {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from('company_page_members')
-        .select('*, profiles(*)')
+        .select('*, profiles(id, username, full_name, avatar_url, is_verified)')
         .eq('page_id', page?.id);
       if (error) throw error;
       return data as any[];

@@ -276,7 +276,7 @@ const RatingsTab = () => {
           poster_path: item.poster_url || null,
           backdrop_path: item.backdrop_url || null,
           vote_average: 0, // Will be enriched or calculated
-          release_date: item.release_date,
+          release_date: item.release_date || undefined,
           original_language: 'en',
           user_rating: null,
           app_rating: item.view_count as any

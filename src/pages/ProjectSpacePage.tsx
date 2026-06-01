@@ -99,8 +99,8 @@ const ProjectSpacePage = () => {
 
   return (
     <div className={cn(
-      "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col z-40",
-      (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)] md:pb-0"
+      "fixed inset-x-0 top-0 h-[100dvh] pt-[calc(env(safe-area-inset-top)+56px)] lg:pt-16 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-purple-900/20 via-background to-background flex flex-col z-40",
+      (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-[env(safe-area-inset-bottom)]"
     )}>
       <div className="flex-1 flex flex-col lg:p-4 lg:pt-0 lg:pb-0 overflow-hidden">
         <ProjectSpace

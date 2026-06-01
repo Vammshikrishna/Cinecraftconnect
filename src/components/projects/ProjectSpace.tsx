@@ -15,7 +15,8 @@ import {
   Settings,
   Phone,
   Video,
-  ShieldBan
+  ShieldBan,
+  BookOpen
 } from 'lucide-react';
 
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
@@ -23,6 +24,7 @@ import Tasks from '@/components/projects/Tasks';
 import Files from '@/components/projects/Files';
 import CallSheet from '@/components/projects/CallSheet';
 import ShotList from '@/components/projects/ShotList';
+import ScreenplayReader from '@/components/projects/ScreenplayReader';
 import LegalDocs from '@/components/projects/LegalDocs';
 import BudgetSched from '@/components/projects/BudgetSched';
 import Team from '@/components/projects/Team';
@@ -45,7 +47,7 @@ interface ProjectSpaceProps {
   projectDescription: string;
 }
 
-const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
+const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'script-reader', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
 type ActiveSection = typeof SECTIONS[number];
 
 export const ProjectSpace = ({
@@ -172,7 +174,7 @@ export const ProjectSpace = ({
     let active = true;
     const checkAccess = async () => {
       setCheckingAccess(true);
-      if (!user || !resolvedSpaceId) {
+      if (!user?.id || !resolvedSpaceId) {
         if (active) setCheckingAccess(false);
         return;
       }
@@ -241,7 +243,7 @@ export const ProjectSpace = ({
     checkAccess();
 
     return () => { active = false; };
-  }, [projectId, resolvedSpaceId, user]);
+  }, [projectId, resolvedSpaceId, user?.id]);
 
   useEffect(() => {
     if (!checkingAccess && !roleLoading && userRole === 'guest' && requestStatus !== 'approved' && !isInternal) {
@@ -308,6 +310,7 @@ export const ProjectSpace = ({
   const productionOfficeNavItems = [
     { id: 'call-sheet' as ActiveSection, label: 'Call Sheet', icon: ClipboardList },
     { id: 'shot-list' as ActiveSection, label: 'Shot List', icon: Camera },
+    { id: 'script-reader' as ActiveSection, label: 'Script Reader', icon: BookOpen },
     { id: 'legal-docs' as ActiveSection, label: 'Legal Docs', icon: Briefcase },
     { id: 'budget-sched' as ActiveSection, label: 'Budget/Sched', icon: DollarSign },
   ];
@@ -363,9 +366,8 @@ export const ProjectSpace = ({
 
 
 
-    // ... (rest of renderContent switch)
     return (
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className="flex-1 w-full flex flex-col overflow-hidden relative">
         {/* Persistent Sections (Hidden but Mounted) */}
         <ProjectChatInterface 
           projectId={projectId} 
@@ -389,6 +391,8 @@ export const ProjectSpace = ({
               return <CallSheet project_id={resolvedSpaceId} />;
             case 'shot-list':
               return <ShotList project_id={resolvedSpaceId} />;
+            case 'script-reader':
+              return <ScreenplayReader project_id={resolvedSpaceId} />;
             case 'legal-docs':
               return <LegalDocs project_id={resolvedSpaceId} />;
             case 'budget-sched':

@@ -3,6 +3,7 @@ import { PersistentMutationStore } from './persistentMutationStore';
 import { MutationDeduper } from './mutationDeduper';
 import { mutationFlusher, MutationHandler } from './mutationFlusher';
 import { networkSync } from '../sync/networkAwareSync';
+import { mutationTelemetry } from './mutationTelemetry';
 
 /**
  * Singleton Orchestrator for Offline Optimistic Mutations.
@@ -22,13 +23,22 @@ class OfflineMutationQueue {
     if (this.isInitialized && this.currentUserId === userId) return;
     this.currentUserId = userId;
     
-    this.queue = await PersistentMutationStore.loadQueue(userId);
+    const loadedQueue = await PersistentMutationStore.loadQueue(userId);
+    
+    // Merge any mutations that were enqueued while we were awaiting the disk load
+    if (this.queue.length > 0) {
+      this.queue = [...loadedQueue, ...this.queue];
+    } else {
+      this.queue = loadedQueue;
+    }
+    
     this.isInitialized = true;
     
     // Sort hydrated queue by priority (0 = CRITICAL, 3 = LOW)
     this.queue.sort((a, b) => a.priority - b.priority);
     
     console.log(`[MUTATION QUEUE] Hydrated ${this.queue.length} pending offline mutations.`);
+    mutationTelemetry.recordQueueDepth(this.queue.length);
     
     // If we boot up online, immediately flush the queue to catch up
     if (networkSync.isConnected) {
@@ -72,6 +82,7 @@ class OfflineMutationQueue {
       userId: this.currentUserId
     };
 
+    const oldLength = this.queue.length;
     // Deduplicate (e.g. remove conflicting LIKE/UNLIKE)
     this.queue = MutationDeduper.mergeQueues(this.queue, newMutation);
     
@@ -86,6 +97,11 @@ class OfflineMutationQueue {
 
     // Persist immediately in case of crash
     await PersistentMutationStore.saveQueue(this.queue);
+    
+    mutationTelemetry.recordQueueDepth(this.queue.length);
+    if (this.queue.length < oldLength + 1) {
+      mutationTelemetry.recordDedupe();
+    }
 
     // If online, execute immediately. If offline, it sits safely on disk.
     if (networkSync.isConnected) {
@@ -99,10 +115,13 @@ class OfflineMutationQueue {
   public async flush() {
     if (!this.isInitialized || this.queue.length === 0) return;
     
+    const startTime = Date.now();
     this.queue = await mutationFlusher.flush(this.queue, async (updatedQueue) => {
       this.queue = updatedQueue;
       await PersistentMutationStore.saveQueue(updatedQueue);
+      mutationTelemetry.recordQueueDepth(updatedQueue.length);
     });
+    mutationTelemetry.recordFlushLatency(Date.now() - startTime);
   }
 
   /**
@@ -113,6 +132,7 @@ class OfflineMutationQueue {
     this.isInitialized = false;
     this.currentUserId = null;
     await PersistentMutationStore.clearQueue();
+    mutationTelemetry.recordQueueDepth(0);
   }
 }
 

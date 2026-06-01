@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,7 +23,7 @@ interface Activity {
   activity_type: string;
   activity_data: any;
   created_at: string;
-  is_read: boolean;
+  is_read: boolean | null;
 }
 
 export const ActivityFeed = () => {
@@ -62,12 +62,12 @@ export const ActivityFeed = () => {
       const { data, error } = await supabase
         .from('user_activities')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user!.id)
         .order('created_at', { ascending: false })
         .limit(20);
 
       if (error) throw error;
-      setActivities(data || []);
+      setActivities(data as any || []);
     } catch (error) {
       console.error('Error fetching activities:', error);
     } finally {

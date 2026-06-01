@@ -157,10 +157,10 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
           tmdb_rating: movie.vote_average,
           user_rating: null,
           created_at: movie.release_date || movie.first_air_date || '',
-          itemType: 'rating',
+          itemType: 'rating' as const,
           poster_url: getSafeImageUrl(movie.poster_path),
           overview: movie.overview,
-          media_type: movie.title ? 'movie' : 'tv'
+          media_type: (movie.title ? 'movie' : 'tv') as 'movie' | 'tv'
         }));
 
         const combined: FeedItem[] = [...typedPosts, ...typedProjects, ...typedDiscussions, ...typedAnnouncements, ...typedRatings];

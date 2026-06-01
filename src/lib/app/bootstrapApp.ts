@@ -27,7 +27,7 @@ export const bootstrapAuthSequence = async (): Promise<BootstrapResult> => {
     const timeoutPromise = new Promise<{ data: { session: null }, error: Error }>((resolve) => {
       setTimeout(() => {
         resolve({ data: { session: null }, error: new Error('Session retrieval timed out') });
-      }, 4000); // 4 seconds max wait for premium instant feel
+      }, 1500); // 1.5 seconds max wait for premium instant feel
     });
 
     const { data, error } = await Promise.race([getSessionPromise, timeoutPromise]);

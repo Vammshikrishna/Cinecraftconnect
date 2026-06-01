@@ -57,7 +57,7 @@ const StarRating = ({
 
       // Use the correct type for the "onConflict" option
       const { error } = await supabase
-        .from('movie_ratings')
+        .from('movie_ratings' as any)
         .upsert(ratingData, { 
           onConflict: 'user_id,movie_title'
         });

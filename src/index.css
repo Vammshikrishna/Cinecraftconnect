@@ -210,7 +210,7 @@
   /* Primary Glass Card - iOS Style */
   .glass-card {
     @apply relative overflow-hidden rounded-2xl;
-    background: hsl(var(--card) / 0.7);
+    background: hsl(var(--card) / 0.85); /* Increased opacity to satisfy WCAG contrast guidelines */
     backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     border: 1px solid hsl(var(--border) / 0.5);
@@ -219,9 +219,17 @@
       inset 0 1px 0 0 rgba(255, 255, 255, 0.1);
   }
 
+  /* Increase contrast of muted/secondary text inside glass cards to meet WCAG AA */
+  .glass-card .text-muted-foreground,
+  .glass-card-premium .text-muted-foreground,
+  .glass-card-light .text-muted-foreground,
+  .glass-card-dark .text-muted-foreground {
+    color: hsl(var(--foreground) / 0.72) !important;
+  }
+
   /* Premium Glass Card - Enhanced elevation and separation */
   .glass-card-premium {
-    @apply relative overflow-hidden rounded-[2.5rem] bg-card/70 backdrop-blur-3xl saturate-[180%] transition-all duration-500;
+    @apply relative overflow-hidden rounded-[2.5rem] bg-card/85 backdrop-blur-3xl saturate-[180%] transition-all duration-500;
     border: 1px solid hsl(var(--border) / 0.5);
     box-shadow: var(--shadow-premium);
   }
@@ -234,7 +242,7 @@
 
   /* Glass Card Variants */
   .glass-card-light {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.85); /* Increased background opacity to meet WCAG AA */
     backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.3);
@@ -244,7 +252,7 @@
   }
 
   .glass-card-dark {
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(14, 14, 14, 0.85); /* Increased opacity and changed to dark base for WCAG contrast */
     backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.05);
@@ -710,4 +718,16 @@
 .epr-header {
   border-bottom: none !important;
   box-shadow: none !important;
+}
+
+/* Date picker indicator dark mode compatibility */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.65;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.95;
 }

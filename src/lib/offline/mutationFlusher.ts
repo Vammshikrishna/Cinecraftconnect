@@ -1,6 +1,7 @@
 import { OfflineMutation, MutationState } from './mutationStateMachine';
 import { ConflictResolver } from './conflictResolver';
 import { networkSync } from '../sync/networkAwareSync';
+import { mutationTelemetry } from './mutationTelemetry';
 
 export type MutationHandler = (payload: any) => Promise<void>;
 
@@ -88,10 +89,14 @@ export class MutationFlusher {
           this.emitStatus(mutation);
           activeQueue = activeQueue.filter(m => m.id !== mutation.id);
           i--;
+          
+          mutationTelemetry.recordOptimisticRollback();
+          mutationTelemetry.recordFailure(err.message || 'UNRECOVERABLE');
         } 
         // 2. Recoverable Error (e.g. 502, Network) -> Retry
         else {
           mutation.retryCount++;
+          mutationTelemetry.recordRetry();
           if (mutation.retryCount >= mutation.maxRetries) {
             mutation.state = MutationState.FAILED;
             this.emitStatus(mutation);

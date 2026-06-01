@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext.tsx';
 import { useToast } from '@/hooks/use-toast.ts';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Schemas
 const loginSchema = z.object({
@@ -46,6 +47,7 @@ const Auth = () => {
   const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   useEffect(() => {
@@ -138,6 +140,25 @@ const Auth = () => {
             console.error("Error checking role after sign in", e);
           }
           
+          // Eagerly prefetch the initial feed micro-payload during the routing transition
+          try {
+             const { data: prefetchUserData } = await supabase.auth.getUser();
+             if (prefetchUserData?.user?.id) {
+                queryClient.prefetchInfiniteQuery({
+                  queryKey: ['home-feed-posts', prefetchUserData.user.id],
+                  queryFn: async () => {
+                    const { data } = await supabase
+                        .from('posts')
+                        .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
+                        .order('created_at', { ascending: false })
+                        .limit(5);
+                    return data || [];
+                  },
+                  initialPageParam: null as string | null
+                });
+             }
+          } catch(e) {}
+
           push('/feed', { noScroll: true });
         } else {
           toast({ title: "Account created!", description: "Please complete your profile." });

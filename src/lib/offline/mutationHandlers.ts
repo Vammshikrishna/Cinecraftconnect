@@ -29,7 +29,8 @@ export const registerAllMutationHandlers = () => {
   mutationQueue.registerHandler('FOLLOW_USER', async (payload: { followerId: string, followingId: string }) => {
     const { error } = await supabase.from('user_connections').insert({
       follower_id: payload.followerId,
-      following_id: payload.followingId
+      following_id: payload.followingId,
+      status: 'pending'
     });
     if (error && error.code !== '23505') throw error;
   });

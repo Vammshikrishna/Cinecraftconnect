@@ -25,15 +25,33 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
     queryFn: async () => {
       if (!user) return [];
 
+      let matchingUserIdsFromSkills: string[] = [];
+
+      if (searchQuery) {
+        const { data: skillMatches } = await (supabase
+          .from('user_skills' as any)
+          .select('user_id')
+          .ilike('skill_name', `%${searchQuery}%`) as any);
+        
+        if (skillMatches && skillMatches.length > 0) {
+          matchingUserIdsFromSkills = skillMatches.map((m: any) => m.user_id);
+        }
+      }
+
       // 1. Fetch profiles
       let profilesQuery = supabase
         .from('profiles')
-        .select('*')
+        .select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags')
         .neq('id', user.id)
         .eq('is_internal', false);
 
       if (searchQuery) {
-        profilesQuery = profilesQuery.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%`);
+        if (matchingUserIdsFromSkills.length > 0) {
+          const idsList = matchingUserIdsFromSkills.join(',');
+          profilesQuery = profilesQuery.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%,id.in.(${idsList})`);
+        } else {
+          profilesQuery = profilesQuery.or(`full_name.ilike.%${searchQuery}%,username.ilike.%${searchQuery}%,craft.ilike.%${searchQuery}%`);
+        }
       }
 
       if (craftFilter && craftFilter !== 'All') {

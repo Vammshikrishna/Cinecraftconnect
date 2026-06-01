@@ -22,9 +22,11 @@ import { useToast } from '@/hooks/use-toast';
 import {
     ListingType,
     EQUIPMENT_CATEGORIES,
-    LOCATION_CATEGORIES
+    LOCATION_CATEGORIES,
+    MarketplaceListing,
+    EquipmentCondition
 } from '@/types/marketplace';
-import { Camera, Home, Upload, X } from 'lucide-react';
+import { Camera, Home, Upload, X, Package } from 'lucide-react';
 
 interface ListingCreationModalProps {
     open: boolean;
@@ -56,6 +58,19 @@ export const ListingCreationModal = ({
     const [pricePerWeek, setPricePerWeek] = useState('');
     const [specifications, setSpecifications] = useState<Record<string, string>>({});
 
+    // Bundle state
+    const [selectedBundleItems, setSelectedBundleItems] = useState<string[]>([]);
+    const [userEquipment, setUserEquipment] = useState<MarketplaceListing[]>([]);
+
+    // Condition state
+    const [conditionGrade, setConditionGrade] = useState<EquipmentCondition | ''>('');
+    const [conditionChecklist, setConditionChecklist] = useState({
+        scratches: false,
+        functional: false,
+        accurate: false
+    });
+    const [isFlagged, setIsFlagged] = useState(false);
+
     // Image handling
     // We mix existing URLs and new Files into a unified view for the UI, but store them separately for logic
     const [existingImages, setExistingImages] = useState<string[]>([]); // URLs
@@ -75,11 +90,38 @@ export const ListingCreationModal = ({
             setExistingImages(initialData.images || []);
             setNewImages([]);
             setNewImagePreviews([]);
+            
+            setIsFlagged(initialData.admin_flagged || false);
+            if (initialData.admin_flagged) {
+                // Force re-confirmation
+                setConditionGrade('');
+                setConditionChecklist({ scratches: false, functional: false, accurate: false });
+            } else {
+                setConditionGrade(initialData.condition_grade || '');
+                if (initialData.condition_grade) {
+                    setConditionChecklist({ scratches: true, functional: true, accurate: true });
+                }
+            }
             setStep(1); // Start at step 1 or maybe step 2? keep 1 to allow type change if needed (though usually type is fixed)
         } else if (open && mode === 'create') {
             resetForm();
         }
     }, [open, mode, initialData]);
+
+    useEffect(() => {
+        if (listingType === 'bundle' && user) {
+            const fetchEquipment = async () => {
+                const { data } = await supabase
+                    .from('marketplace_listings')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .eq('listing_type', 'equipment')
+                    .eq('is_active', true);
+                if (data) setUserEquipment(data as any);
+            };
+            fetchEquipment();
+        }
+    }, [listingType, user]);
 
     const resetForm = () => {
         setStep(1);
@@ -94,6 +136,9 @@ export const ListingCreationModal = ({
         setExistingImages([]);
         setNewImages([]);
         setNewImagePreviews([]);
+        setConditionGrade('');
+        setConditionChecklist({ scratches: false, functional: false, accurate: false });
+        setIsFlagged(false);
     };
 
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,35 +217,53 @@ export const ListingCreationModal = ({
 
             const listingData = {
                 user_id: user.id,
-                listing_type: listingType,
+                listing_type: listingType === 'bundle' ? 'equipment' : listingType,
                 title,
                 description,
-                category,
+                category: listingType === 'bundle' ? 'Bundle' : category,
                 location,
                 price_per_day: parseFloat(pricePerDay),
                 price_per_week: pricePerWeek ? parseFloat(pricePerWeek) : null,
                 images: finalImages,
                 specifications,
-                is_active: true
+                is_active: true,
+                is_bundle: listingType === 'bundle',
+                condition_grade: (listingType === 'equipment' || listingType === 'bundle') && conditionGrade ? conditionGrade : null,
+                admin_flagged: false // Clear flag on save since they re-confirmed
             };
 
             let error;
+            let newListingId = initialData?.id;
             if (mode === 'edit' && initialData?.id) {
                 // Update
-                const { error: updateError } = await supabase
+                const { error: updateError } = await (supabase as any)
                     .from('marketplace_listings')
                     .update(listingData)
                     .eq('id', initialData.id);
                 error = updateError;
             } else {
                 // Insert
-                const { error: insertError } = await supabase
+                const { data: insertedData, error: insertError } = await (supabase as any)
                     .from('marketplace_listings')
-                    .insert(listingData);
+                    .insert(listingData)
+                    .select('id')
+                    .single();
                 error = insertError;
+                if (insertedData) newListingId = (insertedData as any).id;
             }
 
             if (error) throw error;
+
+            if (listingType === 'bundle' && newListingId && selectedBundleItems.length > 0) {
+                if (mode === 'edit') {
+                    await (supabase as any).from('marketplace_bundle_items').delete().eq('bundle_id', newListingId);
+                }
+                const bundleItemsData = selectedBundleItems.map(itemId => ({
+                    bundle_id: newListingId,
+                    item_id: itemId
+                }));
+                await (supabase as any).from('marketplace_bundle_items').insert(bundleItemsData);
+            }
 
             toast({
                 title: mode === 'edit' ? 'Listing Updated' : 'Listing Created',
@@ -241,7 +304,7 @@ export const ListingCreationModal = ({
                     <div className="space-y-6">
                         <div>
                             <Label className="mb-3 block">What would you like to list?</Label>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
                                 <button
                                     onClick={() => setListingType('equipment')}
                                     className={`p-6 rounded-lg border-2 transition-all ${listingType === 'equipment'
@@ -263,6 +326,17 @@ export const ListingCreationModal = ({
                                     <Home size={32} className="mx-auto mb-2" />
                                     <div className="font-semibold">Location</div>
                                     <div className="text-sm text-muted-foreground">Studios, properties, venues</div>
+                                </button>
+                                <button
+                                    onClick={() => setListingType('bundle')}
+                                    className={`p-6 rounded-lg border-2 transition-all ${listingType === 'bundle'
+                                        ? 'border-primary bg-primary/10'
+                                        : 'border-border hover:border-muted-foreground/50'
+                                        }`}
+                                >
+                                    <Package size={32} className="mx-auto mb-2" />
+                                    <div className="font-semibold">Bundle</div>
+                                    <div className="text-sm text-muted-foreground">Group your gear together</div>
                                 </button>
                             </div>
                         </div>
@@ -296,21 +370,51 @@ export const ListingCreationModal = ({
                             />
                         </div>
 
-                        <div>
-                            <Label htmlFor="category">Category *</Label>
-                            <Select value={category} onValueChange={setCategory}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {categories.map((cat) => (
-                                        <SelectItem key={cat} value={cat}>
-                                            {cat}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                        {listingType === 'bundle' ? (
+                            <div>
+                                <Label>Select Items for Bundle *</Label>
+                                <div className="mt-2 space-y-2 max-h-48 overflow-y-auto p-2 border rounded-md bg-secondary/10">
+                                    {userEquipment.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground p-2">You don't have any active equipment listings to bundle.</div>
+                                    ) : (
+                                        userEquipment.map(item => (
+                                            <div key={item.id} className="flex items-center space-x-2">
+                                                <input 
+                                                    type="checkbox" 
+                                                    id={`item-${item.id}`}
+                                                    checked={selectedBundleItems.includes(item.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) setSelectedBundleItems([...selectedBundleItems, item.id]);
+                                                        else setSelectedBundleItems(selectedBundleItems.filter(id => id !== item.id));
+                                                    }}
+                                                    className="rounded border-gray-300"
+                                                />
+                                                <Label htmlFor={`item-${item.id}`} className="font-normal cursor-pointer flex-1 flex justify-between">
+                                                    <span>{item.title}</span>
+                                                    <span className="text-muted-foreground">₹{item.price_per_day}/day</span>
+                                                </Label>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                <Label htmlFor="category">Category *</Label>
+                                <Select value={category} onValueChange={setCategory}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select a category" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {categories.map((cat) => (
+                                            <SelectItem key={cat} value={cat}>
+                                                {cat}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
 
                         <div>
                             <Label htmlFor="location">Location *</Label>
@@ -321,6 +425,79 @@ export const ListingCreationModal = ({
                                 placeholder="e.g., Los Angeles, CA"
                             />
                         </div>
+                        {listingType !== 'location' && (
+                            <div className="space-y-4 pt-4 border-t border-white/10">
+                                <div>
+                                    <h3 className="font-semibold text-lg text-foreground mb-1">Condition Grading</h3>
+                                    <p className="text-sm text-muted-foreground mb-4">Please evaluate and guarantee the condition of this item.</p>
+                                    
+                                    {isFlagged && (
+                                        <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-lg mb-4 text-sm font-medium">
+                                            This listing was flagged by users for poor condition. You must re-evaluate and re-confirm the condition grade to clear the flag.
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-3 mb-6 bg-secondary/20 p-4 rounded-xl border border-white/5">
+                                        <div className="flex items-start space-x-3">
+                                            <input 
+                                                type="checkbox" 
+                                                id="check-scratches"
+                                                checked={conditionChecklist.scratches}
+                                                onChange={(e) => setConditionChecklist(prev => ({ ...prev, scratches: e.target.checked }))}
+                                                className="mt-1 rounded border-gray-300"
+                                            />
+                                            <Label htmlFor="check-scratches" className="font-normal cursor-pointer leading-tight">
+                                                I confirm there are no undeclared scratches, marks, or physical damages on this item.
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-start space-x-3">
+                                            <input 
+                                                type="checkbox" 
+                                                id="check-functional"
+                                                checked={conditionChecklist.functional}
+                                                onChange={(e) => setConditionChecklist(prev => ({ ...prev, functional: e.target.checked }))}
+                                                className="mt-1 rounded border-gray-300"
+                                            />
+                                            <Label htmlFor="check-functional" className="font-normal cursor-pointer leading-tight">
+                                                I confirm the equipment is 100% functional and all features operate as expected.
+                                            </Label>
+                                        </div>
+                                        <div className="flex items-start space-x-3">
+                                            <input 
+                                                type="checkbox" 
+                                                id="check-accurate"
+                                                checked={conditionChecklist.accurate}
+                                                onChange={(e) => setConditionChecklist(prev => ({ ...prev, accurate: e.target.checked }))}
+                                                className="mt-1 rounded border-gray-300"
+                                            />
+                                            <Label htmlFor="check-accurate" className="font-normal cursor-pointer leading-tight">
+                                                I confirm my description accurately reflects the true current state of this item.
+                                            </Label>
+                                        </div>
+                                    </div>
+
+                                    <div className={`${!(conditionChecklist.scratches && conditionChecklist.functional && conditionChecklist.accurate) ? 'opacity-50 pointer-events-none' : ''} transition-opacity`}>
+                                        <Label htmlFor="condition-grade" className="mb-2 block">Select Condition Grade *</Label>
+                                        <Select value={conditionGrade} onValueChange={(val: any) => setConditionGrade(val)}>
+                                            <SelectTrigger id="condition-grade">
+                                                <SelectValue placeholder="Select Grade" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="Mint">Mint - Looks and functions as brand new</SelectItem>
+                                                <SelectItem value="Excellent">Excellent - Minor signs of use, fully functional</SelectItem>
+                                                <SelectItem value="Good">Good - Noticeable wear, fully functional</SelectItem>
+                                                <SelectItem value="Fair">Fair - Heavy wear, functional with notes</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        {!(conditionChecklist.scratches && conditionChecklist.functional && conditionChecklist.accurate) && (
+                                            <p className="text-xs text-muted-foreground mt-2">
+                                                Please check all boxes above to assign a condition grade.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div className="flex gap-2">
                             <Button onClick={() => setStep(1)} variant="outline" className="flex-1">
@@ -329,7 +506,13 @@ export const ListingCreationModal = ({
                             <Button
                                 onClick={() => setStep(3)}
                                 className="flex-1"
-                                disabled={!title || !description || !category || !location}
+                                disabled={
+                                    !title || 
+                                    !description || 
+                                    !location || 
+                                    (listingType === 'bundle' ? selectedBundleItems.length === 0 : !category) ||
+                                    (listingType !== 'location' && !conditionGrade)
+                                }
                             >
                                 Continue
                             </Button>
@@ -340,6 +523,32 @@ export const ListingCreationModal = ({
                 {/* Step 3: Pricing */}
                 {step === 3 && (
                     <div className="space-y-4">
+                        {listingType === 'bundle' && selectedBundleItems.length > 0 && (
+                            <div className="bg-primary/10 p-4 rounded-xl border border-primary/20 flex flex-col gap-2">
+                                <div className="text-sm font-semibold flex justify-between">
+                                    <span>Total Value of Items:</span>
+                                    <span>₹{selectedBundleItems.reduce((sum, id) => {
+                                        const item = userEquipment.find(eq => eq.id === id);
+                                        return sum + (item?.price_per_day || 0);
+                                    }, 0)}/day</span>
+                                </div>
+                                <Button 
+                                    type="button"
+                                    variant="outline" 
+                                    size="sm" 
+                                    className="w-full text-xs"
+                                    onClick={() => {
+                                        const total = selectedBundleItems.reduce((sum, id) => {
+                                            const item = userEquipment.find(eq => eq.id === id);
+                                            return sum + (item?.price_per_day || 0);
+                                        }, 0);
+                                        setPricePerDay((total * 0.9).toFixed(2));
+                                    }}
+                                >
+                                    Apply 10% Bundle Discount
+                                </Button>
+                            </div>
+                        )}
                         <div>
                             <Label htmlFor="pricePerDay">Price per Day (₹) *</Label>
                             <Input

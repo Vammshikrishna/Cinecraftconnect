@@ -1,4 +1,4 @@
-﻿import * as React from 'react';
+import * as React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,11 +60,11 @@ export const RealTimeAnalytics = () => {
             .select('created_at, posts!inner(author_id)')
             .eq('posts.author_id', user.id)
             .gt('created_at', startDateISO),
-          supabase
-            .from('profile_views')
+          (supabase
+            .from('profile_views' as any)
             .select('created_at')
             .eq('profile_id', user.id)
-            .gt('created_at', startDateISO)
+            .gt('created_at', startDateISO) as any)
         ]);
 
         // Process into chart format
@@ -167,10 +167,10 @@ export const RealTimeAnalytics = () => {
             }
 
             // Fetch total views
-            const { count: viewsCount } = await supabase
-              .from('profile_views')
+            const { count: viewsCount } = await (supabase
+              .from('profile_views' as any)
               .select('*', { count: 'exact', head: true })
-              .eq('profile_id', user.id);
+              .eq('profile_id', user.id) as any);
 
             // Fetch projects count
             const { count: projectsCount } = await supabase

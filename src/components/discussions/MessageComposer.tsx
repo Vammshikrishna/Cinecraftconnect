@@ -50,6 +50,9 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
     if (!content.trim() && !selectedFile) return;
     if (sendingRef.current) return;
     
+    const sentContent = content;
+    const sentFile = selectedFile;
+    
     setError(null);
     try {
       if (content.trim()) {
@@ -58,16 +61,22 @@ export const MessageComposer = ({ onSend, disabled, onTyping, onStopTyping, isUp
       sendingRef.current = true;
       setSending(true);
       onStopTyping?.();
-      await onSend(content, selectedFile);
+      
+      // Clear instantly for perfect perceived performance (Zero-latency UI)
       setContent('');
       setSelectedFile(null);
       setMediaPreview(null);
+      
+      await onSend(sentContent, sentFile);
     } catch (err) {
       if (err instanceof z.ZodError) {
         setError(err.issues[0].message);
       } else {
         setError('Failed to send message');
       }
+      // Restore input on failure
+      setContent(sentContent);
+      setSelectedFile(sentFile);
     } finally {
       sendingRef.current = false;
       setSending(false);
