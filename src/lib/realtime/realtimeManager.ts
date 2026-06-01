@@ -98,14 +98,14 @@ class RealtimeManager {
     // ----------------------------------------------------
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'comments' },
+        { event: '*', schema: 'public', table: 'post_comments' },
         (payload) => {
           if (payload.eventType === 'DELETE') {
-            RealtimeReconciler.reconcileDelete('comments', ['comments', payload.old.post_id], payload.old.id);
+            RealtimeReconciler.reconcileDelete('post_comments', ['post_comments', payload.old.post_id], payload.old.id);
           } else if (payload.new && payload.new.post_id) {
             RealtimeReconciler.reconcileUpsert(
-              'comments',
-              ['comments', payload.new.post_id],
+              'post_comments',
+              ['post_comments', payload.new.post_id],
               payload.new
             );
           }

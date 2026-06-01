@@ -10,6 +10,7 @@ import { Building2, X, Plus, Globe, MapPin, Mail, Phone, Calendar, Users } from 
 import { useCreateCompanyPage } from '@/hooks/useCompanyPages';
 import { PAGE_INDUSTRIES, COMPANY_SIZES } from '@/types/companyPages';
 import { supabase } from '@/integrations/supabase/client';
+import { STORAGE_BUCKETS, buildUserFilePath } from '@/lib/storage';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface CreatePageModalProps {
@@ -72,15 +73,15 @@ export function CreatePageModal({ open, onOpenChange, onSuccess }: CreatePageMod
       const compressedLogo = await compressImage(logo);
 
       const ext = compressedLogo.name.split('.').pop();
-      const fileName = `pages/${user.id}/logo-${Date.now()}.${ext}`;
+      const fileName = buildUserFilePath(`pages/${user.id}`, `logo-${Date.now()}.${ext}`);
       const { error } = await supabase.storage
-        .from('avatars')
+        .from(STORAGE_BUCKETS.AVATARS)
         .upload(fileName, compressedLogo, {
           cacheControl: '31536000',
           upsert: false
         });
       if (error) return null;
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      const { data: { publicUrl } } = supabase.storage.from(STORAGE_BUCKETS.AVATARS).getPublicUrl(fileName);
       return publicUrl;
     } catch (e) {
       console.error("Error compressing/uploading logo:", e);

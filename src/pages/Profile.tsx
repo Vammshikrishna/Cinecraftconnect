@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -10,9 +10,11 @@ import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import { UserAnnouncements } from '@/components/profile/UserAnnouncements';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { UserProjects } from '@/components/profile/UserProjects';
-import { RealTimeAnalytics } from '@/components/profile/RealTimeAnalytics';
 import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
+import { VerifiedCredits } from '@/components/profile/VerifiedCredits';
+
+const RealTimeAnalytics = lazy(() => import('@/components/profile/RealTimeAnalytics').then(m => ({ default: m.RealTimeAnalytics })));
 import { SavedPosts } from '@/components/profile/SavedPosts';
 import EditProfileForm from '@/components/profile/EditProfileForm';
 import { formatURL } from '@/lib/utils';
@@ -30,6 +32,7 @@ import {
   Building2,
   Zap,
   Share2,
+  CalendarDays,
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import VerificationBadge from '@/components/common/VerificationBadge';
@@ -81,7 +84,7 @@ const ProfilePage = () => {
         .select('id, account_type')
         .in('id', userIds);
 
-      const profilesMap = new Map(profiles?.map(p => [p.id, p]));
+      const profilesMap = new Map<string, any>(profiles?.map(p => [p.id, p]) || []);
 
       // 3. Categorize connections
       const connections = rawConnections.filter(c => {
@@ -131,7 +134,7 @@ const ProfilePage = () => {
         // First get profile - this is top priority
         const { data: profileData, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags')
           .eq('id', user.id)
           .single();
 
@@ -425,6 +428,11 @@ const ProfilePage = () => {
                 >
                   <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
+                <Link to="/profile/availability" className="shrink-0">
+                  <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
+                    <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </Link>
                 <Link to="/settings" className="shrink-0">
                   <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
                     <Settings className="h-3.5 w-3.5 text-muted-foreground" />
@@ -458,7 +466,7 @@ const ProfilePage = () => {
                 }}
               >
                 <TabsList className="flex h-auto bg-transparent gap-2.5 p-0 min-w-max">
-                  {(isFan ? ['saved'] : isStudio ? ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience'] : ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'skills', 'experience']).map((tab) => (
+                  {(isFan ? ['saved'] : isStudio ? ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'credits', 'skills', 'experience'] : ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'credits', 'skills', 'experience']).map((tab) => (
                     <TabsTrigger
                       key={tab}
                       value={tab}
@@ -483,7 +491,12 @@ const ProfilePage = () => {
               </TabsContent>
               <TabsContent value="projects" className="py-8"><UserProjects userId={user.id} /></TabsContent>
               <TabsContent value="announcements" className="py-8"><UserAnnouncements /></TabsContent>
-              <TabsContent value="analytics" className="py-8"><RealTimeAnalytics /></TabsContent>
+              <TabsContent value="analytics" className="py-8">
+                <Suspense fallback={<div className="h-48 flex items-center justify-center text-muted-foreground font-medium">Loading Analytics...</div>}>
+                  <RealTimeAnalytics />
+                </Suspense>
+              </TabsContent>
+              <TabsContent value="credits" className="py-8"><VerifiedCredits userId={user.id} /></TabsContent>
               <TabsContent value="skills" className="py-8"><Skills userId={user.id} isOwner={true} /></TabsContent>
               <TabsContent value="experience" className="py-8"><Experience userId={user.id} isOwner={true} /></TabsContent>
             </>

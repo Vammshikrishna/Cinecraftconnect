@@ -348,8 +348,16 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
             return prev;
           }
 
+          // Deduplicate incoming broadcasts against existing real messages (if Postgres event arrived before broadcast)
+          if (String(newMsg.id).startsWith('temp-') && newMsg.user_id !== user?.id) {
+            const hasRealMessage = prev.some(m => m.user_id === newMsg.user_id && m.content === newMsg.content && !String(m.id).startsWith('temp-') && Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000);
+            if (hasRealMessage) {
+               return prev;
+            }
+          }
+
           // Find if we have a pending optimistic message with matching content
-          const pendingIdx = prev.findIndex(m => m.status === 'pending' && m.user_id === newMsg.user_id && m.content === newMsg.content);
+          const pendingIdx = prev.findIndex(m => (m.status === 'pending' || String(m.id).startsWith('temp-')) && m.user_id === newMsg.user_id && m.content === newMsg.content);
 
           if (pendingIdx !== -1) {
             // Update the pending message
@@ -981,7 +989,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                 className={cn(
                   "flex gap-3 mb-2 group animate-in fade-in slide-in-from-bottom-2 duration-300",
                   isOwn ? 'flex-row-reverse' : '',
-                  message.status === 'pending' && 'opacity-60 saturate-50'
+                  message.status === 'pending' && isOwn && 'opacity-60 saturate-50'
                 )}
               >
                 <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
@@ -1071,13 +1079,19 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                   </div>
                 </div>
               </div>
-              {isOwn && uniqueSeenBy.length > 0 && (
-                <div className="flex justify-end pr-12 mb-4 -mt-1">
-                  <span className="text-[10px] text-primary/60 font-medium tracking-tight">
-                    Seen by {uniqueSeenBy.join(', ')}
-                  </span>
-                </div>
-              )}
+              {isOwn && (
+                  <div className="flex justify-end mt-1 mb-2">
+                    {uniqueSeenBy.length > 0 ? (
+                      <span className="text-[9px] font-bold text-primary/60 tracking-tight">
+                        Seen by {uniqueSeenBy.join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight">
+                        {message.status === 'pending' ? 'Sending...' : 'Sent'}
+                      </span>
+                    )}
+                  </div>
+                )}
               </React.Fragment>
             );
           })

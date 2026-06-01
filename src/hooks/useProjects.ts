@@ -71,13 +71,17 @@ export const useProjects = (activeTab: string = 'all') => {
                 // Map space IDs back to project IDs for bookmarks
                 if (bookmarksRes.data && bookmarksRes.data.length > 0) {
                     const { data: bSpaces } = await supabase.from('project_spaces').select('project_id').in('id', bookmarksRes.data.map(b => b.project_space_id));
-                    bSpaces?.forEach(s => bookmarkedProjectIds.add(s.project_id));
+                    bSpaces?.forEach(s => {
+                        if (s.project_id) bookmarkedProjectIds.add(s.project_id);
+                    });
                 }
 
                 // Map space IDs back to project IDs for memberships
                 if (membersRes.data && membersRes.data.length > 0) {
                     const { data: mSpaces } = await supabase.from('project_spaces').select('project_id').in('id', membersRes.data.map(m => m.project_space_id));
-                    mSpaces?.forEach(s => memberProjectIds.add(s.project_id));
+                    mSpaces?.forEach(s => {
+                        if (s.project_id) memberProjectIds.add(s.project_id);
+                    });
                 }
             }
 

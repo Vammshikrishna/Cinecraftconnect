@@ -16,12 +16,12 @@ export const useRecordView = (targetId: string | undefined) => {
       recorded.current = true;
 
       try {
-        const { error } = await supabase
-          .from('profile_views')
+        const { error } = await (supabase
+          .from('profile_views' as any)
           .insert({
             profile_id: targetId,
             viewer_id: user?.id || null
-          });
+          } as any) as any);
 
         if (error) {
           // If it failed, we can allow a retry on next render/change

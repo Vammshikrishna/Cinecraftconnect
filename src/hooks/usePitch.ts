@@ -5,8 +5,8 @@ import { useToast } from '@/hooks/use-toast';
 
 export interface PitchCall {
     id: string;
-    created_at: string;
-    updated_at: string;
+    created_at: any;
+    updated_at: any;
     creator_id: string;
     title: string;
     project_type: string;
@@ -43,8 +43,8 @@ export interface PitchCall {
 
 export interface PitchSubmission {
     id: string;
-    created_at: string;
-    submitted_at: string;
+    created_at: any;
+    submitted_at: any;
     pitch_call_id: string;
     submitter_id: string;
     title: string;

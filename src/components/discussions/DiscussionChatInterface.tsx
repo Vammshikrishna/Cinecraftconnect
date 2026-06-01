@@ -97,6 +97,14 @@ export const DiscussionChatInterface = ({
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef(messages);
+  const userRef = useRef(user);
+  const profileRef = useRef(profile);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
   const channelRef = useRef<any>(null);
   useEffect(() => {
     messagesRef.current = messages;
@@ -419,6 +427,9 @@ export const DiscussionChatInterface = ({
     if (!roomId) return;
 
     const handleRoomMessageChange = async (payload: any) => {
+      const roomMsg = payload.new || payload.old;
+      if (!roomMsg || roomMsg.room_id !== roomId) return;
+
       if (payload.eventType === 'INSERT') {
         const newMsg = payload.new;
 
@@ -428,12 +439,20 @@ export const DiscussionChatInterface = ({
           if (hasAlready) return prev;
 
           // Ignore delayed broadcasts of our own optimistic messages to prevent duplicates
-          if (String(newMsg.id).startsWith('temp-') && newMsg.user_id === user?.id) {
+          if (String(newMsg.id).startsWith('temp-') && newMsg.user_id === userRef.current?.id) {
             return prev;
           }
 
+          // Deduplicate incoming broadcasts against existing real messages (if Postgres event arrived before broadcast)
+          if (String(newMsg.id).startsWith('temp-') && newMsg.user_id !== userRef.current?.id) {
+            const hasRealMessage = prev.some(m => m.user_id === newMsg.user_id && m.content === newMsg.content && !String(m.id).startsWith('temp-') && Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000);
+            if (hasRealMessage) {
+               return prev;
+            }
+          }
+
           // Find if we have a pending optimistic message with matching content
-          const pendingIdx = prev.findIndex(m => m.status === 'pending' && m.user_id === newMsg.user_id && m.content === newMsg.content);
+          const pendingIdx = prev.findIndex(m => (m.status === 'pending' || String(m.id).startsWith('temp-')) && m.user_id === newMsg.user_id && m.content === newMsg.content);
 
           if (pendingIdx !== -1) {
             // Update the pending message
@@ -454,11 +473,11 @@ export const DiscussionChatInterface = ({
           
           if (hasProfileIncluded) {
             finalProfile = newMsg.profiles;
-          } else if (newMsg.user_id === user?.id) {
+          } else if (newMsg.user_id === userRef.current?.id) {
             finalProfile = {
-              username: profile?.username || user?.email?.split('@')[0] || 'me',
-              full_name: profile?.full_name || user?.user_metadata?.full_name || 'Me',
-              avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || null
+              username: profileRef.current?.username || userRef.current?.email?.split('@')[0] || 'me',
+              full_name: profileRef.current?.full_name || userRef.current?.user_metadata?.full_name || 'Me',
+              avatar_url: profileRef.current?.avatar_url || userRef.current?.user_metadata?.avatar_url || null
             };
           } else {
             const existingMsgWithProfile = prev.find(m => m.user_id === newMsg.user_id && m.profiles);
@@ -491,7 +510,7 @@ export const DiscussionChatInterface = ({
         setTimeout(() => scrollToBottom(), 100);
 
         // Fetch profile if it wasn't included and we didn't have it cached
-        if (!newMsg.profiles && newMsg.user_id !== user?.id) {
+        if (!newMsg.profiles && newMsg.user_id !== userRef.current?.id) {
           const hasProfile = messagesRef.current.some(m => m.user_id === newMsg.user_id && m.profiles && m.profiles.full_name !== 'Unknown User');
           
           if (!hasProfile) {
@@ -539,28 +558,27 @@ export const DiscussionChatInterface = ({
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
-        table: 'room_messages',
-        filter: `room_id=eq.${roomId}`
+        table: 'room_messages'
       }, handleRoomMessageChange)
       .on('postgres_changes', { 
         event: 'UPDATE', 
         schema: 'public', 
-        table: 'room_messages',
-        filter: `room_id=eq.${roomId}`
+        table: 'room_messages'
       }, handleRoomMessageChange)
       .on('postgres_changes', { 
         event: 'DELETE', 
         schema: 'public', 
-        table: 'room_messages',
-        filter: `room_id=eq.${roomId}`
+        table: 'room_messages'
       }, handleRoomMessageChange)
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'room_message_read_status',
-        filter: `room_id=eq.${roomId}`
-      }, () => {
-        fetchReadStatusesRef.current();
+        table: 'room_message_read_status'
+      }, (payload) => {
+        const statusMsg = (payload.new || payload.old) as any;
+        if (statusMsg && statusMsg.room_id === roomId) {
+          fetchReadStatusesRef.current();
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -591,8 +609,10 @@ export const DiscussionChatInterface = ({
     const handleMutationStatusChange = (event: any) => {
       const { state } = event.detail;
       if (state === 'COMPLETED' || state === 'FAILED') {
-        // Refresh messages when a background sync completes
+        // Refresh messages immediately when a background sync completes
         fetchMessages(false);
+        // Fallback for database index replication latency
+        setTimeout(() => fetchMessages(false), 500);
       }
     };
 
@@ -675,6 +695,7 @@ export const DiscussionChatInterface = ({
           event: 'new_message',
           payload: {
              id: optimisticMessage.id,
+             room_id: roomId,
              content: optimisticMessage.content,
              created_at: optimisticMessage.created_at,
              user_id: optimisticMessage.user_id,
@@ -1175,7 +1196,7 @@ export const DiscussionChatInterface = ({
                         className={cn(
                           "flex gap-3 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300",
                           isSender ? 'flex-row-reverse' : 'flex-row',
-                          message.status === 'pending' && 'opacity-60 saturate-50'
+                          message.status === 'pending' && isSender && 'opacity-60 saturate-50'
                         )}
                       >
                         <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
@@ -1260,11 +1281,17 @@ export const DiscussionChatInterface = ({
                           )}
                         </div>
 
-                        {isSender && uniqueSeenBy.length > 0 && (
+                        {isSender && (
                           <div className="flex justify-end mt-1 mb-2">
-                            <span className="text-[9px] font-bold text-primary/60 tracking-tight">
-                              Seen by {uniqueSeenBy.join(', ')}
-                            </span>
+                            {uniqueSeenBy.length > 0 ? (
+                              <span className="text-[9px] font-bold text-primary/60 tracking-tight">
+                                Seen by {uniqueSeenBy.join(', ')}
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight">
+                                {message.status === 'pending' ? 'Sending...' : 'Sent'}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>

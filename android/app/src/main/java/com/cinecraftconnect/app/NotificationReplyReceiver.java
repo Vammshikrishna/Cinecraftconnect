@@ -56,6 +56,11 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
+                
+                String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+                        .getString("supabase_anon_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
+                conn.setRequestProperty("Authorization", "Bearer " + anonKey);
+                
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();
@@ -92,6 +97,11 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
+                
+                String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+                        .getString("supabase_anon_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
+                conn.setRequestProperty("Authorization", "Bearer " + anonKey);
+                
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();

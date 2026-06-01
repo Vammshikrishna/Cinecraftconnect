@@ -126,11 +126,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
     const handleLikeToggle = (postId: string, isLiked: boolean) => {
         // Optimistic update
-        queryClient.setQueryData(['user-likes', user?.id], (old: Set<string> | undefined) => {
-            const next = new Set(old);
-            if (isLiked) next.add(postId);
-            else next.delete(postId);
-            return next;
+        queryClient.setQueryData(['user-likes', user?.id], (old: any) => {
+            const current = Array.isArray(old) ? old : [];
+            if (isLiked) {
+                if (current.includes(postId)) return current;
+                return [...current, postId];
+            } else {
+                return current.filter((id: string) => id !== postId);
+            }
         });
     };
 

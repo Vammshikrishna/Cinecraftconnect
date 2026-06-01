@@ -72,10 +72,10 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
 
       // Apply Filters
       if (filterType !== 'all') {
-        query = query.eq('type', filterType);
+        query = query.eq('type', filterType as any);
       }
       if (filterExperience !== 'all') {
-        query = query.eq('experience_level', filterExperience);
+        query = query.eq('experience_level', filterExperience as any);
       }
 
       // Apply Sorting

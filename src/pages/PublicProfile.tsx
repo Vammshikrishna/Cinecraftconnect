@@ -34,6 +34,9 @@ import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
 import { UserProjects } from '@/components/profile/UserProjects';
 import { UserPosts } from '@/components/profile/UserPosts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { VerifiedCredits } from '@/components/profile/VerifiedCredits';
+import Skills from '@/components/profile/Skills';
+import Experience from '@/components/profile/Experience';
 import { formatURL } from '@/lib/utils';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useRecordView } from '@/hooks/useRecordView';
@@ -124,13 +127,13 @@ const PublicProfile = () => {
       
       console.log('Fetching profile for:', { identifier, isUUID });
       
-      let data = null;
-      let error = null;
+      let data: any = null;
+      let error: any = null;
 
       // Step 1: Try UUID lookup if applicable
       if (isUUID) {
         console.log('Attempting UUID lookup for:', identifier);
-        const res = await supabase.from('profiles').select('*').eq('id', identifier).maybeSingle();
+        const res = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags').eq('id', identifier).maybeSingle();
         data = res.data;
         error = res.error;
       }
@@ -138,7 +141,7 @@ const PublicProfile = () => {
       // Step 2: Try Username lookup
       if (!data && !error) {
         console.log('Attempting Username lookup for:', identifier);
-        const res = await supabase.from('profiles').select('*').ilike('username', identifier).maybeSingle();
+        const res = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags').ilike('username', identifier).maybeSingle();
         data = res.data;
         error = res.error;
       }
@@ -146,7 +149,7 @@ const PublicProfile = () => {
       // Step 3: Try Full Name lookup (Last resort for manual links/legacy data)
       if (!data && !error && !isUUID && identifier.length > 3) {
         console.log('Attempting Full Name lookup for:', identifier);
-        const res = await supabase.from('profiles').select('*').ilike('full_name', identifier).maybeSingle();
+        const res = await supabase.from('profiles').select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags').ilike('full_name', identifier).maybeSingle();
         data = res.data;
         error = res.error;
       }
@@ -185,7 +188,7 @@ const PublicProfile = () => {
           .select('id, account_type')
           .in('id', userIds);
 
-        const profilesMap = new Map(relatedProfiles?.map(p => [p.id, p]));
+        const profilesMap = new Map<string, any>(relatedProfiles?.map(p => [p.id, p]) || []);
 
         // Categorize based on the platform's social model:
         // - Connections: Creator-to-Creator links
@@ -551,28 +554,55 @@ const PublicProfile = () => {
         {profile.account_type !== 'fan' ? (
           <div className="mt-8">
             <Tabs defaultValue="posts" className="w-full">
-              <TabsList className={`grid w-full bg-muted/50 ${isFan ? 'grid-cols-1 max-w-sm mx-auto' : 'grid-cols-3'}`}>
-                <TabsTrigger value="posts">Posts</TabsTrigger>
-                {!isFan && (
-                  <>
-                    <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-                    <TabsTrigger value="projects">Projects</TabsTrigger>
-                  </>
-                )}
-              </TabsList>
+              <div className="relative w-full mb-8">
+                <div className="relative group">
+                  {/* Fade indicators for scrolling */}
+                  <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                  <div
+                    className="flex overflow-x-auto gap-3 pb-4 w-full no-scrollbar select-none"
+                    style={{
+                      scrollbarWidth: 'none',
+                      msOverflowStyle: 'none',
+                      WebkitOverflowScrolling: 'touch'
+                    }}
+                  >
+                    <TabsList className="flex h-auto bg-transparent gap-2.5 p-0 min-w-max">
+                      {['posts', 'portfolio', 'projects', 'credits', 'skills', 'experience'].map((tab) => (
+                        <TabsTrigger
+                          key={tab}
+                          value={tab}
+                          className="flex items-center gap-2 px-5 py-2.5 md:px-7 md:py-3 rounded-2xl text-xs md:text-sm font-bold whitespace-nowrap transition-all duration-300 border-2 shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_8px_20px_-6px_rgba(var(--primary),0.5)] data-[state=active]:scale-105 bg-card/40 border-border/40 text-muted-foreground hover:bg-card/60 hover:text-foreground hover:border-border/80 capitalize"
+                        >
+                          {tab}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {/* Spacer to allow scrolling past the last item */}
+                    <div className="w-10 shrink-0 md:hidden" />
+                  </div>
+                </div>
+              </div>
+
               <TabsContent value="posts" className="py-6">
                 <UserPosts targetUserId={profile.id} />
               </TabsContent>
-              {!isFan && (
-                <>
-                  <TabsContent value="portfolio" className="py-6">
-                    <PortfolioGrid userId={profile.id} isOwner={false} />
-                  </TabsContent>
-                  <TabsContent value="projects" className="py-6">
-                    <UserProjects userId={profile.id} />
-                  </TabsContent>
-                </>
-              )}
+              <TabsContent value="portfolio" className="py-6">
+                <PortfolioGrid userId={profile.id} isOwner={false} />
+              </TabsContent>
+              <TabsContent value="projects" className="py-6">
+                <UserProjects userId={profile.id} />
+              </TabsContent>
+              <TabsContent value="credits" className="py-6">
+                <VerifiedCredits userId={profile.id} />
+              </TabsContent>
+              <TabsContent value="skills" className="py-6">
+                <Skills userId={profile.id} isOwner={false} />
+              </TabsContent>
+              <TabsContent value="experience" className="py-6">
+                <Experience userId={profile.id} isOwner={false} />
+              </TabsContent>
             </Tabs>
           </div>
         ) : (

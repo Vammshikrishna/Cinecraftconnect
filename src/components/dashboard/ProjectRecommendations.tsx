@@ -58,7 +58,7 @@ export const ProjectRecommendations = () => {
         .from('project_spaces')
         .select('*')
         .eq('project_space_type', 'public')
-        .neq('creator_id', user?.id)
+        .neq('creator_id', user!.id)
         .eq('status', 'planning')
         .order('created_at', { ascending: false })
         .limit(10);

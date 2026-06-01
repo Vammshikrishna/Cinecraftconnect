@@ -64,7 +64,7 @@ export const useConnections = () => {
 
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags')
         .in('id', Array.from(userIds));
 
       const profilesMap = new Map(profiles?.map(p => [p.id, p]));

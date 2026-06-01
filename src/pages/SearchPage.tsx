@@ -182,9 +182,20 @@ const SearchPage = () => {
         }
         setLoading(true);
         try {
+            const { data: skillMatches } = await (supabase
+              .from('user_skills' as any)
+              .select('user_id')
+              .ilike('skill_name', `%${searchQuery}%`) as any);
+            
+            const matchingIds = skillMatches ? skillMatches.map((m: any) => m.user_id) : [];
+            let profilesFilter = `username.ilike.%${searchQuery}%,full_name.ilike.%${searchQuery}%`;
+            if (matchingIds.length > 0) {
+              profilesFilter += `,id.in.(${matchingIds.join(',')})`;
+            }
+
             const promises = [
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
-                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified').or(`username.ilike.%${searchQuery}%,full_name.ilike.%${searchQuery}%`).limit(10),
+                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified').or(profilesFilter).limit(10),
                 supabase.from('discussion_rooms').select('id, title, description, name').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').ilike('content', `%${searchQuery}%`).limit(24),
                 supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Vendor } from '@/types/marketplace';
+import { Vendor, VendorService } from '@/types/marketplace';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { ServicePackageModal } from '@/components/vendors/ServicePackageModal';
 import {
     MapPin,
     MessageSquare,
@@ -21,7 +22,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { PageHeader } from '@/components/common/PageHeader';
 import { useAppRole } from '@/hooks/useAppRole';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Plus } from 'lucide-react';
 
 const VendorDetail = () => {
     const { id } = useParams<{ id: string }>();
@@ -29,10 +30,14 @@ const VendorDetail = () => {
     const { toast } = useToast();
     const { user } = useAuth();
     const [vendor, setVendor] = useState<Vendor | null>(null);
+    const [services, setServices] = useState<VendorService[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeImageIndex, setActiveImageIndex] = useState(0);
     const [showShareSheet, setShowShareSheet] = useState(false);
+    const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
     const { isInternal } = useAppRole();
+
+    const isOwner = user && vendor && user.id === vendor.owner_id;
 
     useEffect(() => {
         if (id) {
@@ -51,6 +56,18 @@ const VendorDetail = () => {
 
             if (data && data.length > 0) {
                 setVendor(data[0] as Vendor);
+                
+                // Fetch services
+                const { data: servicesData } = await supabase
+                    .from('vendor_services' as any)
+                    .select('*')
+                    .eq('vendor_id', id)
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: false });
+                    
+                if (servicesData) {
+                    setServices(servicesData as unknown as VendorService[]);
+                }
             } else {
                 // If RPC returns null/empty (e.g. invalid ID), handle as not found
                 toast({
@@ -211,6 +228,51 @@ const VendorDetail = () => {
                                 </div>
                             </div>
                         )}
+
+                        {/* Service Packages */}
+                        <div className="space-y-4 pt-6">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-xl font-semibold">Service Packages</h3>
+                                {isOwner && (
+                                    <Button size="sm" onClick={() => setIsServiceModalOpen(true)}>
+                                        <Plus className="h-4 w-4 mr-2" /> Add Package
+                                    </Button>
+                                )}
+                            </div>
+                            
+                            {services.length > 0 ? (
+                                <div className="grid grid-cols-1 gap-4">
+                                    {services.map(service => (
+                                        <div key={service.id} className="p-4 bg-card border border-border rounded-xl space-y-3 cursor-pointer hover:border-primary/50 transition-colors" onClick={() => push(`/vendors/services/${service.id}`)}>
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="font-bold text-lg">{service.title}</h4>
+                                                    <p className="text-sm text-muted-foreground line-clamp-2">{service.description}</p>
+                                                </div>
+                                                <div className="text-right shrink-0 ml-4">
+                                                    <div className="font-black text-primary text-lg">₹{service.day_rate}</div>
+                                                    <div className="text-[10px] uppercase tracking-widest text-muted-foreground">/ Day</div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 pt-2">
+                                                {service.production_types.slice(0, 3).map(pt => (
+                                                    <Badge key={pt} variant="outline" className="text-xs bg-secondary/10">
+                                                        {pt}
+                                                    </Badge>
+                                                ))}
+                                                {service.production_types.length > 3 && (
+                                                    <Badge variant="outline" className="text-xs bg-secondary/10">+{service.production_types.length - 3}</Badge>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="p-8 text-center bg-muted/50 rounded-xl border border-dashed border-border">
+                                    <p className="text-muted-foreground">No service packages listed yet.</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Right Column: Info & Actions */}
@@ -322,6 +384,15 @@ const VendorDetail = () => {
                     </div>
                 </div>
             </div>
+            
+            {isOwner && vendor && (
+                <ServicePackageModal
+                    open={isServiceModalOpen}
+                    onOpenChange={setIsServiceModalOpen}
+                    vendorId={vendor.id}
+                    onSuccess={fetchVendorDetails}
+                />
+            )}
         </div>
     );
 };

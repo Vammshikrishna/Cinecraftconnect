@@ -1,7 +1,8 @@
-﻿
+
 import React, { useState } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
+import { STORAGE_BUCKETS, PROJECT_FILE_FOLDERS, buildProjectFilePath } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -33,12 +34,14 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
 
         setUploading(true);
 
-        const fileExt = selectedFile.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${roomId}/legal-docs/${fileName}`;
+        const filePath = buildProjectFilePath(
+            PROJECT_FILE_FOLDERS.LEGAL,
+            roomId,
+            selectedFile.name
+        );
 
         const { error: uploadError } = await supabase.storage
-            .from('project-files')
+            .from(STORAGE_BUCKETS.PROJECT_FILES)
             .upload(filePath, selectedFile);
 
         if (uploadError) {
@@ -47,10 +50,10 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
         }
 
         const { data: publicUrlData } = supabase.storage
-            .from('project-files')
+            .from(STORAGE_BUCKETS.PROJECT_FILES)
             .getPublicUrl(filePath);
 
-        await supabase.from('legal_docs').insert([
+        await (supabase.from('legal_docs' as any).insert([
             {
                 title: selectedFile.name,
                 type: 'Document',
@@ -58,7 +61,7 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
                 url: publicUrlData.publicUrl,
                 project_id: roomId,
             },
-        ]);
+        ] as any) as any);
 
         setUploading(false);
         setSelectedFile(null);
@@ -66,10 +69,10 @@ const ProjectsLegalDocs = ({ roomId }: ProjectsLegalDocsProps) => {
 
     const handleStatusChange = async (id: string, currentStatus: 'Signed' | 'Pending') => {
         const newStatus = currentStatus === 'Signed' ? 'Pending' : 'Signed';
-        await supabase
-            .from('legal_docs')
-            .update({ status: newStatus })
-            .eq('id', id);
+        await (supabase
+            .from('legal_docs' as any)
+            .update({ status: newStatus } as any)
+            .eq('id', id) as any);
     };
 
     if (error) {

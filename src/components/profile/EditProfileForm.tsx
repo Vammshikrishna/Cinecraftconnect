@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from "@/integrations/supabase/client";
+import { STORAGE_BUCKETS } from '@/lib/storage';
 import { Profile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -116,7 +117,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         const fileExt = compressedAvatar.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('avatars')
+          .from(STORAGE_BUCKETS.AVATARS)
           .upload(fileName, compressedAvatar, {
             cacheControl: '31536000',
             upsert: false,
@@ -128,7 +129,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
           return;
         }
 
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        const { data: urlData } = supabase.storage.from(STORAGE_BUCKETS.AVATARS).getPublicUrl(fileName);
         avatar_url = urlData.publicUrl;
       }
 
@@ -139,14 +140,14 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         const fileExt = compressedCover.name.split('.').pop();
         const fileName = `cover-${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('avatars') // Using avatars bucket for both for now, or consider a 'covers' bucket
+          .from(STORAGE_BUCKETS.AVATARS) // Using avatars bucket for both; consider a dedicated 'covers' bucket
           .upload(fileName, compressedCover, {
             cacheControl: '31536000',
             upsert: false,
           });
 
         if (!uploadError) {
-          const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+          const { data: urlData } = supabase.storage.from(STORAGE_BUCKETS.AVATARS).getPublicUrl(fileName);
           cover_image_url = urlData.publicUrl;
         }
       }

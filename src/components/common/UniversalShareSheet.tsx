@@ -6,14 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Link as LinkIcon, Share2, Film, MessageSquare, Zap, Briefcase, Building2, Bell, User } from "lucide-react";
+import { Search, Link as LinkIcon, Share2, Film, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copyToClipboard, getAppOrigin } from "@/lib/utils/share";
 
-export type ShareType = 'project' | 'room' | 'job' | 'post' | 'marketplace' | 'announcement' | 'vendor' | 'pitch' | 'profile' | 'company' | 'content';
+export type ShareType = 'project' | 'room' | 'job' | 'post' | 'marketplace' | 'announcement' | 'vendor' | 'pitch' | 'profile' | 'company' | 'content' | 'wishlist';
 
 interface UniversalShareSheetProps {
     isOpen: boolean;
@@ -43,6 +43,13 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
     const { connections } = useConnections();
     const isDesktop = useMediaQuery("(min-width: 768px)");
     const [snap, setSnap] = useState<string | number | null>(0.6);
+
+    const typeLabel = 
+        shareType === 'room' ? 'Discussion' :
+        shareType === 'marketplace' ? 'Listing' :
+        shareType === 'company' ? 'Company' :
+        shareType.charAt(0).toUpperCase() + shareType.slice(1);
+    const titleText = `Share ${typeLabel} to...`;
 
     useEffect(() => {
         if (isOpen && user) {
@@ -128,7 +135,12 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                 });
             }
 
-            setTargets(newTargets);
+            // Deduplicate to avoid duplicate keys in React list rendering
+            const uniqueTargets = newTargets.filter((target, index, self) =>
+                index === self.findIndex((t) => t.id === target.id && t.type === target.type)
+            );
+
+            setTargets(uniqueTargets);
         } catch (error) {
             console.error("Error in fetchTargets:", error);
         } finally {
@@ -198,6 +210,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             case 'pitch': path = `/pitch/${shareId}`; break;
             case 'profile': path = `/profile/${shareId}`; break;
             case 'company': path = `/pages/${shareId}`; break;
+            case 'wishlist': path = `/wishlist/${shareId}`; break;
             case 'content': {
                 const { type, id } = shareData;
                 path = `/content/${type}/${id}`;
@@ -226,6 +239,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             case 'pitch': path = `/pitch/${shareId}`; break;
             case 'profile': path = `/profile/${shareId}`; break;
             case 'company': path = `/pages/${shareId}`; break;
+            case 'wishlist': path = `/wishlist/${shareId}`; break;
             case 'content': {
                 const { type, id } = shareData;
                 path = `/content/${type}/${id}`;
@@ -294,7 +308,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         return false;
     });
 
-    const displayTargets = searchQuery.trim()
+    const displayTargetsRaw = searchQuery.trim()
         ? [
             ...(activeTab === "connections" ? searchResults : []),
             ...filteredTargets.filter(t =>
@@ -304,56 +318,13 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         ]
         : filteredTargets;
 
+    const displayTargets = displayTargetsRaw.filter((target, index, self) =>
+        index === self.findIndex((t) => t.id === target.id && t.type === target.type)
+    );
+
     const Content = (
-        <div className="flex flex-col h-full overflow-y-auto bg-background">
+        <div className="flex flex-col h-full overflow-hidden bg-background">
             <div className="p-4 sm:p-6 space-y-4">
-                {/* Share Preview */}
-                <div className="flex items-center gap-4 p-4 bg-zinc-50 dark:bg-zinc-900 rounded-[24px] border border-zinc-100 dark:border-zinc-800 shadow-sm mb-2">
-                    <div className="shrink-0 relative">
-                        <Avatar className={`h-14 w-14 border-2 border-background shadow-md ${shareType === 'content' ? 'rounded-lg' : 'rounded-2xl'}`}>
-                            <AvatarImage 
-                                src={
-                                    shareType === 'post' ? (shareData.mediaUrl || shareData.author?.avatar) :
-                                    shareType === 'content' ? `https://image.tmdb.org/t/p/w200${shareData.poster_path}` :
-                                    shareType === 'company' ? shareData.avatar :
-                                    shareType === 'profile' ? shareData.avatar :
-                                    shareData.avatarUrl || shareData.logoUrl || shareData.thumbnailUrl
-                                } 
-                                className="object-cover" 
-                            />
-                            <AvatarFallback className="bg-primary/10 text-primary font-black uppercase">
-                                {shareType === 'project' ? <Film size={20} /> :
-                                 shareType === 'room' ? <MessageSquare size={20} /> :
-                                 shareType === 'job' ? <Briefcase size={20} /> :
-                                 (shareData.title?.[0] || shareData.name?.[0] || '?')}
-                            </AvatarFallback>
-                        </Avatar>
-                        <div className="absolute -top-1 -right-1 bg-primary text-white p-1 rounded-full shadow-lg">
-                            {shareType === 'room' ? <MessageSquare size={10} /> :
-                             shareType === 'job' ? <Briefcase size={10} /> :
-                             shareType === 'marketplace' ? <Zap size={10} /> :
-                             shareType === 'announcement' ? <Bell size={10} /> :
-                             shareType === 'vendor' ? <Building2 size={10} /> :
-                             shareType === 'pitch' ? <Zap size={10} /> :
-                             shareType === 'profile' ? <User size={10} /> :
-                             shareType === 'company' ? <Building2 size={10} /> :
-                             shareType === 'content' ? <Film size={10} /> :
-                             <Share2 size={10} />}
-                        </div>
-                    </div>
-                    <div className="flex flex-col overflow-hidden">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-0.5">Sharing {shareType}</span>
-                        <h4 className="font-black text-lg text-foreground truncate leading-tight">
-                            {shareData.title || shareData.name || (shareType === 'post' ? 'Post Update' : 'Creative Content')}
-                        </h4>
-                        <p className="text-xs text-muted-foreground font-bold truncate opacity-70">
-                            {shareType === 'profile' ? `@${shareId}` :
-                             shareType === 'company' ? shareData.tagline :
-                             shareType === 'content' ? `${shareData.type === 'movie' ? 'Movie' : 'TV Series'}` :
-                             shareData.subtitle || shareData.description || 'CineCraft Connect'}
-                        </p>
-                    </div>
-                </div>
 
                 {/* Search Bar */}
                 <div className="relative group">
@@ -459,12 +430,14 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
     if (isDesktop) {
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[420px] p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-[32px]">
-                    <DialogHeader className="p-6 pb-2 text-center">
-                        <DialogTitle className="text-2xl font-black text-foreground">Share to...</DialogTitle>
+                <DialogContent className="sm:max-w-[420px] max-h-[85vh] md:max-h-[620px] flex flex-col p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-[32px]">
+                    <DialogHeader className="p-6 pb-2 text-center shrink-0">
+                        <DialogTitle className="text-2xl font-black text-foreground">{titleText}</DialogTitle>
                         <DialogDescription className="sr-only">Share this content with your network</DialogDescription>
                     </DialogHeader>
-                    {Content}
+                    <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+                        {Content}
+                    </div>
                 </DialogContent>
             </Dialog>
         );
@@ -480,9 +453,9 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             shouldScaleBackground
         >
             <DrawerContent className="bg-background flex flex-col border-none rounded-t-[32px] max-h-[96dvh] h-full outline-none">
-                <div className="mx-auto mt-4 h-1.5 w-12 rounded-full bg-muted/20 shrink-0" />
-                <DrawerHeader className="pt-4 pb-2 text-center shrink-0">
-                    <DrawerTitle className="text-2xl font-black text-foreground">Share to...</DrawerTitle>
+                <div className="mx-auto mt-2.5 h-1.5 w-12 rounded-full bg-muted/20 shrink-0" />
+                <DrawerHeader className="pt-2 pb-1 text-center shrink-0">
+                    <DrawerTitle className="text-2xl font-black text-foreground">{titleText}</DrawerTitle>
                     <DrawerDescription className="sr-only">Share this content with your network</DrawerDescription>
                 </DrawerHeader>
                 <div className="flex-1 overflow-hidden flex flex-col">

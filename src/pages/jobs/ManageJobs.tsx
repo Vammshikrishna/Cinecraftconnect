@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, FileText, CheckCircle2, XCircle, Clock, Search, Eye, Building2, Edit2, MessageSquare, Briefcase } from "lucide-react";
+import { Loader2, FileText, CheckCircle2, XCircle, Clock, Search, Eye, Building2, Edit2, MessageSquare, Briefcase, CheckSquare, Download, Filter } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { JobCreationModal } from "@/components/jobs/JobCreationModal";
 import { PageHeader } from "@/components/common/PageHeader";
 import { BackButton } from "@/components/common/BackButton";
+import { ApplicantFilterPanel, ApplicantFilters } from "@/components/jobs/ApplicantFilterPanel";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface JobWithApplications {
     id: string;
@@ -29,12 +31,20 @@ interface JobWithApplications {
         status: string | null;
         cover_letter: string | null;
         resume_url: string | null;
+        showreel_url: string | null;
+        is_shortlisted: boolean | null;
         created_at: string | null;
         applicant_id: string;
         applicant: {
             full_name: string | null;
             username: string | null;
             avatar_url: string | null;
+            location: string | null;
+            availability_status: string | null;
+            union_membership: string[] | null;
+            day_rate_min: number | null;
+            day_rate_max: number | null;
+            user_skills?: { skill_name: string }[];
         } | null;
     }[];
     [key: string]: any;
@@ -45,6 +55,94 @@ const ManageJobs = () => {
     const [loading, setLoading] = useState(true);
     const { user } = useAuth();
     const { toast } = useToast();
+
+    const [filters, setFilters] = useState<Record<string, ApplicantFilters>>({});
+    const [showFilters, setShowFilters] = useState<Record<string, boolean>>({});
+    const [selectedApplicants, setSelectedApplicants] = useState<string[]>([]);
+
+    const getFilteredApplications = (jobId: string, applications: any[]) => {
+        const jobFilters = filters[jobId];
+        if (!jobFilters) return applications;
+
+        return applications.filter(app => {
+            const applicant = app.applicant;
+            if (!applicant) return false;
+
+            if (jobFilters.skills.length > 0) {
+                const appSkills = applicant.user_skills?.map((s: any) => s.skill_name) || [];
+                if (!jobFilters.skills.some((skill: string) => appSkills.includes(skill))) return false;
+            }
+
+            if (jobFilters.location && applicant.location) {
+                if (!applicant.location.toLowerCase().includes(jobFilters.location.toLowerCase())) return false;
+            }
+
+            if (jobFilters.rateMax !== null && applicant.day_rate_min) {
+                if (applicant.day_rate_min > jobFilters.rateMax) return false;
+            }
+
+            if (jobFilters.availability && jobFilters.availability !== 'any') {
+                if (applicant.availability_status !== jobFilters.availability) return false;
+            }
+
+            if (jobFilters.union.length > 0) {
+                const appUnion = applicant.union_membership || [];
+                if (!jobFilters.union.some((u: string) => appUnion.includes(u))) return false;
+            }
+
+            return true;
+        });
+    };
+
+    const handleExportPDF = (jobId: string) => {
+        toast({
+            title: "Preparing Export",
+            description: "Opening print dialog. Please select 'Save as PDF' as your printer."
+        });
+        setTimeout(() => {
+            window.print();
+        }, 500);
+    };
+
+    const handleToggleApplicant = (appId: string) => {
+        setSelectedApplicants(prev => 
+            prev.includes(appId) ? prev.filter(id => id !== appId) : [...prev, appId]
+        );
+    };
+
+    const handleBulkShortlist = async (jobId: string) => {
+        if (selectedApplicants.length === 0) return;
+        try {
+            const { error } = await (supabase.from as any)('job_applications')
+                .update({ is_shortlisted: true })
+                .in('id', selectedApplicants);
+
+            if (error) throw error;
+
+            toast({
+                title: "Shortlisted",
+                description: `Successfully shortlisted ${selectedApplicants.length} applicants.`
+            });
+
+            setJobs(prev => prev.map(job => {
+                if (job.id !== jobId) return job;
+                return {
+                    ...job,
+                    applications: job.applications.map(app => 
+                        selectedApplicants.includes(app.id) ? { ...app, is_shortlisted: true } : app
+                    )
+                };
+            }));
+            setSelectedApplicants([]);
+        } catch (error) {
+            console.error('Error shortlisting:', error);
+            toast({
+                title: "Error",
+                description: "Failed to shortlist applicants",
+                variant: "destructive"
+            });
+        }
+    };
 
     const fetchJobsAndApplications = async () => {
         if (!user) return;
@@ -86,19 +184,28 @@ const ManageJobs = () => {
 
             // Fetch applications for these jobs
             const jobsWithApps = await Promise.all((jobsData || []).map(async (job) => {
-                const { data: appsData, error: appsError } = await supabase
-                    .from('job_applications')
+                const { data: appsData, error: appsError } = await (supabase.from as any)('job_applications')
                     .select(`
                         id,
                         status,
                         cover_letter,
                         resume_url,
+                        showreel_url,
+                        is_shortlisted,
                         created_at,
                         applicant_id,
                         applicant:applicant_id (
                             full_name,
                             username,
-                            avatar_url
+                            avatar_url,
+                            location,
+                            availability_status,
+                            union_membership,
+                            day_rate_min,
+                            day_rate_max,
+                            user_skills (
+                                skill_name
+                            )
                         )
                     `)
                     .eq('job_id', job.id)
@@ -108,7 +215,7 @@ const ManageJobs = () => {
 
                 return {
                     ...job,
-                    applications: (appsData || []).map(app => ({
+                    applications: (appsData || []).map((app: any) => ({
                         ...app,
                         applicant: app.applicant as any
                     }))
@@ -152,7 +259,7 @@ const ManageJobs = () => {
         };
     }, [user?.id]);
 
-    const handleStatusUpdate = async (applicationId: string, newStatus: string) => {
+    const handleStatusUpdate = async (applicationId: string, newStatus: any) => {
         try {
             const { error } = await supabase
                 .from('job_applications')
@@ -322,23 +429,72 @@ const ManageJobs = () => {
                                 </CardHeader>
                                 
                                 <CardContent className="bg-muted/10 p-8 border-t border-border/50">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="h-1 w-8 bg-primary/50 rounded-full" />
-                                        <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/80">
-                                            Portfolio Review Grid
-                                        </h4>
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-1 w-8 bg-primary/50 rounded-full" />
+                                            <h4 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground/80">
+                                                Portfolio Review Grid
+                                            </h4>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-3 print:hidden">
+                                            {selectedApplicants.length > 0 && (
+                                                <>
+                                                    <Button 
+                                                        size="sm" 
+                                                        onClick={() => handleBulkShortlist(job.id)}
+                                                        className="h-9 px-4 font-bold bg-primary text-primary-foreground hover:bg-primary/90"
+                                                    >
+                                                        <CheckSquare className="w-4 h-4 mr-2" />
+                                                        Shortlist {selectedApplicants.length}
+                                                    </Button>
+                                                    <Button 
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleExportPDF(job.id)}
+                                                        className="h-9 px-4 font-bold border-primary/20 hover:bg-primary/10 text-primary"
+                                                    >
+                                                        <Download className="w-4 h-4 mr-2" />
+                                                        Export PDF
+                                                    </Button>
+                                                </>
+                                            )}
+                                            <Button
+                                                variant={showFilters[job.id] ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => setShowFilters(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
+                                                className="h-9 font-bold"
+                                            >
+                                                <Filter className="w-4 h-4 mr-2" />
+                                                Filters
+                                            </Button>
+                                        </div>
                                     </div>
+
+                                    {showFilters[job.id] && (
+                                        <ApplicantFilterPanel 
+                                            jobId={job.id}
+                                            filters={filters[job.id] || { skills: [], location: '', availability: 'any', rateMax: null, union: [], minCredits: 0 }}
+                                            onFilterChange={(newFilters) => setFilters(prev => ({ ...prev, [job.id]: newFilters }))}
+                                        />
+                                    )}
                                     
-                                    {job.applications.length === 0 ? (
+                                    {getFilteredApplications(job.id, job.applications).length === 0 ? (
                                         <div className="text-center py-12 bg-background/30 rounded-[2rem] border border-dashed border-border/50">
-                                            <p className="text-muted-foreground font-medium">No candidates have applied to this position yet.</p>
+                                            <p className="text-muted-foreground font-medium">No candidates match these criteria.</p>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 gap-6">
-                                            {job.applications.map((app) => (
+                                            {getFilteredApplications(job.id, job.applications).map((app) => (
                                                 <div key={app.id} className="bg-card/60 backdrop-blur-md border border-border/50 rounded-[2rem] p-6 md:p-8 flex flex-col md:flex-row gap-8 hover:border-primary/50 transition-all duration-500 shadow-sm hover:shadow-xl">
                                                     <div className="flex-grow flex flex-col gap-6">
                                                         <div className="flex items-start gap-5">
+                                                            <div className="pt-4 print:hidden">
+                                                                <Checkbox 
+                                                                    checked={selectedApplicants.includes(app.id)}
+                                                                    onCheckedChange={() => handleToggleApplicant(app.id)}
+                                                                />
+                                                            </div>
                                                             <Link to={`/profile/${app.applicant_id}`}>
                                                                 <Avatar className="w-16 h-16 border-2 border-border/50 shadow-xl hover:scale-110 transition-transform">
                                                                     <AvatarImage src={app.applicant?.avatar_url || ''} className="object-cover" />
@@ -360,6 +516,11 @@ const ManageJobs = () => {
                                                                     <Badge className={`text-[10px] uppercase font-black tracking-widest border-none rounded-full px-4 py-1.5 shadow-sm ${getStatusColor(app.status || 'pending')}`} variant="outline">
                                                                         {app.status || 'pending'}
                                                                     </Badge>
+                                                                    {app.is_shortlisted && (
+                                                                        <Badge className="text-[10px] uppercase font-black tracking-widest bg-amber-500 text-black border-none rounded-full px-4 py-1.5 shadow-sm">
+                                                                            Shortlisted
+                                                                        </Badge>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -367,6 +528,17 @@ const ManageJobs = () => {
                                                         {app.cover_letter && (
                                                             <div className="bg-background/40 backdrop-blur-sm p-6 rounded-[1.5rem] text-muted-foreground font-medium leading-relaxed whitespace-pre-wrap border border-white/5 italic">
                                                                 "{app.cover_letter}"
+                                                            </div>
+                                                        )}
+
+                                                        {app.showreel_url && (
+                                                            <div className="w-full max-w-2xl aspect-video rounded-2xl overflow-hidden border border-border/50 bg-black">
+                                                                <iframe 
+                                                                    src={app.showreel_url} 
+                                                                    className="w-full h-full"
+                                                                    allowFullScreen
+                                                                    title="Showreel Preview"
+                                                                />
                                                             </div>
                                                         )}
 

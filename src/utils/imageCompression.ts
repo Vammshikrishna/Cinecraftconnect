@@ -66,7 +66,7 @@ export const compressImage = (
 
         // Export as WebP if supported, otherwise fallback to JPEG
         // WebP provides significantly better compression ratios than JPEG
-        const outputType = 'image/jpeg';
+        const outputType = 'image/webp';
         
         canvas.toBlob(
           (blob) => {

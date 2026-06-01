@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAccountType } from '@/hooks/useAccountType';
 import { BackButton } from '@/components/common/BackButton';
@@ -23,6 +23,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 const AccountSettings = () => {
     const { push } = useAppNavigation();
@@ -131,16 +132,43 @@ const AccountSettings = () => {
     };
 
     const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+    const [deleteUnderstood, setDeleteUnderstood] = useState(false);
+    const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
 
     const handleDeleteAccount = async () => {
         if (!user) return;
-        
+        if (deleteConfirmEmail.trim().toLowerCase() !== user.email?.toLowerCase()) return;
+
         try {
             setIsDeleting(true);
-            
-            // Delete user data across collections
-            // Note: Cascade deletes should ideally be handled by Database foreign keys
-            // But we explicitly delete the profile which is the core identity
+
+            // 1. Erase direct messages (sender + receiver)
+            await supabase
+                .from('direct_messages' as any)
+                .delete()
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+
+            // 2. Erase group/project messages authored by user
+            await supabase
+                .from('messages')
+                .delete()
+                .eq('sender_id', user.id);
+
+            // 3. Portfolio items
+            await supabase
+                .from('portfolio_items' as any)
+                .delete()
+                .eq('user_id', user.id);
+
+            // 4. Job applications
+            await supabase
+                .from('job_applications' as any)
+                .delete()
+                .eq('applicant_id', user.id);
+
+            // 5. Profile row — FK cascades handle the rest (posts, follows, etc.)
             const { error: profileError } = await supabase
                 .from('profiles')
                 .delete()
@@ -149,25 +177,32 @@ const AccountSettings = () => {
             if (profileError) throw profileError;
 
             toast({
-                title: "Account Deleted",
-                description: "Your data has been removed and you have been signed out.",
+                title: 'Account permanently deleted',
+                description: 'Your data has been erased. Goodbye — we hope to see you again someday.',
             });
 
-            // Log out and redirect
             await signOut();
-            push('/auth', { noScroll: true });
-            
+            // Redirect to landing page
+            window.location.href = '/';
         } catch (error: any) {
             console.error('Error deleting account:', error);
             toast({
-                title: "Error",
-                description: "Failed to delete account: " + error.message,
-                variant: "destructive"
+                title: 'Deletion failed',
+                description: error.message || 'Something went wrong. Please try again or contact support.',
+                variant: 'destructive',
             });
         } finally {
             setIsDeleting(false);
         }
     };
+
+    const openDeleteDialog = () => {
+        setDeleteStep(1);
+        setDeleteUnderstood(false);
+        setDeleteConfirmEmail('');
+        setDeleteDialogOpen(true);
+    };
+
 
     const handleClearAllMessages = async () => {
         if (!user) return;
@@ -408,36 +443,165 @@ const AccountSettings = () => {
                                 <div className="mb-3">
                                     <Label className="text-base font-medium text-destructive">Delete Account</Label>
                                     <p className="text-sm text-muted-foreground mt-1">
-                                        Once you delete your account, there is no going back. Please be certain.
+                                        Permanently erase your account and all associated data. This action cannot be undone.
                                     </p>
                                 </div>
-                                <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="destructive" size="sm">
-                                            <Trash2 className="mr-2 h-4 w-4" />
-                                            Delete Account
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                            <AlertDialogDescription>
-                                                This action cannot be undone. This will permanently delete your account and remove your data from our servers.
-                                            </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction 
-                                                onClick={handleDeleteAccount} 
-                                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
-                                                disabled={isDeleting}
-                                            >
-                                                {isDeleting ? 'Deleting...' : 'Delete Account'}
-                                            </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
+                                <Button variant="destructive" size="sm" onClick={openDeleteDialog}>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete Account
+                                </Button>
                             </div>
+
+                            {/* ── 2-step deletion dialog ── */}
+                            <Dialog
+                                open={deleteDialogOpen}
+                                onOpenChange={(open) => {
+                                    if (!isDeleting) setDeleteDialogOpen(open);
+                                }}
+                            >
+                                <DialogContent className="max-w-md w-[95vw] bg-card border border-destructive/30 rounded-[28px] p-0 overflow-hidden">
+
+                                    {/* ── Step 1: What will be deleted ── */}
+                                    {deleteStep === 1 && (
+                                        <>
+                                            <DialogHeader className="p-6 pb-0">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 rounded-xl bg-destructive/10">
+                                                        <ShieldAlert className="h-5 w-5 text-destructive" />
+                                                    </div>
+                                                    <DialogTitle className="text-lg font-bold text-foreground">
+                                                        Delete your account?
+                                                    </DialogTitle>
+                                                </div>
+                                                <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                                                    The following data will be <span className="font-bold text-destructive">permanently and irreversibly</span> erased:
+                                                </DialogDescription>
+                                            </DialogHeader>
+
+                                            <div className="px-6 py-4">
+                                                <ul className="space-y-2">
+                                                    {[
+                                                        'Profile, bio, and account credentials',
+                                                        'All posts, comments, and reactions',
+                                                        'Portfolio items and media uploads',
+                                                        'Direct messages and chat history',
+                                                        'Project memberships and files',
+                                                        'Job applications and listings',
+                                                        'Ratings, reviews, and legal documents',
+                                                        'All analytics and activity data',
+                                                    ].map((item) => (
+                                                        <li key={item} className="flex items-start gap-2.5 text-sm text-foreground">
+                                                            <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+                                                            {item}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+
+                                                {/* Checkbox confirmation */}
+                                                <label className="flex items-start gap-3 mt-5 p-3 bg-destructive/5 border border-destructive/20 rounded-xl cursor-pointer select-none">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="mt-0.5 accent-destructive h-4 w-4 shrink-0"
+                                                        checked={deleteUnderstood}
+                                                        onChange={e => setDeleteUnderstood(e.target.checked)}
+                                                    />
+                                                    <span className="text-xs text-muted-foreground leading-relaxed">
+                                                        I understand this is <span className="font-bold text-foreground">permanent and cannot be undone</span>, and I want to permanently delete my CineCraft Connect account.
+                                                    </span>
+                                                </label>
+                                            </div>
+
+                                            <div className="flex justify-between gap-3 px-6 pb-6">
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => setDeleteDialogOpen(false)}
+                                                    className="flex-1 rounded-xl"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    disabled={!deleteUnderstood}
+                                                    onClick={() => setDeleteStep(2)}
+                                                    className="flex-1 rounded-xl font-bold"
+                                                >
+                                                    Continue →
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* ── Step 2: Type email to confirm ── */}
+                                    {deleteStep === 2 && (
+                                        <>
+                                            <DialogHeader className="p-6 pb-0">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 rounded-xl bg-destructive/10">
+                                                        <Trash2 className="h-5 w-5 text-destructive" />
+                                                    </div>
+                                                    <DialogTitle className="text-lg font-bold text-foreground">
+                                                        Final confirmation
+                                                    </DialogTitle>
+                                                </div>
+                                                <DialogDescription className="text-sm text-muted-foreground">
+                                                    Type your email address to permanently delete your account.
+                                                </DialogDescription>
+                                            </DialogHeader>
+
+                                            <div className="px-6 py-4 space-y-4">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                                        Your email address
+                                                    </Label>
+                                                    <p className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg">
+                                                        {user?.email}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                                        Confirm by typing your email
+                                                    </Label>
+                                                    <Input
+                                                        type="email"
+                                                        placeholder={user?.email ?? 'your@email.com'}
+                                                        value={deleteConfirmEmail}
+                                                        onChange={e => setDeleteConfirmEmail(e.target.value)}
+                                                        className="rounded-xl border-destructive/30 focus-visible:ring-destructive/30"
+                                                        disabled={isDeleting}
+                                                        autoComplete="off"
+                                                    />
+                                                    {deleteConfirmEmail.length > 0 && deleteConfirmEmail.toLowerCase() !== user?.email?.toLowerCase() && (
+                                                        <p className="text-xs text-destructive font-medium flex items-center gap-1">
+                                                            <AlertTriangle className="h-3 w-3" />
+                                                            Email does not match
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-between gap-3 px-6 pb-6">
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => setDeleteStep(1)}
+                                                    disabled={isDeleting}
+                                                    className="flex-1 rounded-xl"
+                                                >
+                                                    ← Back
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    disabled={isDeleting || deleteConfirmEmail.trim().toLowerCase() !== user?.email?.toLowerCase()}
+                                                    onClick={handleDeleteAccount}
+                                                    className="flex-1 rounded-xl font-bold"
+                                                >
+                                                    {isDeleting ? 'Deleting...' : '🗑 Delete Forever'}
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                </DialogContent>
+                            </Dialog>
 
                             <div className="mt-4 p-4 rounded-lg bg-background border border-destructive/20">
                                 <div className="mb-3">

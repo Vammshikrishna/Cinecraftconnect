@@ -13,7 +13,7 @@ const ContentModerationDashboard = () => {
     (async () => {
       try {
         const { data } = await supabase
-          .from('content_moderation')
+          .from('content_moderation' as any)
           .select('*')
           .order('created_at', { ascending: false })
           .limit(50);

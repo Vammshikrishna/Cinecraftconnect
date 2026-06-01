@@ -16,6 +16,7 @@ export interface Job {
     created_at: string;
     updated_at: string;
     is_active: boolean;
+    auto_close_on_hire?: boolean;
     page_id: string | null;
     profiles?: {
         full_name: string | null;

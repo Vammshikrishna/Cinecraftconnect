@@ -84,7 +84,7 @@ const RoomInfoPanel = ({ roomId, roomTitle, roomDescription, onClose, onRoomUpda
         .eq('room_id', roomId);
 
       if (membersError) throw membersError;
-      setMembers(membersData as Member[]);
+      setMembers(membersData as any as Member[]);
 
     } catch (error: any) {
       toast({ title: "Error fetching room data", description: error.message, variant: "destructive" });

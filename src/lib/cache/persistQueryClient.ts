@@ -1,12 +1,29 @@
 import { QueryClient } from '@tanstack/react-query';
 import { persistQueryClient } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { createIdbPersister } from './idbPersister';
 
 /**
- * List of query keys that are safe to persist to localStorage.
- * IMPORTANT: DO NOT add queries that contain sensitive auth tokens or PII that shouldn't be cached.
+ * Cache key versioned so stale blobs are automatically discarded on upgrade.
+ * Bump this string whenever the shape of persisted data changes in a
+ * backwards-incompatible way (e.g. a query key rename or type change).
  */
-const PERSISTED_QUERIES = [
+const CACHE_KEY = 'cinecraft-production-cache-v1';
+
+/**
+ * Query keys that are safe to persist to IndexedDB.
+ *
+ * IMPORTANT: Never add queries that contain:
+ *   - Auth tokens / session data
+ *   - PII that must not survive a browser restart
+ *   - Rapidly-changing transient state (e.g. presence, typing indicators)
+ *
+ * Production data (tasks, budget, call sheets) is safe because:
+ *   - It is project-scoped (per projectId)
+ *   - It is fetched fresh on mount when online
+ *   - When offline the user expects to see their last-known state
+ */
+const PERSISTED_QUERIES: string[] = [
+  // ── Home feed ────────────────────────────────────────────────────────────
   'home-feed-static',
   'home-feed-posts',
   'home-feed-ratings',
@@ -14,18 +31,26 @@ const PERSISTED_QUERIES = [
   'my-pages',
   'company-pages',
   'network-feed',
-  'notifications'
+  'notifications',
+
+  // ── Production workspace ─────────────────────────────────────────────────
+  'project-tasks',       // Tasks.tsx  →  useProjectTasks
+  'project-budget',      // BudgetSched.tsx  →  useProjectBudget
+  'project-schedule',    // BudgetSched.tsx  →  useProjectBudget
+  'project-call-sheets', // CallSheet.tsx  →  useProjectCallSheets
 ];
 
 /**
- * Initializes the React Query persister to cache UI content offline.
- * This prevents unnecessary reloading on app restart and ensures instant UI rendering.
+ * Initializes React Query persistence to IndexedDB.
+ *
+ * Uses an async persister (IndexedDB) instead of the previous synchronous
+ * localStorage persister for three key reasons:
+ *   1. Async I/O — never blocks the main thread during cache restore/write
+ *   2. Capacity — IndexedDB supports 50–500 MB vs localStorage's ~5 MB cap
+ *   3. Production data can be large (call sheets, budget breakdowns)
  */
 export const initPersistor = (queryClient: QueryClient) => {
-  const persister = createSyncStoragePersister({
-    storage: window.localStorage,
-    key: 'REACT_QUERY_OFFLINE_CACHE_V1',
-  });
+  const persister = createIdbPersister(CACHE_KEY);
 
   persistQueryClient({
     queryClient,
@@ -33,20 +58,24 @@ export const initPersistor = (queryClient: QueryClient) => {
     maxAge: 1000 * 60 * 60 * 24 * 3, // Persist for 3 days
     dehydrateOptions: {
       shouldDehydrateQuery: (query) => {
-        // Only persist selected safe queries that successfully fetched
+        // Only persist explicitly allow-listed, successfully-fetched queries
         const queryKey = query.queryKey[0];
-        if (typeof queryKey === 'string' && PERSISTED_QUERIES.includes(queryKey)) {
-          return query.state.status === 'success';
-        }
-        return false;
+        return (
+          typeof queryKey === 'string' &&
+          PERSISTED_QUERIES.includes(queryKey) &&
+          query.state.status === 'success'
+        );
       },
     },
   });
 };
 
 /**
- * Clears the persisted cache. Useful during logout to ensure no stale data remains.
+ * Wipes the IndexedDB cache entry.
+ * Call this during logout to prevent stale project data from leaking
+ * to the next authenticated user on the same device.
  */
-export const clearPersistedCache = () => {
-  window.localStorage.removeItem('REACT_QUERY_OFFLINE_CACHE_V1');
+export const clearPersistedCache = async (): Promise<void> => {
+  const persister = createIdbPersister(CACHE_KEY);
+  await persister.removeClient();
 };

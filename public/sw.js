@@ -72,6 +72,7 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return;
   if (url.protocol === 'chrome-extension:') return;
+  if (request.headers.has('range') || isVideoOrAudioRequest(request, url)) return; // Bypass SW for streaming media and range requests
 
   // Normalize URL for caching (ignore query param order for Supabase images)
   const normalizedUrl = normalizeMediaUrl(url);
@@ -175,8 +176,14 @@ async function staleWhileRevalidate(request) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function isVideoOrAudioRequest(request, url) {
+  const isVideoExtension = /\.(mp4|webm|mov|m4a|mp3|wav|ogg|aac|avi|mkv|flac)(\?.*)?$/i.test(url.pathname);
+  const isVideoDestination = request.destination === 'video' || request.destination === 'audio';
+  return isVideoExtension || isVideoDestination;
+}
+
 function isMediaRequest(url) {
-  return /\.(jpg|jpeg|png|gif|webp|avif|svg|mp4|webm|mov)(\?.*)?$/i.test(url.pathname);
+  return /\.(jpg|jpeg|png|gif|webp|avif|svg)(\?.*)?$/i.test(url.pathname);
 }
 
 /** Normalizes Supabase storage URLs by sorting query parameters alphabetically */

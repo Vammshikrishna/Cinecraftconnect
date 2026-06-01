@@ -16,7 +16,7 @@ const SavedSearches = ({ onLoadSearch }: { onLoadSearch: (search: any) => void }
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) { setItems([]); return; }
         const { data, error } = await supabase
-          .from('saved_searches')
+          .from('saved_searches' as any)
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });

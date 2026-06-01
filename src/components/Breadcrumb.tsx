@@ -12,7 +12,6 @@ export const Breadcrumb = () => {
       'projects': 'Projects',
       'jobs': 'Jobs',
       'network': 'Network',
-      'learn': 'Learning',
       'craft': 'Crafts',
       'discussion-rooms': 'Discussion Rooms',
       'chats': 'Messages',

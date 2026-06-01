@@ -36,15 +36,15 @@ export const useCallState = (roomId: string) => {
   // Fetch active call
   useEffect(() => {
     const fetchActiveCall = async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('room_calls')
         .select('*')
         .eq('room_id', roomId)
         .eq('is_active', true)
         .single();
 
-      if (data && (data.call_type === 'audio' || data.call_type === 'video')) {
-        setActiveCall(data as ActiveCall);
+      if (data && ((data as any).call_type === 'audio' || (data as any).call_type === 'video')) {
+        setActiveCall(data as any as ActiveCall);
       }
     };
 
@@ -58,7 +58,7 @@ export const useCallState = (roomId: string) => {
         {
           event: '*',
           schema: 'public',
-          table: 'room_calls',
+          table: 'room_calls' as any,
           filter: `room_id=eq.${roomId}`,
         },
         (payload) => {
@@ -89,7 +89,7 @@ export const useCallState = (roomId: string) => {
     }
 
     const fetchParticipants = async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from('call_participants')
         .select('*')
         .eq('call_id', activeCall.id)
@@ -101,22 +101,22 @@ export const useCallState = (roomId: string) => {
       }
 
       // Fetch user roles to identify internal staff
-      const userIds = data.map(p => p.user_id);
-      const { data: rolesData } = await supabase
+      const userIds = data.map((p: any) => p.user_id);
+      const { data: rolesData } = await (supabase as any)
         .from('user_roles')
         .select('user_id, role')
         .in('user_id', userIds);
 
       const internalRoles = ['moderator', 'admin', 'super_admin'];
-      const mergedData = data.map(p => {
-        const userRole = rolesData?.find(r => r.user_id === p.user_id)?.role || 'user';
+      const mergedData = data.map((p: any) => {
+        const userRole = rolesData?.find((r: any) => r.user_id === p.user_id)?.role || 'user';
         return {
           ...p,
           isInternal: internalRoles.includes(userRole)
         };
       });
 
-      setParticipants(mergedData);
+      setParticipants(mergedData as any);
     };
 
     fetchParticipants();
@@ -129,7 +129,7 @@ export const useCallState = (roomId: string) => {
         {
           event: '*',
           schema: 'public',
-          table: 'call_participants',
+          table: 'call_participants' as any,
           filter: `call_id=eq.${activeCall.id}`,
         },
         () => {
@@ -164,14 +164,14 @@ export const useCallState = (roomId: string) => {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('room_calls')
         .insert({
           room_id: roomId,
           started_by: user.id,
           call_type: callType,
           is_active: true,
-        })
+        } as any)
         .select()
         .single();
 
@@ -197,14 +197,14 @@ export const useCallState = (roomId: string) => {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('call_participants')
         .insert({
           call_id: targetCallId,
           user_id: user.id,
           is_audio_enabled: isAudioEnabled,
           is_video_enabled: isVideoEnabled,
-        });
+        } as any);
 
       if (error) throw error;
 
@@ -223,9 +223,9 @@ export const useCallState = (roomId: string) => {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('call_participants')
-        .update({ left_at: new Date().toISOString() })
+        .update({ left_at: new Date().toISOString() } as any)
         .eq('call_id', activeCall.id)
         .eq('user_id', user.id)
         .is('left_at', null);
@@ -247,12 +247,12 @@ export const useCallState = (roomId: string) => {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('room_calls')
         .update({
           is_active: false,
           ended_at: new Date().toISOString(),
-        })
+        } as any)
         .eq('id', activeCall.id);
 
       if (error) throw error;
@@ -274,9 +274,9 @@ export const useCallState = (roomId: string) => {
     const newState = !isAudioEnabled;
     setIsAudioEnabled(newState);
 
-    await supabase
+    await (supabase as any)
       .from('call_participants')
-      .update({ is_audio_enabled: newState })
+      .update({ is_audio_enabled: newState } as any)
       .eq('call_id', activeCall.id)
       .eq('user_id', user.id)
       .is('left_at', null);
@@ -288,9 +288,9 @@ export const useCallState = (roomId: string) => {
     const newState = !isVideoEnabled;
     setIsVideoEnabled(newState);
 
-    await supabase
+    await (supabase as any)
       .from('call_participants')
-      .update({ is_video_enabled: newState })
+      .update({ is_video_enabled: newState } as any)
       .eq('call_id', activeCall.id)
       .eq('user_id', user.id)
       .is('left_at', null);

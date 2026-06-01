@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  STORAGE_BUCKETS,
+  buildUserFilePath,
+  extractStoragePath,
+  signAndDownload,
+  removeStorageFile,
+} from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -57,37 +64,22 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                 return;
             }
 
-            const docsWithSignedUrls = await Promise.all(rawDocs.map(async (doc) => {
+                const docsWithSignedUrls = await Promise.all(rawDocs.map(async (doc) => {
                 if (!doc.url) return doc;
                 try {
-                    // Optimized path extraction
-                    const bucketMatch = doc.url.match(/legal-documents\/(.*)$/);
-                    let path = bucketMatch ? bucketMatch[1] : "";
-                    
-                    if (!path && doc.url.includes('object/')) {
-                         const parts = doc.url.split('object/')[1].split('/');
-                         if (parts.length > 2) path = parts.slice(2).join('/');
-                    }
-
-                    if (!path) path = doc.url.split('/').pop() || "";
-                    
-                    // Clean and decode path
-                    path = decodeURIComponent(path.split('?')[0]).replace(/^\/+/, '');
-                    
+                    const path = extractStoragePath(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS);
                     if (!path) return { ...doc, signedUrl: doc.url || undefined };
 
-                    // 1. Attempt Signed URL (best for security)
                     const { data: signedData, error: signError } = await supabase.storage
-                        .from('legal-documents')
+                        .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
                         .createSignedUrl(path, 3600);
 
                     if (!signError && signedData?.signedUrl) {
                         return { ...doc, signedUrl: signedData.signedUrl };
                     }
 
-                    // 2. Fallback to Public URL (best for reliability)
                     const { data: { publicUrl } } = supabase.storage
-                        .from('legal-documents')
+                        .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
                         .getPublicUrl(path);
 
                     return { ...doc, signedUrl: publicUrl || doc.url || undefined };
@@ -117,17 +109,16 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
         setUploading(true);
 
         try {
-            const fileName = `${Date.now()}-${selectedFile.name.replace(/\s+/g, '_')}`;
-            const filePath = `${project_id}/${fileName}`;
+            const filePath = buildUserFilePath(project_id, selectedFile.name);
 
             const { error: uploadError } = await supabase.storage
-                .from('legal-documents')
+                .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
                 .upload(filePath, selectedFile);
 
             if (uploadError) throw uploadError;
 
             const { data: { publicUrl } } = supabase.storage
-                .from('legal-documents')
+                .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
                 .getPublicUrl(filePath);
 
             const { error: insertError } = await supabase
@@ -155,60 +146,11 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
 
     const handleDownload = async (doc: LegalDoc) => {
         if (!doc.url) return;
+        const ext = doc.url.split('/').pop()?.split('?')[0].split('.').pop() ?? 'pdf';
+        const fileName = `${doc.title.replace(/\s+/g, '_')}.${ext}`;
         try {
-            let path = "";
-            if (doc.url.includes('legal-documents/')) {
-                path = doc.url.split('legal-documents/').pop()?.split('?')[0] || "";
-            } else if (doc.url.startsWith('http')) {
-                try {
-                    const urlObj = new URL(doc.url);
-                    const pathParts = urlObj.pathname.split('/');
-                    const objectIdx = pathParts.indexOf('object');
-                    if (objectIdx !== -1 && pathParts.length > objectIdx + 3) {
-                        path = pathParts.slice(objectIdx + 3).join('/');
-                    } else {
-                        const bucketIdx = pathParts.indexOf('legal-documents');
-                        if (bucketIdx !== -1) {
-                            path = pathParts.slice(bucketIdx + 1).join('/');
-                        } else {
-                            const legacyIdx = pathParts.indexOf('project-files');
-                            if (legacyIdx !== -1) path = pathParts.slice(legacyIdx + 1).join('/');
-                        }
-                    }
-                } catch (e) {
-                    path = doc.url.split('/').pop() || "";
-                }
-            } else {
-                path = doc.url;
-            }
-            path = decodeURIComponent(path.split('?')[0]).replace(/^\/+/, ''); // Clean leading slashes
-            if (!path) throw new Error("Invalid file path structure");
-            
-            // 2. Generate a fresh signed URL
-            const { data: signedData, error: signedError } = await supabase.storage
-                .from('legal-documents')
-                .createSignedUrl(path, 60);
-
-            if (signedError) throw signedError;
-            if (!signedData?.signedUrl) throw new Error("Could not generate secure download link");
-
-            // 3. Fetch as blob
-            const response = await fetch(signedData.signedUrl);
-            const blob = await response.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            
-            const originalFilename = doc.url.split('/').pop()?.split('?')[0] || "";
-            const ext = originalFilename.includes('.') ? originalFilename.split('.').pop() : "pdf";
-            link.download = `${doc.title.replace(/\s+/g, '_')}.${ext}`;
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(blobUrl);
-
+            const ok = await signAndDownload(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS, fileName);
+            if (!ok) throw new Error('Could not generate secure download link');
             toast({ title: "Downloaded", description: doc.title + " is ready." });
         } catch (err: any) {
             toast({ title: "Download Failed", description: err.message, variant: "destructive" });
@@ -220,11 +162,9 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
 
         try {
             if (doc.url) {
-                const parts = doc.url.split('legal-documents/');
-                const path = (parts.length > 1 ? parts[1] : null)?.replace(/^\/+/, ''); // Clean leading slashes
-                if (path) {
-                    await supabase.storage.from('legal-documents').remove([decodeURIComponent(path.split('?')[0])]);
-                }
+                const storageErr = await removeStorageFile(doc.url, STORAGE_BUCKETS.LEGAL_DOCUMENTS);
+                // Non-fatal: log but continue to DB delete
+                if (storageErr) console.warn('[LegalDocs] Storage delete:', storageErr.message);
             }
 
             const { error } = await supabase.from('legal_docs' as any).delete().eq('id', doc.id);

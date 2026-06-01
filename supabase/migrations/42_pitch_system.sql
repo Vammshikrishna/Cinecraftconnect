@@ -1,63 +1,3 @@
--- Consolidated Migration: 12_cinema_and_pitch_system.sql
-
--- =========================================================================
--- From original file: 35_platform_cinema_infrastructure.sql
--- =========================================================================
-
--- 41_platform_cinema_infrastructure.sql
--- Enables users to submit their own films, shows, and ads directly to the platform
-
-CREATE TABLE IF NOT EXISTS public.platform_cinema (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at timestamp with time zone DEFAULT now(),
-    creator_id uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
-    title text NOT NULL,
-    type text NOT NULL CHECK (type IN ('movie', 'tv', 'short', 'ad')),
-    overview text,
-    poster_url text,
-    backdrop_url text,
-    trailer_url text,
-    release_date date DEFAULT CURRENT_DATE,
-    genre text[],
-    runtime integer,
-    credits jsonb DEFAULT '[]'::jsonb,
-    is_published boolean DEFAULT true,
-    view_count bigint DEFAULT 0
-);
-
--- Update Reviews and Ratings to support internal platform cinema
-ALTER TABLE public.film_reviews 
-ADD COLUMN IF NOT EXISTS platform_cinema_id uuid REFERENCES public.platform_cinema(id) ON DELETE CASCADE;
-
-ALTER TABLE public.user_film_ratings 
-ADD COLUMN IF NOT EXISTS platform_cinema_id uuid REFERENCES public.platform_cinema(id) ON DELETE CASCADE;
-
--- Relax constraints: tmdb_id OR platform_cinema_id must be present
-ALTER TABLE public.film_reviews ALTER COLUMN tmdb_id DROP NOT NULL;
-ALTER TABLE public.user_film_ratings ALTER COLUMN tmdb_id DROP NOT NULL;
-
--- Enable RLS
-ALTER TABLE public.platform_cinema ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Anyone can view published cinema" ON public.platform_cinema
-FOR SELECT USING (is_published = true);
-
-CREATE POLICY "Users can manage their own cinema entries" ON public.platform_cinema
-FOR ALL USING (auth.uid() = creator_id);
-
-ALTER TABLE public.platform_cinema 
-ADD COLUMN IF NOT EXISTS gallery text[] DEFAULT '{}'::text[];
-
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_platform_cinema_creator ON public.platform_cinema(creator_id);
-CREATE INDEX IF NOT EXISTS idx_platform_cinema_type ON public.platform_cinema(type);
-CREATE INDEX IF NOT EXISTS idx_platform_cinema_published ON public.platform_cinema(is_published) WHERE is_published = true;
-
-
--- =========================================================================
--- From original file: 36_pitch_system.sql
--- =========================================================================
-
 -- 42_pitch_system.sql
 -- Professional story pitching and collaboration system
 
@@ -104,7 +44,6 @@ CREATE TABLE IF NOT EXISTS public.pitch_calls (
     -- Attachments
     attachments jsonb DEFAULT '[]'
 );
-
 -- Pitch Submissions (Supply side - submitted by Writers/Creators)
 CREATE TABLE IF NOT EXISTS public.pitch_submissions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -156,7 +95,6 @@ CREATE TABLE IF NOT EXISTS public.pitch_submissions (
     
     UNIQUE(pitch_call_id, submitter_id)
 );
-
 -- Access logs for IP protection
 CREATE TABLE IF NOT EXISTS public.pitch_access_logs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -165,7 +103,6 @@ CREATE TABLE IF NOT EXISTS public.pitch_access_logs (
     accessed_by uuid REFERENCES public.profiles(id) ON DELETE CASCADE,
     action text NOT NULL CHECK (action IN ('viewed', 'full_synopsis_viewed', 'attachment_downloaded'))
 );
-
 -- Saved Pitch Calls (bookmarks)
 CREATE TABLE IF NOT EXISTS public.saved_pitch_calls (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -174,25 +111,20 @@ CREATE TABLE IF NOT EXISTS public.saved_pitch_calls (
     pitch_call_id uuid REFERENCES public.pitch_calls(id) ON DELETE CASCADE NOT NULL,
     UNIQUE(user_id, pitch_call_id)
 );
-
 -- Enable RLS
 ALTER TABLE public.pitch_calls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pitch_submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pitch_access_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.saved_pitch_calls ENABLE ROW LEVEL SECURITY;
-
 -- Pitch Calls Policies
 CREATE POLICY "Anyone authenticated can view open pitch calls" ON public.pitch_calls
     FOR SELECT USING (auth.uid() IS NOT NULL AND is_published = true);
-
 CREATE POLICY "Creators can manage their own pitch calls" ON public.pitch_calls
     FOR ALL USING (auth.uid() = creator_id);
-
 -- Pitch Submissions Policies
 -- Submitters see their own submissions
 CREATE POLICY "Submitters see their own submissions" ON public.pitch_submissions
     FOR SELECT USING (auth.uid() = submitter_id);
-
 -- Pitch call creators can see submissions to their calls
 CREATE POLICY "Pitch call owners see their submissions" ON public.pitch_submissions
     FOR SELECT USING (
@@ -200,11 +132,9 @@ CREATE POLICY "Pitch call owners see their submissions" ON public.pitch_submissi
             SELECT creator_id FROM public.pitch_calls WHERE id = pitch_call_id
         )
     );
-
 -- Submitters can insert their own submissions
 CREATE POLICY "Authenticated users can submit pitches" ON public.pitch_submissions
     FOR INSERT WITH CHECK (auth.uid() = submitter_id);
-
 -- Pitch call owners can update submission status
 CREATE POLICY "Pitch call owners can update submission status" ON public.pitch_submissions
     FOR UPDATE USING (
@@ -212,22 +142,18 @@ CREATE POLICY "Pitch call owners can update submission status" ON public.pitch_s
             SELECT creator_id FROM public.pitch_calls WHERE id = pitch_call_id
         )
     );
-
 -- Access logs
 CREATE POLICY "Users can insert their own access logs" ON public.pitch_access_logs
     FOR INSERT WITH CHECK (auth.uid() = accessed_by);
-
 CREATE POLICY "Users see logs for their submissions" ON public.pitch_access_logs
     FOR SELECT USING (
         auth.uid() IN (
             SELECT submitter_id FROM public.pitch_submissions WHERE id = pitch_submission_id
         )
     );
-
 -- Saved pitch calls
 CREATE POLICY "Users manage their own saved pitch calls" ON public.saved_pitch_calls
     FOR ALL USING (auth.uid() = user_id);
-
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_pitch_calls_creator ON public.pitch_calls(creator_id);
 CREATE INDEX IF NOT EXISTS idx_pitch_calls_status ON public.pitch_calls(status) WHERE status = 'open';
@@ -235,7 +161,6 @@ CREATE INDEX IF NOT EXISTS idx_pitch_calls_published ON public.pitch_calls(is_pu
 CREATE INDEX IF NOT EXISTS idx_pitch_submissions_call ON public.pitch_submissions(pitch_call_id);
 CREATE INDEX IF NOT EXISTS idx_pitch_submissions_submitter ON public.pitch_submissions(submitter_id);
 CREATE INDEX IF NOT EXISTS idx_pitch_submissions_status ON public.pitch_submissions(status);
-
 -- Auto-update timestamp
 CREATE OR REPLACE FUNCTION public.update_pitch_updated_at()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -244,16 +169,11 @@ BEGIN
     RETURN NEW;
 END;
 $$;
-
 CREATE TRIGGER pitch_calls_updated_at
     BEFORE UPDATE ON public.pitch_calls
     FOR EACH ROW EXECUTE FUNCTION public.update_pitch_updated_at();
-
 CREATE TRIGGER pitch_submissions_updated_at
     BEFORE UPDATE ON public.pitch_submissions
     FOR EACH ROW EXECUTE FUNCTION public.update_pitch_updated_at();
-
 -- Notify schema cache
 NOTIFY pgrst, 'reload schema';
-
-

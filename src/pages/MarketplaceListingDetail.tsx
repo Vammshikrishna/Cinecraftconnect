@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -13,7 +14,8 @@ import {
     Share2,
     Edit,
     Trash2,
-    Flag
+    Flag,
+    Heart
 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
@@ -22,6 +24,8 @@ import ReportDialog from '@/components/common/ReportDialog';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/common/PageHeader';
+import { Package, Star, ClipboardCheck } from 'lucide-react';
+import { LeaveReviewModal } from '@/components/marketplace/LeaveReviewModal';
 
 const MarketplaceListingDetail = () => {
     const { listingId } = useParams<{ listingId: string }>();
@@ -34,9 +38,48 @@ const MarketplaceListingDetail = () => {
     const [showShareSheet, setShowShareSheet] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isReportOpen, setIsReportOpen] = useState(false);
+    const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
     const { isInternal } = useAppRole();
+    const queryClient = useQueryClient();
 
     const isOwner = user && listing && user.id === listing.user_id;
+
+    const { data: isWishlisted, isLoading: isWishlistLoading } = useQuery({
+        queryKey: ['wishlist', listing?.id, user?.id],
+        queryFn: async () => {
+            if (!user || !listing) return false;
+            const { data } = await supabase
+                .from('marketplace_wishlists' as any)
+                .select('id')
+                .eq('listing_id', listing.id)
+                .eq('user_id', user.id)
+                .maybeSingle();
+            return !!data;
+        },
+        enabled: !!user && !!listing
+    });
+
+    const toggleWishlist = async () => {
+        if (!user) {
+            toast({ title: 'Sign in required', description: 'Please sign in to save items to your wishlist.', variant: 'destructive' });
+            return;
+        }
+
+        if (isWishlisted) {
+            await supabase
+                .from('marketplace_wishlists' as any)
+                .delete()
+                .eq('listing_id', listing!.id)
+                .eq('user_id', user.id);
+            toast({ title: 'Removed', description: 'Removed from wishlist' });
+        } else {
+            await supabase
+                .from('marketplace_wishlists' as any)
+                .insert({ listing_id: listing!.id, user_id: user.id });
+            toast({ title: 'Saved', description: 'Added to wishlist' });
+        }
+        queryClient.invalidateQueries({ queryKey: ['wishlist', listing!.id, user?.id] });
+    };
 
     useEffect(() => {
         if (listingId) {
@@ -71,10 +114,29 @@ const MarketplaceListingDetail = () => {
                 }
             }
 
+            // 2.5 Fetch bundle items if applicable
+            let bundleItemsData = null;
+            if ((listingData as any).is_bundle) {
+                const { data: bItems, error: bError } = await (supabase as any)
+                    .from('marketplace_bundle_items')
+                    .select('item_id')
+                    .eq('bundle_id', listingId);
+                
+                if (!bError && bItems && bItems.length > 0) {
+                    const itemIds = bItems.map((b: any) => b.item_id);
+                    const { data: items } = await supabase
+                        .from('marketplace_listings')
+                        .select('*')
+                        .in('id', itemIds);
+                    if (items) bundleItemsData = items;
+                }
+            }
+
             // 3. Combine the data
             setListing({
                 ...listingData,
-                profiles: profileData
+                profiles: profileData,
+                bundle_items: bundleItemsData
             } as any);
 
         } catch (error: any) {
@@ -102,6 +164,57 @@ const MarketplaceListingDetail = () => {
 
         if (listing && listing.profiles && (listing.profiles as any).id) {
             push(`/messages/${(listing.profiles as any).id}`);
+        }
+    };
+
+    const handleRequestBooking = async () => {
+        if (!user) {
+            toast({
+                title: 'Sign in required',
+                description: 'Please sign in to book this bundle',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        try {
+            // For MVP: Requesting booking creates a pending record starting tomorrow for 1 day
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const nextDay = new Date(tomorrow);
+            nextDay.setDate(nextDay.getDate() + 1);
+            
+            const { error } = await supabase
+                .from('marketplace_bookings')
+                .insert({
+                    listing_id: listing!.id,
+                    renter_id: user.id,
+                    owner_id: listing!.user_id,
+                    start_date: tomorrow.toISOString().split('T')[0],
+                    end_date: nextDay.toISOString().split('T')[0],
+                    total_price: listing!.price_per_day,
+                    status: 'pending',
+                    message: 'Automated booking request from bundle checkout.'
+                });
+                
+            if (error) throw error;
+            
+            toast({
+                title: 'Booking Requested',
+                description: 'Your request has been sent to the vendor!'
+            });
+            
+            // Redirect to chat
+            if (listing && listing.profiles && (listing.profiles as any).id) {
+                push(`/messages/${(listing.profiles as any).id}`);
+            }
+        } catch (error) {
+            console.error('Error requesting booking:', error);
+            toast({
+                title: 'Error',
+                description: 'Failed to request booking',
+                variant: 'destructive'
+            });
         }
     };
 
@@ -246,6 +359,12 @@ const MarketplaceListingDetail = () => {
                                      initialData={listing}
                                      mode="edit"
                                  />
+                                 <LeaveReviewModal
+                                     open={isReviewModalOpen}
+                                     onOpenChange={setIsReviewModalOpen}
+                                     listingId={listing.id}
+                                     onSuccess={fetchListingDetails}
+                                 />
                                 {/* Atmospheric gradient inside pricing block */}
                                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-[80px] -mr-32 -mt-32 pointer-events-none transition-opacity duration-700 opacity-50 group-hover:opacity-100" />
                                 
@@ -264,15 +383,68 @@ const MarketplaceListingDetail = () => {
                                     </div>
                                 )}
 
-                                 <div className="pt-2 flex gap-4 relative z-10">
-                                    {!isInternal && (
-                                        <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleContactSeller}>
-                                            <MessageSquare className="h-5 w-5" />
-                                            <span className="font-bold tracking-wide">Contact Seller</span>
-                                        </Button>
-                                    )}
+                                 <div className="pt-2 flex flex-col gap-4 relative z-10">
+                                    <div className="flex gap-4">
+                                        {!isInternal && (
+                                            listing.is_bundle ? (
+                                                <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleRequestBooking}>
+                                                    <Package className="h-5 w-5" />
+                                                    <span className="font-bold tracking-wide">Request Bundle Booking</span>
+                                                </Button>
+                                            ) : (
+                                                <Button className="flex-1 gap-2.5 h-14 rounded-2xl text-base shadow-lg shadow-primary/25 hover:scale-[1.02] active:scale-[0.98] transition-all" onClick={handleContactSeller}>
+                                                    <MessageSquare className="h-5 w-5" />
+                                                    <span className="font-bold tracking-wide">Contact Seller</span>
+                                                </Button>
+                                            )
+                                        )}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        {!isInternal && !isOwner && user && (
+                                            <Button variant="outline" className="flex-1 h-12 rounded-xl text-sm transition-all font-bold" onClick={() => setIsReviewModalOpen(true)}>
+                                                <Star className="h-4 w-4 mr-2" />
+                                                Leave Review
+                                            </Button>
+                                        )}
+                                        {!isInternal && !isOwner && user && (
+                                            <Button 
+                                                variant="outline" 
+                                                className={`flex-1 h-12 rounded-xl text-sm transition-all font-bold ${isWishlisted ? 'border-red-500/50 text-red-500 bg-red-500/5 hover:bg-red-500/10' : ''}`}
+                                                onClick={toggleWishlist}
+                                                disabled={isWishlistLoading}
+                                            >
+                                                <Heart className={`h-4 w-4 mr-2 ${isWishlisted ? 'fill-current' : ''}`} />
+                                                {isWishlisted ? 'Saved to Wishlist' : 'Save to Wishlist'}
+                                            </Button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+
+                        {listing.condition_grade && (
+                            <div className="p-5 bg-card/40 backdrop-blur-md rounded-2xl border border-white/5 space-y-3 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1 flex items-center gap-2">
+                                        <ClipboardCheck className="h-4 w-4 text-primary" />
+                                        Verified Condition
+                                    </h3>
+                                    <div className="px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 font-black text-xs uppercase tracking-widest">
+                                        {listing.condition_grade}
+                                    </div>
+                                </div>
+                                {listing.condition_score ? (
+                                    <div className="flex items-center gap-2 pl-1">
+                                        <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                                        <span className="text-sm font-bold">{listing.condition_score} / 5</span>
+                                        <span className="text-xs text-muted-foreground">(Condition Rating based on Renter Reviews)</span>
+                                    </div>
+                                ) : (
+                                    <div className="text-xs text-muted-foreground pl-1 font-medium">
+                                        No condition reviews yet.
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="space-y-5">
                             <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Description</h3>
@@ -280,6 +452,25 @@ const MarketplaceListingDetail = () => {
                                 {listing.description}
                             </p>
                         </div>
+
+                        {listing.is_bundle && listing.bundle_items && listing.bundle_items.length > 0 && (
+                            <div className="space-y-5">
+                                <h3 className="text-sm font-black text-muted-foreground uppercase tracking-widest pl-1">Included in this bundle</h3>
+                                <div className="grid grid-cols-1 gap-3">
+                                    {listing.bundle_items.map(item => (
+                                        <div key={item.id} className="flex gap-4 p-3 bg-secondary/10 rounded-2xl border border-white/5 items-center">
+                                            <div className="w-16 h-16 rounded-xl bg-black/10 overflow-hidden shrink-0">
+                                                <img src={item.images?.[0] || '/placeholder-image.jpg'} alt={item.title} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-bold truncate text-sm">{item.title}</h4>
+                                                <p className="text-xs text-muted-foreground truncate">{item.category}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {listing.specifications && Object.keys(listing.specifications).length > 0 && (
                             <div className="space-y-5">

@@ -122,6 +122,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         syncManager.destroy();
         mutationQueue.clear();
         realtimeManager.destroy();
+        initializedRef.current = false;
       }
     });
 
@@ -146,38 +147,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isInitializingRef.current = true;
 
         console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: effect_init_start generation: ${generation}`);
-
         try {
-          // 1. Device Binding (Ensure DB record exists before validation)
-          await bindSessionToDevice(session);
-
-          // Safety check: is this still the current generation?
-          if (getCurrentGeneration() !== generation) {
-            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_binding`);
-            return;
-          }
-
-          // 2. Register Offline Mutation Handlers
+          // 1. Register Offline Mutation Handlers
           registerAllMutationHandlers();
 
-          // 3. Centralized Session Management (Realtime/Validation)
-          // sessionManager.initialize now handles its own background listeners to prevent deadlock
-          await sessionManager.initialize(session);
-
-          // Safety check again
-          if (getCurrentGeneration() !== generation) {
-            console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: init_cancelled reason: generation_stale_after_manager`);
-            return;
-          }
+          // 2. Bind session to device first, then initialize validation manager in sequence
+          // This prevents a race condition under network/db stress where the validator queries
+          // user_sessions before the binding insert has completed, causing an accidental logout.
+          bindSessionToDevice(session)
+            .then(() => {
+              return sessionManager.initialize(session);
+            })
+            .catch(err => {
+              console.error('[AUTH] Background session binding or validation error:', err);
+            });
 
           // 4. Global Sync Engine (Hydration)
-          // We now orchestrate these via the progressive boot pipeline
           startupOrchestrator.onStage(BootStage.CRITICAL_REALTIME, () => {
             syncManager.initialize(user.id);
             mutationQueue.initialize(user.id);
           });
 
-          await realtimeManager.initialize(user.id);
+          // 5. Initialize Realtime in the background
+          realtimeManager.initialize(user.id).catch(err => {
+            console.error('[AUTH] Background realtime initialization error:', err);
+          });
 
           // Register Capacitor Push Notifications on mobile devices
           if (Capacitor.isNativePlatform()) {
@@ -282,17 +276,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [session?.access_token, user?.id]);
 
   useEffect(() => {
-    if (user && initializedRef.current) {
+    if (user && !isLoading) {
       const fetchProfile = async () => {
         const { data, error } = await supabase
           .from('profiles')
-          .select('*, user_roles(role)')
+          .select('id, updated_at, username, full_name, avatar_url, cover_image_url, website, bio, location, experience, craft, instagram_url, youtube_url, account_type, onboarding_completed, is_internal, public_key, social_links, is_verified, is_banned, trust_score, phone, push_token, shadow_banned_at, is_shadowbanned, is_official_team, force_password_reset, restriction_flags, user_roles(role)')
           .eq('id', user.id)
           .single();
 
         if (error) {
           console.error('Error fetching profile:', error);
+          (window as any).__lastProfileError = error;
         } else {
+          (window as any).__lastProfileError = null;
+          (window as any).__lastProfileData = data;
           const rawRole = (data as any).user_roles;
           const role = Array.isArray(rawRole)
             ? (rawRole[0]?.role || 'user')
@@ -326,7 +323,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } else {
       setProfile(null);
     }
-  }, [user, initializedRef.current]);
+  }, [user, isLoading]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({

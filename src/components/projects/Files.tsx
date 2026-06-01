@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useRealtimeData } from '@/lib/realtime';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  STORAGE_BUCKETS,
+  PROJECT_FILE_FOLDERS,
+  buildProjectFilePath,
+  extractStoragePath,
+  signAndDownload,
+  removeStorageFile,
+} from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FileText, Image as ImageIcon, File, Eye, Download, Loader2, Trash2, ShieldAlert, Video } from 'lucide-react';
@@ -32,7 +40,7 @@ const Files = ({ project_id }: FilesProps) => {
 
     // Effect to generate signed URLs for all files
     useEffect(() => {
-        const generateSignedUrls = async () => {
+            const generateSignedUrls = async () => {
             if (!rawFiles || rawFiles.length === 0) {
                 setFiles([]);
                 return;
@@ -40,23 +48,11 @@ const Files = ({ project_id }: FilesProps) => {
 
             const filesWithSignedUrls = await Promise.all(rawFiles.map(async (file) => {
                 try {
-                    let path = "";
-                    if (file.url.includes('project-files/')) {
-                        path = file.url.split('project-files/').pop()?.split('?')[0] || "";
-                    } else if (!file.url.startsWith('http')) {
-                        path = file.url.split('?')[0];
-                    } else {
-                        const parts = file.url.split('/');
-                        const bucketIdx = parts.indexOf('project-files');
-                        if (bucketIdx !== -1) {
-                            path = parts.slice(bucketIdx + 1).join('/').split('?')[0];
-                        }
-                    }
-                    
-                    if (!path) path = `${project_id}/${file.name}`;
-                    
+                    const path = extractStoragePath(file.url, STORAGE_BUCKETS.PROJECT_FILES)
+                      ?? `${project_id}/${file.name}`;
+
                     const { data } = await supabase.storage
-                        .from('project-files')
+                        .from(STORAGE_BUCKETS.PROJECT_FILES)
                         .createSignedUrl(decodeURIComponent(path), 3600);
 
                     return {
@@ -111,11 +107,14 @@ const Files = ({ project_id }: FilesProps) => {
                 fileToUpload = await compressImage(selectedFile);
             }
 
-            const fileName = `${Date.now()}-${fileToUpload.name.replace(/\s+/g, '_')}`;
-            const filePath = `${project_id}/${fileName}`;
+            const filePath = buildProjectFilePath(
+                PROJECT_FILE_FOLDERS.FILES,
+                project_id,
+                fileToUpload.name
+            );
 
             const { error: uploadError } = await supabase.storage
-                .from('project-files')
+                .from(STORAGE_BUCKETS.PROJECT_FILES)
                 .upload(filePath, fileToUpload, {
                     cacheControl: '31536000',
                     upsert: false
@@ -124,7 +123,7 @@ const Files = ({ project_id }: FilesProps) => {
             if (uploadError) throw uploadError;
 
             const { data: publicUrlData } = supabase.storage
-                .from('project-files')
+                .from(STORAGE_BUCKETS.PROJECT_FILES)
                 .getPublicUrl(filePath);
 
             const { error: insertError } = await supabase.from('files' as any).insert([
@@ -153,56 +152,9 @@ const Files = ({ project_id }: FilesProps) => {
             e.preventDefault();
             e.stopPropagation();
         }
-        
         try {
-            // 1. Get path
-            let path = "";
-            if (file.url.includes('project-files/')) {
-                path = file.url.split('project-files/').pop()?.split('?')[0] || "";
-            } else if (file.url.startsWith('http')) {
-                try {
-                    const urlObj = new URL(file.url);
-                    const pathParts = urlObj.pathname.split('/');
-                    const objectIdx = pathParts.indexOf('object');
-                    if (objectIdx !== -1 && pathParts.length > objectIdx + 3) {
-                        path = pathParts.slice(objectIdx + 3).join('/');
-                    } else {
-                        const bucketIdx = pathParts.indexOf('project-files');
-                        if (bucketIdx !== -1) {
-                            path = pathParts.slice(bucketIdx + 1).join('/');
-                        }
-                    }
-                } catch (e) {
-                    path = file.url.split('/').pop() || "";
-                }
-            } else {
-                path = file.url;
-            }
-            path = decodeURIComponent(path.split('?')[0]);
-            if (!path) throw new Error("Could not determine file path");
-
-            // 2. Generate a fresh signed URL to bypass any bucket policy issues
-            const { data: signedData, error: signedError } = await supabase.storage
-                .from('project-files')
-                .createSignedUrl(path, 60);
-
-            if (signedError) throw signedError;
-            if (!signedData?.signedUrl) throw new Error("Could not generate secure download link");
-
-            // 3. Fetch the file as a blob to force a browser download dialog
-            const response = await fetch(signedData.signedUrl);
-            const blob = await response.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = file.name;
-            link.target = '_self';
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(blobUrl);
-
+            const ok = await signAndDownload(file.url, STORAGE_BUCKETS.PROJECT_FILES, file.name);
+            if (!ok) throw new Error('Could not generate secure download link');
             toast({ title: "Started", description: "Download initiated" });
         } catch (err: any) {
             toast({ title: "Download Failed", description: err.message, variant: "destructive" });
@@ -213,14 +165,8 @@ const Files = ({ project_id }: FilesProps) => {
         if (!confirm('Are you sure you want to delete this file?')) return;
 
         try {
-            // Extract path from URL: everything after 'project-files/'
-            const parts = url.split('project-files/');
-            if (parts.length < 2) throw new Error("Invalid file path");
-            
-            const filePath = decodeURIComponent(parts[1]);
-            
-            const { error: storageError } = await supabase.storage.from('project-files').remove([filePath]);
-            if (storageError) throw storageError;
+            const storageErr = await removeStorageFile(url, STORAGE_BUCKETS.PROJECT_FILES);
+            if (storageErr) throw new Error(storageErr.message);
 
             const { error: deleteError } = await supabase.from('files' as any).delete().eq('id', id);
             if (deleteError) throw deleteError;

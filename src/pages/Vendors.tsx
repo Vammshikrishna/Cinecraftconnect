@@ -11,7 +11,7 @@ import {
     CheckCircle2
 } from 'lucide-react';
 import VendorIcon from '@/components/icons/VendorIcon';
-import { Vendor } from '@/types/marketplace';
+import { Vendor, VendorService, PRODUCTION_TYPES } from '@/types/marketplace';
 import { VendorRegistrationModal } from '@/components/vendors/VendorRegistrationModal';
 import { VendorCard } from '@/components/vendors/VendorCard';
 import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
@@ -33,6 +33,12 @@ const Vendors = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showRegistrationModal, setShowRegistrationModal] = useState(false);
 
+    // Services state
+    const [activeTab, setActiveTab] = useState<'vendors' | 'services'>('vendors');
+    const [services, setServices] = useState<VendorService[]>([]);
+    const [filterProductionType, setFilterProductionType] = useState<string>('all');
+    const [filterMinCapacity, setFilterMinCapacity] = useState<string>('');
+
     // Redirect fans
     useEffect(() => {
         if (isFan) {
@@ -43,8 +49,41 @@ const Vendors = () => {
 
 
     useEffect(() => {
-        fetchVendors();
-    }, [searchQuery]);
+        if (activeTab === 'vendors') {
+            fetchVendors();
+        } else {
+            fetchServices();
+        }
+    }, [searchQuery, activeTab, filterProductionType, filterMinCapacity]);
+
+    const fetchServices = async () => {
+        try {
+            setLoading(true);
+            let query = supabase
+                .from('vendor_services' as any)
+                .select('*')
+                .eq('is_active', true);
+            
+            if (searchQuery) {
+                query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+            }
+            if (filterProductionType !== 'all') {
+                query = query.contains('production_types', [filterProductionType]);
+            }
+            if (filterMinCapacity) {
+                query = query.gte('crew_capacity', parseInt(filterMinCapacity));
+            }
+            
+            const { data, error } = await query.order('created_at', { ascending: false });
+            if (error) throw error;
+            setServices((data || []) as unknown as VendorService[]);
+        } catch (error: any) {
+            console.error('Error fetching services:', error);
+            toast({ title: 'Error', description: 'Failed to load services', variant: 'destructive' });
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const fetchVendors = async () => {
         try {
@@ -109,8 +148,24 @@ const Vendors = () => {
                   }
                 />
 
+                {/* Tabs */}
+                <div className="flex gap-4 mb-6 border-b border-border/50">
+                    <button 
+                        onClick={() => setActiveTab('vendors')}
+                        className={`pb-3 font-bold uppercase tracking-widest text-sm transition-colors ${activeTab === 'vendors' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                        Vendor Directory
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('services')}
+                        className={`pb-3 font-bold uppercase tracking-widest text-sm transition-colors ${activeTab === 'services' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                        Service Packages
+                    </button>
+                </div>
+
                 {/* Search Bar */}
-                <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-10 shadow-sm dark:shadow-none">
+                <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-6 shadow-sm dark:shadow-none">
                     <div className="flex flex-row gap-2 md:gap-3">
                         <div className="relative flex-grow h-12 md:h-14">
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
@@ -128,7 +183,38 @@ const Vendors = () => {
                     </div>
                 </div>
 
-                {/* Featured Verified Vendors */}
+                {activeTab === 'services' && (
+                    <div className="flex flex-wrap gap-4 mb-10 p-4 bg-secondary/10 rounded-2xl border border-border/50">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Type:</span>
+                            <select 
+                                value={filterProductionType}
+                                onChange={(e) => setFilterProductionType(e.target.value)}
+                                className="bg-background border border-border rounded-lg text-sm px-3 py-2 outline-none"
+                            >
+                                <option value="all">All Productions</option>
+                                {PRODUCTION_TYPES.map(pt => (
+                                    <option key={pt} value={pt}>{pt}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Min Capacity:</span>
+                            <Input 
+                                type="number" 
+                                placeholder="e.g. 50" 
+                                value={filterMinCapacity}
+                                onChange={(e) => setFilterMinCapacity(e.target.value)}
+                                className="w-24 bg-background border-border"
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Content */}
+                {activeTab === 'vendors' ? (
+                    <>
+                        {/* Featured Verified Vendors */}
                 {vendors.filter(v => v.is_verified).length > 0 && (
                     <div className="mb-12">
                         <div className="flex items-center gap-2 mb-6">
@@ -181,6 +267,44 @@ const Vendors = () => {
                         </div>
                     )}
                 </div>
+                </>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                        {loading ? (
+                             [1, 2, 3, 4, 5, 6].map((i) => (
+                                <EnhancedSkeleton key={i} className="h-[200px] rounded-[2rem]" />
+                            ))
+                        ) : services.length === 0 ? (
+                            <div className="col-span-full text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
+                                <h3 className="text-2xl font-black mb-2">No services found</h3>
+                                <p className="text-muted-foreground">Try adjusting your search or filters.</p>
+                            </div>
+                        ) : (
+                            services.map((service) => (
+                                <div key={service.id} className="bg-card border border-border rounded-3xl p-6 cursor-pointer hover:border-primary/50 transition-colors shadow-sm" onClick={() => push(`/vendors/services/${service.id}`)}>
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 className="font-bold text-xl leading-tight">{service.title}</h3>
+                                            <p className="text-sm text-primary font-black mt-1">₹{service.day_rate} <span className="text-xs text-muted-foreground uppercase font-medium">/ Day</span></p>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{service.description}</p>
+                                    
+                                    <div className="flex flex-wrap gap-2 mt-auto">
+                                        <div className="px-2 py-1 rounded bg-secondary/20 text-xs font-semibold text-secondary-foreground border border-border/50">
+                                            {service.coverage_area}
+                                        </div>
+                                        {service.crew_capacity && (
+                                            <div className="px-2 py-1 rounded bg-secondary/20 text-xs font-semibold text-secondary-foreground border border-border/50">
+                                                Up to {service.crew_capacity} crew
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
             </main>
 
             {/* Vendor Registration Modal */}

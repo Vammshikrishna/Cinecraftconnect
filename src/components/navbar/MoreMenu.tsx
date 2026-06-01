@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, Flag, Shield, Crown, Lightbulb } from 'lucide-react';
+import { ShoppingBag, ChevronDown, BookOpen, Star, Megaphone, Flag, Shield, Crown, Lightbulb, FileSignature } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -32,7 +32,6 @@ const MoreMenu = () => {
         { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace' },
         { path: '/pitch', icon: Lightbulb, label: 'Pitch' },
         { path: '/vendors', icon: VendorIcon, label: 'Vendors' },
-        { path: '/learn', icon: BookOpen, label: 'Learn' },
     ];
 
     // Governance items — shown only to privileged roles

@@ -1,7 +1,7 @@
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { LazyImage } from '@/components/performance/LazyImage';
 import { MarketplaceListing } from '@/types/marketplace';
-import { MapPin, Star, User, MoreVertical, Trash2, X } from 'lucide-react';
+import { MapPin, Star, User, MoreVertical, Trash2, X, Heart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAppRole } from '@/hooks/useAppRole';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
+import { cn } from '@/lib/utils';
 
 interface ListingCardProps {
     listing: MarketplaceListing;
@@ -49,12 +50,62 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
         }
     };
 
+    const { data: isWishlisted, isLoading: isWishlistLoading } = useQuery({
+        queryKey: ['wishlist', listing.id, user?.id],
+        queryFn: async () => {
+            if (!user) return false;
+            const { data } = await supabase
+                .from('marketplace_wishlists' as any)
+                .select('id')
+                .eq('listing_id', listing.id)
+                .eq('user_id', user.id)
+                .maybeSingle();
+            return !!data;
+        },
+        enabled: !!user
+    });
+
+    const toggleWishlist = async (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!user) {
+            toast({ title: 'Sign in required', description: 'Please sign in to save items to your wishlist.', variant: 'destructive' });
+            return;
+        }
+
+        if (isWishlisted) {
+            await supabase
+                .from('marketplace_wishlists' as any)
+                .delete()
+                .eq('listing_id', listing.id)
+                .eq('user_id', user.id);
+            toast({ title: 'Removed', description: 'Removed from wishlist' });
+        } else {
+            await supabase
+                .from('marketplace_wishlists' as any)
+                .insert({ listing_id: listing.id, user_id: user.id });
+            toast({ title: 'Saved', description: 'Added to wishlist' });
+        }
+        queryClient.invalidateQueries({ queryKey: ['wishlist', listing.id, user?.id] });
+    };
+
     const primaryImage = listing.images && listing.images.length > 0
         ? listing.images[0]
         : undefined;
 
     const averageRating = listing.average_rating || 0;
     const reviewCount = listing.review_count || 0;
+
+    const getConditionColor = (grade: string) => {
+        switch(grade) {
+            case 'Mint': return 'bg-emerald-500/90 text-white shadow-emerald-900/20';
+            case 'Excellent': return 'bg-blue-500/90 text-white shadow-blue-900/20';
+            case 'Good': return 'bg-yellow-500/90 text-yellow-950 shadow-yellow-900/20';
+            case 'Fair': return 'bg-orange-500/90 text-white shadow-orange-900/20';
+            default: return 'bg-gray-500/90 text-white shadow-gray-900/20';
+        }
+    };
 
     return (
         <div onClick={() => push(`/marketplace/${listing.id}`)} className="no-underline block group h-full cursor-pointer">
@@ -93,9 +144,37 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                     
                     {/* Category Badge overlaying image */}
                     <div className="absolute top-3 right-3 flex items-center gap-2 shadow-lg">
+                        {listing.is_bundle && (
+                            <div className="px-2.5 py-1 rounded-full bg-purple-600/90 backdrop-blur-md border border-white/20 text-[9px] font-black text-white uppercase tracking-[0.1em] flex items-center gap-1 shadow-lg shadow-purple-900/20">
+                                <span>📦</span> BUNDLE
+                            </div>
+                        )}
+                        {listing.condition_grade && (
+                            <div className={`px-2.5 py-1 rounded-full backdrop-blur-md border border-white/20 text-[9px] font-black uppercase tracking-[0.1em] shadow-lg ${getConditionColor(listing.condition_grade)}`}>
+                                {listing.condition_grade}
+                            </div>
+                        )}
                         <div className="px-2.5 py-1 rounded-full bg-background/80 backdrop-blur-md border border-white/20 text-[9px] font-black text-foreground uppercase tracking-[0.1em]">
                             {listing.category}
                         </div>
+                        
+                        {user && !isOwner && (
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={toggleWishlist}
+                                disabled={isWishlistLoading}
+                                className={cn(
+                                    "h-6 w-6 rounded-full backdrop-blur-md border border-white/20 hover:scale-110 transition-transform",
+                                    isWishlisted ? "bg-red-500/20 hover:bg-red-500/30" : "bg-background/80 hover:bg-background"
+                                )}
+                            >
+                                <Heart 
+                                    size={12} 
+                                    className={cn(isWishlisted ? "fill-red-500 text-red-500" : "text-foreground")} 
+                                />
+                            </Button>
+                        )}
                         
                         {canManage && (
                             <div className="relative z-30" onClick={(e) => e.stopPropagation()}>

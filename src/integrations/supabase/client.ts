@@ -11,7 +11,9 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error('❌ Supabase environment variables are missing! Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your .env file.');
 }
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+type CleanDatabase = Omit<Database, '__InternalSupabase'>;
+
+export const supabase = createClient<CleanDatabase>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
         autoRefreshToken: true,
         persistSession: true,

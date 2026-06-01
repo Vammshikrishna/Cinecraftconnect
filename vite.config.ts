@@ -56,8 +56,7 @@ export default defineConfig(({ mode }) => ({
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', 'lucide-react', 'framer-motion'],
-          'vendor-charts': ['recharts'],
+          'vendor-ui': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', 'framer-motion'],
           'vendor-supabase': ['@supabase/supabase-js'],
           'vendor-livekit': ['@livekit/components-react', 'livekit-client'],
           'vendor-utils': ['date-fns', 'zod', 'clsx', 'tailwind-merge'],

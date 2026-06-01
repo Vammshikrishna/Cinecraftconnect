@@ -183,7 +183,15 @@ const PostCard = ({
   };
 
   // Real-time metrics
-  const { likeCount: displayLikeCount, commentCount: displayCommentCount } = useRealtimePostStats(id, like_count, comment_count);
+  const { likeCount: realtimeLikeCount, commentCount: displayCommentCount } = useRealtimePostStats(id, like_count, comment_count);
+  const [optimisticLikeOffset, setOptimisticLikeOffset] = useState(0);
+
+  // Reset offset when realtime count updates
+  useEffect(() => {
+    setOptimisticLikeOffset(0);
+  }, [realtimeLikeCount]);
+
+  const displayLikeCount = Math.max(0, realtimeLikeCount + optimisticLikeOffset);
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [shouldShowMore, setShouldShowMore] = useState(false);
@@ -308,13 +316,15 @@ const PostCard = ({
     // Call the parent's optimistic update immediately
     const newLikedState = !isLiked;
     onLikeToggle?.(id, newLikedState);
+    setOptimisticLikeOffset(prev => prev + (newLikedState ? 1 : -1));
 
     try {
       await togglePostLike(id, isLiked);
     } catch (error) {
       console.error("Failed to toggle like:", error);
-      // Rollback the optimistic update
+      // Rollback the optimistic update and offset
       onLikeToggle?.(id, isLiked);
+      setOptimisticLikeOffset(prev => prev - (newLikedState ? 1 : -1));
       toast({
         title: "Error",
         description: "Could not update like status. Please try again.",
@@ -670,9 +680,9 @@ const PostCard = ({
               className="hover:opacity-80 transition-opacity relative z-10 cursor-pointer"
             >
               <Avatar className={`h-8 w-8 lg:h-9 lg:w-9 mr-3 ring-2 ring-transparent group-hover:ring-primary/20 transition-all duration-300 ${pageInfo ? 'rounded-lg' : ''}`}>
-                <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || "/placeholder.svg"} className={pageInfo ? 'rounded-lg' : ''} />
+                <AvatarImage src={getOptimizedImage(pageInfo ? (pageInfo.logo_url || "") : (author.avatar || ""), { width: 96, height: 96 }) || undefined} className={pageInfo ? 'rounded-lg' : ''} />
                 <AvatarFallback className={`bg-gradient-to-br from-primary to-secondary text-primary-foreground text-xs ${pageInfo ? 'rounded-lg' : ''}`}>
-                  {pageInfo ? pageInfo.name.charAt(0) : author.initials}
+                  {pageInfo ? pageInfo.name.charAt(0).toUpperCase() : (author.initials || author.name?.slice(0, 2).toUpperCase() || '??')}
                 </AvatarFallback>
               </Avatar>
             </div>

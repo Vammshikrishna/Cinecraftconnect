@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Upload, X, Image, Video, FileText, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { STORAGE_BUCKETS } from '@/lib/storage';
 import { useAuth } from "@/contexts/AuthContext";
 import { PortfolioItemData } from "@/types/portfolio";
 
@@ -93,7 +94,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
         const fileExt = fileToUpload.name.split('.').pop();
         const fileName = `${user.id}-${Date.now()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage
-          .from('portfolio-media')
+          .from(STORAGE_BUCKETS.PORTFOLIO_MEDIA)
           .upload(fileName, fileToUpload, {
             cacheControl: '31536000',
             upsert: false
@@ -101,7 +102,7 @@ const PortfolioUploadDialog = ({ isOpen, onOpenChange, onSave, itemToEdit }: Por
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage.from('portfolio-media').getPublicUrl(fileName);
+        const { data: urlData } = supabase.storage.from(STORAGE_BUCKETS.PORTFOLIO_MEDIA).getPublicUrl(fileName);
         media_url = urlData.publicUrl;
         media_type = fileToUpload.type;
       }

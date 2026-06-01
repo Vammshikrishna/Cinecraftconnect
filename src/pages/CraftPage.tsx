@@ -31,7 +31,7 @@ const CraftPage = () => {
           .eq('craft', formattedCraftName);
 
         if (error) throw error;
-        setProfessionals(data || []);
+        setProfessionals((data as unknown as Profile[]) || []);
       } catch (error) {
         console.error('Error fetching professionals:', error);
       } finally {

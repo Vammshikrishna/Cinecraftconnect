@@ -20,6 +20,7 @@ import { useHomeFeed } from "@/hooks/useHomeFeed";
 import { useConnections } from "@/hooks/useConnections";
 import { FirstContentBlock, SecondContentBlock } from "./FeedWidgets";
 import { useAuth } from "@/contexts/AuthContext";
+import { PostSkeleton, AnnouncementSkeleton, ProjectSkeleton } from "@/components/ui/enhanced-skeleton";
 
 const postSchema = z.object({
   content: z.string().trim().optional(),
@@ -252,8 +253,25 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
 
   if (isLoading && localPosts.length === 0) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex justify-center gap-6 lg:gap-10 max-w-[1180px] mx-auto pt-2 lg:pt-4 px-4 sm:px-0 w-full animate-in fade-in duration-500">
+        <div className="w-full max-w-[560px] space-y-4">
+          <div className="glass-card p-4 lg:p-5 rounded-xl h-20 animate-pulse bg-muted/50 border border-border/50" />
+          
+          <div className="space-y-4 lg:space-y-5">
+            <PostSkeleton />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <AnnouncementSkeleton />
+               <ProjectSkeleton />
+            </div>
+            <PostSkeleton />
+            <PostSkeleton />
+          </div>
+        </div>
+        
+        <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-20 h-fit">
+          <div className="h-12 bg-muted/50 rounded-lg animate-pulse" />
+          <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
+        </aside>
       </div>
     );
   }

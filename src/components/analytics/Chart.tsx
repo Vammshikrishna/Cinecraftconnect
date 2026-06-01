@@ -61,9 +61,9 @@ export const Chart = ({ data, type, config }: ChartProps) => {
                             labelLine={false} 
                             label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                         >
-                            {pieData.map((entry: EngagementData, index: number) => (
+                            {(pieData.map((entry: EngagementData, index: number) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
+                            )) as any)}
                         </Pie>
                         <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }} />
                     </PieChart>
