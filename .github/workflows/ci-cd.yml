@@ -11,11 +11,11 @@ on:
       - master
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-  VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
-  VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
-  VITE_LIVEKIT_URL: ${{ secrets.VITE_LIVEKIT_URL }}
+  VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL }}
+  VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+  VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY || vars.VITE_TMDB_API_KEY }}
+  VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN || vars.VITE_SENTRY_DSN }}
+  VITE_LIVEKIT_URL: ${{ secrets.VITE_LIVEKIT_URL || vars.VITE_LIVEKIT_URL }}
 
 jobs:
   validate:
@@ -68,12 +68,12 @@ jobs:
 
       - name: Verify Environment Variables
         run: |
-          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ]; then
-            echo "ERROR: VITE_SUPABASE_URL secret is not set in GitHub Secrets!"
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "ERROR: VITE_SUPABASE_URL is not set in GitHub Secrets or Variables!"
             exit 1
           fi
-          if [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
-            echo "ERROR: VITE_SUPABASE_ANON_KEY secret is not set in GitHub Secrets!"
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "ERROR: VITE_SUPABASE_ANON_KEY is not set in GitHub Secrets or Variables!"
             exit 1
           fi
           echo "SUCCESS: Supabase environment variables are set."
@@ -120,12 +120,12 @@ jobs:
 
       - name: Verify Environment Variables
         run: |
-          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ]; then
-            echo "ERROR: VITE_SUPABASE_URL secret is not set in GitHub Secrets!"
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "ERROR: VITE_SUPABASE_URL is not set in GitHub Secrets or Variables!"
             exit 1
           fi
-          if [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
-            echo "ERROR: VITE_SUPABASE_ANON_KEY secret is not set in GitHub Secrets!"
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "ERROR: VITE_SUPABASE_ANON_KEY is not set in GitHub Secrets or Variables!"
             exit 1
           fi
           echo "SUCCESS: Supabase environment variables are set."
