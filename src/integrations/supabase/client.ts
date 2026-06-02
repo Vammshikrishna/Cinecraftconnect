@@ -3,8 +3,8 @@ import { Database } from './database.types'
 import { secureStorageEngine } from '@/lib/auth/secureStorage';
 
 // Use environment variables for Supabase configuration.
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim();
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
 // Log error if environment variables are not set
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
