@@ -66,6 +66,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify Environment Variables
+        run: |
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ]; then
+            echo "ERROR: VITE_SUPABASE_URL secret is not set in GitHub Secrets!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
+            echo "ERROR: VITE_SUPABASE_ANON_KEY secret is not set in GitHub Secrets!"
+            exit 1
+          fi
+          echo "SUCCESS: Supabase environment variables are set."
+
       - name: Build Application
         run: npm run build
 
@@ -105,6 +117,18 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify Environment Variables
+        run: |
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ]; then
+            echo "ERROR: VITE_SUPABASE_URL secret is not set in GitHub Secrets!"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
+            echo "ERROR: VITE_SUPABASE_ANON_KEY secret is not set in GitHub Secrets!"
+            exit 1
+          fi
+          echo "SUCCESS: Supabase environment variables are set."
 
       - name: Build Application
         run: npm run build
