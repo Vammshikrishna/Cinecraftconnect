@@ -9,6 +9,8 @@ on:
     branches:
       - main
       - master
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   validate:
@@ -70,6 +72,8 @@ jobs:
           else
             echo "SUCCESS: Firebase Service Account Secret is set."
           fi
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
 
       - name: Deploy to Firebase Hosting Preview
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -108,6 +112,8 @@ jobs:
           else
             echo "SUCCESS: Firebase Service Account Secret is set."
           fi
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
 
       - name: Deploy to Firebase Hosting Production
         uses: FirebaseExtended/action-hosting-deploy@v0
