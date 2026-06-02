@@ -62,6 +62,15 @@ jobs:
       - name: Build Application
         run: npm run build
 
+      - name: Verify Firebase Service Account Secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_CINECRAFT_CONNECT }}" ]; then
+            echo "ERROR: FIREBASE_SERVICE_ACCOUNT_CINECRAFT_CONNECT secret is not set or is empty in GitHub Secrets!"
+            exit 1
+          else
+            echo "SUCCESS: Firebase Service Account Secret is set."
+          fi
+
       - name: Deploy to Firebase Hosting Preview
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -90,6 +99,15 @@ jobs:
 
       - name: Build Application
         run: npm run build
+
+      - name: Verify Firebase Service Account Secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_CINECRAFT_CONNECT }}" ]; then
+            echo "ERROR: FIREBASE_SERVICE_ACCOUNT_CINECRAFT_CONNECT secret is not set or is empty in GitHub Secrets!"
+            exit 1
+          else
+            echo "SUCCESS: Firebase Service Account Secret is set."
+          fi
 
       - name: Deploy to Firebase Hosting Production
         uses: FirebaseExtended/action-hosting-deploy@v0
