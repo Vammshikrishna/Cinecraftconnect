@@ -53,21 +53,22 @@ export const useProjects = (activeTab: string = 'all') => {
                 query = query.eq('creator_id', user.id);
             }
 
-            const { data: projectsData, error: projectsError } = await query.order('created_at', { ascending: false });
+            // 2. Fetch projects and metadata concurrently to halve network latency on 3G
+            const [projectsRes, bookmarksRes, membersRes] = await Promise.all([
+                query.order('created_at', { ascending: false }),
+                user ? supabase.from('project_space_bookmarks').select('project_space_id').eq('user_id', user.id) : Promise.resolve({ data: [] }),
+                user ? supabase.from('project_space_members').select('project_space_id').eq('user_id', user.id) : Promise.resolve({ data: [] })
+            ]);
+
+            const projectsError = projectsRes.error;
+            const projectsData = projectsRes.data;
 
             if (projectsError && projectsError.code !== 'PGRST116') throw projectsError;
 
-            // 2. Fetch bookmarks & memberships if user is logged in
             let bookmarkedProjectIds = new Set<string>();
             let memberProjectIds = new Set<string>();
 
             if (user) {
-                // Get project_space IDs that are bookmarked or where user is member
-                const [bookmarksRes, membersRes] = await Promise.all([
-                    supabase.from('project_space_bookmarks').select('project_space_id').eq('user_id', user.id),
-                    supabase.from('project_space_members').select('project_space_id').eq('user_id', user.id)
-                ]);
-
                 // Map space IDs back to project IDs for bookmarks
                 if (bookmarksRes.data && bookmarksRes.data.length > 0) {
                     const { data: bSpaces } = await supabase.from('project_spaces').select('project_id').in('id', bookmarksRes.data.map(b => b.project_space_id));

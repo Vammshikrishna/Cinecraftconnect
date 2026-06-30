@@ -177,27 +177,19 @@ export const ListingCreationModal = ({
 
     const uploadImages = async (): Promise<string[]> => {
         const uploadedUrls: string[] = [];
-        const { compressImage } = await import('@/utils/imageCompression');
+        const { uploadFileToSupabase } = await import('@/utils/fileValidation');
 
         for (const image of newImages) {
-            const compressedImage = await compressImage(image);
-            const fileExt = compressedImage.name.split('.').pop();
-            const fileName = `${user?.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+            const { url, error: uploadError } = await uploadFileToSupabase(
+                image,
+                'marketplace-images',
+                user?.id || 'unknown',
+                { isThumbnail: true }
+            );
 
-            const { error } = await supabase.storage
-                .from('marketplace-images')
-                .upload(fileName, compressedImage, {
-                    cacheControl: '31536000',
-                    upsert: false
-                });
+            if (uploadError || !url) throw new Error(uploadError || 'Failed to upload image');
 
-            if (error) throw error;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('marketplace-images')
-                .getPublicUrl(fileName);
-
-            uploadedUrls.push(publicUrl);
+            uploadedUrls.push(url);
         }
 
         return uploadedUrls;

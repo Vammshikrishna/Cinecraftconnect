@@ -59,7 +59,12 @@ export const usePlatformFlags = () => {
     };
   }, []);
 
-  const isEnabled = (key: PlatformFlagKey) => flags[key] !== false;
+  const isEnabled = (key: PlatformFlagKey) => {
+    if (key === 'maintenance_mode' || key === 'global_lock') {
+      return flags[key] === true;
+    }
+    return flags[key] !== false;
+  };
 
   return { flags, loading, isEnabled, fetchFlags };
 };

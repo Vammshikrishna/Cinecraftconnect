@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { fetchContentDetails, TMDB_IMAGE_BASE_URL } from '@/services/tmdb';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAccountType } from '@/hooks/useAccountType';
 import { useToast } from '@/hooks/use-toast';
 import { Star, Play, ThumbsUp, Calendar, Clock, AlertTriangle, Smile } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,13 +19,15 @@ import { Share2 } from 'lucide-react';
 
 const ContentDetailPage = () => {
     const { id, type } = useParams<{ id: string; type: 'movie' | 'tv' }>();
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
+    const { isFan } = useAccountType();
     const { toast } = useToast();
     const { theme } = useTheme();
 
     const [content, setContent] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [userRating, setUserRating] = useState<number | null>(null);
+    const [draftRating, setDraftRating] = useState<number | null>(null);
     const [hoverRating, setHoverRating] = useState<number | null>(null);
     const [reviewText, setReviewText] = useState('');
     const [reviews, setReviews] = useState<any[]>([]);
@@ -52,32 +55,72 @@ const ContentDetailPage = () => {
 
         setLoading(true);
         try {
-            const contentData = await fetchContentDetails(parseInt(id), type || 'movie');
+            const isNative = id.includes('-');
+            let contentData;
+
+            if (isNative) {
+                // Fetch from platform_cinema
+                const { data, error } = await supabase
+                    .from('platform_cinema')
+                    .select('*')
+                    .eq('id', id)
+                    .single();
+
+                if (error) throw error;
+                if (data) {
+                    contentData = {
+                        id: data.id,
+                        title: data.title,
+                        overview: data.overview,
+                        poster_url: data.poster_url, // full URL
+                        backdrop_url: data.backdrop_url, // full URL
+                        release_date: data.release_date,
+                        runtime: data.runtime,
+                        genres: data.genre ? data.genre.map((g: string, i: number) => ({ id: i, name: g })) : [],
+                        credits: data.credits || { cast: [], crew: [] },
+                        videos: data.trailer_url ? { results: [{ type: 'Trailer', site: 'YouTube', key: data.trailer_url.split('v=')[1] || data.trailer_url.split('/').pop() }] } : { results: [] },
+                        vote_average: 0 // Native rating will be handled separately
+                    };
+                }
+            } else {
+                contentData = await fetchContentDetails(parseInt(id), type || 'movie');
+            }
+
             setContent(contentData);
 
             // Load user rating
             if (user) {
-                const { data: ratingData } = await supabase
-                    .from('user_film_ratings')
-                    .select('rating')
-                    .eq('user_id', user.id)
-                    .eq('tmdb_id', parseInt(id))
-                    .maybeSingle();
+                let query = supabase.from('user_film_ratings').select('rating').eq('user_id', user.id);
+                if (isNative) {
+                    query = query.eq('platform_cinema_id', id);
+                } else {
+                    query = query.eq('tmdb_id', parseInt(id));
+                }
+                const { data: ratingData } = await query.maybeSingle();
 
-                if (ratingData) setUserRating(ratingData.rating);
+                if (ratingData) {
+                    setUserRating(ratingData.rating);
+                    setDraftRating(ratingData.rating);
+                }
             }
 
             // Load reviews
-            const { data: reviewsData } = await supabase
+            let reviewQuery = supabase
                 .from('film_reviews')
                 .select(`
                     *,
                     profiles(full_name, avatar_url, craft)
                 `)
-                .eq('tmdb_id', parseInt(id))
                 .order('helpful_count', { ascending: false })
                 .limit(10);
+                
+            if (isNative) {
+                reviewQuery = reviewQuery.eq('platform_cinema_id', id);
+            } else {
+                reviewQuery = reviewQuery.eq('tmdb_id', parseInt(id));
+            }
 
+            const { data: reviewsData } = await reviewQuery;
             if (reviewsData) setReviews(reviewsData);
 
         } catch (error) {
@@ -88,55 +131,72 @@ const ContentDetailPage = () => {
         }
     };
 
-    const handleRating = async (rating: number) => {
+    const handleRating = (rating: number) => {
         if (!user) {
             toast({ title: 'Sign in required', description: 'Please sign in to rate', variant: 'destructive' });
             return;
         }
-
-        try {
-            const { error } = await supabase
-                .from('user_film_ratings')
-                .upsert({
-                    user_id: user.id,
-                    tmdb_id: parseInt(id!),
-                    rating: rating
-                }, { onConflict: 'user_id, tmdb_id' });
-
-            if (error) throw error;
-            setUserRating(rating);
-            toast({ title: 'Rating saved', description: 'Your rating has been saved' });
-        } catch (error) {
-            console.error('Error saving rating:', error);
-            toast({ title: 'Error', description: 'Failed to save rating', variant: 'destructive' });
-        }
+        setDraftRating(rating);
     };
 
     const handleSubmitReview = async () => {
-        if (!user || !reviewText.trim()) return;
+        if (!user) return;
+        
+        const hasRatingChanged = draftRating !== null && draftRating !== userRating;
+        const hasReviewText = reviewText.trim().length > 0;
+
+        if (!hasRatingChanged && !hasReviewText) return;
 
         setSubmittingReview(true);
         try {
-            const { error } = await supabase
-                .from('film_reviews')
-                .upsert({
+            const isNative = id!.includes('-');
+            
+            // 1. Save Rating if it has changed
+            if (hasRatingChanged) {
+                const ratingPayload: any = {
                     user_id: user.id,
-                    tmdb_id: parseInt(id!),
+                    rating: draftRating
+                };
+                if (isNative) ratingPayload.platform_cinema_id = id;
+                else ratingPayload.tmdb_id = parseInt(id!);
+
+                const { error: ratingError } = await supabase
+                    .from('user_film_ratings')
+                    .upsert(ratingPayload, { onConflict: isNative ? 'user_id, platform_cinema_id' : 'user_id, tmdb_id' });
+
+                if (ratingError) throw ratingError;
+                setUserRating(draftRating);
+            }
+
+            // 2. Save Review if there is text
+            if (hasReviewText) {
+                const reviewPayload: any = {
+                    user_id: user.id,
                     review_text: reviewText.trim(),
                     is_spoiler: isSpoiler,
                     is_anonymous: isAnonymous
-                }, { onConflict: 'user_id, tmdb_id' });
+                };
+                if (isNative) reviewPayload.platform_cinema_id = id;
+                else reviewPayload.tmdb_id = parseInt(id!);
 
-            if (error) throw error;
+                const { error: reviewError } = await supabase
+                    .from('film_reviews')
+                    .upsert(reviewPayload, { onConflict: isNative ? 'user_id, platform_cinema_id' : 'user_id, tmdb_id' });
 
-            toast({ title: 'Review submitted', description: 'Your review has been posted' });
-            setReviewText('');
-            setIsSpoiler(false);
-            setIsAnonymous(false);
-            loadContentDetails(); // Reload to show new review
+                if (reviewError) throw reviewError;
+            }
+
+            toast({ title: 'Success', description: 'Your input has been saved' });
+            
+            if (hasReviewText) {
+                setReviewText('');
+                setIsSpoiler(false);
+                setIsAnonymous(false);
+                loadContentDetails(); // Reload to show new review
+            }
         } catch (error) {
-            console.error('Error submitting review:', error);
-            toast({ title: 'Error', description: 'Failed to submit review', variant: 'destructive' });
+            console.error('Error saving:', error);
+            toast({ title: 'Error', description: 'Failed to save', variant: 'destructive' });
         } finally {
             setSubmittingReview(false);
         }
@@ -183,7 +243,10 @@ const ContentDetailPage = () => {
     const title = content.title || content.name;
     const releaseDate = content.release_date || content.first_air_date;
     const runtime = content.runtime || (content.episode_run_time && content.episode_run_time[0]);
-    const displayRating = hoverRating ?? userRating ?? 0;
+    const displayRating = hoverRating ?? draftRating ?? userRating ?? 0;
+
+    const backdropSrc = content.backdrop_url || content.poster_url || `https://image.tmdb.org/t/p/original${content.backdrop_path || content.poster_path}`;
+    const posterSrc = content.poster_url || `${TMDB_IMAGE_BASE_URL}${content.poster_path}`;
 
     return (
         <div className="min-h-screen bg-background pb-40">
@@ -196,7 +259,7 @@ const ContentDetailPage = () => {
             <div className="relative w-full aspect-video md:aspect-[21/9] min-h-[500px] md:min-h-[600px] lg:min-h-[650px]">
                 <div className="absolute inset-0">
                     <img
-                        src={`https://image.tmdb.org/t/p/original${content.backdrop_path || content.poster_path}`}
+                        src={backdropSrc}
                         alt={title}
                         className="w-full h-full object-cover"
                     />
@@ -210,7 +273,7 @@ const ContentDetailPage = () => {
                     <div className="flex flex-row gap-4 md:gap-8 items-end text-left">
                         <div className="relative group flex-shrink-0">
                             <img
-                                src={`${TMDB_IMAGE_BASE_URL}${content.poster_path}`}
+                                src={posterSrc}
                                 alt={title}
                                 className="w-36 sm:w-44 md:w-52 lg:w-64 rounded-xl shadow-2xl border-2 border-white/10 transition-transform duration-500 group-hover:scale-105"
                             />
@@ -290,37 +353,7 @@ const ContentDetailPage = () => {
                     )}
                 </section>
 
-                {/* Rating Section */}
-                <section className="bg-card p-6 rounded-xl border">
-                    <h2 className="text-2xl font-bold mb-4">Rate this {type === 'tv' ? 'Series' : 'Movie'}</h2>
-                    <div className="flex items-center gap-4">
-                        <div
-                            className="flex items-center gap-2"
-                            onMouseLeave={() => setHoverRating(null)}
-                        >
-                            {[1, 2, 3, 4, 5].map((star) => (
-                                <button
-                                    key={star}
-                                    onClick={() => handleRating(star)}
-                                    onMouseEnter={() => setHoverRating(star)}
-                                    className="focus:outline-none transition-transform hover:scale-125"
-                                >
-                                    <Star
-                                        className={cn(
-                                            "h-10 w-10 transition-colors duration-200",
-                                            star <= displayRating
-                                                ? "text-yellow-500 fill-yellow-500"
-                                                : "text-muted-foreground/30"
-                                        )}
-                                    />
-                                </button>
-                            ))}
-                        </div>
-                        {userRating && (
-                            <span className="text-lg font-semibold">Your rating: {userRating}/5</span>
-                        )}
-                    </div>
-                </section>
+
 
                 {/* Cast */}
                 {content.credits?.cast && content.credits.cast.length > 0 && (
@@ -383,91 +416,148 @@ const ContentDetailPage = () => {
                     </section>
                 )}
 
-                {/* Reviews Section */}
+                {/* Reviews & Ratings Section */}
                 <section className="space-y-6">
-                    <h2 className="text-2xl font-bold">Reviews from Craftsmen</h2>
+                    <h2 className="text-2xl font-bold">Ratings & Reviews</h2>
 
-                    {/* Write Review */}
-                    {user && (
-                        <div className="bg-card p-6 rounded-xl border space-y-4">
-                            <h3 className="font-semibold text-lg">Write a Review (Optional)</h3>
-                            <div className="relative">
-                                <Textarea
-                                    ref={textareaRef}
-                                    placeholder="Share your thoughts about this film..."
-                                    value={reviewText}
-                                    onChange={(e) => setReviewText(e.target.value)}
-                                    rows={4}
-                                    className="resize-none"
-                                />
-                                <div className="absolute bottom-2 right-2">
-                                    <Popover open={localEmojiOpen} onOpenChange={(open) => {
-                                        setLocalEmojiOpen(open);
-                                        if (open) setIsEmojiPickerOpen(true);
-                                        else setIsEmojiPickerOpen(false);
-                                    }}>
-                                        <PopoverTrigger asChild>
-                                            <Button 
-                                                type="button"
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-8 w-8 rounded-full hover:bg-muted emoji-toggle-button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    e.stopPropagation();
-                                                    e.preventDefault();
-                                                }}
-                                            >
-                                                <Smile className="h-5 w-5 text-muted-foreground" />
-                                            </Button>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="start" side="top" sideOffset={5}>
-                                            <EmojiPicker 
-                                                onEmojiClick={(emojiData) => setReviewText(prev => prev + emojiData.emoji)}
-                                                autoFocusSearch={false}
-                                                emojiStyle={EmojiStyle.APPLE}
-                                                theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
-                                                width={280}
-                                                height={350}
-                                                lazyLoadEmojis={false}
-                                            />
-                                        </PopoverContent>
-                                    </Popover>
-                                </div>
-                            </div>
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                                <div className="flex flex-wrap items-center gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={isSpoiler}
-                                            onChange={(e) => setIsSpoiler(e.target.checked)}
-                                            className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
-                                        />
-                                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Contains spoilers</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer group">
-                                        <input
-                                            type="checkbox"
-                                            checked={isAnonymous}
-                                            onChange={(e) => setIsAnonymous(e.target.checked)}
-                                            className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
-                                        />
-                                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Post anonymously</span>
-                                    </label>
-                                </div>
-                                <Button
-                                    onClick={handleSubmitReview}
-                                    disabled={!reviewText.trim() || submittingReview}
-                                    className="w-full sm:w-auto shadow-lg shadow-primary/20"
+                    {/* Rate & Write Review Card */}
+                    <div className="bg-card p-6 rounded-xl border space-y-6 shadow-sm">
+                        
+                        {/* Rating Part */}
+                        <div>
+                            <h3 className="font-semibold text-lg mb-3">Rate this {type === 'tv' ? 'Series' : 'Movie'}</h3>
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className="flex items-center gap-1.5"
+                                    onMouseLeave={() => setHoverRating(null)}
                                 >
-                                    {submittingReview ? 'Submitting...' : 'Submit Review'}
-                                </Button>
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                        <button
+                                            key={star}
+                                            onClick={() => handleRating(star)}
+                                            disabled={userRating !== null || (user ? reviews.some(r => r.user_id === user.id) : false)}
+                                            onMouseEnter={() => {
+                                                if (userRating === null && (!user || !reviews.some(r => r.user_id === user.id))) {
+                                                    setHoverRating(star);
+                                                }
+                                            }}
+                                            className={cn(
+                                                "focus:outline-none transition-transform",
+                                                (userRating === null && (!user || !reviews.some(r => r.user_id === user.id))) ? "hover:scale-125" : "cursor-default opacity-90"
+                                            )}
+                                        >
+                                            <Star
+                                                className={cn(
+                                                    "h-8 w-8 transition-colors duration-200",
+                                                    star <= displayRating
+                                                        ? "text-yellow-500 fill-yellow-500 drop-shadow-sm"
+                                                        : "text-muted-foreground/30"
+                                                )}
+                                            />
+                                        </button>
+                                    ))}
+                                </div>
+                                {userRating !== null && (
+                                    <span className="text-sm font-semibold text-muted-foreground bg-muted/50 px-3 py-1 rounded-full">
+                                        Your rating: {userRating}/5
+                                    </span>
+                                )}
+                                {user && isFan && draftRating !== userRating && draftRating !== null && (
+                                    <Button size="sm" onClick={handleSubmitReview} disabled={submittingReview}>
+                                        Save Rating
+                                    </Button>
+                                )}
                             </div>
                         </div>
-                    )}
+
+                        {/* Write Review Part */}
+                        {user && !isFan ? (
+                            !reviews.some(r => r.user_id === user.id) && userRating === null ? (
+                                <div className="space-y-4 pt-6 border-t border-border/50">
+                                    <h3 className="font-semibold text-lg">Write a Review (Optional)</h3>
+                                    <div className="relative">
+                                        <Textarea
+                                            ref={textareaRef}
+                                            placeholder="Share your thoughts about this film..."
+                                            value={reviewText}
+                                            onChange={(e) => setReviewText(e.target.value)}
+                                            rows={4}
+                                            className="resize-none"
+                                        />
+                                        <div className="absolute bottom-2 right-2">
+                                            <Popover open={localEmojiOpen} onOpenChange={(open) => {
+                                                setLocalEmojiOpen(open);
+                                                if (open) setIsEmojiPickerOpen(true);
+                                                else setIsEmojiPickerOpen(false);
+                                            }}>
+                                                <PopoverTrigger asChild>
+                                                    <Button 
+                                                        type="button"
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        className="h-8 w-8 rounded-full hover:bg-muted emoji-toggle-button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                        }}
+                                                        onMouseDown={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
+                                                        }}
+                                                    >
+                                                        <Smile className="h-5 w-5 text-muted-foreground" />
+                                                    </Button>
+                                                </PopoverTrigger>
+                                                <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="start" side="top" sideOffset={5}>
+                                                    <EmojiPicker 
+                                                        onEmojiClick={(emojiData) => setReviewText(prev => prev + emojiData.emoji)}
+                                                        autoFocusSearch={false}
+                                                        emojiStyle={EmojiStyle.APPLE}
+                                                        theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
+                                                        width={280}
+                                                        height={350}
+                                                        lazyLoadEmojis={false}
+                                                    />
+                                                </PopoverContent>
+                                            </Popover>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                        <div className="flex flex-wrap items-center gap-4">
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSpoiler}
+                                                    onChange={(e) => setIsSpoiler(e.target.checked)}
+                                                    className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
+                                                />
+                                                <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Contains spoilers</span>
+                                            </label>
+                                            <label className="flex items-center gap-2 cursor-pointer group">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isAnonymous}
+                                                    onChange={(e) => setIsAnonymous(e.target.checked)}
+                                                    className="rounded border-muted-foreground/30 text-primary focus:ring-primary h-4 w-4"
+                                                />
+                                                <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">Post anonymously</span>
+                                            </label>
+                                        </div>
+                                        <Button
+                                            onClick={handleSubmitReview}
+                                            disabled={(!reviewText.trim() && draftRating === userRating) || submittingReview}
+                                            className="w-full sm:w-auto shadow-lg shadow-primary/20"
+                                        >
+                                            {submittingReview ? 'Submitting...' : 'Submit'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : null
+                        ) : !user ? (
+                            <div className="space-y-2 pt-6 border-t border-border/50">
+                                <p className="text-muted-foreground text-sm">Please sign in to rate and review.</p>
+                            </div>
+                        ) : null}
+                    </div>
 
                     {/* Display Reviews */}
                     <div className="space-y-4">

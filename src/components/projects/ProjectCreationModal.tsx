@@ -16,6 +16,8 @@ import { Plus, Calendar, DollarSign, MapPin, Users, Image as ImageIcon, Lock, Gl
 
 import { Project } from '@/hooks/useProjects';
 import { useAppRole } from '@/hooks/useAppRole';
+import { generateGroupKey, exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '@/lib/e2ee';
+import { syncGroupKeyToNative } from '@/lib/e2ee-bridge';
 
 interface ProjectCreationModalProps {
   onProjectCreated?: () => void;
@@ -123,26 +125,17 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
     try {
       let imageUrl: string | undefined = undefined;
       if (projectImage) {
-        const { compressImage } = await import('@/utils/imageCompression');
-        const compressedImage = await compressImage(projectImage);
+        const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+        const { url, error: uploadError } = await uploadFileToSupabase(
+          projectImage,
+          'portfolios',
+          'projects',
+          { isThumbnail: true }
+        );
 
-        const fileExt = compressedImage.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-        const filePath = `projects/${fileName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('portfolios')
-          .upload(filePath, compressedImage, {
-            cacheControl: '31536000',
-            upsert: false
-          });
-
-        if (uploadError) throw uploadError;
-
-        const { data: { publicUrl } } = supabase.storage
-          .from('portfolios')
-          .getPublicUrl(filePath);
+        if (uploadError || !url) throw new Error(uploadError || 'Failed to upload project image');
         
-        imageUrl = publicUrl;
+        imageUrl = url;
       }
 
       const payload: any = {
@@ -189,13 +182,38 @@ export const ProjectCreationModal = ({ onProjectCreated, defaultOpen = false, pr
 
         // Create a project space for this project
         if (newProject) {
-          const { error: spaceError } = await supabase.from('project_spaces').insert({
+          const { error: spaceError, data: spaceData } = await supabase.from('project_spaces').insert({
             project_id: newProject.id,
             name: `${projectData.name} Workspace`,
-          });
+          }).select().single();
 
           if (spaceError) {
-            // Don't throw - project is created
+            console.error("Failed to create project space:", spaceError);
+          } else if (spaceData && user) {
+            // Silently provision E2EE keys for this new space so the user doesn't see "Initializing E2EE"
+            try {
+              const aesKey = await generateGroupKey();
+              const rawAesKeyBase64 = await exportSymmetricKey(aesKey);
+              
+              const { data: profile } = await supabase.from('profiles').select('public_key').eq('id', user.id).single();
+              
+              if (profile?.public_key) {
+                const importedPubKey = await importPublicKey(profile.public_key);
+                const encryptedAesKey = await encryptWithPublicKey(rawAesKeyBase64, importedPubKey);
+                
+                await (supabase as any).from('group_keys').insert({
+                  target_type: 'project_space',
+                  target_id: spaceData.id,
+                  user_id: user.id,
+                  encrypted_symmetric_key: encryptedAesKey
+                });
+                
+                await syncGroupKeyToNative(spaceData.id, rawAesKeyBase64);
+                console.log("Silently provisioned E2EE group key for new Project Space");
+              }
+            } catch (e2eeError) {
+              console.error("Failed silent E2EE provisioning:", e2eeError);
+            }
           }
         }
 

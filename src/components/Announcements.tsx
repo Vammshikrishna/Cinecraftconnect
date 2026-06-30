@@ -44,11 +44,11 @@ export default function Announcements() {
 
   useEffect(() => {
     const subscription = supabase
-      .channel('announcements')
+      .channel('announcements_realtime')
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'announcements' },
-        (payload) => {
-          fetchAnnouncementWithAuthor(payload.new as Announcement);
+        { event: '*', schema: 'public', table: 'announcements' },
+        () => {
+          fetchAnnouncements();
         }
       )
       .subscribe();
@@ -56,7 +56,7 @@ export default function Announcements() {
     return () => {
       supabase.removeChannel(subscription);
     };
-  }, [profiles]);
+  }, []);
 
 
   const fetchAnnouncements = async () => {

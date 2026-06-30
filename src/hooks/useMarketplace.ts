@@ -22,7 +22,7 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
         queryFn: async () => {
             let query = supabase
                 .from('marketplace_listings')
-                .select('*')
+                .select('*, profiles:user_id(username, avatar_url, full_name)')
                 .eq('is_active', true)
                 .order('created_at', { ascending: false });
 
@@ -55,21 +55,12 @@ export const useMarketplaceListings = ({ searchQuery = '', activeTab = 'all', fi
             if (error) throw error;
             if (!data || data.length === 0) return [];
 
-            // Fetch profiles in batch
-            const userIds = new Set((data as any[]).map((l) => l.user_id));
-            const { data: profiles } = await supabase
-                .from('profiles')
-                .select('id, username, avatar_url, full_name')
-                .in('id', Array.from(userIds));
-
-            const profilesMap = new Map(profiles?.map(p => [p.id, p]));
-
             return (data as any[]).map((listing: any) => ({
                 ...listing,
-                profiles: profilesMap.get(listing.user_id) ? {
-                    username: profilesMap.get(listing.user_id)?.username || '',
-                    avatar_url: profilesMap.get(listing.user_id)?.avatar_url || '',
-                    full_name: profilesMap.get(listing.user_id)?.full_name || ''
+                profiles: listing.profiles ? {
+                    username: listing.profiles.username || '',
+                    avatar_url: listing.profiles.avatar_url || '',
+                    full_name: listing.profiles.full_name || ''
                 } : undefined,
                 specifications: listing.specifications || {},
                 availability_calendar: listing.availability_calendar || [],

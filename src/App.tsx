@@ -11,7 +11,6 @@ import RoleGuard from "@/components/RoleGuard";
 import ErrorBoundary from "@/components/ui/error-boundary";
 import GlobalFeatures from "@/components/GlobalFeatures";
 import { PremiumNotificationOverlay } from "@/components/notifications/PremiumNotificationOverlay";
-import ThemeSyncPrompt from "@/components/theme/ThemeSyncPrompt";
 import DesktopOnlyGuard from "@/components/DesktopOnlyGuard";
 import { SystemStatusBanner } from "@/components/internal/shared/SystemStatusBanner";
 import { OfflineBanner } from "@/components/offline/OfflineBanner";
@@ -26,40 +25,29 @@ import { useEffect } from 'react';
 import { KeyboardProvider } from "@/contexts/KeyboardContext";
 import { useState } from 'react';
 import { Capacitor } from '@capacitor/core';
+import { E2EEBackupProvider } from "@/contexts/E2EEBackupContext";
+import { E2EEKeyBackupModal } from "@/components/security/E2EEKeyBackupModal";
 import SplashScreen from "@/components/common/SplashScreen";
-import { AuthDebugPanel } from "@/devtools/AuthDebugPanel";
-import { VirtualizationDebugPanel } from "@/devtools/VirtualizationDebugPanel";
-import { WorkerDebugPanel } from "@/devtools/WorkerDebugPanel";
-import { MediaDebugPanel } from "@/devtools/MediaDebugPanel";
-import { TabCoordinationDebugPanel } from "@/devtools/TabCoordinationDebugPanel";
-import { PresenceDebugPanel } from "@/devtools/PresenceDebugPanel";
-import { NetworkDebugPanel } from "@/devtools/NetworkDebugPanel";
-import { RuntimeDebugPanel } from "@/devtools/RuntimeDebugPanel";
-import { PredictiveDebugPanel } from "./devtools/PredictiveDebugPanel";
-import { EntropyDebugPanel } from "./devtools/EntropyDebugPanel";
-import { MasterRuntimeDashboard } from "./devtools/MasterRuntimeDashboard";
-import { VideoDebugPanel } from "./devtools/VideoDebugPanel";
-import { ProductDebugPanel } from "./devtools/ProductDebugPanel";
+
 
 
 // Lazy Loaded Pages
 const LegalPage = lazy(() => import("./pages/LegalPage"));
-const Index = lazy(() => import("./pages/Index"));
-const Auth = lazy(() => import("./pages/Auth"));
-const Feed = lazy(() => import("./pages/Feed"));
-const Profile = lazy(() => import("./pages/Profile"));
-const Pricing = lazy(() => import("./pages/Pricing"));
+import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import Feed from "./pages/Feed";
+import Profile from "./pages/Profile";
 const PublicProfile = lazy(() => import("./pages/PublicProfile"));
-const Projects = lazy(() => import("./pages/Projects"));
+import Projects from "./pages/Projects";
 const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage"));
-const Jobs = lazy(() => import("./pages/Jobs"));
-const Network = lazy(() => import("./pages/Network"));
+import Jobs from "./pages/Jobs";
+import Network from "./pages/Network";
 const NotFound = lazy(() => import("./pages/NotFound"));
 const CraftPage = lazy(() => import("./pages/CraftPage"));
 const AllCraftsPage = lazy(() => import("./pages/AllCraftsPage"));
 const SetupAdmin = lazy(() => import("./pages/admin/SetupAdmin"));
-const DiscussionRooms = lazy(() => import("./pages/DiscussionRooms"));
-const Messages = lazy(() => import("./pages/Messages"));
+import DiscussionRooms from "./pages/DiscussionRooms";
+import Messages from "./pages/Messages";
 const Settings = lazy(() => import("./pages/Settings"));
 const AppearanceSettings = lazy(() => import("./pages/settings/AppearanceSettings"));
 const NotificationsSettings = lazy(() => import("./pages/settings/NotificationsSettings"));
@@ -72,11 +60,11 @@ const DataSettings = lazy(() => import("./pages/settings/DataSettings"));
 const AccountSettings = lazy(() => import("./pages/settings/AccountSettings"));
 const CompleteProfile = lazy(() => import("./pages/CompleteProfile"));
 const AvailabilityCalendar = lazy(() => import("./pages/profile/AvailabilityCalendar"));
-const Marketplace = lazy(() => import("./pages/Marketplace"));
+import Marketplace from "./pages/Marketplace";
 const MarketplaceListingDetail = lazy(() => import("./pages/MarketplaceListingDetail"));
 const Wishlist = lazy(() => import("./pages/Wishlist"));
 const SharedWishlist = lazy(() => import("./pages/SharedWishlist"));
-const Vendors = lazy(() => import("./pages/Vendors"));
+import Vendors from "./pages/Vendors";
 const VendorDetail = lazy(() => import("./pages/VendorDetail"));
 const VendorServiceDetail = lazy(() => import("./pages/VendorServiceDetail"));
 const MyApplications = lazy(() => import("./pages/jobs/MyApplications"));
@@ -84,6 +72,7 @@ const ManageJobs = lazy(() => import("./pages/jobs/ManageJobs"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const ContentDetailPage = lazy(() => import("./pages/ContentDetailPage"));
 const RatingsPage = lazy(() => import("./pages/RatingsPage"));
+const CategoryPage = lazy(() => import("./pages/CategoryPage"));
 const AnnouncementsPage = lazy(() => import("./pages/AnnouncementsPage"));
 const CompanyPages = lazy(() => import("./pages/CompanyPages"));
 const CompanyPageDetail = lazy(() => import("./pages/CompanyPageDetail"));
@@ -91,6 +80,7 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const JobDetail = lazy(() => import("@/pages/JobDetail"));
 const PostDetailPage = lazy(() => import("@/pages/PostDetailPage"));
 const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
+const DiscussionRoomDetailPage = lazy(() => import("./pages/DiscussionRoomDetailPage"));
 const Support = lazy(() => import("./pages/Support"));
 const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
 const Pitch = lazy(() => import("./pages/Pitch"));
@@ -124,9 +114,11 @@ const LandingRoute = () => {
 
 import PageLoader from "@/components/common/PageLoader";
 import { NavigationProvider } from "@/contexts/NavigationContext";
+import { useE2EEInit } from "@/hooks/useE2EEInit";
 
 const App = () => {
   const { user, profile, isLoading } = useAuth();
+  useE2EEInit(); // Automatically initializes keys for authenticated users
   console.log(`[APP TRACE] timestamp: ${new Date().toISOString()} source: App event: render user: ${!!user} profile: ${!!profile} isLoading: ${isLoading}`);
   const [showCustomSplash, setShowCustomSplash] = useState(false);
   const isNative = Capacitor.isNativePlatform();
@@ -148,11 +140,13 @@ const App = () => {
     <Router future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <KeyboardProvider>
         <NavigationProvider>
-          <PageLoader />
-          <SplashScreen isVisible={showCustomSplash} />
-          <PlatformFlagsProvider>
-            <CallProvider>
-              <PresenceProvider>
+          <E2EEBackupProvider>
+            <E2EEKeyBackupModal />
+            <PageLoader />
+            <SplashScreen isVisible={showCustomSplash} />
+            <PlatformFlagsProvider>
+              <CallProvider>
+                <PresenceProvider>
                 <ScrollToTop />
                 <OfflineBanner />
                 <SystemStatusBanner />
@@ -160,24 +154,7 @@ const App = () => {
                 <Toaster />
                 <PremiumNotificationOverlay />
                 <GlobalFeatures />
-                {import.meta.env.DEV && (
-                  <>
-                    <AuthDebugPanel />
-                    <VirtualizationDebugPanel />
-                    <WorkerDebugPanel />
-                    <MediaDebugPanel />
-                    <TabCoordinationDebugPanel />
-                    <PresenceDebugPanel />
-                    <NetworkDebugPanel />
-                    <RuntimeDebugPanel />
-                    <PredictiveDebugPanel />
-                    <EntropyDebugPanel />
-                    <MasterRuntimeDashboard />
-                    <VideoDebugPanel />
-                    <ProductDebugPanel />
-                  </>
-                )}
-                <ThemeSyncPrompt />
+
                 {!isLoading && (() => {
                   const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
                   const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
@@ -203,28 +180,31 @@ const App = () => {
                           <Route path="/about" element={<About />} />
                           <Route path="/features" element={<Features />} />
                           <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
-                          <Route path="/post/:postId" element={<ProtectedRoute><PostDetailPage /></ProtectedRoute>} />
-                          <Route path="/profile/:userId" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/post/:postId" element={<PostDetailPage />} />
+                          <Route path="/posts/:postId" element={<PostDetailPage />} />
+                          <Route path="/profile/:userId" element={<FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard>} />
                           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                           <Route path="/profile/availability" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />
                           <Route path="/projects" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled" fallbackTitle="Project Hub Restricted"><Projects /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/projects/:projectId" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/projects/:projectId/space" element={<ProtectedRoute><FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/projects/:projectId" element={<FeatureGuard flag="project_creation_enabled"><ProjectDetailPage /></FeatureGuard>} />
+                          <Route path="/projects/:projectId/space" element={<FeatureGuard flag="project_creation_enabled"><ProjectSpacePage /></FeatureGuard>} />
                           <Route path="/jobs" element={<ProtectedRoute><FeatureGuard flag="job_posting_enabled" fallbackTitle="Job Board Restricted"><Jobs /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/network" element={<ProtectedRoute><FeatureGuard flag="talent_network_enabled" fallbackTitle="Talent Search Restricted"><Network /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/craft/:craftName" element={<CraftPage />} />
                           <Route path="/all-crafts" element={<AllCraftsPage />} />
-                          <Route path="/setup-admin" element={
-                            <DesktopOnlyGuard>
-                              <SetupAdmin />
-                            </DesktopOnlyGuard>
-                          } />
+                          {import.meta.env.DEV && (
+                            <Route path="/setup-admin" element={
+                              <DesktopOnlyGuard>
+                                <SetupAdmin />
+                              </DesktopOnlyGuard>
+                            } />
+                          )}
                           <Route path="/discussion-rooms" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled" fallbackTitle="Discussions Offline"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/discussion-rooms/:roomId" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/discussion-rooms/:roomId" element={<FeatureGuard flag="discussion_rooms_enabled"><DiscussionRoomDetailPage /></FeatureGuard>} />
+                          <Route path="/discussion-rooms/:roomId/chat" element={<ProtectedRoute><FeatureGuard flag="discussion_rooms_enabled"><DiscussionRooms /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/messages" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled" fallbackTitle="Messaging Offline"><Messages /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/messages/:conversationId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/dm/:userId" element={<ProtectedRoute><FeatureGuard flag="messaging_enabled"><Messages /></FeatureGuard></ProtectedRoute>} />
-                          <Route path="/pricing" element={<ProtectedRoute><FeatureGuard flag="monetization_enabled"><Pricing /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/legal/:type" element={<LegalPage />} />
                           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
                           <Route path="/settings/appearance" element={<ProtectedRoute><AppearanceSettings /></ProtectedRoute>} />
@@ -240,22 +220,23 @@ const App = () => {
                           <Route path="/marketplace" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled" fallbackTitle="Marketplace Disabled"><Marketplace /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/marketplace/wishlist" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><Wishlist /></FeatureGuard></ProtectedRoute>} />
                           <Route path="/marketplace/wishlist/shared/:token" element={<SharedWishlist />} />
-                          <Route path="/marketplace/:listingId" element={<ProtectedRoute><FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard></ProtectedRoute>} />
+                          <Route path="/marketplace/:listingId" element={<FeatureGuard flag="marketplace_enabled"><MarketplaceListingDetail /></FeatureGuard>} />
                           <Route path="/vendors" element={<ProtectedRoute><Vendors /></ProtectedRoute>} />
-                          <Route path="/vendors/:id" element={<ProtectedRoute><VendorDetail /></ProtectedRoute>} />
-                          <Route path="/vendors/services/:id" element={<ProtectedRoute><VendorServiceDetail /></ProtectedRoute>} />
-                          <Route path="/jobs/:jobId" element={<ProtectedRoute><JobDetail /></ProtectedRoute>} />
+                          <Route path="/vendors/:id" element={<VendorDetail />} />
+                          <Route path="/vendors/services/:id" element={<VendorServiceDetail />} />
+                          <Route path="/jobs/:jobId" element={<JobDetail />} />
                           <Route path="/jobs/applications" element={<ProtectedRoute><MyApplications /></ProtectedRoute>} />
                           <Route path="/jobs/manage" element={<ProtectedRoute><ManageJobs /></ProtectedRoute>} />
                           <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
-                          <Route path="/content/:type/:id" element={<ProtectedRoute><ContentDetailPage /></ProtectedRoute>} />
+                          <Route path="/content/:type/:id" element={<ContentDetailPage />} />
                           <Route path="/ratings" element={<ProtectedRoute><RatingsPage /></ProtectedRoute>} />
+                          <Route path="/category/:categoryId" element={<ProtectedRoute><CategoryPage /></ProtectedRoute>} />
                           <Route path="/pitch" element={<ProtectedRoute><Pitch /></ProtectedRoute>} />
-                          <Route path="/pitch/:pitchId" element={<ProtectedRoute><PitchDetail /></ProtectedRoute>} />
-                          <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
+                          <Route path="/pitch/:pitchId" element={<PitchDetail />} />
+                          <Route path="/announcements" element={<AnnouncementsPage />} />
                           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                           <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />
-                          <Route path="/pages/:slug" element={<ProtectedRoute><CompanyPageDetail /></ProtectedRoute>} />
+                          <Route path="/pages/:slug" element={<CompanyPageDetail />} />
                           <Route path="/support" element={<ProtectedRoute><Support /></ProtectedRoute>} />
                           <Route path="/support/ticket/:ticketId" element={<ProtectedRoute><SupportTicketDetail /></ProtectedRoute>} />
 
@@ -306,6 +287,7 @@ const App = () => {
               </PresenceProvider>
             </CallProvider>
           </PlatformFlagsProvider>
+          </E2EEBackupProvider>
         </NavigationProvider>
       </KeyboardProvider>
     </Router>

@@ -143,7 +143,7 @@ serve(async (req) => {
             targetUserIds = [post.author_id];
             payload.type = "social";
             payload.id = record.id;
-            payload.actionUrl = `/feed`;
+            payload.actionUrl = `/post/${record.post_id}`;
             payload.senderId = record.user_id;
 
             const { data: sender } = await supabase
@@ -171,7 +171,7 @@ serve(async (req) => {
             targetUserIds = [post.author_id];
             payload.type = "social";
             payload.id = record.id;
-            payload.actionUrl = `/feed`;
+            payload.actionUrl = `/post/${record.post_id}`;
             payload.senderId = record.user_id;
 
             const { data: sender } = await supabase
@@ -190,6 +190,42 @@ serve(async (req) => {
     } else {
         // Ignore other tables for now
         return new Response(JSON.stringify({ message: "Ignored" }), { status: 200 });
+    }
+
+    // --- E2EE Detection & Group Key Prefetch ---
+    let isEncrypted = false;
+    let encryptedContent = "";
+    let perUserEncryptedKeys: Record<string, string> = {};
+
+    if (record.content && (record.content.includes("__e2ee") || record.content.includes("__e2ee_group"))) {
+        isEncrypted = true;
+        encryptedContent = record.content;
+        payload.body = "\u{1F512} Encrypted message"; // 🔒 fallback for lock screen
+    }
+
+    // For group/room encrypted messages, fetch each target user's encrypted symmetric key
+    if (isEncrypted && targetUserIds.length > 0) {
+        if (table === "room_messages" || table === "project_space_messages") {
+            const targetId = table === "room_messages" ? record.room_id : record.project_space_id;
+            const targetType = table === "room_messages" ? "room" : "project_space";
+
+            try {
+                const { data: groupKeys } = await supabase
+                    .from("group_keys")
+                    .select("user_id, encrypted_symmetric_key")
+                    .eq("target_type", targetType)
+                    .eq("target_id", targetId)
+                    .in("user_id", targetUserIds);
+
+                if (groupKeys) {
+                    for (const gk of groupKeys) {
+                        perUserEncryptedKeys[gk.user_id] = gk.encrypted_symmetric_key;
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to fetch group keys for E2EE push:", e);
+            }
+        }
     }
 
     if (targetUserIds.length === 0) {
@@ -291,30 +327,38 @@ serve(async (req) => {
         sanitizedData["actionUrl"] = String(payload.actionUrl || `/messages/${payload.conversationId || payload.id}`);
         if (payload.avatarUrl) sanitizedData["avatarUrl"] = String(payload.avatarUrl);
 
+        // Include E2EE data for native decryption
+        if (isEncrypted) {
+            sanitizedData["isEncrypted"] = "true";
+            sanitizedData["encryptedContent"] = encryptedContent;
+
+            // Include this specific user's encrypted symmetric key (if available)
+            const userEncKey = perUserEncryptedKeys[userId];
+            if (userEncKey) {
+                sanitizedData["encryptedSymmetricKey"] = userEncKey;
+            }
+        }
+
         const message = {
             token: token,
-            android: {
-                priority: "high" as const,
-                // OMIT the 'notification' key! 
-                // This forces Android to deliver it as a pure DATA message to FCMService.java
-            },
+            data: sanitizedData,
             apns: {
-                headers: {
-                    "apns-priority": "10"
-                },
                 payload: {
                     aps: {
                         alert: {
-                            title: payload.title,
-                            body: payload.body
+                            title: String(payload.title),
+                            body: String(payload.body),
                         },
                         sound: "default",
                         badge: 1,
+                        "mutable-content": 1,
                         threadId: payload.conversationId || payload.id
                     }
                 }
             },
-            data: sanitizedData
+            android: {
+                priority: "high" as const,
+            }
         };
 
         try {

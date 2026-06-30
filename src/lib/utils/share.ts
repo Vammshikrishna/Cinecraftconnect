@@ -42,9 +42,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 export function getAppOrigin(): string {
     const origin = window.location.origin;
     
-    // If it's a local origin (Capacitor or development), default to production for sharing
-    if (origin.includes('localhost') || origin.startsWith('capacitor://')) {
-        return 'https://cinecraftconnect.com';
+    // Only rewrite to a web domain if we are running in a native mobile container (Capacitor)
+    if (origin.startsWith('capacitor://')) {
+        return import.meta.env.VITE_APP_URL || 'https://cinecraftconnect.com';
     }
     
     return origin;
@@ -55,8 +55,9 @@ export function getAppOrigin(): string {
  */
 export function sanitizeUrl(url: string): string {
     const origin = window.location.origin;
-    if (origin.includes('localhost') || origin.startsWith('capacitor://')) {
-        return url.replace(origin, 'https://cinecraftconnect.com');
+    if (origin.startsWith('capacitor://')) {
+        const targetOrigin = import.meta.env.VITE_APP_URL || 'https://cinecraftconnect.com';
+        return url.replace(origin, targetOrigin);
     }
     return url;
 }

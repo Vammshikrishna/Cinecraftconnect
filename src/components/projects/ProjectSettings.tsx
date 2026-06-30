@@ -555,8 +555,9 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-8 h-full overflow-y-auto no-scrollbar pb-24 relative animate-in fade-in slide-in-from-right-8 duration-500">
-            <div className="flex flex-col gap-1 mb-8">
+        <div className="flex flex-col h-full w-full relative">
+            <div className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 space-y-8 overflow-y-auto no-scrollbar pb-32 animate-in fade-in slide-in-from-right-8 duration-500">
+                <div className="flex flex-col gap-1 mb-8">
                 <button 
                     onClick={() => setIsMenu(true)}
                     className="flex items-center gap-2 text-muted-foreground hover:text-primary transition-colors mb-4 group w-fit"
@@ -801,32 +802,35 @@ const ProjectSettings = ({ projectId }: ProjectSettingsProps) => {
                     </div>
                 )}
             </div>
+            </div>
 
             {/* Persistent Action Bar */}
             {!isInternal && (
-                <div className="sticky bottom-4 left-0 right-0 z-50 animate-in slide-in-from-bottom-8 duration-700">
-                    <Card className="bg-background/60 backdrop-blur-2xl border-t border-white/10 shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.5)] rounded-[40px] p-4 flex flex-col sm:flex-row items-center justify-between gap-6 px-10">
-                        <div className="hidden sm:block space-y-0.5">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Editing Mode</p>
-                            <p className="text-sm font-bold text-foreground/70">Unsaved changes in <span className="text-primary font-black uppercase text-xs">{step}</span></p>
-                        </div>
-                        <div className="flex items-center gap-4 w-full sm:w-auto">
-                            <Button 
-                                variant="ghost" 
-                                onClick={fetchProjectDetails} 
-                                disabled={saving}
-                                className="flex-1 sm:flex-none h-14 rounded-2xl font-bold text-muted-foreground hover:bg-white/5"
-                            >
-                                Reset
-                            </Button>
-                            <Button 
-                                onClick={handleSave} 
-                                disabled={saving} 
-                                className="flex-1 sm:flex-none h-14 rounded-[24px] px-12 bg-primary hover:bg-primary/90 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-primary/40 transition-all active:scale-95 flex items-center gap-3"
-                            >
-                                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                Sync Settings
-                            </Button>
+                <div className="absolute bottom-0 left-0 right-0 z-50 animate-in slide-in-from-bottom-8 duration-700">
+                    <Card className="bg-background/80 backdrop-blur-2xl border-t border-x-0 border-b-0 border-white/10 shadow-[0_-20px_50px_-15px_rgba(0,0,0,0.5)] rounded-none p-4 sm:p-6 w-full">
+                        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 w-full">
+                            <div className="hidden sm:block space-y-0.5">
+                                <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Editing Mode</p>
+                                <p className="text-sm font-bold text-foreground/70">Unsaved changes in <span className="text-primary font-black uppercase text-xs">{step}</span></p>
+                            </div>
+                            <div className="flex items-center justify-end gap-4 w-full sm:w-auto">
+                                <Button 
+                                    variant="ghost" 
+                                    onClick={fetchProjectDetails} 
+                                    disabled={saving}
+                                    className="w-auto h-14 rounded-2xl font-bold text-muted-foreground hover:bg-white/5 px-6"
+                                >
+                                    Reset
+                                </Button>
+                                <Button 
+                                    onClick={handleSave} 
+                                    disabled={saving} 
+                                    className="flex-1 sm:flex-none sm:w-auto h-14 rounded-[24px] px-8 sm:px-12 bg-primary hover:bg-primary/90 text-white font-black text-xs uppercase tracking-widest shadow-2xl shadow-primary/40 transition-all active:scale-95 flex items-center justify-center gap-3"
+                                >
+                                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                    Sync Settings
+                                </Button>
+                            </div>
                         </div>
                     </Card>
                 </div>

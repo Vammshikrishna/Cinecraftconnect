@@ -11,6 +11,7 @@ import { CallCreatorPitchInbox, WriterPitchTracker } from '@/components/pitch/Pi
 import { usePitchCalls, canCreatePitchCall, canSubmitPitch } from '@/hooks/usePitch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
+import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useUnreadPitchSubmissions } from '@/hooks/useUnreadPitchSubmissions';
 import { CardSkeleton } from '@/components/ui/enhanced-skeleton';
 import SEO from '@/components/common/SEO';
@@ -25,6 +26,15 @@ import { supabase } from '@/integrations/supabase/client';
 
 const Pitch = () => {
     const { user, profile } = useAuth();
+    const { push } = useAppNavigation();
+    const { accountType: userAccountType, isFan } = useAccountType();
+
+    useEffect(() => {
+        if (isFan) {
+            push('/404');
+        }
+    }, [isFan, push]);
+
     const [activeTab, setActiveTab] = useState('discover');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -39,7 +49,6 @@ const Pitch = () => {
         regionalWelcome: false,
     });
 
-    const { accountType: userAccountType } = useAccountType();
     const userCraft = (profile as any)?.craft || '';
 
     const userCanCreate = canCreatePitchCall(userCraft, userAccountType);

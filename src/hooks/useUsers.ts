@@ -17,11 +17,16 @@ export interface UserProfile {
   suggestion_reason?: string;
 }
 
-export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') => {
-  const { user } = useAuth();
+export const useUsers = (
+  searchQuery: string = '', 
+  craftFilter: string = 'All', 
+  isEnabled: boolean = true,
+  accountTypeFilter: 'creator' | 'fan' | null = null
+) => {
+  const { user, profile } = useAuth();
 
   const { data: users = [], isLoading: loading } = useQuery({
-    queryKey: ['users', searchQuery, craftFilter, user?.id],
+    queryKey: ['users', searchQuery, craftFilter, user?.id, accountTypeFilter, profile?.account_type],
     queryFn: async () => {
       if (!user) return [];
 
@@ -56,6 +61,13 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
 
       if (craftFilter && craftFilter !== 'All') {
         profilesQuery = profilesQuery.ilike('craft', `%${craftFilter}%`);
+      }
+
+      const isViewerPro = !profile || profile.account_type !== 'fan';
+      if (isViewerPro) {
+        profilesQuery = profilesQuery.or('account_type.neq.fan,account_type.is.null');
+      } else if (accountTypeFilter) {
+        profilesQuery = profilesQuery.eq('account_type', accountTypeFilter);
       }
 
       // 2. Fetch connections (for status mapping)
@@ -153,7 +165,7 @@ export const useUsers = (searchQuery: string = '', craftFilter: string = 'All') 
         return 0;
       });
     },
-    enabled: !!user,
+    enabled: !!user && isEnabled,
     staleTime: 1000 * 60, // 1 minute stale time for users list
   });
 

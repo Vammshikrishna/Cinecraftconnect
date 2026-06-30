@@ -58,7 +58,21 @@ export const TeamManagementTab = ({ projectId, isOwner }: TeamManagementTabProps
         .eq('project_space_id', projectId);
       if (membersError) throw membersError;
       
-      const filteredMembers = (membersData as any[])?.filter(m => !m.profiles?.is_internal) || [];
+      const userIds = (membersData as any[])?.map(m => m.user_id) || [];
+      let staffUserIds = new Set<string>();
+      if (userIds.length > 0) {
+        const { data: rolesData } = await supabase
+            .from('user_roles')
+            .select('user_id, role')
+            .in('user_id', userIds);
+        rolesData?.forEach((r: any) => {
+            if (r.role === 'admin' || r.role === 'super_admin' || r.role === 'moderator') {
+                staffUserIds.add(r.user_id);
+            }
+        });
+      }
+
+      const filteredMembers = (membersData as any[])?.filter(m => !m.profiles?.is_internal && !staffUserIds.has(m.user_id)) || [];
       setMembers(filteredMembers);
 
     } catch (error: any) {

@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAppRole } from '@/hooks/useAppRole';
+import { useFollows } from '@/hooks/useFollows';
 import VerificationBadge from '../common/VerificationBadge';
 import { getOptimizedImage } from '@/utils/image-optimization';
 
@@ -51,9 +52,13 @@ interface UserCardProps {
   onCancelRequest?: (userId: string) => void;
   onRemoveConnection?: (userId: string) => void;
   onDismiss?: (userId: string) => void;
+  isFanFollowMode?: boolean;
+  isFollowing?: boolean;
+  onFollow?: (userId: string) => void;
+  onUnfollow?: (userId: string) => void;
 }
 
-const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject, onCancelRequest, onRemoveConnection, onDismiss }) => {
+const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject, onCancelRequest, onRemoveConnection, onDismiss, isFanFollowMode, isFollowing, onFollow, onUnfollow }) => {
   const { push } = useAppNavigation();
   const { user: currentUser } = useAuth();
   const status = user.connection_status || 'none';
@@ -66,9 +71,47 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
   };
 
   const { isInternal } = useAppRole();
+  const { followers } = useFollows();
+  const isMutualFollow = isFollowing && followers?.some((f: any) => f.follower_id === user.id);
 
   const renderActionButton = () => {
     if (user.id === currentUser?.id || isInternal) return null;
+
+    if (isFanFollowMode) {
+      if (isFollowing) {
+        return (
+          <div className="grid grid-cols-2 gap-1.5 w-full">
+            <Button 
+              size="sm" 
+              variant="secondary" 
+              className={isMutualFollow ? "w-full bg-muted/50 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all text-[9px] sm:text-[10px] font-bold px-2 h-8" : "w-full bg-muted/50 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-all text-[9px] sm:text-[10px] font-bold px-2 h-8 col-span-2"} 
+              onClick={() => onUnfollow && onUnfollow(user.id)}
+            >
+              <UserCheck size={11} className="mr-1" /> Following
+            </Button>
+            {isMutualFollow && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full bg-primary/5 hover:bg-primary/10 text-primary border border-primary/10 transition-all text-[9px] sm:text-[10px] font-bold px-2 h-8"
+                onClick={() => push(`/messages/${user.id}`)}
+              >
+                <MessageCircle size={11} className="mr-1 sm:mr-1.5" /> Message
+              </Button>
+            )}
+          </div>
+        );
+      }
+      return (
+        <Button 
+          size="sm" 
+          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm hover:shadow-primary/20 transition-all text-[9px] sm:text-[10px] font-bold px-2 h-8" 
+          onClick={() => onFollow && onFollow(user.id)}
+        >
+          <UserPlus size={11} className="mr-1" /> Follow
+        </Button>
+      );
+    }
 
     switch (status) {
       case 'pending_sent':

@@ -20,12 +20,39 @@ export interface HomeFeedData {
 }
 
 export const useHomeFeed = () => {
-    const { user } = useAuth();
+    const { user, profile } = useAuth();
     const queryClient = useQueryClient();
+
+    // 2. Infinite Posts Query (5 posts per load)
+    const infinitePostsQuery = useInfiniteQuery({
+        queryKey: ['home-feed-posts', user?.id],
+        queryFn: async ({ pageParam }: { pageParam: string | null }) => {
+            let query = supabase
+                .from('posts')
+                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            if (pageParam) {
+                query = query.lt('created_at', pageParam);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return data || [];
+        },
+        initialPageParam: null as string | null,
+        getNextPageParam: (lastPage: any[]) => {
+            if (lastPage.length < 5) return undefined;
+            return lastPage[lastPage.length - 1].created_at;
+        },
+        staleTime: 1000 * 60 * 2,
+        placeholderData: (previousData) => previousData,
+    });
 
     // 1. Static Feed Data (Announcements, Projects, etc.)
     const staticDataQuery = useQuery({
-        queryKey: ['home-feed-static', user?.id],
+        queryKey: ['home-feed-static', user?.id, profile?.account_type],
         queryFn: async () => {
             const announcementsPromise = supabase
                 .from('announcements')
@@ -57,14 +84,22 @@ export const useHomeFeed = () => {
                 .order('created_at', { ascending: false })
                 .limit(10);
 
+            const isViewerPro = !profile || profile.account_type !== 'fan';
             const connectionsPromise = user?.id
-                ? supabase
-                    .from('profiles')
-                    .select('id, full_name, username, avatar_url, craft, bio, is_verified, is_internal')
-                    .neq('id', user.id)
-                    .eq('is_internal', false)
-                    .order('updated_at', { ascending: false, nullsFirst: false })
-                    .limit(10)
+                ? (() => {
+                    let query = supabase
+                        .from('profiles')
+                        .select('id, full_name, username, avatar_url, craft, bio, is_verified, is_internal, account_type')
+                        .neq('id', user.id)
+                        .eq('is_internal', false);
+
+                    if (isViewerPro) {
+                        query = query.or('account_type.neq.fan,account_type.is.null');
+                    }
+                    return query
+                        .order('updated_at', { ascending: false, nullsFirst: false })
+                        .limit(10);
+                  })()
                 : Promise.resolve({ data: [], error: null });
 
             const [
@@ -85,33 +120,8 @@ export const useHomeFeed = () => {
             };
         },
         staleTime: 1000 * 60 * 5,
-    });
-
-    // 2. Infinite Posts Query (5 posts per load)
-    const infinitePostsQuery = useInfiniteQuery({
-        queryKey: ['home-feed-posts', user?.id],
-        queryFn: async ({ pageParam }: { pageParam: string | null }) => {
-            let query = supabase
-                .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
-                .order('created_at', { ascending: false })
-                .limit(5);
-
-            if (pageParam) {
-                query = query.lt('created_at', pageParam);
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-            return data || [];
-        },
-        initialPageParam: null as string | null,
-        getNextPageParam: (lastPage: any[]) => {
-            if (lastPage.length < 5) return undefined;
-            return lastPage[lastPage.length - 1].created_at;
-        },
-        staleTime: 1000 * 60 * 2,
-        placeholderData: (previousData) => previousData,
+        // Stagger requests on slow networks: don't fetch heavy static data until posts are loaded
+        enabled: !!user?.id && !!infinitePostsQuery.data,
     });
 
     // 3. User Likes Query
@@ -126,7 +136,7 @@ export const useHomeFeed = () => {
             if (error) throw error;
             return (data || []).map((l: any) => l.post_id);
         },
-        enabled: !!user?.id,
+        enabled: !!user?.id && !!infinitePostsQuery.data,
     });
 
     // 4. TMDB Ratings
@@ -134,6 +144,7 @@ export const useHomeFeed = () => {
         queryKey: ['home-feed-ratings'],
         queryFn: fetchLatestRatings,
         staleTime: 1000 * 60 * 60,
+        enabled: !!infinitePostsQuery.data,
     });
 
     // Real-time subscriptions
@@ -172,9 +183,17 @@ export const useHomeFeed = () => {
             })
             .subscribe();
 
+        const announcementsChannel = supabase
+            .channel('announcements_updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+                queryClient.invalidateQueries({ queryKey: ['home-feed-static', user.id] });
+            })
+            .subscribe();
+
         return () => {
             supabase.removeChannel(postsChannel);
             supabase.removeChannel(likesChannel);
+            supabase.removeChannel(announcementsChannel);
         };
     }, [user?.id, queryClient]);
 

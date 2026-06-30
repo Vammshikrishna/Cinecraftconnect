@@ -20,6 +20,7 @@ export interface Message {
   };
   deleted_for_users?: string[];
   status?: 'pending' | 'sent' | 'error';
+  reactions?: any[];
 }
 
 export interface Call {

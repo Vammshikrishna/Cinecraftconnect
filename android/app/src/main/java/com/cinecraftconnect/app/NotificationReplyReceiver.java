@@ -35,7 +35,27 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                     String senderName = intent.getStringExtra("senderName");
                     String avatarUrl = intent.getStringExtra("avatarUrl");
                     String actionUrl = intent.getStringExtra("actionUrl");
-                    sendReplyToSupabase(context, conversationId, targetUserId, replyText.toString(), notificationId, senderName, avatarUrl, actionUrl, intent);
+                    boolean isEncrypted = intent.getBooleanExtra("isEncrypted", false);
+
+                    String contentToSend = replyText.toString();
+                    String displayText = replyText.toString(); // Always show plaintext in notification
+
+                    // Encrypt the reply if the conversation is encrypted
+                    if (isEncrypted && conversationId != null) {
+                        try {
+                            String cachedGroupKey = E2EEKeyStore.getGroupKey(context, conversationId);
+                            if (cachedGroupKey != null) {
+                                contentToSend = E2EECryptoHelper.encryptGroupMessage(contentToSend, cachedGroupKey);
+                                Log.d(TAG, "E2EE: Encrypted reply using cached group key");
+                            } else {
+                                Log.w(TAG, "E2EE: No cached group key found, sending reply as plaintext");
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG, "E2EE: Failed to encrypt reply, sending as plaintext", e);
+                        }
+                    }
+
+                    sendReplyToSupabase(context, conversationId, targetUserId, contentToSend, displayText, notificationId, senderName, avatarUrl, actionUrl, intent);
                 }
             }
         } else if ("MARK_READ_ACTION".equals(action)) {
@@ -49,7 +69,7 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
         }
     }
 
-    private void sendReplyToSupabase(Context context, String conversationId, String targetUserId, String replyText, int notificationId, String senderName, String avatarUrl, String actionUrl, Intent originalIntent) {
+    private void sendReplyToSupabase(Context context, String conversationId, String targetUserId, String contentToSend, String displayText, int notificationId, String senderName, String avatarUrl, String actionUrl, Intent originalIntent) {
         new Thread(() -> {
             try {
                 URL url = java.net.URI.create("https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-reply").toURL();
@@ -67,7 +87,7 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 jsonParam.put("action", "reply");
                 jsonParam.put("conversationId", conversationId);
                 jsonParam.put("senderId", targetUserId);
-                jsonParam.put("content", replyText);
+                jsonParam.put("content", contentToSend); // Send encrypted content to server
                 if (actionUrl != null) {
                     jsonParam.put("actionUrl", actionUrl);
                 }
@@ -79,7 +99,8 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
 
                 int responseCode = conn.getResponseCode();
                 if (responseCode == 200) {
-                    appendReplyToNotification(context, conversationId, notificationId, replyText, senderName, avatarUrl, actionUrl, originalIntent);
+                    // Show plaintext in local notification bubble
+                    appendReplyToNotification(context, conversationId, notificationId, displayText, senderName, avatarUrl, actionUrl, originalIntent);
                 } else {
                     updateNotification(context, notificationId, "Failed: " + responseCode);
                 }

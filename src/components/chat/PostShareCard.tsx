@@ -37,7 +37,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                     .from('posts')
                     .select('content, media_url, profiles(username, full_name, avatar_url, is_verified)')
                     .eq('id', postId)
-                    .single();
+                    .maybeSingle();
 
                 if (postData) {
                     if (postData.profiles) {
@@ -77,12 +77,12 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         <>
             <div
                 onClick={() => setIsOpen(true)}
-                className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
+                className="block w-[220px] shrink-0 glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
             >
                 {/* Header Section */}
-                <div className="p-3 flex items-center gap-2.5 bg-muted/50 backdrop-blur-md border-b border-white/10">
+                <div className="p-3 flex items-center gap-2.5 bg-white dark:bg-black/60 backdrop-blur-md border-b border-black/10 dark:border-white/10">
                     <div className="relative shrink-0">
-                        <Avatar className="h-7 w-7 border border-white/20">
+                        <Avatar className="h-7 w-7 border border-black/20 dark:border-white/20">
                             <AvatarImage src={getOptimizedImage(author?.avatar_url || '', { width: 64, height: 64 }) || undefined} />
                             <AvatarFallback className="bg-primary/20 text-primary text-[10px] font-bold">
                                 {(author?.full_name || author?.username || '?').charAt(0)}
@@ -100,12 +100,12 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                 </div>
 
                 {/* Media Section */}
-                <div className="relative w-full aspect-[4/5] bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
+                <div className={`relative w-full ${!preview && text?.includes('JOB_SHARE::') ? 'py-6' : 'aspect-[4/5]'} bg-[#0a0a0a] flex items-center justify-center overflow-hidden`}>
                     {preview ? (
                         isVideo(preview) ? (
                             <video
                                 src={preview}
-                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
                                 muted
                                 loop
                                 playsInline
@@ -116,7 +116,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                             <img
                                 src={getOptimizedImage(preview, { width: 400 })}
                                 alt="Post Preview"
-                                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
                             />
                         )
                     ) : text?.includes('JOB_SHARE::') ? (
@@ -144,8 +144,8 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                                                     <span className="text-[8px] font-black uppercase tracking-[0.2em] text-primary">Official Opportunity</span>
                                                 </div>
 
-                                                <div className="w-full scale-[0.85] origin-center transition-transform duration-500 group-hover/hero:scale-[0.88]">
-                                                    <JobShareCard {...shareData} />
+                                                <div className="w-full px-1">
+                                                    <JobShareCard {...shareData} compact={true} className="w-full" />
                                                 </div>
                                             </div>
                                         </>
@@ -165,7 +165,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
 
                 {/* Footer / Caption Section */}
                 {text && (
-                    <div className="p-3 bg-muted/50 backdrop-blur-md border-t border-white/10">
+                    <div className="p-3 bg-white dark:bg-black/60 backdrop-blur-md border-t border-black/10 dark:border-white/10">
                         {text.includes('JOB_SHARE::') ? (
                             (() => {
                                 try {
@@ -180,9 +180,11 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                                                     {actualCaption}
                                                 </p>
                                             )}
-                                            <div className="scale-[0.85] origin-top-left -mb-4">
-                                                <JobShareCard {...shareData} />
-                                            </div>
+                                            {preview && (
+                                                <div className="scale-[0.85] origin-top-left -mb-4">
+                                                    <JobShareCard {...shareData} />
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 } catch (e) {

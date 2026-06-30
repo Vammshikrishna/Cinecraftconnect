@@ -70,7 +70,12 @@ const VendorServiceDetail = () => {
 
     const handleContactVendor = () => {
         if (!user) {
-            toast({ title: 'Sign in required', description: 'Please sign in to contact the vendor', variant: 'destructive' });
+            toast({
+                title: 'Sign in required',
+                description: 'Redirecting to sign in page...',
+                variant: 'destructive'
+            });
+            push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
         if (vendor && vendor.owner_id) {

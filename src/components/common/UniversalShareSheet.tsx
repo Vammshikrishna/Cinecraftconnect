@@ -12,6 +12,8 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useConnections } from "@/hooks/useConnections";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { copyToClipboard, getAppOrigin } from "@/lib/utils/share";
+import { useAccountType } from "@/hooks/useAccountType";
+import { generateDirectRoomId } from "@/lib/chat-utils";
 
 export type ShareType = 'project' | 'room' | 'job' | 'post' | 'marketplace' | 'announcement' | 'vendor' | 'pitch' | 'profile' | 'company' | 'content' | 'wishlist';
 
@@ -39,6 +41,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
     const [sentTo, setSentTo] = useState<Set<string>>(new Set());
     const [activeTab, setActiveTab] = useState("connections");
     const { user } = useAuth();
+    const { isFan } = useAccountType();
     const { toast } = useToast();
     const { connections } = useConnections();
     const isDesktop = useMediaQuery("(min-width: 768px)");
@@ -62,20 +65,39 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         setLoading(true);
 
         try {
-            const [memberSpacesRes, ownedProjectsRes, roomsRes] = await Promise.all([
+            const [memberSpacesRes, ownedProjectsRes, memberRoomsRes, ownedRoomsRes, recentConvosRes] = await Promise.all([
                 supabase.from('project_space_members').select('project_space_id').eq('user_id', user.id),
                 supabase.from('projects').select('id').eq('creator_id', user.id),
-                supabase.from('discussion_rooms').select('id, title')
+                supabase.from('room_members').select('room_id').eq('user_id', user.id),
+                supabase.from('discussion_rooms').select('id, title').eq('creator_id', user.id),
+                supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id })
             ]);
 
             const newTargets: ShareTarget[] = [];
 
             // 1. Process Connections
+            const addedUserIds = new Set<string>();
+
+            if (recentConvosRes.data) {
+                recentConvosRes.data.forEach((c: any) => {
+                    if (!addedUserIds.has(c.other_user_id)) {
+                        newTargets.push({
+                            id: c.other_user_id,
+                            name: c.other_user_full_name || 'Unknown',
+                            avatar_url: c.other_user_avatar_url,
+                            type: 'user',
+                            subtitle: 'Recent Interaction'
+                        });
+                        addedUserIds.add(c.other_user_id);
+                    }
+                });
+            }
+
             if (connections) {
                 connections.forEach(conn => {
                     const isFollower = conn.follower_id === user.id;
                     const profile = isFollower ? conn.following_profile : conn.follower_profile;
-                    if (profile) {
+                    if (profile && !addedUserIds.has(profile.id)) {
                         newTargets.push({
                             id: profile.id,
                             name: profile.full_name || profile.username || 'Unknown',
@@ -83,6 +105,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                             type: 'user',
                             subtitle: 'Connection'
                         });
+                        addedUserIds.add(profile.id);
                     }
                 });
             }
@@ -123,8 +146,10 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             }
 
             // 3. Process Rooms
-            if (roomsRes.data) {
-                roomsRes.data.forEach((r: any) => {
+            const addedRoomIds = new Set<string>();
+
+            if (ownedRoomsRes.data) {
+                ownedRoomsRes.data.forEach((r: any) => {
                     newTargets.push({
                         id: r.id,
                         name: r.title,
@@ -132,7 +157,29 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                         type: 'room',
                         subtitle: 'Discussion Room'
                     });
+                    addedRoomIds.add(r.id);
                 });
+            }
+
+            const memberRoomIds = memberRoomsRes.data?.map(m => m.room_id).filter(id => !addedRoomIds.has(id)) || [];
+
+            if (memberRoomIds.length > 0) {
+                const { data: memberRoomsData } = await supabase
+                    .from('discussion_rooms')
+                    .select('id, title')
+                    .in('id', memberRoomIds);
+
+                if (memberRoomsData) {
+                    memberRoomsData.forEach((r: any) => {
+                        newTargets.push({
+                            id: r.id,
+                            name: r.title,
+                            avatar_url: null,
+                            type: 'room',
+                            subtitle: 'Discussion Room'
+                        });
+                    });
+                }
             }
 
             // Deduplicate to avoid duplicate keys in React list rendering
@@ -155,23 +202,37 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         try {
             const prefix = shareType === 'room' ? 'DISCUSSION_SHARE::' : `${shareType.toUpperCase()}_SHARE::`;
             
-            // Defensive check: Ensure profile shares always have an identifier in shareData
+            // Defensive check: Ensure shares always have an identifier in shareData
             let finalShareData = { ...shareData };
-            if (shareType === 'profile' && !finalShareData.id && !finalShareData.username) {
-                console.log('UniversalShareSheet: Injecting missing profile identifier', shareId);
+            if (!finalShareData.id) {
+                console.log('UniversalShareSheet: Injecting missing identifier', shareId);
                 finalShareData.id = shareId; // Fallback to shareId if data is missing
             }
 
             const messageContent = `${prefix}${JSON.stringify(finalShareData)}`;
 
             if (target.type === 'user') {
-                const channelId = [user.id, target.id].sort().join('-');
+                const channelId = generateDirectRoomId(user.id, target.id);
                 await supabase.from('direct_messages').insert({
                     content: messageContent,
                     sender_id: user.id,
                     channel_id: channelId,
                     receiver_id: target.id
                 });
+
+                // Dispatch local event for instant UI update
+                console.log('[UniversalShareSheet] Dispatching local chat_list_update event');
+                window.dispatchEvent(new CustomEvent('chat_list_update', {
+                    detail: { senderId: user.id, receiverId: target.id }
+                }));
+
+                // Safely broadcast globally
+                const globalChannel = supabase.channel('global_chat_updates');
+                globalChannel.send({
+                    type: 'broadcast',
+                    event: 'chat_list_update',
+                    payload: { senderId: user.id, receiverId: target.id }
+                }).catch(console.error);
             } else if (target.type === 'project') {
                 await supabase.from('project_space_messages').insert({
                     project_space_id: target.id,
@@ -197,10 +258,76 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
         }
     };
 
+    const handleShareToFeedPost = async () => {
+        if (!user) return;
+        setSending('feed_post');
+        try {
+            const prefix = `JOB_SHARE::`;
+            const finalShareData = { ...shareData, id: shareId };
+            const content = `${prefix}${JSON.stringify(finalShareData)}`;
+
+            const { error } = await supabase.from('posts').insert({
+                author_id: user.id,
+                content: content,
+            });
+
+            if (error) throw error;
+
+            toast({
+                title: "Shared to Post",
+                description: "This job opportunity has been posted to your profile and feed.",
+            });
+            onOpenChange(false);
+        } catch (err: any) {
+            console.error("Error sharing to post:", err);
+            toast({
+                title: "Error sharing to post",
+                description: err.message || "Failed to share job as a post.",
+                variant: "destructive"
+            });
+        } finally {
+            setSending(null);
+        }
+    };
+
+    const handleShareToAnnouncement = async () => {
+        if (!user) return;
+        setSending('announcement');
+        try {
+            const prefix = `JOB_SHARE::`;
+            const finalShareData = { ...shareData, id: shareId };
+            const content = `${prefix}${JSON.stringify(finalShareData)}`;
+
+            const { error } = await supabase.from('announcements').insert({
+                author_id: user.id,
+                title: `Hiring: ${shareData.title || 'Job Opportunity'}`,
+                content: content,
+                posted_at: new Date().toISOString()
+            });
+
+            if (error) throw error;
+
+            toast({
+                title: "Shared to Announcements",
+                description: "This job has been published to Announcements and will show on the feed.",
+            });
+            onOpenChange(false);
+        } catch (err: any) {
+            console.error("Error sharing to announcements:", err);
+            toast({
+                title: "Error sharing to announcements",
+                description: err.message || "Failed to publish announcement.",
+                variant: "destructive"
+            });
+        } finally {
+            setSending(null);
+        }
+    };
+
     const handleCopyLink = async () => {
         let path = '';
         switch(shareType) {
-            case 'project': path = `/projects/${shareId}/space`; break;
+            case 'project': path = `/projects/${shareId}`; break;
             case 'room': path = `/discussion-rooms/${shareId}`; break;
             case 'job': path = `/jobs/${shareId}`; break;
             case 'post': path = `/posts/${shareId}`; break;
@@ -229,7 +356,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
     const handleSystemShare = async () => {
         let path = '';
         switch(shareType) {
-            case 'project': path = `/projects/${shareId}/space`; break;
+            case 'project': path = `/projects/${shareId}`; break;
             case 'room': path = `/discussion-rooms/${shareId}`; break;
             case 'job': path = `/jobs/${shareId}`; break;
             case 'post': path = `/posts/${shareId}`; break;
@@ -256,7 +383,8 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                 });
             } catch (err) {
                 if ((err as Error).name !== 'AbortError') {
-                    console.error("Share failed", err);
+                    console.error("Share failed, falling back to copy link", err);
+                    await handleCopyLink();
                 }
             }
         } else {
@@ -358,12 +486,37 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                     </Button>
                 </div>
 
+                {shareType === 'job' && !isFan && (
+                    <div className="flex gap-3 px-1">
+                        <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            disabled={sending === 'feed_post'}
+                            className="flex-1 gap-2 h-10 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border-none transition-all font-bold text-xs" 
+                            onClick={handleShareToFeedPost}
+                        >
+                            {sending === 'feed_post' ? "Sharing..." : "Share to Post"}
+                        </Button>
+                        <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            disabled={sending === 'announcement'}
+                            className="flex-1 gap-2 h-10 rounded-xl bg-secondary/10 hover:bg-secondary/20 text-secondary border-none transition-all font-bold text-xs" 
+                            onClick={handleShareToAnnouncement}
+                        >
+                            {sending === 'announcement' ? "Sharing..." : "Share to Announcement"}
+                        </Button>
+                    </div>
+                )}
+
                 {/* Tabs */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-                    <TabsList className="w-full grid grid-cols-3 bg-zinc-100 dark:bg-zinc-800/50 p-1.5 rounded-2xl h-12">
+                    <TabsList className={`w-full grid ${isFan ? 'grid-cols-2' : 'grid-cols-3'} bg-zinc-100 dark:bg-zinc-800/50 p-1.5 rounded-2xl h-12`}>
                         <TabsTrigger value="connections" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Connections</TabsTrigger>
                         <TabsTrigger value="discussions" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Discussions</TabsTrigger>
-                        <TabsTrigger value="projects" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Projects</TabsTrigger>
+                        {!isFan && (
+                            <TabsTrigger value="projects" className="text-[10px] font-black uppercase tracking-widest rounded-xl data-[state=active]:bg-white dark:data-[state=active]:bg-zinc-900 data-[state=active]:text-[#ff4d4d] data-[state=active]:shadow-sm transition-all h-full">Projects</TabsTrigger>
+                        )}
                     </TabsList>
                 </Tabs>
             </div>

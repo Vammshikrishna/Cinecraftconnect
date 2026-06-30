@@ -132,8 +132,6 @@ const PostActionsDialogs = ({
         .update({
           content: finalContent,
           media_items: editMediaItems,
-          media_url: editMediaItems.length > 0 ? editMediaItems[0].url : null,
-          media_type: editMediaItems.length > 0 ? editMediaItems[0].type : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', postId);

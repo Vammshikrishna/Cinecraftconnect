@@ -117,7 +117,7 @@ export const useUnreadMessages = () => {
       .on('postgres_changes', {
         event: '*', 
         schema: 'public', 
-        table: 'project_space_message_read_status',
+        table: 'project_message_read_status',
         filter: `user_id=eq.${user.id}`
       }, () => fetchInitialUnreadStatus())
       .subscribe();

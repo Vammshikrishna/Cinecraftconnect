@@ -42,7 +42,7 @@ const Vendors = () => {
     // Redirect fans
     useEffect(() => {
         if (isFan) {
-            push('/pricing');
+            push('/404');
         }
     }, [isFan, push]);
 

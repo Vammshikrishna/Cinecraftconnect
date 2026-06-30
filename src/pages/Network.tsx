@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Search, Users, UserPlus, UserCheck, ChevronRight } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useUsers } from "@/hooks/useUsers";
 import { useConnections } from "@/hooks/useConnections";
+import { useFollows } from "@/hooks/useFollows";
 import UserCard from "@/components/network/UserCard";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,17 +26,15 @@ const Network = () => {
   const [craftFilter, setCraftFilter] = useState("All");
   const [activeTab, setActiveTab] = useState("discover");
 
-  // Redirect fans
-  useState(() => {
-    if (isFan) {
-      push('/pricing');
-    }
-  });
-
-
   const [connectionsSearchQuery, setConnectionsSearchQuery] = useState("");
 
-  const { users, loading: usersLoading } = useUsers(searchQuery, craftFilter);
+  // Update default tab for Fans
+  useEffect(() => {
+    if (isFan && activeTab === 'discover') {
+      setActiveTab('discover-creators');
+    }
+  }, [isFan]);
+
   const {
     connections,
     pendingRequests,
@@ -47,6 +46,17 @@ const Network = () => {
     cancelConnectionRequest,
     removeConnection,
   } = useConnections();
+
+  const {
+    following,
+    sendFollow,
+    deleteFollow
+  } = useFollows();
+
+  // Determine account type filter for useUsers
+  const accountTypeFilter = activeTab === 'discover-creators' ? 'creator' : activeTab === 'discover-fans' ? 'fan' : null;
+
+  const { users, loading: usersLoading } = useUsers(searchQuery, craftFilter, !connectionsLoading, accountTypeFilter);
 
   const [dismissedUserIds, setDismissedUserIds] = useState<Set<string>>(new Set());
 
@@ -95,43 +105,66 @@ const Network = () => {
 
         <div className="flex flex-col lg:flex-row gap-8">
           
-          {/* LEFT SIDEBAR - LinkedIn Style */}
+          {/* LEFT SIDEBAR */}
           <div className="w-full lg:w-1/4 shrink-0 space-y-6">
             <Card className="bg-card/40 backdrop-blur-md border-border/50 shadow-sm overflow-hidden">
               <div className="py-4 px-5 border-b border-border/50">
                   <h2 className="font-semibold text-lg text-foreground">Manage my network</h2>
               </div>
               <div className="flex flex-col py-2">
-                <Button 
-                    variant="ghost" 
-                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'connections' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
-                    onClick={() => setActiveTab('connections')}
-                >
-                    <span className="flex items-center"><Users className="w-5 h-5 mr-3"/> Connections</span>
-                    <span className={activeTab === 'connections' ? 'text-primary' : 'text-muted-foreground'}>{connections.length}</span>
-                </Button>
+                {!isFan ? (
+                  <>
+                    <Button 
+                        variant="ghost" 
+                        className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'connections' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                        onClick={() => setActiveTab('connections')}
+                    >
+                        <span className="flex items-center"><Users className="w-5 h-5 mr-3"/> Connections</span>
+                        <span className={activeTab === 'connections' ? 'text-primary' : 'text-muted-foreground'}>{connections.length}</span>
+                    </Button>
 
-                <Button 
-                    variant="ghost" 
-                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'requests' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
-                    onClick={() => setActiveTab('requests')}
-                >
-                    <span className="flex items-center"><UserPlus className="w-5 h-5 mr-3"/> Requests</span>
-                    {pendingRequests.length > 0 ? (
-                        <Badge variant="default" className="bg-primary text-primary-foreground">{pendingRequests.length}</Badge>
-                    ) : (
-                        <span className={activeTab === 'requests' ? 'text-primary' : 'text-muted-foreground'}>{pendingRequests.length}</span>
-                    )}
-                </Button>
+                    <Button 
+                        variant="ghost" 
+                        className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'requests' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                        onClick={() => setActiveTab('requests')}
+                    >
+                        <span className="flex items-center"><UserPlus className="w-5 h-5 mr-3"/> Requests</span>
+                        {pendingRequests.length > 0 ? (
+                            <Badge variant="default" className="bg-primary text-primary-foreground">{pendingRequests.length}</Badge>
+                        ) : (
+                            <span className={activeTab === 'requests' ? 'text-primary' : 'text-muted-foreground'}>{pendingRequests.length}</span>
+                        )}
+                    </Button>
 
-                <Button 
-                    variant="ghost" 
-                    className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'discover' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
-                    onClick={() => setActiveTab('discover')}
-                >
-                    <span className="flex items-center"><Search className="w-5 h-5 mr-3"/> Discover</span>
-                    <ChevronRight className="w-4 h-4 opacity-50" />
-                </Button>
+                    <Button 
+                        variant="ghost" 
+                        className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'discover' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                        onClick={() => setActiveTab('discover')}
+                    >
+                        <span className="flex items-center"><Search className="w-5 h-5 mr-3"/> Discover</span>
+                        <ChevronRight className="w-4 h-4 opacity-50" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button 
+                        variant="ghost" 
+                        className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'discover-creators' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                        onClick={() => setActiveTab('discover-creators')}
+                    >
+                        <span className="flex items-center"><Search className="w-5 h-5 mr-3"/> Discover Creators</span>
+                        <ChevronRight className="w-4 h-4 opacity-50" />
+                    </Button>
+                    <Button 
+                        variant="ghost" 
+                        className={`justify-between w-full rounded-none px-5 py-6 font-medium ${activeTab === 'discover-fans' ? 'bg-primary/5 border-l-4 border-l-primary text-primary' : 'text-muted-foreground hover:bg-muted/50 border-l-4 border-l-transparent'}`} 
+                        onClick={() => setActiveTab('discover-fans')}
+                    >
+                        <span className="flex items-center"><Users className="w-5 h-5 mr-3"/> Discover Fans</span>
+                        <ChevronRight className="w-4 h-4 opacity-50" />
+                    </Button>
+                  </>
+                )}
               </div>
             </Card>
           </div>
@@ -139,8 +172,8 @@ const Network = () => {
           {/* MAIN CONTENT AREA */}
           <div className="w-full lg:w-3/4 space-y-6">
 
-            {/* IF TAB IS DISCOVER */}
-            {activeTab === 'discover' && (
+            {/* IF TAB IS DISCOVER OR FAN DISCOVER */}
+            {(activeTab === 'discover' || activeTab === 'discover-creators' || activeTab === 'discover-fans') && (
               <>
                 {/* Mini pending requests banner if there are any */}
                 {pendingRequests.length > 0 && (
@@ -202,6 +235,7 @@ const Network = () => {
                       .filter(user => !dismissedUserIds.has(user.id))
                       .map((user) => {
                         const sentReq = sentRequests.find(r => r.following_id === user.id);
+                        const receivedReq = pendingRequests.find(r => r.follower_id === user.id);
                         const connection = connections.find(c =>
                           (c.follower_id === user.id && c.following_id === currentUser?.id) ||
                           (c.following_id === user.id && c.follower_id === currentUser?.id)
@@ -213,14 +247,19 @@ const Network = () => {
                             user={{
                               ...user,
                               is_verified: user.is_verified || undefined,
-                              connection_status: sentReq ? 'pending_sent' :
-                                connection ? 'connected' :
+                              connection_status: connection ? 'connected' : 
+                                sentReq ? 'pending_sent' : 
+                                receivedReq ? 'pending_received' :
                                   user.connection_status || 'none'
                             }}
                             onConnect={sendConnectionRequest}
                             onAccept={(id: string) => {
                               const req = pendingRequests.find(r => r.follower_id === id);
                               if (req) acceptConnectionRequest(req.id);
+                            }}
+                            onReject={(id: string) => {
+                              const req = pendingRequests.find(r => r.follower_id === id);
+                              if (req) rejectConnectionRequest(req.id);
                             }}
                             onCancelRequest={(id: string) => {
                               const req = sentRequests.find(r => r.following_id === id);
@@ -231,6 +270,13 @@ const Network = () => {
                               if (conn) removeConnection(conn.id);
                             }}
                             onDismiss={handleDismiss}
+                            isFanFollowMode={isFan}
+                            isFollowing={isFan ? following.some(f => f.following_id === user.id) : undefined}
+                            onFollow={(id) => sendFollow(id)}
+                            onUnfollow={(id) => {
+                              const f = following.find(f => f.following_id === id);
+                              if (f) deleteFollow(f.id);
+                            }}
                           />
                         );
                       })}

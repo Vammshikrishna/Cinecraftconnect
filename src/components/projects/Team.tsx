@@ -29,10 +29,11 @@ interface SearchResult {
 }
 
 interface TeamProps {
-    project_id: string;
+    project_id: string; // This is actually the space ID
+    real_project_id?: string; // This is the actual project ID
 }
 
-const Team = ({ project_id }: TeamProps) => {
+const Team = ({ project_id, real_project_id }: TeamProps) => {
     const { user } = useAuth();
     const { isInternal } = useAppRole();
     const { toast } = useToast();
@@ -75,6 +76,18 @@ const Team = ({ project_id }: TeamProps) => {
     const fetchMembers = useCallback(async () => {
         try {
             setLoading(true);
+
+            let creatorId = null;
+            if (real_project_id) {
+                // Fetch the project creator to identify the admin
+                const { data: projectData } = await supabase
+                    .from('projects')
+                    .select('creator_id')
+                    .eq('id', real_project_id)
+                    .maybeSingle();
+                creatorId = projectData?.creator_id;
+            }
+
             const { data, error } = await supabase
                 .from('project_space_members' as any)
                 .select(`
@@ -89,16 +102,35 @@ const Team = ({ project_id }: TeamProps) => {
 
             if (error) throw error;
 
-            const formattedMembers = data?.map((member: any) => ({
-                user_id: member.user_id,
-                role: member.role,
-                profiles: {
-                    full_name: member.profiles?.full_name || null,
-                    avatar_url: member.profiles?.avatar_url || null,
-                    is_internal: member.profiles?.is_internal || false,
-                    platform_role: member.profiles?.is_internal ? 'Staff' : 'user'
-                }
-            })).filter((m: any) => !m.profiles.is_internal) || [];
+            const userIds = data?.map((m: any) => m.user_id) || [];
+            let staffUserIds = new Set<string>();
+            
+            if (userIds.length > 0) {
+                const { data: rolesData } = await supabase
+                    .from('user_roles')
+                    .select('user_id, role')
+                    .in('user_id', userIds);
+                
+                rolesData?.forEach((r: any) => {
+                    if (r.role === 'admin' || r.role === 'super_admin' || r.role === 'moderator') {
+                        staffUserIds.add(r.user_id);
+                    }
+                });
+            }
+
+            const formattedMembers = data?.map((member: any) => {
+                const isInternalRole = staffUserIds.has(member.user_id) || member.profiles?.is_internal;
+                return {
+                    user_id: member.user_id,
+                    role: member.user_id === creatorId ? 'admin' : member.role, // Creator is always an admin
+                    profiles: {
+                        full_name: member.profiles?.full_name || null,
+                        avatar_url: member.profiles?.avatar_url || null,
+                        is_internal: isInternalRole,
+                        platform_role: isInternalRole ? 'Staff' : 'user'
+                    }
+                };
+            }).filter((m: any) => !m.profiles.is_internal) || [];
 
             setMembers(formattedMembers);
         } catch (error: any) {
@@ -165,19 +197,35 @@ const Team = ({ project_id }: TeamProps) => {
 
         setSearching(true);
         try {
-            // @ts-ignore
             const { data, error } = await supabase
                 .from('profiles')
-                // @ts-ignore
-                .select('id, full_name, avatar_url, bio')
+                .select('id, full_name, avatar_url, bio, is_internal')
                 .ilike('full_name', `%${searchQuery}%`)
-                .limit(10);
+                .limit(20);
 
             if (error) throw error;
 
+            const userIds = data?.map((u: any) => u.id) || [];
+            let staffUserIds = new Set<string>();
+            if (userIds.length > 0) {
+                const { data: rolesData } = await supabase
+                    .from('user_roles')
+                    .select('user_id, role')
+                    .in('user_id', userIds);
+                
+                rolesData?.forEach((r: any) => {
+                    if (r.role === 'admin' || r.role === 'super_admin' || r.role === 'moderator') {
+                        staffUserIds.add(r.user_id);
+                    }
+                });
+            }
+
             const memberIds = members.map(m => m.user_id);
-            // @ts-ignore
-            const filtered = data?.filter((user: any) => !memberIds.includes(user.id)).map((u: any) => ({
+            const filtered = data?.filter((user: any) => 
+                !memberIds.includes(user.id) && 
+                !user.is_internal && 
+                !staffUserIds.has(user.id)
+            ).map((u: any) => ({
                 id: u.id,
                 full_name: u.full_name,
                 avatar_url: u.avatar_url,
@@ -351,34 +399,76 @@ const Team = ({ project_id }: TeamProps) => {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {members.map(member => (
-                    <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                {member.profiles.avatar_url ? (
-                                    <img src={member.profiles.avatar_url} alt={member.profiles.full_name || 'Member'} className="h-12 w-12 rounded-full object-cover border-2 border-primary/20" />
-                                ) : (
-                                    <div className="h-12 w-12 rounded-full bg-primary/15 flex items-center justify-center text-lg font-bold text-primary">
-                                        {(member.profiles.full_name || 'U')[0].toUpperCase()}
+            {/* Admins Section */}
+            {members.filter(m => m.role === 'admin').length > 0 && (
+                <div className="mb-8">
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4 px-1">Project Admins</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {members.filter(m => m.role === 'admin').map(member => (
+                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-primary/5 -rotate-45 translate-x-8 -translate-y-8" />
+                                <div className="flex items-center justify-between relative z-10">
+                                    <div className="flex items-center gap-3">
+                                        {member.profiles.avatar_url ? (
+                                            <img src={member.profiles.avatar_url} alt={member.profiles.full_name || 'Member'} className="h-12 w-12 rounded-full object-cover border-2 border-primary/20 shadow-sm" />
+                                        ) : (
+                                            <div className="h-12 w-12 rounded-full bg-primary/15 flex items-center justify-center text-lg font-bold text-primary shadow-sm">
+                                                {(member.profiles.full_name || 'U')[0].toUpperCase()}
+                                            </div>
+                                        )}
+                                        <div>
+                                            <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
+                                            <p className="text-xs font-bold uppercase tracking-wider text-primary mt-0.5">
+                                                Admin
+                                            </p>
+                                        </div>
                                     </div>
-                                )}
-                                <div>
-                                    <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
-                                    <p className={`text-xs font-medium capitalize ${member.profiles.is_internal ? 'text-orange-500 font-bold' : 'text-primary'}`}>
-                                        {member.profiles.is_internal ? 'Staff Observer' : member.role}
-                                    </p>
+                                    {member.user_id !== user?.id && !isInternal && (
+                                        <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    )}
                                 </div>
                             </div>
-                            {member.user_id !== user?.id && !isInternal && (
-                                <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
-                                    <Trash2 className="h-4 w-4" />
-                                </Button>
-                            )}
-                        </div>
+                        ))}
                     </div>
-                ))}
-            </div>
+                </div>
+            )}
+
+            {/* Regular Members Section */}
+            {members.filter(m => m.role !== 'admin').length > 0 && (
+                <div>
+                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4 px-1">Team Members</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {members.filter(m => m.role !== 'admin').map(member => (
+                            <div key={member.user_id} className="p-5 bg-card border border-border rounded-2xl hover:bg-accent/50 hover:border-primary/20 transition-all duration-300 shadow-sm group">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        {member.profiles.avatar_url ? (
+                                            <img src={member.profiles.avatar_url} alt={member.profiles.full_name || 'Member'} className="h-12 w-12 rounded-full object-cover border-2 border-border" />
+                                        ) : (
+                                            <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center text-lg font-bold text-muted-foreground">
+                                                {(member.profiles.full_name || 'U')[0].toUpperCase()}
+                                            </div>
+                                        )}
+                                        <div>
+                                            <p className="font-bold text-foreground">{member.profiles.full_name || 'Unknown User'}</p>
+                                            <p className="text-xs font-medium capitalize text-muted-foreground mt-0.5">
+                                                {member.role || 'Member'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {member.user_id !== user?.id && !isInternal && (
+                                        <Button size="sm" variant="ghost" onClick={() => removeMember(member.user_id)} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive rounded-full h-9 w-9 p-0">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {members.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-24 text-center">

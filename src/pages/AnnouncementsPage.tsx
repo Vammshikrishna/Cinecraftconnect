@@ -139,10 +139,11 @@ const AnnouncementsPage = ({ openCreate = false }: { openCreate?: boolean }) => 
                         </p>
                     </div>
                 ) : (
-                    <ResponsiveGrid cols={{ sm: 1, md: 2, lg: 3, xl: 4 }} gap={6}>
+                    <ResponsiveGrid cols={{ sm: 1, md: 1, lg: 2, xl: 3 }} gap={6} className="items-start">
                         {announcements.map((announcement) => (
                             <FeedAnnouncementCard
                                 key={announcement.id}
+                                isWidget={true}
                                 announcement={{
                                     id: announcement.id,
                                     title: announcement.title,

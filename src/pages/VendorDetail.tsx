@@ -94,9 +94,10 @@ const VendorDetail = () => {
         if (!user) {
             toast({
                 title: 'Sign in required',
-                description: 'Please sign in to contact the vendor',
+                description: 'Redirecting to sign in page...',
                 variant: 'destructive'
             });
+            push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
             return;
         }
 

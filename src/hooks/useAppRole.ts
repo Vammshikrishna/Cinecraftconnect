@@ -42,12 +42,15 @@ export const useAppRole = (): UseAppRoleReturn => {
           .from('user_roles')
           .select('role')
           .eq('user_id', user.id)
-          .maybeSingle();
+          .limit(1);
 
         if (error) throw error;
 
-        setRole((data?.role as AppRole) ?? 'user');
-      } catch {
+        const fetchedRole = data && data.length > 0 ? data[0].role : null;
+        console.log('[useAppRole] Fetched role for', user.id, ':', fetchedRole);
+        setRole((fetchedRole as AppRole) ?? 'user');
+      } catch (err) {
+        console.error('[useAppRole] Error fetching role:', err);
         setRole('user');
       } finally {
         setLoading(false);

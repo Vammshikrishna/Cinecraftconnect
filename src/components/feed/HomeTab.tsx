@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useConnections } from '@/hooks/useConnections';
+import { useFollows } from '@/hooks/useFollows';
 import { formatDistanceToNow } from 'date-fns';
 import {
     Megaphone, Film, Star,
@@ -122,6 +123,12 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
         removeConnection
     } = useConnections();
 
+    const {
+        following: existingFollows,
+        sendFollow,
+        deleteFollow
+    } = useFollows();
+
     const refreshFeed = () => refetch();
 
     const handleLikeToggle = (postId: string, isLiked: boolean) => {
@@ -172,6 +179,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         itemType: 'announcement'
                                     }}
                                     onDismiss={(id) => handleDismiss(id)}
+                                    isWidget={true}
                                 />
                             </div>
                         ))}
@@ -365,14 +373,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                     </div>
                 </div>
             )}
-            <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-6">
+            <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-2 md:pt-6">
             {/* Main Feed Column */}
-            <div className="w-full max-w-[680px] space-y-6">
+            <div className="w-full max-w-[480px] space-y-6">
                 <div className="px-1 sm:px-4">
                     {/* Only creators can compose posts */}
                     {!isFan && <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />}
                     {isFan && (
-                        <div className="rounded-xl border border-border/30 bg-card/40 px-4 py-3 text-sm text-muted-foreground flex items-center gap-2">
+                        <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md px-4 py-3 text-sm text-muted-foreground flex items-center gap-2">
                             <span className="text-base">🎬</span>
                             <span>You're viewing as a <strong className="text-foreground">Fan</strong>. Follow creators to see their content here.</span>
                         </div>
@@ -403,6 +411,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             name: authorName,
                                             role: authorRole,
                                             craft: author?.craft || undefined,
+                                            account_type: author?.account_type || undefined,
                                             initials: getInitials(authorName),
                                             avatar: post.profiles?.avatar_url || undefined,
                                             isVerified: post.profiles?.is_verified
@@ -417,9 +426,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         })()}
                                         createdAt={post.created_at}
                                         content={post.content}
-                                        mediaUrl={post.media_url}
-                                        mediaItems={post.media_items}
-                                        hasImage={post.media_type === 'image'}
+                                        mediaUrl={post.media_urls?.[0] || post.media_url}
+                                        mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+                                        hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
                                         hasVideo={post.media_type === 'video'}
                                         like_count={post.like_count || 0}
                                         comment_count={post.comment_count || 0}
@@ -479,7 +488,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             </div>
 
             {/* Instagram-style Sidebar (Hidden on small screens) */}
-            <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-20 h-fit pt-6">
+            <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-24 h-fit p-5 rounded-2xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md shadow-sm">
                 {/* User Mini Profile */}
                 <div className="flex items-center justify-between px-1">
                     <div 
@@ -575,7 +584,8 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     !existingConnections.some(c => 
                                         (c.follower_id === profile.id && c.status === 'accepted') || 
                                         (c.following_id === profile.id && c.status === 'accepted')
-                                    )
+                                    ) &&
+                                    !existingFollows.some(f => f.following_id === profile.id)
                                 )
                                 .slice(0, 5)
                                 .map((conn) => (
@@ -602,11 +612,13 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <button 
-                                            onClick={() => sendConnectionRequest(conn.id)}
-                                            disabled={sentRequests.some(r => r.following_id === conn.id)}
+                                            onClick={() => isFan ? sendFollow(conn.id) : sendConnectionRequest(conn.id)}
+                                            disabled={isFan ? existingFollows.some(f => f.following_id === conn.id) : sentRequests.some(r => r.following_id === conn.id)}
                                             className="text-primary text-[11px] font-bold hover:opacity-80 disabled:text-muted-foreground"
                                         >
-                                            {sentRequests.some(r => r.following_id === conn.id) ? 'Sent' : (isFan ? 'Follow' : 'Connect')}
+                                            {isFan 
+                                                ? (existingFollows.some(f => f.following_id === conn.id) ? 'Following' : 'Follow') 
+                                                : (sentRequests.some(r => r.following_id === conn.id) ? 'Sent' : 'Connect')}
                                         </button>
                                         {!sentRequests.some(r => r.following_id === conn.id) && (
                                             <button 

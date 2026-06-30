@@ -116,7 +116,7 @@ const SearchPage = () => {
         try {
             const promises = [
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').limit(12),
-                supabase.from('discussion_rooms').select('id, title, description, name').limit(12),
+                supabase.from('discussion_rooms').select('id, title, description').limit(12),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').order('created_at', { ascending: false }).limit(32),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12)
@@ -196,7 +196,7 @@ const SearchPage = () => {
             const promises = [
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified').or(profilesFilter).limit(10),
-                supabase.from('discussion_rooms').select('id, title, description, name').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
+                supabase.from('discussion_rooms').select('id, title, description').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').ilike('content', `%${searchQuery}%`).limit(24),
                 supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
@@ -220,7 +220,7 @@ const SearchPage = () => {
 
             const projects = (projectsData || []).map((p: any) => ({ ...p, id: p.id, title: p.title, description: p.description || '', location: p.location, genre: p.genre, status: p.status, image_url: p.image_url, type: 'project' as const }));
             const users = (usersData || []).map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, type: 'user' as const }));
-            const discussions = (discussionsData || []).map((d: any) => ({ ...d, id: d.id, title: d.title, name: d.name, description: d.description || '', type: 'discussion' as const }));
+            const discussions = (discussionsData || []).map((d: any) => ({ ...d, id: d.id, title: d.title, name: d.title, description: d.description || '', type: 'discussion' as const }));
             const posts = (postsData || []).map((p: any) => ({ id: p.id, content: p.content, image_url: p.media_type === 'image' ? p.media_url : undefined, video_url: p.media_type === 'video' ? p.media_url : undefined, like_count: p.like_count || 0, comment_count: p.comment_count || 0, author: p.author ? (Array.isArray(p.author) ? p.author[0] : p.author) : null, type: 'post' as const }));
             const announcements = (announcementsData || []).map((a: any) => ({ id: a.id, title: a.title, content: a.content, type: 'announcement' as const }));
             const vendors = (vendorsData || []).map((v: any) => ({ ...v, id: v.id, business_name: v.business_name, logo_url: v.logo_url || undefined, category: v.category || v.specialization, city: v.city || v.location, type: 'vendor' as const }));

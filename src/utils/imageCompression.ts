@@ -13,7 +13,7 @@ export const compressImage = (
   file: File,
   maxWidth = 1200,
   maxHeight = 1200,
-  quality = 0.75
+  quality = 0.70
 ): Promise<File> => {
   return new Promise((resolve) => {
     // Check if browser environment supports canvas and file readers

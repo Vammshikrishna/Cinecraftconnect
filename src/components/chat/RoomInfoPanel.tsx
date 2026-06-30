@@ -65,14 +65,16 @@ const RoomInfoPanel = ({ roomId, roomTitle, roomDescription, onClose, onRoomUpda
             .from('discussion_rooms')
             .select('room_type, creator_id')
             .eq('id', roomId)
-            .single();
+            .maybeSingle();
 
         if (roomError) throw roomError;
-        setIsPublic(roomData.room_type === 'public');
-        if (user && roomData.creator_id === user.id) {
-            setIsCreator(true);
-            const requests = await fetchJoinRequests(roomId);
-            setJoinRequests(requests);
+        if (roomData) {
+            setIsPublic(roomData.room_type === 'public');
+            if (user && roomData.creator_id === user.id) {
+                setIsCreator(true);
+                const requests = await fetchJoinRequests(roomId);
+                setJoinRequests(requests);
+            }
         }
 
       const { data: membersData, error: membersError } = await supabase

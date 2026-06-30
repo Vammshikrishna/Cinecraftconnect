@@ -27,6 +27,9 @@ public class FCMService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         super.onMessageReceived(remoteMessage);
+        
+        // Forward to Capacitor PushNotificationsPlugin so JS listeners work
+        com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin.sendRemoteMessage(remoteMessage);
 
         Map<String, String> data = remoteMessage.getData();
         if (data.isEmpty())
@@ -38,6 +41,8 @@ public class FCMService extends FirebaseMessagingService {
         String actionUrl = data.get("actionUrl");
         String targetUserId = data.get("targetUserId");
         String avatarUrl = data.get("avatarUrl");
+        String type = data.get("type"); // "conversation" or "social" etc.
+        String title = data.get("title");
 
         if (conversationId == null) {
             conversationId = "general";
@@ -51,11 +56,106 @@ public class FCMService extends FirebaseMessagingService {
         if (targetUserId == null)
             targetUserId = "system";
 
-        showInboxStyleNotification(conversationId, senderName, messageBody, actionUrl, targetUserId, avatarUrl, remoteMessage.getMessageId());
+        // --- E2EE Decryption ---
+        String isEncrypted = data.get("isEncrypted");
+        if ("true".equals(isEncrypted)) {
+            try {
+                String encryptedContent = data.get("encryptedContent");
+                String encryptedSymKey = data.get("encryptedSymmetricKey");
+                Context context = getApplicationContext();
+
+                if (encryptedContent != null && !encryptedContent.isEmpty()) {
+                    if (encryptedSymKey != null && !encryptedSymKey.isEmpty()) {
+                        // GROUP MESSAGE: RSA-decrypt the symmetric key, then AES-GCM decrypt
+                        String privateKeyBase64 = E2EEKeyStore.getPrivateKey(context, targetUserId);
+                        if (privateKeyBase64 != null) {
+                            String symKeyBase64 = E2EECryptoHelper.rsaDecrypt(privateKeyBase64, encryptedSymKey);
+                            String decrypted = E2EECryptoHelper.decryptGroupMessage(encryptedContent, symKeyBase64);
+                            messageBody = decrypted;
+                            Log.d("FCMService", "E2EE: Successfully decrypted group message");
+                        } else {
+                            messageBody = "Decryption error: Private key is null (Group)";
+                            // Try cached group key as fallback
+                            String cachedGroupKey = E2EEKeyStore.getGroupKey(context, conversationId);
+                            if (cachedGroupKey != null) {
+                                String decrypted = E2EECryptoHelper.decryptGroupMessage(encryptedContent, cachedGroupKey);
+                                messageBody = decrypted;
+                                Log.d("FCMService", "E2EE: Decrypted group message using cached key");
+                            }
+                        }
+                    } else {
+                        // DIRECT MESSAGE: RSA-decrypt directly
+                        String privateKeyBase64 = E2EEKeyStore.getPrivateKey(context, targetUserId);
+                        if (privateKeyBase64 != null) {
+                            String decrypted = E2EECryptoHelper.decryptDirectMessage(
+                                    encryptedContent, privateKeyBase64, false);
+                            messageBody = decrypted;
+                            Log.d("FCMService", "E2EE: Successfully decrypted direct message");
+                        } else {
+                            messageBody = "Decryption error: Private key is null (DM)";
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                // Decryption failed — log and show the error in the notification for debugging
+                Log.w("FCMService", "E2EE decryption failed, using server fallback body", e);
+                messageBody = "Decryption error: " + e.toString();
+            }
+        }
+
+        boolean wasEncrypted = "true".equals(isEncrypted);
+
+        SharedPreferences capacitorPrefs = getApplicationContext().getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+        String activeConversationId = capacitorPrefs.getString("active_conversation_id", "");
+        
+        if (isAppInForeground(getApplicationContext()) && conversationId.equals(activeConversationId)) {
+            Log.d("FCMService", "App is in foreground and user is looking at this conversation, skipping banner.");
+            return;
+        }
+
+        if (type != null && !type.equals("conversation") && !type.equals("chat")) {
+            showBasicNotification(conversationId, title != null ? title : senderName, messageBody, actionUrl, remoteMessage.getMessageId());
+        } else {
+            showInboxStyleNotification(conversationId, senderName, messageBody, actionUrl, targetUserId, avatarUrl, remoteMessage.getMessageId(), wasEncrypted);
+        }
+    }
+
+    private void showBasicNotification(String notificationIdStr, String title, String body, String actionUrl, String messageId) {
+        Context context = getApplicationContext();
+        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Updates", NotificationManager.IMPORTANCE_DEFAULT);
+            notificationManager.createNotificationChannel(channel);
+        }
+
+        int notificationId = notificationIdStr != null ? notificationIdStr.hashCode() : (int) System.currentTimeMillis();
+
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        if (actionUrl != null) {
+            intent.putExtra("actionUrl", actionUrl);
+        }
+        if (messageId != null) {
+            intent.putExtra("google.message_id", messageId);
+        }
+
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, notificationId, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_icon_default)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true);
+
+        notificationManager.notify(notificationId, builder.build());
     }
 
     private void showInboxStyleNotification(String conversationId, String senderName, String newBody, String actionUrl,
-            String targetUserId, String avatarUrl, String messageId) {
+            String targetUserId, String avatarUrl, String messageId, boolean isEncryptedConversation) {
         Context context = getApplicationContext();
 
         // Security Check: Ensure this notification is for the currently logged in user!
@@ -133,6 +233,7 @@ public class FCMService extends FirebaseMessagingService {
         replyIntent.putExtra("senderName", senderName);
         replyIntent.putExtra("avatarUrl", avatarUrl);
         replyIntent.putExtra("actionUrl", actionUrl);
+        replyIntent.putExtra("isEncrypted", isEncryptedConversation);
         PendingIntent replyPendingIntent = PendingIntent.getBroadcast(this, notificationId + 2, replyIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
 
@@ -198,7 +299,7 @@ public class FCMService extends FirebaseMessagingService {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_icon_default)
                 .setStyle(messagingStyle)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -217,7 +318,7 @@ public class FCMService extends FirebaseMessagingService {
         // Build and publish the Summary Notification to properly group them
         NotificationCompat.Builder summaryBuilder = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("CineCraft Connect")
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_icon_default)
                 .setGroup("CINECRAFT_MESSAGES")
                 .setGroupSummary(true)
                 .setContentIntent(pendingIntent)
@@ -234,7 +335,8 @@ public class FCMService extends FirebaseMessagingService {
     @Override
     public void onNewToken(String token) {
         super.onNewToken(token);
-        // Capacitor Push Notifications plugin handles the new token upstream
+        // Forward token to Capacitor Push Notifications plugin
+        com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin.onNewToken(token);
     }
 
     public static android.graphics.Bitmap getCircularBitmap(android.graphics.Bitmap bitmap) {
@@ -256,5 +358,19 @@ public class FCMService extends FirebaseMessagingService {
         android.graphics.Rect srcRect = new android.graphics.Rect(xOffset, yOffset, xOffset + size, yOffset + size);
         canvas.drawBitmap(bitmap, srcRect, rect, paint);
         return output;
+    }
+
+    private boolean isAppInForeground(Context context) {
+        android.app.ActivityManager activityManager = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager == null) return false;
+        java.util.List<android.app.ActivityManager.RunningAppProcessInfo> appProcesses = activityManager.getRunningAppProcesses();
+        if (appProcesses == null) return false;
+        final String packageName = context.getPackageName();
+        for (android.app.ActivityManager.RunningAppProcessInfo appProcess : appProcesses) {
+            if (appProcess.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND && appProcess.processName.equals(packageName)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

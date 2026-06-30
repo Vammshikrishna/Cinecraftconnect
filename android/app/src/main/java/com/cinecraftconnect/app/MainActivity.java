@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(E2EEBridge.class);
         super.onCreate(savedInstanceState);
         handleIntent(getIntent());
     }

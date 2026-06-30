@@ -52,8 +52,13 @@ const encryptText = async (text: string, salt: string): Promise<string | null> =
     const combined = new Uint8Array(iv.length + encrypted.byteLength);
     combined.set(iv, 0);
     combined.set(new Uint8Array(encrypted), iv.length);
-    // Return base64 representation
-    return btoa(String.fromCharCode(...combined));
+    
+    // Return base64 representation (Iterative to avoid RangeError: Maximum call stack size exceeded)
+    let binaryStr = '';
+    for (let i = 0; i < combined.length; i++) {
+      binaryStr += String.fromCharCode(combined[i]);
+    }
+    return btoa(binaryStr);
   } catch (e) {
     console.error("Encryption failed:", e);
     return null;
@@ -93,13 +98,10 @@ export const secureStorageEngine = {
       if (Capacitor.isNativePlatform()) {
         const result = await SecureStorage.get(key);
         return result ? String(result) : null;
+      } else {
+        // Use raw localStorage on web to prevent async race conditions during OAuth redirects
+        return localStorage.getItem(key);
       }
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return null;
-      
-      // Decrypt the token payload bound to the current browser fingerprint
-      const decrypted = await decryptText(raw, key);
-      return decrypted;
     } catch (e) {
       console.error('Error reading from secure storage:', e);
       return null;
@@ -111,11 +113,8 @@ export const secureStorageEngine = {
       if (Capacitor.isNativePlatform()) {
         await SecureStorage.set(key, value);
       } else {
-        const encrypted = await encryptText(value, key);
-        if (!encrypted) {
-          throw new Error("Encryption failed, refusing to write plaintext token to storage");
-        }
-        window.localStorage.setItem(key, encrypted);
+        // Use raw localStorage on web to prevent async race conditions during OAuth redirects
+        localStorage.setItem(key, value);
       }
     } catch (e) {
       console.error('Error writing to secure storage:', e);

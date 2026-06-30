@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAccountType } from '@/hooks/useAccountType';
 import { BackButton } from '@/components/common/BackButton';
@@ -27,7 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 
 const AccountSettings = () => {
     const { push } = useAppNavigation();
-    const { signOut, user } = useAuth();
+    const { signOut, user, savedAccounts, switchAccount, addAccount, removeAccount } = useAuth();
     const { toast } = useToast();
     const [isSigningOut, setIsSigningOut] = useState(false);
     const { accountType } = useAccountType();
@@ -316,7 +316,7 @@ const AccountSettings = () => {
                                 <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
                                     <div className="h-5 w-5 text-amber-500 mt-0.5">⚠️</div>
                                     <p className="text-xs text-amber-500 leading-relaxed">
-                                        Some Pro features require a subscription. Switching to Creator or Studio may prompt you to view our <Link to="/pricing" className="underline font-bold">Pricing Plans</Link>.
+                                        Some Pro features require a subscription. Switching to Creator or Studio may prompt you to subscribe in the future.
                                     </p>
                                 </div>
                             )}
@@ -411,6 +411,102 @@ const AccountSettings = () => {
                                     </Button>
                                 </div>
                             )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Saved Accounts Card */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <User className="h-5 w-5 text-primary" />
+                                Saved Accounts
+                            </CardTitle>
+                            <CardDescription>Switch between accounts logged in on this device, or link a new one.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {savedAccounts.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No other accounts saved on this device.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {savedAccounts.map((acc) => {
+                                        const isActive = acc.userId === user?.id;
+                                        const initials = acc.username
+                                            .split(' ')
+                                            .map((n: string) => n[0])
+                                            .join('')
+                                            .toUpperCase()
+                                            .slice(0, 2) || 'U';
+
+                                        return (
+                                            <div
+                                                key={acc.userId}
+                                                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${
+                                                    isActive
+                                                    ? 'bg-primary/5 border-primary shadow-sm'
+                                                    : 'bg-background border-border hover:border-primary/30 hover:bg-muted/30'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="relative">
+                                                        <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-border/50 overflow-hidden">
+                                                            {acc.avatarUrl ? (
+                                                                <img
+                                                                    src={acc.avatarUrl}
+                                                                    alt={acc.username}
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            ) : initials}
+                                                        </div>
+                                                        {isActive && (
+                                                            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="text-sm font-semibold truncate leading-none text-foreground">{acc.username}</span>
+                                                        <span className="text-[11px] text-muted-foreground truncate mt-1">{acc.email}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {isActive ? (
+                                                        <span className="text-xs font-bold text-primary px-2.5 py-1 bg-primary/10 rounded-full">
+                                                            Active
+                                                        </span>
+                                                    ) : (
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 rounded-lg font-medium text-xs"
+                                                                onClick={() => switchAccount(acc.userId)}
+                                                            >
+                                                                Switch
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                                                onClick={() => removeAccount(acc.userId)}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            <Button
+                                variant="outline"
+                                className="w-full rounded-xl border-dashed border-primary/40 text-primary hover:bg-primary/5 hover:border-primary transition-all duration-200 mt-2 font-semibold"
+                                onClick={addAccount}
+                            >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Link / Add Another Account
+                            </Button>
                         </CardContent>
                     </Card>
 

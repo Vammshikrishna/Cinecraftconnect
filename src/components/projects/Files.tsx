@@ -99,38 +99,20 @@ const Files = ({ project_id }: FilesProps) => {
         setUploading(true);
 
         try {
-            const isImage = selectedFile.type.startsWith('image/');
-            let fileToUpload = selectedFile;
-
-            if (isImage) {
-                const { compressImage } = await import('@/utils/imageCompression');
-                fileToUpload = await compressImage(selectedFile);
-            }
-
-            const filePath = buildProjectFilePath(
-                PROJECT_FILE_FOLDERS.FILES,
-                project_id,
-                fileToUpload.name
+            const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+            const { url, error: uploadError } = await uploadFileToSupabase(
+                selectedFile,
+                STORAGE_BUCKETS.PROJECT_FILES,
+                `${PROJECT_FILE_FOLDERS.FILES}/${project_id}`
             );
 
-            const { error: uploadError } = await supabase.storage
-                .from(STORAGE_BUCKETS.PROJECT_FILES)
-                .upload(filePath, fileToUpload, {
-                    cacheControl: '31536000',
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-
-            const { data: publicUrlData } = supabase.storage
-                .from(STORAGE_BUCKETS.PROJECT_FILES)
-                .getPublicUrl(filePath);
+            if (uploadError || !url) throw new Error(uploadError || 'Failed to upload file');
 
             const { error: insertError } = await supabase.from('files' as any).insert([
                 {
                     name: selectedFile.name,
                     size: selectedFile.size,
-                    url: publicUrlData.publicUrl,
+                    url: url,
                     project_id: project_id,
                     file_type: selectedFile.type
                 },

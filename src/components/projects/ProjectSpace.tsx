@@ -16,7 +16,8 @@ import {
   Phone,
   Video,
   ShieldBan,
-  BookOpen
+  BookOpen,
+  Lock
 } from 'lucide-react';
 
 import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
@@ -32,6 +33,7 @@ import ProjectApplicants from '@/components/projects/ProjectApplicants';
 import ProjectSettings from '@/components/projects/ProjectSettings';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { SpaceEscalationPanel } from '@/components/governance/SpaceEscalationPanel';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -40,11 +42,14 @@ import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useToast } from '@/hooks/use-toast';
 import { useAppRole } from '@/hooks/useAppRole';
 import { useGlobalCall } from '@/contexts/CallContext';
+import { clearGroupKeyCache } from '@/hooks/useGroupKey';
 
 interface ProjectSpaceProps {
   projectId: string;
   projectTitle: string;
   projectDescription: string;
+  projectCreatorId?: string;
+  initialSpaceId?: string | null;
 }
 
 const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'script-reader', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
@@ -54,15 +59,18 @@ export const ProjectSpace = ({
   projectId,
   projectTitle,
   projectDescription,
+  projectCreatorId,
+  initialSpaceId,
 }: ProjectSpaceProps) => {
   const { push } = useAppNavigation();
   const { user } = useAuth();
   const { isInternal, loading: roleLoading } = useAppRole();
   const { toast } = useToast();
   const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member' | 'guest'>('guest');
-  const [resolvedSpaceId, setResolvedSpaceId] = useState<string>(projectId);
+  const [resolvedSpaceId, setResolvedSpaceId] = useState<string | null>(initialSpaceId || null);
   const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none');
-  const [checkingAccess, setCheckingAccess] = useState(true); // New loading state
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [hasGrantedAccess, setHasGrantedAccess] = useState<boolean>(false);
   const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizing, setIsResizing] = useState(false);
@@ -73,8 +81,9 @@ export const ProjectSpace = ({
   const isInCall = callState.isActive && (callState.roomId === resolvedSpaceId || callState.roomId === projectId);
   const isCallMinimized = callState.isMinimized;
 
-  // Scroll active tab into view
+  // Resolve space ID — only if not already provided by parent
   useEffect(() => {
+    if (resolvedSpaceId) return; // Already have it from initialSpaceId
     let mounted = true;
     const resolveSpace = async () => {
       if (!projectId) return;
@@ -85,10 +94,18 @@ export const ProjectSpace = ({
           .eq('project_id', projectId)
           .maybeSingle();
 
-
         if (mounted && data) {
           setResolvedSpaceId(data.id);
         } else if (mounted) {
+          // Auto-create the space if it doesn't exist
+          const { data: newSpace } = await supabase
+            .from('project_spaces')
+            .insert({ project_id: projectId, name: 'General' })
+            .select()
+            .single();
+          if (mounted && newSpace) {
+            setResolvedSpaceId(newSpace.id);
+          }
         }
       } catch (e) {
         // Silent catch for resolution
@@ -96,7 +113,7 @@ export const ProjectSpace = ({
     };
     resolveSpace();
     return () => { mounted = false; };
-  }, [projectId]);
+  }, [projectId, resolvedSpaceId]);
 
   // Scroll active tab into view
   useEffect(() => {
@@ -170,7 +187,19 @@ export const ProjectSpace = ({
     }
   }, [isResizing, handleMouseMove, handleMouseUp]);
 
+  // Instant creator detection — runs synchronously on every render cycle where user becomes available
+  // This is the FAST PATH: if we know the creator, skip ALL async checks and loading screens
   useEffect(() => {
+    if (projectCreatorId && user?.id && projectCreatorId === user.id) {
+      setUserRole('creator');
+      setCheckingAccess(false);
+    }
+  }, [projectCreatorId, user?.id]);
+
+  useEffect(() => {
+    // Creator already identified — no async check needed
+    if (projectCreatorId && user?.id && projectCreatorId === user.id) return;
+
     let active = true;
     const checkAccess = async () => {
       setCheckingAccess(true);
@@ -180,55 +209,75 @@ export const ProjectSpace = ({
       }
 
       try {
-        // 1. Check Creator Status FIRST
-        const { data: project } = await supabase
-          .from('projects')
-          .select('creator_id')
-          .eq('id', projectId)
-          .single();
+        // Run remaining checks in parallel
+        const [membershipRes, requestRes, applicationRes, grantRes] = await Promise.all([
+          // 1. Check Membership
+          supabase
+            .from('project_space_members')
+            .select('role')
+            .eq('project_space_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+            
+          // 2. Check for pending join request
+          supabase
+            .from('project_space_join_requests' as any)
+            .select('status, id')
+            .eq('project_space_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+
+          // 3. Check for approved application (applicants who were accepted)
+          supabase
+            .from('project_applications' as any)
+            .select('status')
+            .eq('project_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .eq('status', 'approved')
+            .maybeSingle(),
+            
+          // 4. Check for active grant if staff is guest
+          isInternal ? (supabase as any)
+            .from('space_access_grants')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('target_type', 'project_space')
+            .eq('target_id', resolvedSpaceId)
+            .gt('expires_at', new Date().toISOString())
+            .maybeSingle() : Promise.resolve({ data: null })
+        ]);
 
         if (!active) return;
 
-        if (project && project.creator_id === user.id) {
-          setUserRole('creator');
-          return;
-        }
-
-        // 2. Check Membership
-        const { data: membership } = await supabase
-          .from('project_space_members')
-          .select('role')
-          .eq('project_space_id', resolvedSpaceId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (!active) return;
-
-        if (membership) {
-          if (membership.role === 'admin') {
-            setUserRole('admin');
-          } else {
-            setUserRole('member');
+        // Internal staff ALWAYS require an active grant for private project spaces.
+        // Membership is intentionally ignored — governance accounts must go through
+        // break glass every time, even if they were added as a regular member.
+        if (isInternal) {
+          const hasGrant = !!grantRes.data;
+          setHasGrantedAccess(hasGrant);
+          if (!hasGrant) {
+            setUserRole('guest'); // Force Intercept screen — grant required
+            return;
           }
+          // Has a valid grant — fall through to set membership role below
+        }
+
+        if (membershipRes.data) {
+          setUserRole(membershipRes.data.role === 'admin' ? 'admin' : 'member');
           return;
         }
 
-        // 3. Check for pending join request
-        const { data: request } = await supabase
-          .from('project_space_join_requests' as any)
-          .select('status, id')
-          .eq('project_space_id', resolvedSpaceId)
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // If user has an approved application, treat them as a member
+        if (applicationRes.data) {
+          setUserRole('member');
+          return;
+        }
 
-        if (!active) return;
-
-        if (request && (request as any).status === 'pending') {
-          setRequestStatus('pending');
-        } else if (request && (request as any).status === 'rejected') {
-          setRequestStatus('rejected');
-        } else if (request && (request as any).status === 'approved') {
-          setRequestStatus('approved');
+        if (requestRes.data) {
+          const status = (requestRes.data as any).status;
+          if (status === 'pending' || status === 'rejected' || status === 'approved') {
+            setRequestStatus(status);
+          }
         }
 
         setUserRole('guest');
@@ -243,7 +292,7 @@ export const ProjectSpace = ({
     checkAccess();
 
     return () => { active = false; };
-  }, [projectId, resolvedSpaceId, user?.id]);
+  }, [projectId, resolvedSpaceId, user?.id, isInternal, projectCreatorId]);
 
   useEffect(() => {
     if (!checkingAccess && !roleLoading && userRole === 'guest' && requestStatus !== 'approved' && !isInternal) {
@@ -286,6 +335,39 @@ export const ProjectSpace = ({
       toast({ title: "Request Sent", description: "Your request has been sent to the project owner." });
     } catch (e: any) {
       toast({ title: "Error", description: "Failed to send request: " + (e.message || "Unknown error"), variant: "destructive" });
+    }
+  };
+
+  const handleLockSpace = async () => {
+    if (!user || !resolvedSpaceId) return;
+    try {
+      const { data, error } = await (supabase as any)
+        .from('space_access_grants')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('target_type', 'project_space')
+        .eq('target_id', resolvedSpaceId)
+        .select();
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No active grant found in database to revoke. Access may have already expired.");
+      }
+
+      clearGroupKeyCache('project_space', resolvedSpaceId); // Evict cached E2EE key immediately
+      setHasGrantedAccess(false);
+      setUserRole('guest'); // Force the Intercept screen guard to trigger immediately on re-entry
+      push('/projects', { noScroll: true });
+      toast({
+        title: "Space Locked",
+        description: "Your temporary escalated access has been revoked.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error revoking access",
+        description: err.message,
+        variant: "destructive"
+      });
     }
   };
 
@@ -335,6 +417,12 @@ export const ProjectSpace = ({
   }
 
   const renderContent = () => {
+    if (!resolvedSpaceId) return (
+      <div className="flex-1 flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+
     if (userRole === 'guest' && !isInternal) {
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
@@ -371,6 +459,7 @@ export const ProjectSpace = ({
         {/* Persistent Sections (Hidden but Mounted) */}
         <ProjectChatInterface 
           projectId={projectId} 
+          spaceId={resolvedSpaceId}
           isActive={activeSection === 'chat'}
         />
         
@@ -398,7 +487,7 @@ export const ProjectSpace = ({
             case 'budget-sched':
               return <BudgetSched project_id={resolvedSpaceId} />;
             case 'team':
-              return <Team project_id={resolvedSpaceId} />;
+              return <Team project_id={resolvedSpaceId} real_project_id={projectId} />;
             case 'applicants':
               return <ProjectApplicants projectId={projectId} />;
             case 'settings':
@@ -411,10 +500,57 @@ export const ProjectSpace = ({
     );
   };
 
-  if (checkingAccess || roleLoading) {
+  // Only show a loading spinner for unknown users while their access is being checked.
+  // Creators bypass this entirely because their role is set synchronously.
+  if (userRole === 'guest' && (checkingAccess || roleLoading)) {
     return (
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (isInternal && userRole === 'guest' && !hasGrantedAccess) {
+    // Wait for resolvedSpaceId before showing the escalation panel.
+    // If we render with an empty targetId, the grant gets stored with target_id=""
+    // and Lock Space will fail to find the row when it tries to delete by real UUID.
+    if (!resolvedSpaceId) {
+      return (
+        <div className="h-screen w-screen bg-background flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      );
+    }
+    return (
+      <div className="flex-1 flex flex-col h-full bg-background overflow-hidden relative">
+        {/* Top bar with back navigation */}
+        <div className="px-6 py-4 border-b border-border/40 bg-card/40 backdrop-blur-md flex items-center gap-3 shrink-0">
+          <Button
+            variant="ghost"
+            onClick={() => push('/projects', { noScroll: true })}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-white/5 rounded-xl px-4"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="font-bold text-xs uppercase tracking-wider">Back to Projects</span>
+          </Button>
+          <div className="h-4 w-[1px] bg-border/40" />
+          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Project Space Governance Intercept
+          </span>
+        </div>
+
+        {/* Escalation Interface */}
+        <SpaceEscalationPanel
+          targetType="project_space"
+          targetId={resolvedSpaceId}
+          chatTitle={projectTitle}
+          onAccessGranted={() => {
+            setHasGrantedAccess(true);
+            // Re-run the access check so userRole updates based on membership
+            // (the check effect won't fire again unless deps change)
+            setCheckingAccess(true);
+          }}
+        />
       </div>
     );
   }
@@ -521,6 +657,17 @@ export const ProjectSpace = ({
             <h2 className="text-base font-bold truncate leading-tight">{projectTitle}</h2>
           </div>
           <div className="flex items-center gap-1.5">
+            {isInternal && hasGrantedAccess && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLockSpace}
+                className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-8 shrink-0 mr-1"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Lock Space</span>
+              </Button>
+            )}
             {isInCall ? (
               <button 
                 onClick={() => setActiveSection('call')}
@@ -536,20 +683,13 @@ export const ProjectSpace = ({
                   size="icon"
                   onClick={handleStartCall}
                   className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
-                >
-                  <Phone className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleStartCall}
-                  className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+                  title="Start Call"
                 >
                   <Video className="h-4 w-4" />
                 </Button>
               </>
             ) : (
-              <div title="Staff Observation Only">
+              <div title="Staff Observation Mode">
                 <ShieldBan className="h-4 w-4 text-muted-foreground/30" />
               </div>
             )}
@@ -615,6 +755,18 @@ export const ProjectSpace = ({
             </div>
             
             <div className="flex items-center gap-1 ml-auto shrink-0">
+              {isInternal && hasGrantedAccess && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLockSpace}
+                  className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-8 shrink-0 mr-1"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Lock Space</span>
+                </Button>
+              )}
+
               {isInCall ? (
                 <button 
                   onClick={() => setActiveSection('call')}
@@ -630,16 +782,7 @@ export const ProjectSpace = ({
                     size="icon"
                     onClick={handleStartCall}
                     className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
-                    title="Start Voice Call"
-                  >
-                    <Phone className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={handleStartCall}
-                    className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
-                    title="Start Video Call"
+                    title="Start Call"
                   >
                     <Video className="h-4 w-4" />
                   </Button>

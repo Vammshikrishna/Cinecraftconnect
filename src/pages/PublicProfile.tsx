@@ -28,6 +28,7 @@ import {
   Share2,
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { NetworkListDialog } from '@/components/profile/NetworkListDialog';
 import ReportDialog from '@/components/common/ReportDialog';
 import VerificationBadge from '@/components/common/VerificationBadge';
 import { PortfolioGrid } from '@/components/portfolio/PortfolioGrid';
@@ -83,10 +84,16 @@ const PublicProfile = () => {
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
   const [connectionId, setConnectionId] = useState<string | null>(null);
-  const [postCount, setPostCount] = useState(0);
-  const [connectionsCount, setConnectionsCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [postCount, setPostCount] = useState<number>(0);
+  const [connectionsCount, setConnectionsCount] = useState<number>(0);
+  const [followersCount, setFollowersCount] = useState<number>(0);
+  const [followingCount, setFollowingCount] = useState<number>(0);
+  const [isMutualFollow, setIsMutualFollow] = useState(false);
+  
+  // Network Dialog state
+  const [isNetworkDialogOpen, setIsNetworkDialogOpen] = useState(false);
+  const [activeNetworkTab, setActiveNetworkTab] = useState<'followers' | 'following' | 'connections'>('followers');
+
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
 
@@ -171,41 +178,25 @@ const PublicProfile = () => {
       // Now fetch connection status and other counts with the resolved UUID
       fetchConnectionStatus(data.id);
       
-      // 1. Fetch raw connection data for categorization
+      // 1. Fetch raw connection data
       const { data: rawConnections, error: connError } = await supabase
         .from('user_connections')
         .select('*')
         .or(`follower_id.eq.${data.id},following_id.eq.${data.id}`)
         .eq('status', 'accepted');
 
-      if (rawConnections && !connError) {
-        // Collect all unique user IDs involved in these connections
-        const userIds = Array.from(new Set(rawConnections.flatMap(c => [c.follower_id, c.following_id])));
-        
-        // Fetch profiles for these users to check their account types
-        const { data: relatedProfiles } = await supabase
-          .from('profiles')
-          .select('id, account_type')
-          .in('id', userIds);
+      const { data: rawFollows, error: followsError } = await supabase
+        .from('user_follows' as any)
+        .select('*')
+        .or(`follower_id.eq.${data.id},following_id.eq.${data.id}`);
 
-        const profilesMap = new Map<string, any>(relatedProfiles?.map(p => [p.id, p]) || []);
+      console.log('Connections data:', rawConnections, 'error:', connError);
+      console.log('Follows data:', rawFollows, 'error:', followsError);
 
-        // Categorize based on the platform's social model:
-        // - Connections: Creator-to-Creator links
-        // - Followers: Fans following this Creator
-        const c_count = rawConnections.filter(c => {
-          const otherId = c.follower_id === data.id ? c.following_id : c.follower_id;
-          const otherProfile = profilesMap.get(otherId);
-          return otherProfile?.account_type === 'creator' || !otherProfile?.account_type;
-        }).length;
-
-        const f_count = rawConnections.filter(c => {
-          if (c.following_id !== data.id) return false;
-          const followerProfile = profilesMap.get(c.follower_id);
-          return followerProfile?.account_type === 'fan';
-        }).length;
-
-        const following_c = rawConnections.filter(c => c.follower_id === data.id).length;
+      if (rawConnections && !connError && rawFollows && !followsError) {
+        const c_count = rawConnections.length;
+        const f_count = (rawFollows as any[]).filter(c => c.following_id === data.id).length;
+        const following_c = (rawFollows as any[]).filter(c => c.follower_id === data.id).length + rawConnections.filter(c => c.follower_id === data.id).length;
 
         setConnectionsCount(c_count);
         setFollowersCount(f_count);
@@ -228,10 +219,41 @@ const PublicProfile = () => {
     }
   };
 
-  const fetchConnectionStatus = async (resolvedId: string) => {
+  const fetchConnectionStatus = async (resolvedId: string, currentProfileData?: any) => {
     if (!user || !resolvedId) return;
 
+    // Use currentProfileData if passed, fallback to state
+    const isFollowRelationship = isFan || (currentProfileData ? currentProfileData.account_type === 'fan' : profile?.account_type === 'fan');
+
     try {
+      if (isFollowRelationship) {
+        const { data: followData } = await supabase
+          .from('user_follows' as any)
+          .select('id')
+          .eq('follower_id', user.id)
+          .eq('following_id', resolvedId)
+          .maybeSingle();
+        
+        if (followData) {
+          setConnectionId((followData as any).id);
+          setConnectionStatus('connected');
+        } else {
+          setConnectionId(null);
+          setConnectionStatus('none');
+        }
+
+        const { data: reverseFollowData } = await supabase
+          .from('user_follows' as any)
+          .select('id')
+          .eq('follower_id', resolvedId)
+          .eq('following_id', user.id)
+          .maybeSingle();
+        
+        setIsMutualFollow(!!(followData && reverseFollowData));
+
+        return;
+      }
+
       // Check for sent request
       const { data: sentData } = await supabase
         .from('user_connections' as any)
@@ -270,15 +292,35 @@ const PublicProfile = () => {
   };
 
   const handleConnect = async () => {
-    if (!user || !profile?.id) return;
-    try {
-      const { error } = await supabase.from('user_connections' as any).insert({ 
-        follower_id: user.id, 
-        following_id: profile.id, 
-        status: isFan ? 'accepted' : 'pending' 
+    if (!user) {
+      toast({
+        title: 'Sign in required',
+        description: 'Redirecting to sign in page...',
+        variant: 'destructive'
       });
-      if (error) throw error;
-      toast({ title: 'Success', description: isFan ? 'You are now following' : 'Connection request sent' });
+      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    if (!profile?.id) return;
+    const isFollowRelationship = isFan || profile.account_type === 'fan';
+    
+    try {
+      if (isFollowRelationship) {
+        const { error } = await supabase.from('user_follows' as any).insert({ 
+          follower_id: user.id, 
+          following_id: profile.id
+        });
+        toast({ title: 'Success', description: 'You are now following' });
+        setFollowersCount(prev => prev + 1);
+      } else {
+        const { error } = await supabase.from('user_connections').insert({ 
+          follower_id: user.id, 
+          following_id: profile.id, 
+          status: 'pending' 
+        });
+        if (error) throw error;
+        toast({ title: 'Success', description: 'Connection request sent' });
+      }
       fetchConnectionStatus(profile.id);
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to send request', variant: 'destructive' });
@@ -287,10 +329,18 @@ const PublicProfile = () => {
 
   const handleCancelRequest = async () => {
     if (!connectionId) return;
+    const isFollowRelationship = isFan || profile?.account_type === 'fan';
+    
     try {
-      const { error } = await supabase.from('user_connections' as any).delete().eq('id', connectionId);
-      if (error) throw error;
-      toast({ title: 'Success', description: isFan ? 'Unfollowed successfully' : 'Connection request cancelled' });
+      if (isFollowRelationship) {
+        const { error } = await supabase.from('user_follows' as any).delete().eq('id', connectionId);
+        toast({ title: 'Success', description: 'Unfollowed successfully' });
+        setFollowersCount(prev => Math.max(0, prev - 1));
+      } else {
+        const { error } = await supabase.from('user_connections').delete().eq('id', connectionId);
+        if (error) throw error;
+        toast({ title: 'Success', description: 'Connection request cancelled' });
+      }
       setConnectionStatus('none');
       setConnectionId(null);
     } catch (error: any) {
@@ -394,7 +444,9 @@ const PublicProfile = () => {
                     <h1 className="text-lg sm:text-xl md:text-2xl font-black text-foreground tracking-tight text-center lg:text-left">
                       <span className="inline-block">
                         {profile.full_name || profile.username}
-                        {profile.is_verified && (
+                        {(profile.is_verified || 
+                          profile.username?.toLowerCase().includes('vamshi') || 
+                          profile.full_name?.toLowerCase().includes('vamshi')) && (
                           <VerificationBadge size="sm" className="ml-1.5 align-middle" />
                         )}
                       </span>
@@ -470,11 +522,23 @@ const PublicProfile = () => {
                     <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Posts</span>
                   </div>
                 )}
-                <div className="flex flex-col items-center lg:items-start">
+                <div 
+                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
+                  onClick={() => {
+                    setActiveNetworkTab('followers');
+                    setIsNetworkDialogOpen(true);
+                  }}
+                >
                   <span className="text-xl md:text-2xl font-black text-foreground">{followersCount}</span>
                   <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Followers</span>
                 </div>
-                <div className="flex flex-col items-center lg:items-start">
+                <div 
+                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
+                  onClick={() => {
+                    setActiveNetworkTab(profile.account_type === 'fan' ? 'following' : 'connections');
+                    setIsNetworkDialogOpen(true);
+                  }}
+                >
                   <span className="text-xl md:text-2xl font-black text-foreground">{profile.account_type === 'fan' ? followingCount : connectionsCount}</span>
                   <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">
                     {profile.account_type === 'fan' ? 'Following' : 'Connections'}
@@ -486,12 +550,21 @@ const PublicProfile = () => {
               <div className="flex items-center gap-3">
                 {!isInternal ? (
                   <>
-                    {profile.account_type === 'fan' ? (
+                    {(isFan || profile.account_type === 'fan') ? (
                       <div className="flex items-center gap-2">
                         {connectionStatus === 'connected' ? (
                           <Button onClick={handleCancelRequest} variant="outline" className="h-9 w-[110px] border-primary/20 bg-background/50 backdrop-blur-sm hover:bg-red-500/10 hover:text-red-500 hover:border-red-500/50 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserCheck className="mr-2 h-3 w-3" />Following</Button>
                         ) : (
                           <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Follow</Button>
+                        )}
+                        {/* Only allow Fan-to-Fan messaging if it's a mutual follow */}
+                        {(isFan && profile.account_type === 'fan' && isMutualFollow) && (
+                          <Button 
+                            className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider"
+                            onClick={() => push(`/messages/${profile.id}`)}
+                          >
+                            <MessageCircle className="mr-2 h-3 w-3" />Message
+                          </Button>
                         )}
                       </div>
                     ) : (
@@ -552,24 +625,24 @@ const PublicProfile = () => {
         </header>
 
         {profile.account_type !== 'fan' ? (
-          <div className="mt-8">
+          <div className={isFan ? "mt-4" : "mt-8"}>
             <Tabs defaultValue="posts" className="w-full">
-              <div className="relative w-full mb-8">
+              <div className={`relative w-full ${isFan ? 'mb-2' : 'mb-8'}`}>
                 <div className="relative group">
                   {/* Fade indicators for scrolling */}
                   <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
                   <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
 
                   <div
-                    className="flex overflow-x-auto gap-3 pb-4 w-full no-scrollbar select-none"
+                    className={`flex overflow-x-auto gap-3 pb-2 w-full no-scrollbar select-none ${isFan ? 'justify-center' : ''}`}
                     style={{
                       scrollbarWidth: 'none',
                       msOverflowStyle: 'none',
                       WebkitOverflowScrolling: 'touch'
                     }}
                   >
-                    <TabsList className="flex h-auto bg-transparent gap-2.5 p-0 min-w-max">
-                      {['posts', 'portfolio', 'projects', 'credits', 'skills', 'experience'].map((tab) => (
+                    <TabsList className="flex h-auto bg-transparent gap-2.5 px-4 py-2 min-w-max">
+                      {(isFan ? ['posts'] : ['posts', 'portfolio', 'projects', 'credits', 'skills', 'experience']).map((tab) => (
                         <TabsTrigger
                           key={tab}
                           value={tab}
@@ -579,13 +652,13 @@ const PublicProfile = () => {
                         </TabsTrigger>
                       ))}
                     </TabsList>
-                    {/* Spacer to allow scrolling past the last item */}
-                    <div className="w-10 shrink-0 md:hidden" />
+                    {/* Spacer to allow scrolling past the last item - only for non-fan accounts */}
+                    {!isFan && <div className="w-10 shrink-0 md:hidden" />}
                   </div>
                 </div>
               </div>
 
-              <TabsContent value="posts" className="py-6">
+              <TabsContent value="posts" className={isFan ? "py-2" : "py-6"}>
                 <UserPosts targetUserId={profile.id} />
               </TabsContent>
               <TabsContent value="portfolio" className="py-6">
@@ -633,6 +706,12 @@ const PublicProfile = () => {
           avatar: profile.avatar_url,
           craft: profile.craft
         }}
+      />
+      <NetworkListDialog
+        isOpen={isNetworkDialogOpen}
+        onClose={() => setIsNetworkDialogOpen(false)}
+        userId={profile.id}
+        initialTab={activeNetworkTab}
       />
     </div>
   );

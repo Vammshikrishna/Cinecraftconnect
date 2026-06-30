@@ -1,5 +1,6 @@
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Preferences } from '@capacitor/preferences';
 import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,12 +13,14 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { MessageSquare, Search, Plus } from 'lucide-react';
+import { MessageSquare, Search, Plus, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import EnhancedRealTimeChat from '@/components/chat/EnhancedRealTimeChat';
 import { ChatListSkeleton } from '@/components/chat/ChatListSkeleton';
-import { getDisplayMessage } from '@/lib/chat-utils';
+import { getDisplayMessage, generateDirectRoomId } from '@/lib/chat-utils';
 import { Conversation } from '@/types/chat';
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptDirectMessage } from '@/lib/e2ee';
 
 const Messages = () => {
   const { user } = useAuth();
@@ -34,6 +37,12 @@ const Messages = () => {
     }
   }, [activePartnerId]);
 
+  const { privateKey, keysLoaded } = useE2EEChatKeys();
+  const privateKeyRef = useRef(privateKey);
+  useEffect(() => {
+    privateKeyRef.current = privateKey;
+  }, [privateKey]);
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,46 +55,109 @@ const Messages = () => {
   // Partner data for the active chat
   const [activePartnerData, setActivePartnerData] = useState<{ id: string; name: string; avatar: string } | null>(null);
 
-  useEffect(() => {
-    const fetchConversations = async (isInitial = true) => {
-      if (!user) return;
-      if (isInitial) setLoading(true);
-      const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
+  const fetchConversations = useCallback(async (isInitial = true) => {
+    if (!user) return;
+    if (isInitial) setLoading(true);
+    console.log('[Messages Sidebar] Fetching conversations for user:', user.id);
+    const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
 
-      if (error) {
-        console.error('Error fetching conversations:', error);
-      } else if (data) {
-        const processedConversations: Conversation[] = (data as any[]).map((c: any) => ({
+    if (error) {
+      console.error('[Messages Sidebar] Error fetching conversations:', error);
+    } else if (data) {
+      console.log('[Messages Sidebar] Conversations fetched count:', data.length);
+      const processedConversations: Conversation[] = await Promise.all((data as any[]).map(async (c: any) => {
+        let decryptedContent = c.last_message_content;
+        if (c.last_message_content?.includes('__e2ee')) {
+          if (privateKeyRef.current) {
+              try {
+                decryptedContent = await decryptDirectMessage(c.last_message_content, privateKeyRef.current);
+              } catch (decErr) {
+                console.error('[Messages Sidebar] Failed to decrypt preview in sidebar:', decErr);
+              }
+          } else {
+              decryptedContent = '🔒 Encrypted Message';
+          }
+        }
+        return {
           partner: {
             id: c.other_user_id,
             full_name: c.other_user_full_name,
             avatar_url: c.other_user_avatar_url,
           },
           last_message: {
-            content: c.last_message_content,
+            content: decryptedContent,
             created_at: c.last_message_created_at,
           },
           unread_count: c.unread_count,
-        }));
-        setConversations(processedConversations);
-      }
-      setLoading(false);
-    };
+        };
+      }));
+      setConversations(processedConversations);
+    }
+    setLoading(false);
+  }, [user?.id]);
 
-    fetchConversations();
+  useEffect(() => {
+    fetchConversations(true);
+  }, [fetchConversations]);
 
+  useEffect(() => {
+    if (privateKey) {
+      console.log('[Messages Sidebar] E2EE Private key loaded/changed. Re-fetching and decrypting previews.');
+      fetchConversations(false);
+    }
+  }, [privateKey, fetchConversations]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log('[Messages Sidebar] Setting up realtime subscription: messages_sidebar_updates');
+    
     const subscription = supabase
       .channel('messages_sidebar_updates')
       .on('postgres_changes', 
         { event: '*', schema: 'public', table: 'direct_messages' }, 
-        () => fetchConversations(false)
+        (payload) => {
+          console.log('[Messages Sidebar] Realtime postgres_changes event received:', payload);
+          fetchConversations(false);
+        }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log('[Messages Sidebar] Realtime channel status:', status, err || '');
+      });
+
+    // Subscribe to global broadcast updates for client-to-client sync
+    console.log('[Messages Sidebar] Setting up global broadcast updates channel');
+    const globalChannel = supabase
+      .channel('global_chat_updates')
+      .on('broadcast', { event: 'chat_list_update' }, (payload) => {
+        const data = payload.payload;
+        if (data.senderId === user.id || data.receiverId === user.id) {
+          console.log('[Messages Sidebar] Broadcast chat_list_update received:', data);
+          fetchConversations(false);
+        }
+      })
+      .subscribe((status, err) => {
+        console.log('[Messages Sidebar] Global broadcast channel status:', status, err || '');
+      });
 
     return () => {
+      console.log('[Messages Sidebar] Cleaning up subscriptions');
       supabase.removeChannel(subscription);
+      supabase.removeChannel(globalChannel);
     };
-  }, [user?.id]);
+  }, [user?.id, fetchConversations]);
+
+  useEffect(() => {
+    const handleLocalUpdate = (e: any) => {
+      console.log('[Messages Sidebar] Local chat_list_update event received, re-fetching conversations');
+      fetchConversations(false);
+    };
+
+    window.addEventListener('chat_list_update', handleLocalUpdate);
+    return () => {
+      window.removeEventListener('chat_list_update', handleLocalUpdate);
+    };
+  }, [fetchConversations]);
 
   useEffect(() => {
     if (!activePartnerId) {
@@ -113,6 +185,17 @@ const Messages = () => {
   }, [activePartnerId]);
 
   useEffect(() => {
+    if (activePartnerId) {
+      Preferences.set({ key: 'active_conversation_id', value: activePartnerId });
+    } else {
+      Preferences.remove({ key: 'active_conversation_id' });
+    }
+    return () => {
+      Preferences.remove({ key: 'active_conversation_id' });
+    };
+  }, [activePartnerId]);
+
+  useEffect(() => {
     const searchUsers = async () => {
       if (!userSearchTerm.trim() || !user) {
         setSearchedUsers([]);
@@ -130,7 +213,30 @@ const Messages = () => {
       if (isFan) query = query.eq('account_type', 'fan');
 
       const { data, error } = await query;
-      if (!error && data) setSearchedUsers(data);
+      if (!error && data) {
+        if (isFan && data.length > 0) {
+          const userIds = data.map(u => u.id);
+          const { data: myFollows } = await supabase
+            .from('user_follows' as any)
+            .select('following_id')
+            .eq('follower_id', user.id)
+            .in('following_id', userIds);
+            
+          const { data: myFollowers } = await supabase
+            .from('user_follows' as any)
+            .select('follower_id')
+            .eq('following_id', user.id)
+            .in('follower_id', userIds);
+            
+          const followingIds = myFollows?.map((f: any) => f.following_id) || [];
+          const followerIds = myFollowers?.map((f: any) => f.follower_id) || [];
+          
+          const mutualUserIds = userIds.filter(id => followingIds.includes(id) && followerIds.includes(id));
+          setSearchedUsers(data.filter(u => mutualUserIds.includes(u.id)));
+        } else {
+          setSearchedUsers(data);
+        }
+      }
       setSearchingUsers(false);
     };
 
@@ -140,7 +246,7 @@ const Messages = () => {
 
   const channelId = useMemo(() => {
     if (!user || !activePartnerId) return null;
-    return [user.id, activePartnerId].sort().join('-');
+    return generateDirectRoomId(user.id, activePartnerId);
   }, [user, activePartnerId]);
 
   const filteredConversations = conversations.filter(c =>
@@ -150,6 +256,41 @@ const Messages = () => {
   const handleStartChat = (id: string) => {
     setIsNewChatOpen(false);
     push(`/messages/${id}`);
+  };
+
+  const handleDeleteConversation = async (e: React.MouseEvent, partnerId: string) => {
+    e.stopPropagation();
+    
+    if (!user) return;
+    const confirmDelete = window.confirm("Are you sure you want to delete this specific conversation? This cannot be undone.");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from('direct_messages')
+      .delete()
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
+
+    if (error) {
+      console.error('Error deleting conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    } else {
+      fetchConversations(false);
+      
+      if (activePartnerId === partnerId) {
+        push('/messages');
+      }
+
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+
+      const globalChannel = supabase.channel('global_chat_updates');
+      globalChannel.send({
+        type: 'broadcast',
+        event: 'chat_list_update',
+        payload: { senderId: user.id, receiverId: partnerId }
+      }).catch(console.error);
+    }
   };
 
   return (
@@ -231,11 +372,18 @@ const Messages = () => {
             {loading ? (
               <ChatListSkeleton />
             ) : filteredConversations.map((convo) => (
-              <button
+              <div
                 key={convo.partner.id}
                 onClick={() => handleStartChat(convo.partner.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    handleStartChat(convo.partner.id);
+                  }
+                }}
                 className={cn(
-                  "w-full flex items-center gap-4 p-4 rounded-[2rem] transition-all duration-300 relative border border-transparent mb-1",
+                  "w-full flex items-center gap-4 p-4 rounded-[2rem] transition-all duration-300 relative border border-transparent mb-1 cursor-pointer group",
                   activePartnerId === convo.partner.id 
                     ? "bg-primary/10 border-primary/10 shadow-sm" 
                     : "hover:bg-muted/40 hover:border-border/30"
@@ -258,11 +406,20 @@ const Messages = () => {
                     )}>
                       {convo.partner.full_name}
                     </p>
-                    {convo.unread_count > 0 && (
-                      <Badge className="bg-primary text-primary-foreground h-5 min-w-5 px-1 flex items-center justify-center font-black text-[10px] rounded-full">
-                        {convo.unread_count}
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {convo.partner.id !== activePartnerId && convo.unread_count > 0 && (
+                        <Badge className="bg-primary text-primary-foreground h-5 min-w-5 px-1 flex items-center justify-center font-black text-[10px] rounded-full">
+                          {convo.unread_count}
+                        </Badge>
+                      )}
+                      <button
+                        onClick={(e) => handleDeleteConversation(e, convo.partner.id)}
+                        className="p-1.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Delete Conversation"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground line-clamp-1 opacity-70">
                     {getDisplayMessage(convo.last_message.content)}
@@ -271,7 +428,7 @@ const Messages = () => {
                 {activePartnerId === convo.partner.id && (
                   <div className="absolute left-0 top-1/4 bottom-1/4 w-1.5 bg-primary rounded-r-full" />
                 )}
-              </button>
+              </div>
             ))}
             {!loading && filteredConversations.length === 0 && (
               <div className="text-center py-12 px-6">

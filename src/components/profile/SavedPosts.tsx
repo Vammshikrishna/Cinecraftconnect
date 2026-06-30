@@ -60,10 +60,10 @@ export function SavedPosts() {
             timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
             createdAt={post.created_at}
             content={post.content}
-            mediaUrl={post.media_url}
-            mediaItems={post.media_items}
-            hasImage={post.media_type === "image"}
-            hasVideo={post.media_type === "video"}
+            mediaUrl={post.media_urls?.[0] || post.media_url}
+            mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+            hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
+            hasVideo={post.media_type === 'video'}
             like_count={post.like_count || 0}
             comment_count={post.comment_count || 0}
             share_count={post.share_count || 0}

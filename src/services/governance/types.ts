@@ -23,7 +23,10 @@ export type GovernanceAction =
   | 'system.maintenance'
   | 'system.audit_view'
   | 'finance.view'
-  | 'finance.manage';
+  | 'finance.manage'
+  | 'chat.request_access'
+  | 'chat.approve_access'
+  | 'chat.emergency_access';
 
 export interface GovernanceScope {
   region?: string[];

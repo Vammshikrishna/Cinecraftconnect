@@ -121,15 +121,17 @@ const MediaUpload = ({ onMediaUpload, disabled }: MediaUploadProps) => {
                     });
                     return;
                 }
-                if (file.size > 100 * 1024 * 1024) {
-                    toast({
-                        title: "File too large",
-                        description: `"${file.name}" is larger than 100MB`,
-                        variant: "destructive",
-                    });
-                    return;
-                }
-                uploadFile(file, 'video');
+                import('@/utils/fileValidation').then(({ FILE_SIZE_LIMITS }) => {
+                    if (file.size > FILE_SIZE_LIMITS.video) {
+                        toast({
+                            title: "File too large",
+                            description: `"${file.name}" is larger than 20MB`,
+                            variant: "destructive",
+                        });
+                        return;
+                    }
+                    uploadFile(file, 'video');
+                });
             });
         }
     };

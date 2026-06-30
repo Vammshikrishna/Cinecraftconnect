@@ -47,7 +47,7 @@ export const MarketplaceShareCard = ({
                     .from('marketplace_listings')
                     .select('*, profiles(username, avatar_url, full_name)')
                     .eq('id', listingId)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     setTitle(data.title);
@@ -72,7 +72,7 @@ export const MarketplaceShareCard = ({
     return (
         <Link
             to={`/marketplace/${listingId}`}
-            className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
             {/* Visual Header - High Impact Media */}
             <div className="relative aspect-video w-full overflow-hidden bg-muted">
@@ -100,15 +100,15 @@ export const MarketplaceShareCard = ({
 
                 {/* Premium Price Tag - Top Right */}
                 {price !== undefined && (
-                    <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-xl rounded-xl border border-white/20 shadow-2xl animate-in fade-in zoom-in duration-700">
+                    <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-xl rounded-xl border border-black/20 dark:border-white/20 shadow-2xl animate-in fade-in zoom-in duration-700">
                         <span className="text-[10px] font-black text-white tracking-tight">₹{price.toLocaleString()}</span>
                         <span className="text-[7px] font-bold text-white/50 uppercase tracking-widest">/ Day</span>
                     </div>
                 )}
 
                 {/* Identity Overlay - Bottom Center-ish */}
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-[90%] flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-2xl rounded-xl border border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-700">
-                    <Avatar className="h-8 w-8 rounded-xl border border-white/20 shadow-sm">
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-[90%] flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-2xl rounded-xl border border-black/20 dark:border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-700">
+                    <Avatar className="h-8 w-8 rounded-xl border border-black/20 dark:border-white/20 shadow-sm">
                         <AvatarImage src={author?.avatar_url || undefined} />
                         <AvatarFallback className="text-[10px] bg-primary text-black font-black">
                             {author?.username?.[0]?.toUpperCase() || 'S'}
@@ -124,7 +124,7 @@ export const MarketplaceShareCard = ({
             </div>
 
             {/* Premium Content Footer */}
-            <div className="p-5 space-y-5 bg-background/80 backdrop-blur-md">
+            <div className="p-5 space-y-5 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-2">
                     <h3 className="text-[18px] font-black text-foreground leading-tight tracking-tighter group-hover:text-primary transition-colors uppercase">
                         {title || 'Equipment Listing'}

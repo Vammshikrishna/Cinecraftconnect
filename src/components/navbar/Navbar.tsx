@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Search, Star } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
@@ -15,6 +15,8 @@ import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 const Navbar = () => {
   const { user } = useAuth();
   const { isFan } = useAccountType();
+  const location = useLocation();
+  const isSearchActive = location.pathname.startsWith('/search');
 
   return (
     <>
@@ -33,27 +35,25 @@ const Navbar = () => {
                   {/* Group 2: Navigation (Links + More) */}
                   <div className="hidden lg:flex items-center gap-1 xl:gap-2">
                     <NavLinks />
-                    <MoreMenu />
+                    {!isFan && <MoreMenu />}
                   </div>
 
-                  {/* Fan badge */}
-                  {isFan && (
-                    <Link to="/pricing" className="hidden sm:flex items-center gap-1 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-xs font-bold shrink-0 hover:bg-primary/20 transition-all hover:scale-105 active:scale-95 shadow-sm">
-                      <Star className="h-3.5 w-3.5 fill-primary" />
-                      <span>Upgrade to Pro</span>
-                    </Link>
-                  )}
 
                   {/* Group 1: Utility & Account (Search, Chat, Notifs, Profile) */}
-                  <div className="flex items-center gap-0 sm:gap-1">
+                  <div className="flex items-center gap-1 sm:gap-2 ml-1">
                     {/* Search - now part of the utility group on all devices */}
-                    <Button variant="ghost" size="icon" asChild className="text-foreground/70 hover:text-primary transition-all duration-300">
+                    <Button 
+                      variant={isSearchActive ? "default" : "ghost"} 
+                      size="icon" 
+                      asChild 
+                      className={`transition-all duration-300 ${isSearchActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+                    >
                       <Link to="/search">
-                        <Search className="h-5 w-5" />
+                        <Search className={`h-5 w-5 ${isSearchActive ? "text-primary-foreground" : ""}`} />
                       </Link>
                     </Button>
 
-                    {!isFan && <ChatLink />}
+                    <ChatLink />
                     <NotificationsDropdown />
                     <UserProfileMenu />
                   </div>
@@ -83,13 +83,20 @@ const Navbar = () => {
 
 const ChatLink = () => {
   const { unreadCount } = useUnreadMessages();
+  const location = useLocation();
+  const isMessagesActive = location.pathname.startsWith('/messages');
 
   return (
-    <Button variant="ghost" size="icon" asChild className="relative text-foreground/70 hover:text-primary hover:bg-primary/10 transition-all duration-300">
+    <Button 
+      variant={isMessagesActive ? "default" : "ghost"} 
+      size="icon" 
+      asChild 
+      className={`relative transition-all duration-300 ${isMessagesActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+    >
       <Link to="/messages">
-        <MessageSquare className="h-5 w-5" />
+        <MessageSquare className={`h-5 w-5 ${isMessagesActive ? "text-primary-foreground" : ""}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-background animate-in zoom-in">
+          <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 animate-in zoom-in ${isMessagesActive ? 'border-primary' : 'border-background'}`}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
