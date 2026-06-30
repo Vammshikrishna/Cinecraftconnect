@@ -310,7 +310,18 @@ const CompanyPageDetail = () => {
             <div className="flex flex-wrap items-center gap-4 md:gap-6">
               {!isOwner && !isInternal && (
                 <Button
-                  onClick={() => toggleFollow.mutate({ pageId: page.id, isFollowing: !!isFollowing })}
+                  onClick={() => {
+                    if (!user) {
+                      toast({
+                        title: 'Sign in required',
+                        description: 'Redirecting to sign in page...',
+                        variant: 'destructive'
+                      });
+                      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+                      return;
+                    }
+                    toggleFollow.mutate({ pageId: page.id, isFollowing: !!isFollowing });
+                  }}
                   disabled={toggleFollow.isPending}
                   variant={isFollowing ? 'outline' : 'default'}
                   className={`h-11 px-8 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all ${
@@ -419,9 +430,9 @@ const CompanyPageDetail = () => {
                             timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
                             createdAt={post.created_at}
                             content={post.content}
-                            mediaUrl={post.media_url}
-                            mediaItems={post.media_items}
-                            hasImage={post.media_type === 'image'}
+                            mediaUrl={post.media_urls?.[0] || post.media_url}
+                            mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+                            hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
                             hasVideo={post.media_type === 'video'}
                             like_count={post.like_count || 0}
                             comment_count={post.comment_count || 0}

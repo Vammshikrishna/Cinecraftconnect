@@ -52,9 +52,22 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { ReportDialog } from '@/components/governance/ReportDialog';
 import SEO from '@/components/common/SEO';
 
+import { useAccountType } from '@/hooks/useAccountType';
+import { useEffect } from 'react';
+
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
+  const { push } = useAppNavigation();
   const { isAdmin, isInternal } = useAppRole();
+  const { isFan } = useAccountType();
+
+  // Redirect fans
+  useEffect(() => {
+    if (isFan) {
+      push('/404');
+    }
+  }, [isFan, push]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);

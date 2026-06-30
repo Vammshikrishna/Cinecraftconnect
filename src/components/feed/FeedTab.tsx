@@ -393,6 +393,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     name: authorName,
                     role: authorRole,
                     craft: author?.craft || undefined,
+                    account_type: author?.account_type || undefined,
                     initials: getInitials(authorName),
                     avatar: author?.avatar_url || undefined,
                     isVerified: !!author?.is_verified
@@ -427,8 +428,8 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     slug: post.company_pages.slug,
                     is_verified: !!post.company_pages.is_verified
                   } : undefined}
-                  mediaUrl={post.media_url}
-                  mediaItems={post.media_items}
+                  mediaUrl={post.media_urls?.[0] || post.media_url}
+                  mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
                   authorId={post.author_id}
                   onDelete={(postId) => {
                     setLocalPosts(prev => prev.filter(p => p.id !== postId));

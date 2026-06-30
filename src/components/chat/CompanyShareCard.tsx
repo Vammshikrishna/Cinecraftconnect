@@ -38,7 +38,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
                     .from('company_pages')
                     .select('*')
                     .or(`id.eq.${id},slug.eq.${id},slug.eq.${slug || ''}`)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     setName(data.name);
@@ -62,7 +62,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
     return (
         <Link
             to={`/pages/${slug || id}`}
-            className="block w-full max-w-[200px] sm:max-w-[270px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
             {/* Premium Header: Banner + Floating Logo */}
             <div className="relative h-28 w-full overflow-hidden bg-muted">
@@ -83,7 +83,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
                 {/* Floating Logo/Avatar */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
                     <div className="relative group/logo">
-                        <div className="w-16 h-16 rounded-2xl border-[3px] border-white/20 backdrop-blur-xl shadow-2xl overflow-hidden bg-background/80 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
+                        <div className="w-16 h-16 rounded-2xl border-[3px] border-black/20 dark:border-white/20 backdrop-blur-xl shadow-2xl overflow-hidden bg-white dark:bg-black/60 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
                             {logoUrl ? (
                                 <img src={logoUrl} alt={name} className="w-full h-full object-cover" />
                             ) : (
@@ -95,7 +95,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
 
                 {/* Followers Badge */}
                 {followerCount !== null && (
-                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in duration-500">
+                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in duration-500">
                         <Users size={10} className="text-primary" />
                         <span className="text-[8px] font-black text-white">{followerCount.toLocaleString()}</span>
                     </div>
@@ -112,7 +112,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
             </div>
 
             {/* Content Section */}
-            <div className="p-4 space-y-4 bg-background/60 backdrop-blur-xl border-t border-white/5">
+            <div className="p-4 space-y-4 bg-card/90 dark:bg-black/40 backdrop-blur-xl border-t border-white/5">
                 <div className="text-center space-y-1.5">
                     <div className="flex items-center justify-center gap-1.5 px-2">
                         <h4 className="text-[15px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">

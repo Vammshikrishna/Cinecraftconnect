@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ProjectSpace } from '@/components/projects/ProjectSpace';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { BackButton } from '@/components/common/BackButton';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppRole } from '@/hooks/useAppRole';
@@ -17,23 +18,33 @@ interface Project {
   id: string;
   title: string;
   description: string | null;
+  creator_id: string;
 }
 
 const ProjectSpacePage = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const { push } = useAppNavigation();
+  const { user, isLoading: authLoading } = useAuth();
   const { isFan } = useAccountType();
   const { isInternal } = useAppRole();
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const location = useLocation();
   const initialState = location.state as { project?: Project } | null;
   const [project, setProject] = useState<Project | null>(initialState?.project || null);
+  const [spaceId, setSpaceId] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialState?.project);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+    
+    if (!user) {
+      push(`/projects/${projectId}`, { noScroll: true });
+      return;
+    }
+
     if (isFan && !isInternal) {
-      push('/pricing');
+      push('/404');
       return;
     }
 
@@ -48,24 +59,40 @@ const ProjectSpacePage = () => {
       return;
     }
 
-    const fetchProject = async () => {
+    const fetchProjectAndSpace = async () => {
       try {
-        const { data: projectData, error: projectError } = await supabase
-          .from('projects')
-          .select('id, title, description')
-          .eq('id', projectId)
-          .maybeSingle();
+        // Fetch project data AND space ID in parallel — one round trip
+        const [projectRes, spaceRes] = await Promise.all([
+          supabase
+            .from('projects')
+            .select('id, title, description, creator_id')
+            .eq('id', projectId)
+            .maybeSingle(),
+          supabase
+            .from('project_spaces')
+            .select('id')
+            .eq('project_id', projectId)
+            .maybeSingle()
+        ]);
 
-        if (projectError) throw projectError;
+        if (projectRes.error) throw projectRes.error;
 
-        if (!projectData) {
+        if (!projectRes.data) {
           setError('Project not found');
           setLoading(false);
           return;
         }
 
-        setProject({ id: projectData.id, title: projectData.title, description: projectData.description });
+        setProject({
+          id: projectRes.data.id,
+          title: projectRes.data.title,
+          description: projectRes.data.description,
+          creator_id: projectRes.data.creator_id,
+        });
 
+        if (spaceRes.data) {
+          setSpaceId(spaceRes.data.id);
+        }
       } catch (err) {
         console.error('Error fetching project:', err);
         setError('Failed to load project space');
@@ -74,10 +101,10 @@ const ProjectSpacePage = () => {
       }
     };
 
-    fetchProject();
-  }, [projectId]);
+    fetchProjectAndSpace();
+  }, [projectId, authLoading, user, isFan, isInternal, push]);
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="h-screen w-screen bg-background flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -107,6 +134,8 @@ const ProjectSpacePage = () => {
           projectId={project.id}
           projectTitle={project.title}
           projectDescription={project.description || ''}
+          projectCreatorId={project.creator_id}
+          initialSpaceId={spaceId}
         />
       </div>
     </div>

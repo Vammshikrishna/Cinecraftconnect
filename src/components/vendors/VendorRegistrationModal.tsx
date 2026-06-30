@@ -74,26 +74,17 @@ export const VendorRegistrationModal = ({
     const uploadLogo = async (): Promise<string | null> => {
         if (!logo || !user) return null;
 
-        const { compressImage } = await import('@/utils/imageCompression');
-        const compressedLogo = await compressImage(logo);
+        const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+        const { url, error: uploadError } = await uploadFileToSupabase(
+            logo,
+            'vendor-images',
+            user.id,
+            { isThumbnail: true }
+        );
 
-        const fileExt = compressedLogo.name.split('.').pop();
-        const fileName = `${user.id}/logo-${Date.now()}.${fileExt}`;
+        if (uploadError || !url) throw new Error(uploadError || 'Failed to upload logo');
 
-        const { error } = await supabase.storage
-            .from('vendor-images')
-            .upload(fileName, compressedLogo, {
-                cacheControl: '31536000',
-                upsert: false
-            });
-
-        if (error) throw error;
-
-        const { data: { publicUrl } } = supabase.storage
-            .from('vendor-images')
-            .getPublicUrl(fileName);
-
-        return publicUrl;
+        return url;
     };
 
     const handleCategoryToggle = (category: string) => {

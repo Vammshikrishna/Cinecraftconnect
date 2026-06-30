@@ -112,13 +112,29 @@ export const registerAllMutationHandlers = () => {
       author_id: payload.userId,
       content: payload.content,
       page_id: payload.pageId || null,
-      media_url: payload.mediaItems && payload.mediaItems.length > 0 ? payload.mediaItems[0].url : null,
+      media_urls: payload.mediaItems ? payload.mediaItems.map((item: any) => item.url) : [],
       media_type: payload.mediaItems && payload.mediaItems.length > 0 ? payload.mediaItems[0].type : null,
-      media_items: payload.mediaItems || [],
       tags: payload.tags || []
     });
     if (error) throw error;
   });
+  mutationQueue.registerHandler('MARK_NOTIFICATION_READ', async (payload: { notificationId: string }) => {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', payload.notificationId);
+    if (error) throw error;
+  });
+
+  mutationQueue.registerHandler('MARK_ALL_NOTIFICATIONS_READ', async (payload: { userId: string }) => {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', payload.userId)
+      .eq('is_read', false);
+    if (error) throw error;
+  });
+
   mutationQueue.registerHandler('DELETE_NOTIFICATION', async (payload: { notificationId: string }) => {
     const { error } = await supabase.from('notifications').delete().eq('id', payload.notificationId);
     if (error) throw error;
@@ -145,6 +161,25 @@ export const registerAllMutationHandlers = () => {
   mutationQueue.registerHandler('UPDATE_JOB', async (payload: any) => {
     const { jobId, employerId, ...jobData } = payload;
     const { error } = await supabase.from('jobs').update(jobData).eq('id', jobId);
+    if (error) throw error;
+  });
+
+  mutationQueue.registerHandler('CREATE_JOB', async (payload: any) => {
+    const { tempId, employerId, ...jobData } = payload;
+    const { error } = await supabase.from('jobs').insert({
+      ...jobData,
+      posted_by: employerId,
+    });
+    if (error) throw error;
+  });
+
+  mutationQueue.registerHandler('APPLY_JOB', async (payload: any) => {
+    const { jobId, applicantId, ...applicationData } = payload;
+    const { error } = await supabase.from('job_applications').insert({
+      ...applicationData,
+      job_id: jobId,
+      applicant_id: applicantId
+    });
     if (error) throw error;
   });
 

@@ -56,7 +56,7 @@ const FeedSection = ({ title, icon: Icon, linkTo, children, className }: FeedSec
 
                 <div
                     ref={scrollContainerRef}
-                    className="flex overflow-x-auto gap-4 px-4 pb-4 scrollbar-hide snap-x snap-mandatory"
+                    className="flex items-start overflow-x-auto gap-4 px-4 pb-4 scrollbar-hide snap-x snap-mandatory"
                     style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                 >
                     {children}

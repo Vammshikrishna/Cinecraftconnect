@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAccountType } from '@/hooks/useAccountType';
 import { getOptimizedImage } from '@/utils/image-optimization';
+import { cn } from '@/lib/utils';
 
 interface JobShareCardProps {
     jobId: string;
@@ -16,6 +17,8 @@ interface JobShareCardProps {
     imageUrl?: string;
     salary?: string;
     type?: string;
+    className?: string;
+    compact?: boolean;
 }
 
 export const JobShareCard = ({
@@ -26,7 +29,9 @@ export const JobShareCard = ({
     logoUrl: initialLogo,
     description: initialDesc,
     salary: initialSalary,
-    type: initialType
+    type: initialType,
+    className,
+    compact
 }: JobShareCardProps) => {
     const { isFan } = useAccountType();
     const [title, setTitle] = useState(initialTitle);
@@ -47,7 +52,7 @@ export const JobShareCard = ({
                     .from('jobs')
                     .select('*, profiles(full_name, avatar_url, username)')
                     .eq('id', jobId)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     setTitle(data.title);
@@ -71,15 +76,78 @@ export const JobShareCard = ({
         fetchJobDetails();
     }, [jobId, initialDesc, initialSalary]);
 
+    if (compact) {
+        return (
+            <Link
+                to={`/jobs/${jobId}`}
+                className={cn(
+                    "block w-full glass-card-premium rounded-xl overflow-hidden transition-all duration-300 hover:-translate-y-1 active:scale-[0.98] no-underline group shadow-lg border border-black/10 dark:border-white/10",
+                    className
+                )}
+            >
+                {/* Compact Header */}
+                <div className="p-2.5 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <Avatar className="h-6 w-6 rounded-md border border-black/20 dark:border-white/20 shadow-sm shrink-0">
+                            <AvatarImage src={getOptimizedImage(logoUrl, { width: 48, height: 48 }) || undefined} />
+                            <AvatarFallback className="text-[8px] bg-primary text-black font-black uppercase shrink-0">
+                                {company?.[0]}
+                            </AvatarFallback>
+                        </Avatar>
+                        <span className="text-[10px] font-bold text-white uppercase tracking-wider truncate leading-tight">
+                            {company}
+                        </span>
+                    </div>
+                    <div className="shrink-0 px-1.5 py-0.5 bg-[#ff3d00] text-white text-[6.5px] font-black uppercase tracking-widest rounded shadow-sm">
+                        Hiring
+                    </div>
+                </div>
+
+                {/* Compact Content */}
+                <div className="p-3 space-y-2 bg-white dark:bg-black/60 backdrop-blur-md">
+                    <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-sm font-black text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase truncate">
+                            {title || 'Open Casting'}
+                        </h3>
+                        {type && (
+                            <div className="px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded text-[6px] font-black text-primary uppercase tracking-widest shrink-0">
+                                {type}
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1 text-[8px] text-muted-foreground font-bold uppercase tracking-wider truncate">
+                            <MapPin size={8} className="text-primary shrink-0" />
+                            <span className="truncate">{location || 'Global Location'}</span>
+                        </div>
+                        {salary && (
+                            <span className="text-[8px] font-black text-green-500 uppercase tracking-widest shrink-0">
+                                {salary.includes(' - ') ? salary.split(' - ')[0] : salary}
+                            </span>
+                        )}
+                    </div>
+                    {description && (
+                        <p className="text-[9px] text-foreground/70 font-medium leading-relaxed line-clamp-3 italic opacity-80 border-l-2 border-primary/30 pl-2 mt-2">
+                            {description}
+                        </p>
+                    )}
+                </div>
+            </Link>
+        );
+    }
+
     return (
         <Link
             to={`/jobs/${jobId}`}
-            className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className={cn(
+                "block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10",
+                className
+            )}
         >
             {/* Header Section - Identity & Urgency */}
-            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">
+            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3 overflow-hidden">
-                    <Avatar className="h-10 w-10 rounded-xl border border-white/20 shadow-sm">
+                    <Avatar className="h-10 w-10 rounded-xl border border-black/20 dark:border-white/20 shadow-sm">
                         <AvatarImage src={getOptimizedImage(logoUrl, { width: 80, height: 80 }) || undefined} />
                         <AvatarFallback className="text-[12px] bg-primary text-black font-black uppercase">
                             {company?.[0]}
@@ -95,13 +163,13 @@ export const JobShareCard = ({
                     </div>
                 </div>
 
-                <div className="shrink-0 px-2 py-1 bg-red-600 text-white text-[8px] font-black uppercase tracking-widest rounded-md shadow-lg animate-pulse">
-                    Urgent
+                <div className="shrink-0 px-2 py-1 bg-[#ff3d00] text-white text-[8px] font-black uppercase tracking-widest rounded-md shadow-lg">
+                    Hiring
                 </div>
             </div>
 
             {/* Content Section */}
-            <div className="p-5 space-y-5 bg-background/80 backdrop-blur-md">
+            <div className="p-5 space-y-5 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <h3 className="text-[18px] font-black text-foreground leading-tight tracking-tighter group-hover:text-primary transition-colors uppercase">
@@ -142,7 +210,7 @@ export const JobShareCard = ({
 
                 <div className="pt-2">
                     {isFan ? (
-                        <div className="w-full py-3 bg-muted/40 text-muted-foreground text-center rounded-2xl flex items-center justify-center gap-3 text-[11px] font-black uppercase tracking-widest opacity-80 cursor-not-allowed border border-dashed border-white/10">
+                        <div className="w-full py-3 bg-muted/40 text-muted-foreground text-center rounded-2xl flex items-center justify-center gap-3 text-[11px] font-black uppercase tracking-widest opacity-80 cursor-not-allowed border border-dashed border-black/10 dark:border-white/10">
                             <Lock size={14} />
                             Creator Only
                         </div>

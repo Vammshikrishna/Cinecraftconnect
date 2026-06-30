@@ -86,10 +86,10 @@ const PostDetailPage = () => {
                     }}
                     timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
                     content={post.content}
-                    hasImage={post.media_type === 'image'}
+                    hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
                     hasVideo={post.media_type === 'video'}
-                    mediaUrl={post.media_url}
-                    mediaItems={post.media_items}
+                    mediaUrl={post.media_urls?.[0] || post.media_url}
+                    mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
                     like_count={post.like_count || 0}
                     comment_count={post.comment_count || 0}
                     share_count={post.share_count || 0}

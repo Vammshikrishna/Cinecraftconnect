@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Search, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { generateDirectRoomId } from "@/lib/chat-utils";
 
 interface ShareToConnectionDialogProps {
     isOpen: boolean;
@@ -71,7 +72,7 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
         setSending(recipientId);
 
         try {
-            const channelId = [user.id, recipientId].sort().join('-');
+            const channelId = generateDirectRoomId(user.id, recipientId);
             const postLink = `${window.location.origin}/feed?post=${postId}`;
             const messageContent = `Check out this post: ${postLink}`;
 
@@ -83,6 +84,20 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
             });
 
             if (sendError) throw sendError;
+
+            // Dispatch local event for instant UI update
+            console.log('[ShareToConnectionDialog] Dispatching local chat_list_update event');
+            window.dispatchEvent(new CustomEvent('chat_list_update', {
+                detail: { senderId: user.id, receiverId: recipientId }
+            }));
+
+            // Safely broadcast globally
+            const globalChannel = supabase.channel('global_chat_updates');
+            globalChannel.send({
+                type: 'broadcast',
+                event: 'chat_list_update',
+                payload: { senderId: user.id, receiverId: recipientId }
+            }).catch(console.error);
 
             setSentTo(prev => new Set(prev).add(recipientId));
             toast({

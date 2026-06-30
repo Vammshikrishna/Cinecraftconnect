@@ -109,17 +109,14 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
         setUploading(true);
 
         try {
-            const filePath = buildUserFilePath(project_id, selectedFile.name);
+            const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+            const { url, error: uploadError } = await uploadFileToSupabase(
+                selectedFile,
+                STORAGE_BUCKETS.LEGAL_DOCUMENTS,
+                project_id
+            );
 
-            const { error: uploadError } = await supabase.storage
-                .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
-                .upload(filePath, selectedFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from(STORAGE_BUCKETS.LEGAL_DOCUMENTS)
-                .getPublicUrl(filePath);
+            if (uploadError || !url) throw new Error(uploadError || 'Failed to upload document');
 
             const { error: insertError } = await supabase
                 .from('legal_docs' as any)
@@ -127,7 +124,7 @@ const LegalDocs = ({ project_id }: LegalDocsProps) => {
                     project_id,
                     title,
                     description: description || null,
-                    url: publicUrl,
+                    url: url,
                     document_type: documentType,
                     uploaded_by: (await supabase.auth.getUser()).data.user?.id
                 }]);

@@ -2,9 +2,7 @@ import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePresence } from '@/hooks/usePresence';
 import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
-import { ConsistencyDebugPanel } from '@/devtools/ConsistencyDebugPanel';
-import { OrchestrationDebugPanel } from '@/devtools/OrchestrationDebugPanel';
-import { HydrationDebugPanel } from '@/devtools/HydrationDebugPanel';
+
 import { GlobalNotificationListener } from '@/components/notifications/GlobalNotificationListener';
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -35,15 +33,11 @@ const GlobalFeatures = () => {
         if (Capacitor.isNativePlatform()) {
             const clearScreenNotifications = async () => {
                 try {
-                    const delivered = await PushNotifications.getDeliveredNotifications();
-                    const matchingNotifications = delivered.notifications.filter(
-                        n => n.data && n.data.actionUrl === location.pathname
-                    );
-                    
-                    if (matchingNotifications.length > 0) {
-                        console.log(`🧹 [Native Push] Clearing ${matchingNotifications.length} tray notifications for ${location.pathname}`);
-                        await PushNotifications.removeDeliveredNotifications({ notifications: matchingNotifications });
-                    }
+                    // Because we are using custom Android Notification styles (MessagingStyle) 
+                    // built manually in FCMService.java with string-based IDs, Capacitor's 
+                    // removeDeliveredNotifications often crashes trying to parse the IDs.
+                    // Instead, we just clear all notifications, or let the user dismiss them.
+                    // For now, we rely on the NotificationReplyReceiver's "Mark as Read" intent.
                 } catch (e) {
                     console.error('Failed to clear tray notifications on navigation:', e);
                 }
@@ -59,8 +53,8 @@ const GlobalFeatures = () => {
                 const { value } = await Preferences.get({ key: 'pending_push_url' });
                 if (value) {
                     await Preferences.remove({ key: 'pending_push_url' });
-                    // Give the app a moment to settle before navigating
-                    setTimeout(() => navigate(value), 100);
+                    // Navigate immediately to prevent flashing intermediate pages
+                    navigate(value, { replace: true });
                 }
             } catch (e) {
                 console.error("Error reading pending push url", e);
@@ -79,7 +73,6 @@ const GlobalFeatures = () => {
 
         // Listen for direct notification taps (Foreground and Background)
         let pushSub: any = null;
-        let receiveSub: any = null;
         if (Capacitor.isNativePlatform()) {
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
                 const data = action.notification.data;
@@ -87,25 +80,11 @@ const GlobalFeatures = () => {
                     navigate(data.actionUrl);
                 }
             }).then(s => pushSub = s);
-
-            // Instantly clear incoming push notifications if the user is already on that exact screen
-            PushNotifications.addListener('pushNotificationReceived', async (notification) => {
-                const data = notification.data;
-                if (data && data.actionUrl && window.location.pathname === data.actionUrl) {
-                    try {
-                        console.log('🔕 [Native Push] Clearing notification because user is already on screen:', data.actionUrl);
-                        await PushNotifications.removeDeliveredNotifications({ notifications: [notification] });
-                    } catch (e) {
-                        console.error('Failed to clear foreground native notification:', e);
-                    }
-                }
-            }).then(s => receiveSub = s);
         }
 
         return () => {
             sub.then(s => s.remove());
             if (pushSub) pushSub.remove();
-            if (receiveSub) receiveSub.remove();
         };
     }, [navigate]);
 
@@ -120,14 +99,7 @@ const GlobalFeatures = () => {
             {/* Render the Back to Top button */}
             <BackToTop />
 
-            {/* Development-only Consistency and Orchestration Debug Panels */}
-            {import.meta.env.DEV && (
-              <>
-                <ConsistencyDebugPanel />
-                <OrchestrationDebugPanel />
-                <HydrationDebugPanel />
-              </>
-            )}
+
         </>
     );
 };

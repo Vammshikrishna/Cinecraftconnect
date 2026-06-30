@@ -6,6 +6,7 @@ import { Session } from '@supabase/supabase-js';
 export interface BootstrapResult {
   session: Session | null;
   error?: any;
+  timedOut?: boolean;
 }
 
 /**
@@ -27,16 +28,16 @@ export const bootstrapAuthSequence = async (): Promise<BootstrapResult> => {
     const timeoutPromise = new Promise<{ data: { session: null }, error: Error }>((resolve) => {
       setTimeout(() => {
         resolve({ data: { session: null }, error: new Error('Session retrieval timed out') });
-      }, 1500); // 1.5 seconds max wait for premium instant feel
+      }, 4000); // 4 seconds: secureStorage decryption (async Web Crypto) can be slow on cold start
     });
 
     const { data, error } = await Promise.race([getSessionPromise, timeoutPromise]);
 
     if (error) {
       if (error.message === 'Session retrieval timed out') {
-        console.warn('Bootstrap: Session check timed out. Proceeding offline.');
-        // We do not force logout on timeout; network might be slow.
-        return { session: null, error };
+        console.warn('Bootstrap: Session check timed out. onAuthStateChange will handle the session once storage decrypts.');
+        // Return timedOut so AuthContext keeps isLoading=true and waits for onAuthStateChange
+        return { session: null, error, timedOut: true };
       }
       
       console.error('Bootstrap: Session error detected. Attempting recovery...');

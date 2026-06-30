@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAppRole } from '@/hooks/useAppRole';
 
 export type MessageTableType = 'direct_messages' | 'room_messages' | 'project_messages';
 
@@ -10,13 +11,14 @@ export type MessageTableType = 'direct_messages' | 'room_messages' | 'project_me
  */
 export const useMessageSeen = (tableType: MessageTableType = 'direct_messages') => {
     const { user } = useAuth();
+    const { isInternal } = useAppRole();
     const observerRef = useRef<IntersectionObserver | null>(null);
     const seenQueue = useRef<Set<string>>(new Set());
     const debounceTimer = useRef<any>(null);
 
     // The actual API call to mark messages as seen
     const flushSeenQueue = useCallback(async () => {
-        if (seenQueue.current.size === 0 || !user) return;
+        if (seenQueue.current.size === 0 || !user || isInternal) return;
 
         // Find the newest message ID in the queue (the watermark)
         const idsArray = Array.from(seenQueue.current);
@@ -28,19 +30,22 @@ export const useMessageSeen = (tableType: MessageTableType = 'direct_messages') 
                 tableType === 'room_messages' ? 'mark_room_message_as_seen' : 
                 'mark_project_message_as_seen';
 
-            const { error } = await (supabase.rpc as any)(rpcName, {
-                p_message_id: newestId
-            });
+            const rpcArgs = { 
+                p_message_id: newestId,
+                p_user_id: user.id
+            };
+
+            const { error } = await (supabase.rpc as any)(rpcName, rpcArgs);
             
             if (error) {
-                console.error(`[useMessageSeen] Update failed for ${newestId}:`, error);
+                console.error(`[useMessageSeen] Update failed for ${newestId} via ${rpcName}:`, error);
             } else {
                 seenQueue.current.clear();
             }
         } catch (err) {
             console.error('Error flushing seen queue:', err);
         }
-    }, [user, tableType]);
+    }, [user, tableType, isInternal]);
 
     // Native debounce implementation
     const debouncedFlush = useCallback(() => {

@@ -3,7 +3,7 @@ import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { MoreVertical, Reply, Trash2, X } from 'lucide-react';
+import { MoreVertical, Reply, Trash2, X, Smile, Flag, Info } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
@@ -36,6 +36,18 @@ import { useAppRole } from '@/hooks/useAppRole';
 import { useKeyboard } from '@/contexts/KeyboardContext';
 import { cn } from '@/lib/utils';
 
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+  user_profile?: {
+    full_name: string;
+    avatar_url: string;
+  };
+}
+
 interface Message {
   id: string;
   content: string;
@@ -52,12 +64,16 @@ interface Message {
   } | null;
   deleted_for_users: string[] | null;
   status?: 'pending' | 'sent' | 'error';
+  reactions?: MessageReaction[];
 }
 
 interface ProjectChatInterfaceProps {
   projectId: string;
+  spaceId?: string;
   isActive?: boolean;
 }
+
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
 
 const SENDER_COLORS = [
   'text-blue-700 dark:text-blue-300',
@@ -94,12 +110,44 @@ const formatTimestamp = (timestamp: string) => {
   return format(date, 'p');
 };
 
+const getMessagePreviewText = (content: string): string => {
+  if (!content) return '';
+  if (content.startsWith('POST_SHARE::')) return 'Shared a post';
+  if (content.startsWith('MARKETPLACE_SHARE::')) return 'Shared a listing';
+  if (content.startsWith('ANNOUNCEMENT_SHARE::')) return 'Shared an announcement';
+  if (content.startsWith('VENDOR_SHARE::')) return 'Shared a vendor';
+  if (content.startsWith('PROJECT_SHARE::')) return 'Shared a project';
+  if (content.startsWith('DISCUSSION_SHARE::')) return 'Shared a discussion';
+  if (content.startsWith('ROOM_SHARE::')) return 'Shared a room';
+  if (content.startsWith('COMPANY_SHARE::')) return 'Shared a company profile';
+  if (content.startsWith('PROFILE_SHARE::')) return 'Shared a user profile';
+  if (content.startsWith('PITCH_SHARE::')) return 'Shared a pitch deck';
+  if (content.startsWith('CONTENT_SHARE::')) return 'Shared a video/content';
+  if (content.includes('JOB_SHARE::')) return 'Shared a job post';
+  return content;
+};
+
+const scrollToMessage = (messageId: string) => {
+  const element = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl') || element.querySelector('[class*="bg-primary"]');
+    if (bubble) {
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      setTimeout(() => {
+        bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
+      }, 1200);
+    }
+  }
+};
+
 export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChatInterfaceProps) => {
   const { user, profile } = useAuth();
   const { isInternal } = useAppRole();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef(messages);
+  const reactionLocksRef = useRef<Set<string>>(new Set());
   const channelRef = useRef<any>(null);
   useEffect(() => {
     messagesRef.current = messages;
@@ -118,7 +166,209 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
   const { markAsRead } = useChatReadStatus();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<Message | null>(null);
+  const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
+  const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+  const longPressTimerRef = useRef<any>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isSwipingRef = useRef<boolean>(false);
+
+  const handleTouchStart = (messageId: string, isDeleted: boolean) => (e: React.TouchEvent) => {
+    if (isDeleted) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    isSwipingRef.current = false;
+    
+    longPressTimerRef.current = setTimeout(() => {
+      if (!isSwipingRef.current) {
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        setActiveMobileReactionMessageId(messageId);
+      }
+    }, 500);
+  };
+
+  const handleTouchMove = (messageId: string) => (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const diffX = touch.clientX - touchStartRef.current.x;
+    const diffY = touch.clientY - touchStartRef.current.y;
+    
+    if (!isSwipingRef.current && diffX > 10 && Math.abs(diffY) < 15) {
+      isSwipingRef.current = true;
+      setSwipeMessageId(messageId);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === messageId) {
+      const offset = Math.max(0, Math.min(diffX, 80));
+      setSwipeOffset(offset);
+      if (offset >= 55 && swipeOffset < 55) {
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+      }
+    }
+    
+    if (Math.abs(diffY) > 10 && !isSwipingRef.current) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+  };
+
+  const handleTouchEnd = (message: Message) => () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === message.id) {
+      if (swipeOffset >= 55) {
+        setReplyingTo(message);
+      }
+    }
+    
+    setSwipeOffset(0);
+    setSwipeMessageId(null);
+    isSwipingRef.current = false;
+    touchStartRef.current = null;
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = () => {
+      setActiveMobileReactionMessageId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
   // const [isKeyLoading, setIsKeyLoading] = useState(false); // Unused for now
+
+  const fetchReactions = async (msgs: Message[]) => {
+    const msgIds = msgs.map(m => m.id);
+    if (msgIds.length === 0) return msgs;
+    
+    const { data, error } = await supabase
+      .from('project_space_message_reactions')
+      .select('*, profiles:user_id(full_name, avatar_url)')
+      .in('message_id', msgIds);
+      
+    if (error) {
+      console.error('Error fetching reactions:', error);
+      return msgs;
+    }
+    
+    const reactionsMap: Record<string, MessageReaction[]> = {};
+    (data || []).forEach(r => {
+      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+      reactionsMap[r.message_id].push({
+        id: r.id,
+        message_id: r.message_id,
+        user_id: r.user_id,
+        emoji: r.emoji,
+        created_at: r.created_at,
+        user_profile: Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+      });
+    });
+    
+    return msgs.map(m => ({
+      ...m,
+      reactions: reactionsMap[m.id] || []
+    }));
+  };
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    
+    if (reactionLocksRef.current.has(messageId)) return;
+    reactionLocksRef.current.add(messageId);
+    
+    try {
+      let currentReactions: MessageReaction[] = [];
+      setMessages(prev => {
+        const msg = prev.find(m => m.id === messageId);
+        if (msg) currentReactions = msg.reactions || [];
+        return prev;
+      });
+      
+      const existingReaction = currentReactions.find(r => r.emoji === emoji && r.user_id === user.id);
+      const isTogglingOff = !!existingReaction;
+
+      const optimisticId = `temp-react-${Date.now()}`;
+      setMessages(prev => {
+        const idx = prev.findIndex(m => m.id === messageId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        let newReactions = [...(updated[idx].reactions || [])].filter(r => r.user_id !== user.id);
+        
+        if (!isTogglingOff) {
+          newReactions.push({
+             id: optimisticId,
+             message_id: messageId,
+             user_id: user.id,
+             emoji: emoji,
+             created_at: new Date().toISOString(),
+             user_profile: profile ? { full_name: profile.full_name || '', avatar_url: profile.avatar_url || '' } : undefined
+          });
+        }
+        updated[idx] = { ...updated[idx], reactions: newReactions };
+        return updated;
+      });
+
+      if (channelRef.current) {
+         channelRef.current.send({
+            type: 'broadcast',
+            event: 'reaction_update',
+            payload: { 
+               eventType: isTogglingOff ? 'DELETE' : 'INSERT', 
+               [isTogglingOff ? 'old' : 'new']: isTogglingOff ? existingReaction : { id: optimisticId, message_id: messageId, user_id: user.id, emoji }
+            }
+         }).catch(console.error);
+      }
+
+      await supabase.from('project_space_message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id);
+
+      if (!isTogglingOff) {
+        const { data, error } = await supabase.from('project_space_message_reactions').insert({
+          message_id: messageId,
+          user_id: user.id,
+          emoji: emoji
+        }).select().single();
+        
+        if (error) {
+          console.error('Error adding reaction', error);
+          setMessages(prev => {
+            const idx = prev.findIndex(m => m.id === messageId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], reactions: currentReactions };
+            return updated;
+          });
+        } else if (data) {
+          setMessages(prev => {
+             const idx = prev.findIndex(m => m.id === messageId);
+             if (idx === -1) return prev;
+             const updated = [...prev];
+             updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).map(r => r.id === optimisticId ? { ...r, id: data.id } : r) };
+             return updated;
+          });
+        }
+      }
+    } finally {
+      reactionLocksRef.current.delete(messageId);
+    }
+  };
 
   const fetchMessages = useCallback(async (isNewRoom = true) => {
     if (!spaceId) return;
@@ -157,6 +407,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
       const sortedMessages = [...fetchedMessages].sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
+      const withReactions = await fetchReactions(sortedMessages);
       setMessages(prev => {
         const baseMessages = isNewRoom ? [] : prev;
         const pending = baseMessages.filter(m => m.status === 'pending');
@@ -168,7 +419,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
           }
         });
         
-        sortedMessages.forEach(m => {
+        withReactions.forEach(m => {
           messagesMap.set(m.id, m);
         });
         
@@ -188,8 +439,8 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
 
   const fetchReadStatuses = useCallback(async () => {
     if (!spaceId) return;
-    const { data, error } = await (supabase.from('project_space_message_read_status') as any)
-      .select('user_id, last_read_at')
+    const { data, error } = await (supabase.from('project_message_read_status') as any)
+      .select('user_id, last_read_at, profiles(full_name, avatar_url)')
       .eq('project_space_id', spaceId);
     
     if (error) {
@@ -449,11 +700,49 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
       }
     };
 
+    const handleReactionChange = async (payload: any) => {
+      const reaction = payload.new || payload.old;
+      if (!reaction) return;
+      
+      if (payload.eventType === 'INSERT') {
+        const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', reaction.user_id).maybeSingle();
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === reaction.message_id);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          let newReactions = [...(updated[idx].reactions || [])];
+          newReactions = newReactions.filter(r => r.user_id !== reaction.user_id);
+          newReactions.push({ ...reaction, user_profile: profile || undefined });
+          updated[idx] = { ...updated[idx], reactions: newReactions };
+          return updated;
+        });
+      } else if (payload.eventType === 'DELETE') {
+        setMessages(prev => {
+          const updated = [...prev];
+          if (reaction.message_id && reaction.user_id) {
+            const idx = updated.findIndex(m => m.id === reaction.message_id);
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).filter(r => r.user_id !== reaction.user_id) };
+            }
+          } else {
+            const idx = updated.findIndex(m => m.reactions?.some(r => r.id === reaction.id));
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).filter(r => r.id !== reaction.id) };
+            }
+          }
+          return updated;
+        });
+      }
+    };
+
     const channel = supabase
       .channel(`project_messages-v2:${spaceId}`)
       .on('broadcast', { event: 'new_message' }, (payload) => {
          const newMsg = payload.payload;
          handleProjectMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
+      .on('broadcast', { event: 'reaction_update' }, (payload) => {
+        handleReactionChange(payload.payload);
       })
       .on('postgres_changes', {
         event: 'INSERT',
@@ -476,7 +765,12 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'project_space_message_read_status',
+        table: 'project_space_message_reactions'
+      }, handleReactionChange)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'project_message_read_status',
         filter: `project_space_id=eq.${spaceId}`
       }, () => {
         fetchReadStatusesRef.current();
@@ -604,7 +898,8 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
         const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
-        setMessages(prev => [...sortedNewMessages, ...prev]);
+        const withReactions = await fetchReactions(sortedNewMessages);
+        setMessages(prev => [...withReactions, ...prev]);
         setHasMore(fetchedMessages.length === 30);
       } else {
         setHasMore(false);
@@ -999,50 +1294,188 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                   </AvatarFallback>
                 </Avatar>
                 <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
-                  <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                    <div className={cn(
-                      "relative transition-all duration-300",
-                      message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
-                      isShare ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
-                      (message.attachment_url && (!message.content || message.content === 'Shared an image' || message.content === 'Shared a video' || message.content === 'Shared a file')) ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
-                      isOwn ? "bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
-                      "bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
-                    )}>
-                      {!isOwn && !message.is_deleted && (
-                        <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
-                          {message.profiles?.username || message.profiles?.full_name || 'User'}
-                        </p>
+                  <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
+                      {/* Swipe to reply indicator icon behind message */}
+                      {swipeMessageId === message.id && swipeOffset > 0 && (
+                        <div 
+                          className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
+                          style={{
+                            opacity: Math.min(swipeOffset / 55, 1),
+                            transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
+                          }}
+                        >
+                          <Reply className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                      <div 
+                        className="relative select-none transition-transform duration-200"
+                        style={{
+                          transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          if (!message.is_deleted) {
+                            handleToggleReaction(message.id, '❤️');
+                          }
+                        }}
+                        onTouchStart={handleTouchStart(message.id, !!message.is_deleted)}
+                        onTouchMove={handleTouchMove(message.id)}
+                        onTouchEnd={handleTouchEnd(message)}
+                      >
+                      <div className={cn(
+                        "relative transition-all duration-300",
+                        message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
+                        isShare ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
+                        (message.attachment_url && (!message.content || message.content === 'Shared an image' || message.content === 'Shared a video' || message.content === 'Shared a file')) ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
+                        isOwn ? "bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
+                        "bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
+                      )}>
+                        {!isOwn && !message.is_deleted && (
+                          <p className={`text-[11px] font-bold mb-1 ${getUserColor(message.user_id)}`}>
+                            {message.profiles?.username || message.profiles?.full_name || 'User'}
+                          </p>
+                        )}
+
+                        {message.reply_to_id && !message.is_deleted && (() => {
+                          const repliedMsg = messages.find(m => m.id === message.reply_to_id);
+                          if (!repliedMsg) return null;
+                          return (
+                            <div 
+                              onClick={() => scrollToMessage(message.reply_to_id!)}
+                              className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all ${isOwn ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                            >
+                              <div className={`font-semibold text-[10px] mb-0.5 ${isOwn ? 'text-white font-bold' : getUserColor(repliedMsg.user_id)}`}>
+                                {repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
+                              </div>
+                              <div className={`opacity-80 line-clamp-1 ${isOwn ? 'text-white/80' : 'text-muted-foreground'}`}>
+                                {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
+                                  getMessagePreviewText(repliedMsg.content)
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        {message.is_deleted ? (
+                          <p className="text-sm italic opacity-70 flex items-center gap-1.5 py-0.5">
+                            This message was deleted
+                          </p>
+                        ) : (
+                          renderMessageContent(message)
+                        )}
+                      </div>
+
+                      {/* Reactions Pill */}
+                      {message.reactions && message.reactions.length > 0 && (
+                        <div className={cn(
+                          "absolute -bottom-3 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-sm",
+                          isOwn ? "right-2" : "left-2"
+                        )}>
+                          {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
+                             const count = message.reactions!.filter(r => r.emoji === emoji).length;
+                             const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
+                             return (
+                               <button 
+                                  key={emoji} 
+                                  onClick={() => handleToggleReaction(message.id, emoji)}
+                                  className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors bg-background/50 border border-border/50", hasReacted && "bg-primary/10 text-primary border-primary/20")}
+                               >
+                                 <span>{emoji}</span>
+                                 {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
+                               </button>
+                             );
+                          })}
+                        </div>
                       )}
 
-                      {message.reply_to_id && !message.is_deleted && (() => {
-                        const repliedMsg = messages.find(m => m.id === message.reply_to_id);
-                        if (!repliedMsg) return null;
-                        return (
-                          <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isOwn ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
-                            <div className={`font-semibold text-[10px] mb-1 ${getUserColor(repliedMsg.user_id)}`}>
-                              {repliedMsg.profiles?.username || repliedMsg.profiles?.full_name || 'User'}
-                            </div>
-                            <div className="opacity-90 line-clamp-1">
-                              {repliedMsg.is_deleted ? <em>This message was deleted</em> : (
-                                repliedMsg.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                  repliedMsg.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                    repliedMsg.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                      repliedMsg.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                        repliedMsg.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                          repliedMsg.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                            repliedMsg.content.startsWith('ROOM_SHARE::') ? 'Shared a room' :
-                                              repliedMsg.content
+                      {/* Mobile floating reactions picker */}
+                      {activeMobileReactionMessageId === message.id && (
+                        <div 
+                          className={cn(
+                            "absolute -top-12 z-50 flex items-center gap-1 p-1.5 rounded-full border border-border/50 shadow-xl bg-background/95 backdrop-blur-xl animate-in zoom-in-95 duration-100",
+                            isOwn ? "right-0" : "left-0"
+                          )}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          {QUICK_REACTIONS.map(emoji => (
+                            <button 
+                              key={emoji} 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleReaction(message.id, emoji);
+                                setActiveMobileReactionMessageId(null);
+                              }} 
+                              className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMobileReactionMessageId(null);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-foreground rounded-full"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Action Buttons (Absolute) */}
+                      {!message.is_deleted && (
+                        <div 
+                          className={`absolute top-1/2 -translate-y-1/2 ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5`}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                                <Smile className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl">
+                                {QUICK_REACTIONS.map(emoji => (
+                                  <button 
+                                    key={emoji} 
+                                    onClick={() => handleToggleReaction(message.id, emoji)} 
+                                    className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36">
+                              {isOwn && (
+                                <DropdownMenuItem onClick={() => {
+                                  setInfoMessage(message);
+                                  setShowInfoDialog(true);
+                                }}>
+                                  <Info className="h-4 w-4 mr-2" /> Info
+                                </DropdownMenuItem>
                               )}
-                            </div>
-                          </div>
-                        )
-                      })()}
-                      {message.is_deleted ? (
-                        <p className="text-sm italic opacity-70 flex items-center gap-1.5 py-0.5">
-                          This message was deleted
-                        </p>
-                      ) : (
-                        renderMessageContent(message)
+                              <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                <Reply className="h-4 w-4 mr-2" /> Reply
+                              </DropdownMenuItem>
+                              {isOwn && (
+                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                  <Trash2 className="h-4 w-4 mr-2" /> Undo
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                <X className="h-4 w-4 mr-2" /> Delete for Me
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       )}
                     </div>
 
@@ -1051,38 +1484,19 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                         {formatTimestamp(message.created_at)}
                       </span>
                     )}
-
-                    {!message.is_deleted && (
-                      <div className={`opacity-0 group-hover:opacity-100 transition-opacity`}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
-                              <MoreVertical className="h-4 w-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36">
-                            <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                              <Reply className="h-4 w-4 mr-2" /> Reply
-                            </DropdownMenuItem>
-                            {isOwn && (
-                              <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                <Trash2 className="h-4 w-4 mr-2" /> Undo
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                              <X className="h-4 w-4 mr-2" /> Delete for Me
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
               {isOwn && (
                   <div className="flex justify-end mt-1 mb-2">
                     {uniqueSeenBy.length > 0 ? (
-                      <span className="text-[9px] font-bold text-primary/60 tracking-tight">
+                      <span 
+                        className="text-[9px] font-bold text-primary/60 tracking-tight cursor-pointer hover:underline"
+                        onClick={() => {
+                          setInfoMessage(message);
+                          setShowInfoDialog(true);
+                        }}
+                      >
                         Seen by {uniqueSeenBy.join(', ')}
                       </span>
                     ) : (
@@ -1111,11 +1525,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                 Replying to {replyingTo.profiles?.full_name || 'User'}
               </div>
               <div className="text-muted-foreground truncate">
-                {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                  replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                    replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                      replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                        replyingTo.content}
+                {getMessagePreviewText(replyingTo.content)}
               </div>
             </div>
             <button
@@ -1171,6 +1581,62 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                 <X className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Message Info Dialog */}
+      <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Message Info</DialogTitle>
+            <DialogDescription>
+              Details of who has seen this message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[300px] overflow-y-auto py-2 divide-y divide-border/30">
+            {infoMessage && (() => {
+              const messageTime = new Date(infoMessage.created_at).getTime();
+              const viewers = readStatuses.filter(rs => {
+                if (rs.user_id === user?.id) return false;
+                try {
+                  const statusTime = new Date(rs.last_read_at).getTime();
+                  return statusTime >= messageTime;
+                } catch (e) { return false; }
+              });
+
+              if (viewers.length === 0) {
+                return (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No one else has seen this message yet.
+                  </p>
+                );
+              }
+
+              return viewers.map(rs => (
+                <div key={rs.user_id} className="flex items-center justify-between py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={rs.profiles?.avatar_url || undefined} />
+                      <AvatarFallback className="text-xs bg-secondary text-secondary-foreground font-bold">
+                        {rs.profiles?.full_name?.[0] || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-semibold leading-none mb-1">
+                        {rs.profiles?.full_name || 'User'}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground leading-none">
+                        Read
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-medium">
+                    {format(new Date(rs.last_read_at), 'p')}
+                  </span>
+                </div>
+              ));
+            })()}
           </div>
         </DialogContent>
       </Dialog>

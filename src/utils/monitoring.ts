@@ -54,8 +54,10 @@ export class PerformanceMonitor {
       await supabase.from('user_analytics').insert({
         user_id: user.id,
         event_type: eventType,
-        event_data: data || {},
-        page_url: window.location.pathname
+        metadata: {
+          ...(data || {}),
+          page_url: window.location.pathname
+        }
       });
     } catch (error) {
       console.error('Failed to log analytics:', error);

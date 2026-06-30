@@ -22,7 +22,7 @@ export const FirstContentBlock = ({ announcements, projects, discussions, rating
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {announcements.map((item) => (
                                 <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
-                                    <FeedAnnouncementCard announcement={item} onDismiss={onDismiss} />
+                                    <FeedAnnouncementCard announcement={item} onDismiss={onDismiss} isWidget={true} />
                                 </div>
                             ))}
                         </div>

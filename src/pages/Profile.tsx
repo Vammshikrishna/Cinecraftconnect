@@ -13,6 +13,7 @@ import { UserProjects } from '@/components/profile/UserProjects';
 import Skills from '@/components/profile/Skills';
 import Experience from '@/components/profile/Experience';
 import { VerifiedCredits } from '@/components/profile/VerifiedCredits';
+import { NetworkListDialog } from '@/components/profile/NetworkListDialog';
 
 const RealTimeAnalytics = lazy(() => import('@/components/profile/RealTimeAnalytics').then(m => ({ default: m.RealTimeAnalytics })));
 import { SavedPosts } from '@/components/profile/SavedPosts';
@@ -59,6 +60,10 @@ const ProfilePage = () => {
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [followersCount, setFollowersCount] = useState(0);
+  
+  // Network Dialog state
+  const [isNetworkDialogOpen, setIsNetworkDialogOpen] = useState(false);
+  const [activeNetworkTab, setActiveNetworkTab] = useState<'followers' | 'following' | 'connections'>('followers');
 
   const coverUrl = profile?.cover_image_url ? getOptimizedImage(profile.cover_image_url, { width: 1200, quality: 90 }) : '';
   const cachedCover = useCachedImage(coverUrl);
@@ -68,41 +73,25 @@ const ProfilePage = () => {
   const fetchCounts = useCallback(async () => {
     if (!user) return;
 
-    // 1. Fetch all raw connections for this user
     const { data: rawConnections, error: connError } = await supabase
       .from('user_connections')
       .select('*')
       .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`)
       .eq('status', 'accepted');
 
-    if (rawConnections && !connError) {
-      // 2. Fetch profiles for these connections and determine account types
-      const userIds = Array.from(new Set(rawConnections.flatMap(c => [c.follower_id, c.following_id])));
+    const { data: rawFollows, error: followsError } = await supabase
+      .from('user_follows' as any)
+      .select('*')
+      .or(`follower_id.eq.${user.id},following_id.eq.${user.id}`);
 
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, account_type')
-        .in('id', userIds);
+    if (rawConnections && !connError && rawFollows && !followsError) {
+      const c_count = rawConnections.length;
+      const f_count = (rawFollows as any[]).filter(c => c.following_id === user.id).length;
+      const following_c = (rawFollows as any[]).filter(c => c.follower_id === user.id).length + rawConnections.filter(c => c.follower_id === user.id).length;
 
-      const profilesMap = new Map<string, any>(profiles?.map(p => [p.id, p]) || []);
-
-      // 3. Categorize connections
-      const connections = rawConnections.filter(c => {
-        const otherId = c.follower_id === user.id ? c.following_id : c.follower_id;
-        const otherProfile = profilesMap.get(otherId);
-        // Standard connection if the other person is a creator or not specified
-        return otherProfile?.account_type === 'creator' || !otherProfile?.account_type;
-      });
-
-      const fanFollowers = rawConnections.filter(c => {
-        // Only count as fan follower if THEY follow US and they are a FAN
-        if (c.following_id !== user.id) return false;
-        const followerProfile = profilesMap.get(c.follower_id);
-        return followerProfile?.account_type === 'fan';
-      });
-
-      setConnectionsCount(connections.length);
-      setFollowersCount(fanFollowers.length);
+      setConnectionsCount(c_count);
+      setFollowersCount(f_count);
+      setFollowingCount(following_c);
     }
 
     // Still fetch post count separately for efficiency
@@ -112,15 +101,6 @@ const ProfilePage = () => {
       .eq('author_id', user.id);
 
     setPostCount(postsCount || 0);
-
-    // Fetch following count (people this user follows who are NOT fan accounts usually)
-    const { count: followingCount } = await supabase
-      .from('user_connections')
-      .select('id', { count: 'exact', head: true })
-      .eq('follower_id', user.id)
-      .eq('status', 'accepted');
-
-    setFollowingCount(followingCount || 0);
   }, [user]);
 
   useEffect(() => {
@@ -304,10 +284,10 @@ const ProfilePage = () => {
                 <div className="flex flex-col items-center lg:items-start gap-3 w-full">
                   <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
                     {isFan && (
-                      <Link to="/pricing" className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider hover:bg-amber-500/20 transition-all">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider">
                         <Star size={10} className="fill-amber-500" />
                         <span>Fan Account</span>
-                      </Link>
+                      </div>
                     )}
                     
                     {!isFan && (
@@ -400,11 +380,23 @@ const ProfilePage = () => {
                     <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Posts</span>
                   </div>
                 )}
-                <div className="flex flex-col items-center lg:items-start">
+                <div 
+                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
+                  onClick={() => {
+                    setActiveNetworkTab('followers');
+                    setIsNetworkDialogOpen(true);
+                  }}
+                >
                   <span className="text-xl md:text-2xl font-black text-foreground">{followersCount}</span>
                   <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Followers</span>
                 </div>
-                <div className="flex flex-col items-center lg:items-start">
+                <div 
+                  className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
+                  onClick={() => {
+                    setActiveNetworkTab(isFan ? 'following' : 'connections');
+                    setIsNetworkDialogOpen(true);
+                  }}
+                >
                   <span className="text-xl md:text-2xl font-black text-foreground">{isFan ? followingCount : connectionsCount}</span>
                   <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">
                     {isFan ? 'Following' : 'Connections'}
@@ -428,11 +420,13 @@ const ProfilePage = () => {
                 >
                   <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
-                <Link to="/profile/availability" className="shrink-0">
-                  <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
-                    <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
-                </Link>
+                {!isFan && (
+                  <Link to="/profile/availability" className="shrink-0">
+                    <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
+                      <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </Link>
+                )}
                 <Link to="/settings" className="shrink-0">
                   <Button variant="outline" className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all">
                     <Settings className="h-3.5 w-3.5 text-muted-foreground" />
@@ -451,21 +445,21 @@ const ProfilePage = () => {
           }}
           className="w-full"
         >
-          <div className="relative w-full mb-8">
+          <div className={`relative w-full ${isFan ? 'mb-2' : 'mb-8'}`}>
             <div className="relative group">
               {/* Fade indicators for scrolling */}
               <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
               <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
 
               <div
-                className="flex overflow-x-auto gap-3 pb-4 w-full no-scrollbar select-none"
+                className={`flex overflow-x-auto gap-3 pb-2 w-full no-scrollbar select-none ${isFan ? 'justify-center' : ''}`}
                 style={{
                   scrollbarWidth: 'none',
                   msOverflowStyle: 'none',
                   WebkitOverflowScrolling: 'touch'
                 }}
               >
-                <TabsList className="flex h-auto bg-transparent gap-2.5 p-0 min-w-max">
+                <TabsList className="flex h-auto bg-transparent gap-2.5 px-4 py-2 min-w-max">
                   {(isFan ? ['saved'] : isStudio ? ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'credits', 'skills', 'experience'] : ['posts', 'portfolio', 'projects', 'announcements', 'analytics', 'saved', 'credits', 'skills', 'experience']).map((tab) => (
                     <TabsTrigger
                       key={tab}
@@ -476,13 +470,13 @@ const ProfilePage = () => {
                     </TabsTrigger>
                   ))}
                 </TabsList>
-                {/* Spacer to allow scrolling past the last item */}
-                <div className="w-10 shrink-0 md:hidden" />
+                {/* Spacer to allow scrolling past the last item - only for non-fan accounts */}
+                {!isFan && <div className="w-10 shrink-0 md:hidden" />}
               </div>
             </div>
           </div>
 
-          <TabsContent value="saved" className="py-8"><SavedPosts /></TabsContent>
+          <TabsContent value="saved" className={isFan ? "py-2" : "py-8"}><SavedPosts /></TabsContent>
           {!isFan && (
             <>
               <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
@@ -516,6 +510,14 @@ const ProfilePage = () => {
           craft: profile.craft
         }}
       />
+      {user && (
+        <NetworkListDialog
+          isOpen={isNetworkDialogOpen}
+          onClose={() => setIsNetworkDialogOpen(false)}
+          userId={user.id}
+          initialTab={activeNetworkTab}
+        />
+      )}
     </div>
   );
 };

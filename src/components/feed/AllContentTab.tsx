@@ -244,9 +244,9 @@ const AllContentTab = ({ postRatings, onRate }: AllContentTabProps) => {
               timeAgo={formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
               createdAt={item.created_at}
               content={item.content}
-              mediaUrl={item.media_url}
-              mediaItems={item.media_items}
-              hasImage={item.media_type === 'image'}
+              mediaUrl={item.media_urls?.[0] || item.media_url}
+              mediaItems={item.media_urls?.map((url: string) => ({ url, type: (item.media_type === 'video' ? 'video' : 'image') as 'video' | 'image' })) || item.media_items}
+              hasImage={item.media_type === 'image' || (item.media_urls && item.media_urls.length > 0)}
               hasVideo={item.media_type === 'video'}
               like_count={item.like_count}
               comment_count={item.comment_count}

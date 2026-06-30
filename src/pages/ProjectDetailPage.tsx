@@ -172,7 +172,18 @@ const ProjectDetailPage = () => {
                 <Button 
                   className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg shadow-primary/20"
                   disabled={hasApplied}
-                  onClick={() => setIsApplicationDialogOpen(true)}
+                  onClick={() => {
+                    if (!user) {
+                      toast({
+                        title: 'Sign in required',
+                        description: 'Redirecting to sign in page...',
+                        variant: 'destructive'
+                      });
+                      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+                      return;
+                    }
+                    setIsApplicationDialogOpen(true);
+                  }}
                 >
                   <Briefcase className="mr-2 h-4 w-4" />
                   {hasApplied ? 'Application Sent' : 'Apply to Join'}

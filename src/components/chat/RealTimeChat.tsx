@@ -34,7 +34,7 @@ const RealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, onBack
             const { data, error } = await supabase
                 .from('direct_messages')
                 .select('*')
-                .or(`(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
+                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
                 .order('created_at', { ascending: true });
 
             if (error) {

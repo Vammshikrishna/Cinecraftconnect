@@ -16,7 +16,7 @@ const CompanyPages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const { data: pages = [], isLoading } = useCompanyPages(searchQuery);
-  const { isFan } = useAccountType();
+  const { isStudio } = useAccountType();
   const { isInternal } = useAppRole();
 
   return (
@@ -33,7 +33,7 @@ const CompanyPages = () => {
           Icon={Building2}
           actionsAtTop={true}
           actions={
-            (!isFan && !isInternal) && (
+            (isStudio && !isInternal) && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
                   <Plus size={18} strokeWidth={3} />
                   <span className="hidden xs:inline">Create a Page</span>
@@ -110,7 +110,7 @@ const CompanyPages = () => {
                   ? 'Try a different search term or explore all pages.'
                   : 'Establish your organization\'s presence in our production ecosystem!'}
               </p>
-              {!searchQuery && (!isFan && !isInternal) && (
+              {!searchQuery && (isStudio && !isInternal) && (
                 <Button onClick={() => setShowCreateModal(true)} className="gap-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 px-8">
                   <Plus size={20} strokeWidth={3} />
                   Create a Page

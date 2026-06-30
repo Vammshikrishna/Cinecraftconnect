@@ -8,9 +8,10 @@ export const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w342';
  */
 const HELPERS = {
     CORS_PROXIES: [
-        '', // Direct connection first
+        '', // Direct connection
         'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url='
+        'https://api.allorigins.win/raw?url=',
+        'https://api.codetabs.com/v1/proxy?quest='
     ]
 };
 
@@ -72,37 +73,59 @@ const setCache = (key: string, data: TMDBContent[]) => {
 // ---------------------------------------------------------------------------
 // Fetch with ISP-Safe Bridge — survivors Jio/Airtel DNS blocks
 // ---------------------------------------------------------------------------
-const fetchWithRetry = async (url: string, retries = 2, baseDelay = 1000): Promise<Response> => {
-    // We try multiple entry points: direct, then various proxies
-    for (let proxyIdx = 0; proxyIdx < HELPERS.CORS_PROXIES.length; proxyIdx++) {
-        const proxy = HELPERS.CORS_PROXIES[proxyIdx];
-        const finalUrl = proxy ? `${proxy}${encodeURIComponent(url)}` : url;
+const fetchWithRetry = async (url: string, retries = 2, baseDelay = 1000): Promise<any> => {
+    const urlsToTry = [
+        url,
+        url.replace('api.tmdb.org', 'api.themoviedb.org')
+    ];
 
+    const entryPoints: string[] = [];
+    
+    // Direct connections first
+    urlsToTry.forEach(u => entryPoints.push(u));
+    HELPERS.CORS_PROXIES.forEach(proxy => {
+        if (proxy) {
+            urlsToTry.forEach(u => entryPoints.push(`${proxy}${encodeURIComponent(u)}`));
+        }
+    });
+
+    for (let proxyIdx = 0; proxyIdx < entryPoints.length; proxyIdx++) {
+        const finalUrl = entryPoints[proxyIdx];
+        
         for (let attempt = 0; attempt <= retries; attempt++) {
             const controller = new AbortController();
-            // Faster initial timeout to trigger proxy fallback quickly if blocked
-            const timeout = proxyIdx === 0 ? 8000 : 15000 + attempt * 10000;
+            // Give direct connection at least 25s before timing out, because TMDB takes 11-18s on this ISP
+            const timeout = proxyIdx === 0 || proxyIdx === 1 ? 25000 : 15000 + attempt * 5000;
             const timeoutId = setTimeout(() => controller.abort(), timeout);
 
             try {
                 const response = await fetch(finalUrl, { signal: controller.signal });
                 clearTimeout(timeoutId);
-                if (response.ok) return response;
-                
-                if (response.status >= 500 && attempt < retries) {
-                    await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
-                    continue;
-                }
-                throw new Error(`HTTP ${response.status}`);
-            } catch (error: any) {
-                clearTimeout(timeoutId);
-                // If it's a network error (likely ISP block) and we are on direct connection, 
-                // skip retries and go straight to proxy
-                if (proxyIdx === 0 && (error.name === 'AbortError' || error.message.includes('Failed to fetch'))) {
-                    console.warn("Direct connection to TMDB blocked by ISP. Switching to proxy bridge...");
-                    break; // break out of inner loop to try next proxy
+
+                if (!response.ok) {
+                    if (response.status >= 500 && attempt < retries) {
+                        await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
+                        continue;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
                 }
 
+                const data = await response.json();
+                
+                // Extremely important: check if API returned an error object
+                if (data.success === false || data.status_code) {
+                    throw new Error(data.status_message || 'TMDB API Error');
+                }
+
+                // If a proxy returns 200 OK but the JSON is an error message missing the 'results' array
+                if (!data.results && !data.id && !data.cast && !data.parts) {
+                    throw new Error(`Invalid TMDB response (Missing results). Body: ${JSON.stringify(data).substring(0, 100)}`);
+                }
+
+                return data; // Return the parsed JSON data, NOT the response!
+            } catch (error: any) {
+                clearTimeout(timeoutId);
+                
                 if (attempt < retries) {
                     await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt)));
                     continue;
@@ -110,28 +133,70 @@ const fetchWithRetry = async (url: string, retries = 2, baseDelay = 1000): Promi
             }
         }
     }
+
     throw new Error('All entry points for TMDB are unreachable on this network.');
+};
+
+// ---------------------------------------------------------------------------
+// Local Content Filter
+// ---------------------------------------------------------------------------
+const BLACKLIST_KEYWORDS = [
+    'ullu', 'charmsukh', 'palang tod', 'kullu', 'hotshots', 
+    'erotic', 'kooku', 'rabbit movies', 'primeplay', 'voovi', 'besharam'
+];
+
+// Use word boundaries (\b) so we don't accidentally match substrings 
+// e.g. "pull us" -> contains "ullu" but won't match \bullu\b
+const BLACKLIST_REGEX = new RegExp(`\\b(${BLACKLIST_KEYWORDS.join('|')})\\b`, 'i');
+
+const filterSafeContent = (results: TMDBContent[]) => {
+    return results.filter(item => {
+        const text = `${item.title || ''} ${item.name || ''} ${item.overview || ''}`;
+        return !BLACKLIST_REGEX.test(text);
+    });
 };
 
 // ---------------------------------------------------------------------------
 // Core fetch — uses cache-first then network to guarantee data shows up
 // ---------------------------------------------------------------------------
-export const fetchByPath = async (path: string, params: string = ''): Promise<TMDBContent[]> => {
+export const fetchByPath = async (path: string, params: string = '', forceNetwork = false): Promise<TMDBContent[]> => {
     const cacheKey = `${path}${params}`;
     const cached = getCached(cacheKey);
 
+    // CRITICAL: Return valid cached data instantly to prevent massive sequential loading delays
+    if (cached && cached.length > 0 && !forceNetwork) {
+        return filterSafeContent(cached);
+    }
+
     try {
         const url = `${TMDB_BASE_URL}${path}?api_key=${TMDB_API_KEY}&language=en-US${params}`;
-        const response = await fetchWithRetry(url);
-        const data = await response.json();
-        const results = data.results || [];
+        
+        // rawData is now the parsed JSON object directly from fetchWithRetry
+        const rawData = await fetchWithRetry(url);
+        
+        let data = rawData;
+        
+        // Some proxies return the TMDB response wrapped in a 'contents' field
+        if (rawData && rawData.contents) {
+            try {
+                data = typeof rawData.contents === 'string' ? JSON.parse(rawData.contents) : rawData.contents;
+            } catch (e) {
+                // Ignore parse errors, fallback to rawData
+            }
+        }
+            
+        const results = filterSafeContent(data.results || []);
+        
         if (results.length > 0) {
             setCache(cacheKey, results);
         }
         return results;
     } catch (error) {
         console.warn(`TMDB fetch failed for ${path}, using cache:`, error);
-        return cached || [];
+        if (cached && cached.length > 0) {
+            return filterSafeContent(cached);
+        }
+        throw error;
     }
 };
 
@@ -151,48 +216,54 @@ export const fetchContent = async (type: 'movie' | 'tv' | 'short', language?: st
     }
 };
 
-export const fetchTrending = (type: 'movie' | 'tv' = 'movie') => fetchByPath(`/trending/${type}/week`);
-export const fetchTopRated = (type: 'movie' | 'tv' = 'movie') => fetchByPath(`/${type}/top_rated`, '&page=1');
-export const fetchUpcoming = () => fetchByPath('/movie/upcoming', '&page=1&region=IN');
-export const fetchNowPlaying = () => fetchByPath('/movie/now_playing', '&page=1&region=IN');
-export const fetchUpcomingTv = () => fetchByPath('/tv/on_the_air', '&page=1');
-export const fetchActionMovies = () => fetchByPath('/discover/movie', '&with_genres=28&sort_by=popularity.desc');
-export const fetchComedyMovies = () => fetchByPath('/discover/movie', '&with_genres=35&sort_by=popularity.desc');
-export const fetchIndianMovies = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&sort_by=popularity.desc&region=IN');
-export const fetchIndianAction = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=28&sort_by=popularity.desc&region=IN');
-export const fetchIndianComedy = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=35,18&sort_by=popularity.desc&region=IN');
-export const fetchIndianHorror = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=27,53&sort_by=popularity.desc&region=IN');
-export const fetchIndianTv = () => fetchByPath('/discover/tv', '&with_original_language=hi|te|ta|ml|kn&sort_by=popularity.desc&region=IN');
-export const fetchTeluguMovies = () => fetchByPath('/discover/movie', '&with_original_language=te&sort_by=popularity.desc&region=IN');
-export const fetchHindiMovies = () => fetchByPath('/discover/movie', '&with_original_language=hi&sort_by=popularity.desc&region=IN');
-export const fetchTamilMovies = () => fetchByPath('/discover/movie', '&with_original_language=ta&sort_by=popularity.desc&region=IN');
-export const fetchMalayalamMovies = () => fetchByPath('/discover/movie', '&with_original_language=ml&sort_by=popularity.desc&region=IN');
-export const fetchKannadaMovies = () => fetchByPath('/discover/movie', '&with_original_language=kn&sort_by=popularity.desc&region=IN');
-export const fetchHorrorMovies = () => fetchByPath('/discover/movie', '&with_genres=27&sort_by=popularity.desc');
-export const fetchSciFiMovies = () => fetchByPath('/discover/movie', '&with_genres=878&sort_by=popularity.desc');
-export const fetchRomanceMovies = () => fetchByPath('/discover/movie', '&with_genres=10749&sort_by=popularity.desc');
-export const fetchTvSeries = (genreId?: number) => fetchByPath('/discover/tv', `&sort_by=popularity.desc&page=1${genreId ? `&with_genres=${genreId}` : ''}`);
-export const fetchMoviesByGenre = (genreId: number) => fetchByPath('/discover/movie', `&with_genres=${genreId}&sort_by=popularity.desc&page=1`);
-export const fetchAnime = () => fetchByPath('/discover/tv', '&with_genres=16&sort_by=popularity.desc');
-export const fetchDocumentaries = () => fetchByPath('/discover/movie', '&with_genres=99&sort_by=popularity.desc');
-export const fetchMystery = () => fetchByPath('/discover/movie', '&with_genres=9648&sort_by=popularity.desc');
-export const fetchSciFiFantasy = () => fetchByPath('/discover/movie', '&with_genres=878,14&sort_by=popularity.desc');
-export const fetchFamilyMovies = () => fetchByPath('/discover/movie', '&with_genres=10751&sort_by=popularity.desc');
-export const fetchAnimation = () => fetchByPath('/discover/movie', '&with_genres=16&sort_by=popularity.desc');
-export const fetchAdventure = () => fetchByPath('/discover/movie', '&with_genres=12&sort_by=popularity.desc');
-export const fetchCrimeMovies = () => fetchByPath('/discover/movie', '&with_genres=80&sort_by=popularity.desc');
-export const fetchWarMovies = () => fetchByPath('/discover/movie', '&with_genres=10752&sort_by=popularity.desc');
-export const fetchMusicals = () => fetchByPath('/discover/movie', '&with_genres=10402&sort_by=popularity.desc');
-export const fetchIndianFamily = () => fetchByPath('/discover/movie', '&with_original_language=hi|te|ta|ml|kn&with_genres=10751&sort_by=popularity.desc');
-export const searchContent = (query: string) => fetchByPath('/search/multi', `&query=${encodeURIComponent(query)}&page=1&include_adult=false`);
+export const fetchTrending = (type: 'movie' | 'tv' = 'movie', page = 1) => fetchByPath(`/trending/${type}/week`, `&page=${page}`);
+export const fetchTopRated = (type: 'movie' | 'tv' = 'movie', page = 1) => fetchByPath(`/${type}/top_rated`, `&page=${page}`);
+export const fetchUpcoming = (page = 1) => fetchByPath('/movie/upcoming', `&page=${page}&region=IN`);
+export const fetchNowPlaying = (page = 1) => fetchByPath('/movie/now_playing', `&page=${page}&region=IN`);
+export const fetchUpcomingTv = (page = 1) => fetchByPath('/tv/on_the_air', `&page=${page}`);
+export const fetchActionMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=28&sort_by=popularity.desc&page=${page}`);
+export const fetchComedyMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=35&sort_by=popularity.desc&page=${page}`);
+export const fetchIndianMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchIndianAction = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&with_genres=28&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchIndianComedy = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&with_genres=35,18&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchIndianHorror = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&with_genres=27,53&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchIndianTv = (page = 1) => fetchByPath('/discover/tv', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchTeluguMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=te&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchHindiMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchTamilMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=ta&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchMalayalamMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=ml&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchKannadaMovies = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=kn&sort_by=popularity.desc&region=IN&page=${page}`);
+export const fetchHorrorMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=27&sort_by=popularity.desc&page=${page}`);
+export const fetchSciFiMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=878&sort_by=popularity.desc&page=${page}`);
+export const fetchRomanceMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=10749&sort_by=popularity.desc&page=${page}`);
+export const fetchTvSeries = (genreId?: number, page = 1) => fetchByPath('/discover/tv', `&sort_by=popularity.desc&page=${page}${genreId ? `&with_genres=${genreId}` : ''}`);
+export const fetchMoviesByGenre = (genreId: number, page = 1) => fetchByPath('/discover/movie', `&with_genres=${genreId}&sort_by=popularity.desc&page=${page}`);
+export const fetchAnime = (page = 1) => fetchByPath('/discover/tv', `&with_genres=16&sort_by=popularity.desc&page=${page}`);
+export const fetchDocumentaries = (page = 1) => fetchByPath('/discover/movie', `&with_genres=99&sort_by=popularity.desc&page=${page}`);
+export const fetchMystery = (page = 1) => fetchByPath('/discover/movie', `&with_genres=9648&sort_by=popularity.desc&page=${page}`);
+export const fetchSciFiFantasy = (page = 1) => fetchByPath('/discover/movie', `&with_genres=878,14&sort_by=popularity.desc&page=${page}`);
+export const fetchFamilyMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=10751&sort_by=popularity.desc&page=${page}`);
+export const fetchAnimation = (page = 1) => fetchByPath('/discover/movie', `&with_genres=16&sort_by=popularity.desc&page=${page}`);
+export const fetchAdventure = (page = 1) => fetchByPath('/discover/movie', `&with_genres=12&sort_by=popularity.desc&page=${page}`);
+export const fetchCrimeMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=80&sort_by=popularity.desc&page=${page}`);
+export const fetchWarMovies = (page = 1) => fetchByPath('/discover/movie', `&with_genres=10752&sort_by=popularity.desc&page=${page}`);
+export const fetchMusicals = (page = 1) => fetchByPath('/discover/movie', `&with_genres=10402&sort_by=popularity.desc&page=${page}`);
+export const fetchIndianFamily = (page = 1) => fetchByPath('/discover/movie', `&with_original_language=hi%7Cte%7Cta%7Cml%7Ckn&with_genres=10751&sort_by=popularity.desc&page=${page}`);
+export const searchContent = (query: string, page = 1) => fetchByPath('/search/multi', `&query=${encodeURIComponent(query)}&page=${page}&include_adult=false`);
 
 // Fetch detailed information for a specific movie or TV show
 export const fetchContentDetails = async (id: number, type: 'movie' | 'tv' = 'movie') => {
     try {
         const endpoint = type === 'movie' ? `/movie/${id}` : `/tv/${id}`;
         const url = `${TMDB_BASE_URL}${endpoint}?api_key=${TMDB_API_KEY}&language=en-US&append_to_response=credits,videos,similar,reviews`;
-        const response = await fetchWithRetry(url);
-        return await response.json();
+        const data = await fetchWithRetry(url);
+        
+        // Handle proxy wrapping
+        if (data && data.contents) {
+            return typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
+        }
+        
+        return data;
     } catch (error) {
         console.error(`Error fetching ${type} details:`, error);
         return null;

@@ -22,6 +22,10 @@ export const useCachedImage = (url: string | null | undefined): string => {
       return;
     }
 
+    // Determine if it's a Supabase URL
+    // We only want to aggressively cache our own storage to prevent CORS errors on external avatars
+    const isSupabaseUrl = url.includes('supabase.co');
+
     let isMounted = true;
     let objectUrl = '';
     setCheckingCache(true);
@@ -55,10 +59,13 @@ export const useCachedImage = (url: string | null | undefined): string => {
           setCheckingCache(false);
         }
 
-        // Fetch and store in background
-        const response = await fetch(url, { mode: 'cors' });
-        if (response.ok) {
-          await cache.put(url, response.clone());
+        // Only fetch and store in background for our own Supabase storage
+        // This prevents CORS errors on external avatars (Google, Pravatar)
+        if (isSupabaseUrl) {
+          const response = await fetch(url, { mode: 'cors' });
+          if (response.ok) {
+            await cache.put(url, response.clone());
+          }
         }
       } catch (err) {
         console.debug('Background caching skipped:', url, err);

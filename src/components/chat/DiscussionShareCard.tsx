@@ -36,7 +36,7 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
                     .from('discussion_rooms')
                     .select('*, room_categories(name)')
                     .eq('id', roomId)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     setTitle(data.title);
@@ -59,10 +59,10 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
     return (
         <Link
             to={`/discussion-rooms/${roomId}`}
-            className="block w-full max-w-[200px] sm:max-w-[270px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
             {/* Compact Header */}
-            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">
+            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20 p-1">
                         <DiscussionRoomIcon className="w-full h-full text-primary" color="currentColor" />
@@ -85,7 +85,7 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
             </div>
 
             {/* Content */}
-            <div className="p-5 space-y-4 bg-background/80 backdrop-blur-md">
+            <div className="p-5 space-y-4 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-1">
                     <h4 className="text-[16px] font-black text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors tracking-tight uppercase">
                         {title}

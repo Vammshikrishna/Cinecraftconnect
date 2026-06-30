@@ -53,17 +53,56 @@ const EnhancedNotificationsCenter = () => {
   const { markAsRead: mutateMarkAsRead, markAllAsRead: mutateMarkAllAsRead, deleteNotification: mutateDeleteNotification, resolveNotificationAction } = useNotificationMutation();
 
   useEffect(() => {
+    if (!user) return;
+    const userId = user.id;
     let mounted = true;
     const fetchNotifications = async () => {
-      if (mounted) {
-        setNotifications([]);
-        setUnreadCount(0);
-        setLoading(false);
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', userId)
+          .neq('type', 'new_message')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        if (mounted) {
+          setNotifications((data || []) as unknown as Notification[]);
+          setUnreadCount((data || []).filter((n: any) => !n.is_read).length);
+        }
+      } catch (err) {
+        console.error('Error fetching notifications:', err);
+      } finally {
+        if (mounted) setLoading(false);
       }
     };
 
     fetchNotifications();
-    return () => { mounted = false; };
+
+    const channel = supabase.channel(`enhanced-notifications-realtime-${userId}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`
+      }, () => {
+        fetchNotifications();
+      })
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`
+      }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
   }, [user, toast]);
 
   const markAsRead = async (id: string) => {

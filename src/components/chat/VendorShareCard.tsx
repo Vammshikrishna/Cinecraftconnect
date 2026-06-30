@@ -60,7 +60,7 @@ export const VendorShareCard = ({
                     .from('vendors')
                     .select('*')
                     .eq('id', vendorId)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     const v = data;
@@ -89,7 +89,7 @@ export const VendorShareCard = ({
     return (
         <Link
             to={`/vendors/${vendorId}`}
-            className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[170px] sm:min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
         >
             {/* Premium Header: Banner + Floating Logo */}
             <div className="relative h-28 w-full overflow-hidden bg-muted">
@@ -110,7 +110,7 @@ export const VendorShareCard = ({
                 {/* Floating Logo/Avatar */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
                     <div className="relative group/logo">
-                        <div className="w-16 h-16 rounded-full border-4 border-white/20 backdrop-blur-xl shadow-2xl overflow-hidden bg-background/80 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
+                        <div className="w-16 h-16 rounded-full border-4 border-black/20 dark:border-white/20 backdrop-blur-xl shadow-2xl overflow-hidden bg-white dark:bg-black/60 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-500">
                             {logoUrl ? (
                                 <img src={logoUrl} alt={name} className="w-full h-full object-cover" />
                             ) : (
@@ -122,7 +122,7 @@ export const VendorShareCard = ({
 
                 {/* Rating Badge */}
                 {reviewCount ? reviewCount > 0 && (
-                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in duration-500">
+                    <div className="absolute top-3 right-3 px-2 py-1 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 flex items-center gap-1 shadow-lg animate-in fade-in zoom-in duration-500">
                         <Star size={10} className="text-yellow-500 fill-yellow-500" />
                         <span className="text-[9px] font-black text-white">{rating?.toFixed(1)}</span>
                     </div>
@@ -131,7 +131,7 @@ export const VendorShareCard = ({
                 {/* Categories */}
                 <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5 px-3">
                     {categories.slice(0, 2).map((cat, i) => (
-                        <div key={i} className="px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-white/10 text-[7px] font-black uppercase tracking-widest text-white/90">
+                        <div key={i} className="px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-black/10 dark:border-white/10 text-[7px] font-black uppercase tracking-widest text-white/90">
                             {cat}
                         </div>
                     ))}
@@ -139,7 +139,7 @@ export const VendorShareCard = ({
             </div>
 
             {/* Content Section */}
-            <div className="p-4 space-y-4 bg-muted/30 backdrop-blur-xl">
+            <div className="p-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-xl">
                 <div className="text-center space-y-1">
                     <div className="flex items-center justify-center gap-1.5 px-2">
                         <h4 className="text-[16px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">

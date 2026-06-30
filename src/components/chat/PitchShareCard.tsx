@@ -87,7 +87,7 @@ export const PitchShareCard = ({
                         )
                     `)
                     .eq('id', id)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     const d = data as any;
@@ -126,13 +126,13 @@ export const PitchShareCard = ({
     return (
         <Link 
             to={`/pitch/${id}`}
-            className="block w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
             {/* Compact Header - Identity & Status */}
-            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-white/10 flex items-center justify-between">
+            <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
                 {author && (
                     <div className="flex items-center gap-3 overflow-hidden">
-                        <Avatar className="h-10 w-10 rounded-xl border border-white/20 shadow-sm">
+                        <Avatar className="h-10 w-10 rounded-xl border border-black/20 dark:border-white/20 shadow-sm">
                             <AvatarImage src={author.avatar} />
                             <AvatarFallback className="text-[12px] bg-primary text-black font-black uppercase">
                                 {author.name[0]}
@@ -163,7 +163,7 @@ export const PitchShareCard = ({
             </div>
 
             {/* Content Section */}
-            <div className="p-5 space-y-4 bg-background/80 backdrop-blur-md">
+            <div className="p-5 space-y-4 bg-white dark:bg-black/60 backdrop-blur-md">
 
                 <div className="space-y-2">
                     <h3 className="text-[16px] font-black text-primary leading-tight group-hover:scale-[1.02] transition-transform duration-300 tracking-tight uppercase">
@@ -196,7 +196,7 @@ export const PitchShareCard = ({
                         ))}
                     </div>
 
-                    <div className="flex items-center justify-between py-3 border-y border-white/10">
+                    <div className="flex items-center justify-between py-3 border-y border-black/10 dark:border-white/10">
                         <div className="flex flex-col gap-1.5">
                             <div className="flex items-center gap-2 text-[10px] font-black text-foreground/80 uppercase tracking-widest">
                                 <DollarSign size={12} className="text-primary" />

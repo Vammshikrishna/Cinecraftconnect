@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useKeyboard } from '@/contexts/KeyboardContext';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, Bell, Flag } from 'lucide-react';
+import { Loader2, Users, Search, PlusCircle, Lock, Globe, MoreVertical, Edit, Trash2, Radio, Share2, Bell, Flag, ArrowLeft } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
 import { Category } from '@/components/discussions/types';
 import { DiscussionChatInterface } from '@/components/discussions/DiscussionChatInterface';
@@ -32,6 +32,10 @@ import { BackButton } from '@/components/common/BackButton';
 import { ReportDialog } from '@/components/governance/ReportDialog';
 import SEO from '@/components/common/SEO';
 import VerificationBadge from '@/components/common/VerificationBadge';
+import { SpaceEscalationPanel } from '@/components/governance/SpaceEscalationPanel';
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptWithPrivateKey, importSymmetricKey, decryptGroupMessage, generateGroupKey, exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '@/lib/e2ee';
+import { syncGroupKeyToNative } from '@/lib/e2ee-bridge';
 
 // --- DATA INTERFACES ---
 
@@ -58,35 +62,271 @@ interface Room {
   settings?: any;
 }
 
+// In-memory profile cache for sidebar previews to make updates instant
+const sidebarProfileCache = new Map<string, { full_name: string | null, username: string | null, is_verified: boolean }>();
+
 // --- MAIN PAGE COMPONENT ---
 const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [activeCallRoomIds, setActiveCallRoomIds] = useState<string[]>([]);
+  const queryClient = useQueryClient();
   const { roomId } = useParams<{ roomId: string }>();
   const { push } = useAppNavigation();
   const { user } = useAuth();
   const { isFan } = useAccountType();
-  const { isInternal } = useAppRole();
+  const { isInternal, loading: roleLoading } = useAppRole();
+
+  const { privateKey } = useE2EEChatKeys();
+  const [groupKeys, setGroupKeys] = useState<Record<string, CryptoKey>>({});
+  const [decryptedLastMessages, setDecryptedLastMessages] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!user || !privateKey) return;
+
+    const fetchAndDecryptGroupKeys = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('group_keys')
+          .select('target_id, encrypted_symmetric_key')
+          .eq('target_type', 'room')
+          .eq('user_id', user.id);
+
+        if (error) {
+          console.error("Error fetching group keys for list:", error);
+          return;
+        }
+
+        if (data) {
+          const keysMap: Record<string, CryptoKey> = {};
+          for (const row of (data as any[])) {
+            try {
+              const rawSymmetricKeyBase64 = await decryptWithPrivateKey(row.encrypted_symmetric_key, privateKey);
+              const loadedSymmetricKey = await importSymmetricKey(rawSymmetricKeyBase64);
+              keysMap[row.target_id] = loadedSymmetricKey;
+            } catch (decErr) {
+              console.error(`Failed to decrypt group key for target ${row.target_id} (user keys may have been reset):`, decErr);
+              // Self-healing: Delete mismatched key row from DB so it can be re-provisioned cleanly
+              supabase
+                .from('group_keys' as any)
+                .delete()
+                .eq('target_type', 'room')
+                .eq('target_id', row.target_id)
+                .eq('user_id', user.id)
+                .then(({ error: delErr }) => {
+                  if (!delErr) {
+                    console.log(`[DiscussionRooms] Cleaned up mismatched group key for room: ${row.target_id}`);
+                  }
+                });
+            }
+          }
+          setGroupKeys(keysMap);
+        }
+      } catch (err) {
+        console.error("Failed to load and decrypt group keys for list:", err);
+      }
+    };
+
+    fetchAndDecryptGroupKeys();
+  }, [user?.id, privateKey]);
+
+  useEffect(() => {
+    let mounted = true;
+    const decryptAll = async () => {
+      const newDecrypted: Record<string, string> = {};
+      for (const room of rooms) {
+        const lastMsg = room.last_message;
+        if (lastMsg && lastMsg.content) {
+          if (lastMsg.content.includes('__e2ee_group')) {
+            const symKey = groupKeys[room.id];
+            if (symKey) {
+              try {
+                const dec = await decryptGroupMessage(lastMsg.content, symKey);
+                newDecrypted[room.id] = dec;
+              } catch (err) {
+                console.error(`Failed to decrypt room last msg ${room.id}:`, err);
+                newDecrypted[room.id] = '🔒 Encrypted Message';
+              }
+            } else {
+              newDecrypted[room.id] = '🔒 Encrypted Message';
+            }
+          } else {
+            newDecrypted[room.id] = lastMsg.content;
+          }
+        }
+      }
+      if (mounted) {
+        setDecryptedLastMessages(newDecrypted);
+      }
+    };
+    decryptAll();
+    return () => {
+      mounted = false;
+    };
+  }, [rooms, groupKeys]);
+
+  const [deepLinkRoom, setDeepLinkRoom] = useState<any | null>(null);
+  const [loadingDeepLinkRoom, setLoadingDeepLinkRoom] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!roomId) {
+      setDeepLinkRoom(null);
+      return;
+    }
+
+    const found = rooms.find(r => r.id === roomId);
+    if (found) {
+      setDeepLinkRoom(null);
+      return;
+    }
+
+    const fetchSpecificRoom = async () => {
+      setLoadingDeepLinkRoom(true);
+      try {
+        const { data, error } = await supabase
+          .from('discussion_rooms')
+          .select(`
+            id, 
+            title, 
+            description, 
+            created_at, 
+            category_id, 
+            room_type, 
+            creator_id, 
+            member_count, 
+            room_categories(name), 
+            tags,
+            settings
+          `)
+          .eq('id', roomId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          setDeepLinkRoom({
+            ...data,
+            member_count: data.member_count || 0,
+            room_type: data.room_type as 'public' | 'private' | 'secret',
+            category_id: data.category_id || '',
+            creator_id: data.creator_id || '',
+            tags: data.tags || [],
+            settings: data.settings || {}
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching deep-link room:', err);
+      } finally {
+        setLoadingDeepLinkRoom(false);
+      }
+    };
+
+    fetchSpecificRoom();
+  }, [roomId, rooms]);
+
+  // Use URL as the source of truth for the selected room
+  const activeRoom = useMemo(() => {
+    if (!roomId) return null;
+    const found = rooms.find(r => r.id === roomId);
+    return found || deepLinkRoom || null;
+  }, [roomId, rooms, deepLinkRoom]);
+
+  const [hasAccess, setHasAccess] = useState<boolean>(false);
+  const [checkingAccess, setCheckingAccess] = useState<boolean>(false);
+  const verifiedRoomIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const verifyRoomAccess = async () => {
+      if (roleLoading) return;
+
+      if (!user) {
+        setHasAccess(activeRoom ? activeRoom.room_type === 'public' : false);
+        setCheckingAccess(false);
+        verifiedRoomIdRef.current = null;
+        return;
+      }
+
+      if (!activeRoom) {
+        setHasAccess(true);
+        setCheckingAccess(false);
+        verifiedRoomIdRef.current = null;
+        return;
+      }
+
+      if (activeRoom.room_type === 'public') {
+        setHasAccess(true);
+        setCheckingAccess(false);
+        verifiedRoomIdRef.current = activeRoom.id;
+        return;
+      }
+
+      // NOTE: Do NOT cache-skip for private rooms — always re-verify against the database
+      // so that revoked access grants are immediately enforced on re-entry.
+
+      setCheckingAccess(true);
+      try {
+        // Internal staff ALWAYS require an active grant for private/secret rooms.
+        // Membership is intentionally ignored — governance accounts should never
+        // bypass the break-glass flow by being a regular room member.
+        if (isInternal) {
+          const { data: grantData } = await (supabase as any)
+            .from('space_access_grants')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('target_type', 'room')
+            .eq('target_id', activeRoom.id)
+            .gt('expires_at', new Date().toISOString())
+            .limit(1);
+
+          setHasAccess(grantData && grantData.length > 0);
+          verifiedRoomIdRef.current = activeRoom.id;
+          return;
+        }
+
+        // For regular users: check membership
+        const { data: memberData } = await supabase
+          .from('room_members')
+          .select('role')
+          .eq('room_id', activeRoom.id)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        const isRoomMember = !!memberData || activeRoom.creator_id === user.id;
+        setHasAccess(isRoomMember);
+        
+        // Save successfully verified room ID
+        verifiedRoomIdRef.current = activeRoom.id;
+      } catch (err) {
+        console.error('Error verifying room access:', err);
+        setHasAccess(false);
+      } finally {
+        setCheckingAccess(false);
+      }
+    };
+
+    verifyRoomAccess();
+  }, [user, activeRoom, isInternal, roleLoading]);
+
+  useEffect(() => {
+    const handleAccessRevoked = (e: any) => {
+      const { targetType, targetId } = e.detail;
+      if (targetType === 'room' && targetId === activeRoom?.id) {
+        setHasAccess(false);
+        verifiedRoomIdRef.current = null; // Clear cache so re-entry triggers a fresh DB check
+      }
+    };
+
+    window.addEventListener('space_access_revoked', handleAccessRevoked);
+    return () => {
+      window.removeEventListener('space_access_revoked', handleAccessRevoked);
+    };
+  }, [activeRoom]);
+
   const { callState } = useGlobalCall();
   const { unreadDiscussionIds } = useUnreadMessages();
   const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
   const isInCall = callState.isActive && callState.roomId === roomId;
   const isCallMinimized = callState.isMinimized;
 
-  // Use URL as the source of truth for the selected room
-  const activeRoom = useMemo(() => {
-    if (!roomId || rooms.length === 0) return null;
-    return rooms.find(r => r.id === roomId) || null;
-  }, [roomId, rooms]);
-
-  // Generate a stable anonymous display name for fans in public rooms
-  const fanAnonName = useMemo(() => {
-    if (!user) return 'Viewer';
-    // Deterministic number from user id so it's consistent per session
-    const num = parseInt(user.id.replace(/-/g, '').slice(0, 6), 16) % 999 + 1;
-    return `Viewer #${num}`;
-  }, [user]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -179,7 +419,30 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
   // Sync state with query data
   useEffect(() => {
     if (discussionData) {
-      setRooms(discussionData.rooms);
+      setRooms(prevRooms => {
+        if (prevRooms.length === 0) return discussionData.rooms;
+
+        return discussionData.rooms.map(fetchedRoom => {
+          const prevRoom = prevRooms.find(r => r.id === fetchedRoom.id);
+          if (prevRoom && prevRoom.last_message) {
+            if (!fetchedRoom.last_message) {
+              return {
+                ...fetchedRoom,
+                last_message: prevRoom.last_message
+              };
+            }
+            const prevTime = new Date(prevRoom.last_message.created_at).getTime();
+            const fetchedTime = new Date(fetchedRoom.last_message.created_at).getTime();
+            if (prevTime > fetchedTime) {
+              return {
+                ...fetchedRoom,
+                last_message: prevRoom.last_message
+              };
+            }
+          }
+          return fetchedRoom;
+        });
+      });
       setCategories(discussionData.categories);
       setActiveCallRoomIds(discussionData.activeCallIds);
     }
@@ -191,8 +454,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     const debouncedRefresh = () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        fetchData();
-      }, 1000);
+        queryClient.invalidateQueries({ queryKey: ['discussion-rooms'] });
+      }, 3000);
     };
 
     const channel = supabase.channel('discussion-rooms-realtime')
@@ -200,13 +463,104 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_members' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_categories' }, debouncedRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_messages' }, debouncedRefresh)
       .subscribe();
 
     return () => {
       clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [fetchData]);
+  }, [queryClient]);
+
+  // Handle instant window message updates for sidebar previews
+  useEffect(() => {
+    const handleWindowMessage = async (e: any) => {
+      const newMsg = e.detail;
+      if (!newMsg || !newMsg.room_id) return;
+
+      // 1. Get cached profile or use default immediately
+      const cachedProfile = sidebarProfileCache.get(newMsg.user_id);
+      let senderName = cachedProfile?.full_name || 'User';
+      let senderUsername = cachedProfile?.username || '';
+      let isVerified = cachedProfile?.is_verified || false;
+
+      // 2. Decrypt content if E2EE
+      let decryptedContent = newMsg.content;
+      if (newMsg.content && newMsg.content.includes('__e2ee_group')) {
+        const symKey = groupKeys[newMsg.room_id];
+        if (symKey) {
+          try {
+            decryptedContent = await decryptGroupMessage(newMsg.content, symKey);
+          } catch (decErr) {
+            console.error('Failed to decrypt instant room message preview:', decErr);
+            decryptedContent = '🔒 Encrypted Message';
+          }
+        } else {
+          decryptedContent = '🔒 Encrypted Message';
+        }
+      }
+
+      const updateRoomsState = (name: string, username: string, verified: boolean) => {
+        setRooms(prevRooms => {
+          return prevRooms.map(room => {
+            if (room.id === newMsg.room_id) {
+              return {
+                ...room,
+                last_message: {
+                  content: newMsg.content,
+                  created_at: newMsg.created_at,
+                  sender_name: name,
+                  sender_username: username,
+                  is_verified: verified
+                }
+              };
+            }
+            return room;
+          });
+        });
+
+        setDecryptedLastMessages(prev => ({
+          ...prev,
+          [newMsg.room_id]: decryptedContent
+        }));
+      };
+
+      // 3. Update UI instantly with cached/default profile info
+      updateRoomsState(senderName, senderUsername, isVerified);
+
+      // 4. Fetch profile asynchronously if not cached, then update UI
+      if (!cachedProfile) {
+        // Run in background without blocking the main event flow
+        (async () => {
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('full_name, username, is_verified')
+              .eq('id', newMsg.user_id)
+              .single();
+            if (profile) {
+              const profileInfo = {
+                full_name: profile.full_name || 'User',
+                username: profile.username || '',
+                is_verified: profile.is_verified || false
+              };
+              sidebarProfileCache.set(newMsg.user_id, profileInfo);
+              updateRoomsState(profileInfo.full_name, profileInfo.username, profileInfo.is_verified);
+            }
+          } catch (err) {
+            console.error('Error fetching profile for sidebar message update:', err);
+          }
+        })();
+      }
+    };
+
+    window.addEventListener('room_message_received', handleWindowMessage);
+    window.addEventListener('room_message_received_sidebar', handleWindowMessage);
+    return () => {
+      window.removeEventListener('room_message_received', handleWindowMessage);
+      window.removeEventListener('room_message_received_sidebar', handleWindowMessage);
+    };
+  }, [groupKeys]);
 
   const handleRoomJoin = (room: Room) => {
     // Clear any existing focus to prevent keyboard from following us into the room
@@ -272,9 +626,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     return [...rooms].sort((a, b) => b.member_count - a.member_count).slice(0, 3);
   }, [rooms]);
 
-  // Loading state (initial load or resolving deep link)
-  // If we have a roomId but haven't found the room yet (and strict loading is true or rooms empty), show loading.
-  const isResolvingDeepLink = loading || (!!roomId && !activeRoom && rooms.length === 0);
+  const isResolvingDeepLink = loading || loadingDeepLinkRoom || (!!roomId && (roleLoading || checkingAccess));
 
   // JS-based screen size detection for conditional layout
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
@@ -286,7 +638,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  if (isResolvingDeepLink) {
+  if (isResolvingDeepLink || checkingAccess || roleLoading) {
     return (
       <div className="min-h-screen bg-background text-foreground p-4 sm:p-6 lg:p-8">
         <div className="container mx-auto pt-16 pb-24">
@@ -301,6 +653,12 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       </div>
     );
   }
+
+  // Optimistically render chat UI to eliminate latency. 
+  // the background check will flip hasAccess to false and boot them to the PrivateRoomAccessPanel.
+
+  // The early return for SpaceEscalationPanel was removed from here.
+  // It is now embedded directly inside the desktop and mobile layouts.
 
   // --- Instagram-style Desktop Layout (Only when a room is selected) ---
   if (isDesktopLayout && activeRoom) {
@@ -407,7 +765,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                                   room.last_message.sender_username?.toLowerCase().includes('vamshi')) && (
                                     <VerificationBadge size="xs" className="scale-75" />
                                   )}
-                                <span className="truncate">: {getDisplayMessage(room.last_message.content)}</span>
+                                <span className="truncate">: {getDisplayMessage(decryptedLastMessages[room.id] || room.last_message.content)}</span>
                               </>
                             ) : (
                               <span className="truncate">{room.description || 'No messages yet...'}</span>
@@ -443,21 +801,39 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
           <div className="flex-1 bg-background flex flex-col overflow-hidden relative border-l border-border/10">
             <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
-            <DiscussionChatInterface
-              roomId={activeRoom.id}
-              userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
-              roomTitle={activeRoom.title}
-              roomDescription={activeRoom.description}
-              categoryId={activeRoom.category_id}
-              categories={categories}
-              roomType={activeRoom.room_type}
-              roomSettings={activeRoom.settings}
-              onClose={() => {
-                push('/discussion-rooms', { noScroll: true });
-              }}
-              onRoomUpdated={handleRoomUpdated}
-              showBackButton={isInCall && !isCallMinimized}
-            />
+            {hasAccess ? (
+              <DiscussionChatInterface
+                key={activeRoom.id}
+                roomId={activeRoom.id}
+                userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
+                roomTitle={activeRoom.title}
+                roomDescription={activeRoom.description}
+                categoryId={activeRoom.category_id}
+                categories={categories}
+                roomType={activeRoom.room_type}
+                roomSettings={activeRoom.settings}
+                onClose={() => {
+                  push('/discussion-rooms', { noScroll: true });
+                }}
+                onRoomUpdated={handleRoomUpdated}
+                showBackButton={isInCall && !isCallMinimized}
+                initialGrantedAccess={isInternal && hasAccess}
+              />
+            ) : isInternal ? (
+              <SpaceEscalationPanel
+                targetType="room"
+                targetId={activeRoom.id}
+                chatTitle={activeRoom.title}
+                onAccessGranted={() => setHasAccess(true)}
+              />
+            ) : (
+              <PrivateRoomAccessPanel
+                roomId={activeRoom.id}
+                roomTitle={activeRoom.title}
+                roomDescription={activeRoom.description}
+                onClose={() => push('/discussion-rooms', { noScroll: true })}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -481,6 +857,31 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         </div>
       );
     }
+    if (!hasAccess) {
+      return (
+        <div className={cn(
+          "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40 pb-[calc(env(safe-area-inset-bottom)+76px)]"
+        )}>
+          {isInternal ? (
+            <SpaceEscalationPanel
+              targetType="room"
+              targetId={activeRoom.id}
+              chatTitle={activeRoom.title}
+              onAccessGranted={() => setHasAccess(true)}
+            />
+          ) : (
+            <PrivateRoomAccessPanel
+              roomId={activeRoom.id}
+              roomTitle={activeRoom.title}
+              roomDescription={activeRoom.description}
+              onClose={() => push('/discussion-rooms', { noScroll: true })}
+              showBackButton={true}
+            />
+          )}
+        </div>
+      );
+    }
+
     return (
       <div className={cn(
         "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40",
@@ -488,6 +889,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
       )}>
         <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
         <DiscussionChatInterface
+          key={activeRoom.id}
           roomId={activeRoom.id}
           userRole={user?.id === activeRoom.creator_id ? 'creator' : 'member'}
           roomTitle={activeRoom.title}
@@ -498,6 +900,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
           roomSettings={activeRoom.settings}
           onClose={() => push('/discussion-rooms', { noScroll: true })}
           onRoomUpdated={handleRoomUpdated}
+          initialGrantedAccess={isInternal && hasAccess}
         />
       </div>
     );
@@ -538,12 +941,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                 <span>👁️</span>
                 <span>Observation Mode</span>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-muted/40 border border-border/30 text-sm text-muted-foreground">
-                <span>🎬</span>
-                <span>Viewing as <strong className="text-foreground">{fanAnonName}</strong></span>
-              </div>
-            )
+            ) : null
           }
         />
 
@@ -925,6 +1323,31 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
 
       if (fetchError) throw fetchError;
 
+      // Silently provision E2EE keys for this new room so the user doesn't see "Initializing E2EE"
+      try {
+        const aesKey = await generateGroupKey();
+        const rawAesKeyBase64 = await exportSymmetricKey(aesKey);
+        
+        const { data: profile } = await supabase.from('profiles').select('public_key').eq('id', user.id).single();
+        
+        if (profile?.public_key) {
+          const importedPubKey = await importPublicKey(profile.public_key);
+          const encryptedAesKey = await encryptWithPublicKey(rawAesKeyBase64, importedPubKey);
+          
+          await (supabase as any).from('group_keys').insert({
+            target_type: 'room',
+            target_id: newRoomId,
+            user_id: user.id,
+            encrypted_symmetric_key: encryptedAesKey
+          });
+          
+          await syncGroupKeyToNative(newRoomId as string, rawAesKeyBase64);
+          console.log("Silently provisioned E2EE group key for new Discussion Room");
+        }
+      } catch (e2eeError) {
+        console.error("Failed silent E2EE provisioning:", e2eeError);
+      }
+
       toast({ title: "Success!", description: "Your room has been created." });
 
       // 3. Construct the final Room object for the UI
@@ -1004,6 +1427,164 @@ const CreateRoomModal = ({ categories, closeModal, onRoomCreated }: CreateRoomMo
         </DialogFooter>
       </form>
     </DialogContent>
+  );
+};
+
+// --- PRIVATE ROOM ACCESS PANEL ---
+const PrivateRoomAccessPanel = ({
+  roomId,
+  roomTitle,
+  roomDescription,
+  onClose,
+  showBackButton = false
+}: {
+  roomId: string;
+  roomTitle: string;
+  roomDescription: string | null;
+  onClose: () => void;
+  showBackButton?: boolean;
+}) => {
+  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'loading'>('loading');
+  const { user } = useAuth();
+  const { push } = useAppNavigation();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const checkRequestStatus = async () => {
+      if (!user) {
+        setRequestStatus('none');
+        return;
+      }
+      if (!roomId) return;
+      try {
+        const { data, error } = await supabase
+          .from('room_join_requests')
+          .select('status')
+          .eq('room_id', roomId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          setRequestStatus('pending');
+        } else {
+          setRequestStatus('none');
+        }
+      } catch (err) {
+        console.error('Error checking join request status:', err);
+        setRequestStatus('none');
+      }
+    };
+    checkRequestStatus();
+  }, [user, roomId]);
+
+  const handleRequestAccess = async () => {
+    if (!user) {
+      toast({
+        title: 'Sign in required',
+        description: 'Redirecting to sign in page...',
+        variant: 'destructive'
+      });
+      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
+    if (!roomId) return;
+    try {
+      setRequestStatus('loading');
+      const { error } = await supabase
+        .from('room_join_requests')
+        .insert({
+          room_id: roomId,
+          user_id: user.id,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+
+      setRequestStatus('pending');
+      toast({
+        title: "Request Sent",
+        description: "Your request to join this private room has been sent to the admin.",
+      });
+    } catch (err: any) {
+      console.error('Error sending join request:', err);
+      toast({
+        title: "Request Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+      setRequestStatus('none');
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 bg-background relative select-none animate-in fade-in duration-300">
+      {showBackButton && (
+        <div className="absolute top-4 left-4 z-10">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-white/5 rounded-xl px-4 h-10"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="font-bold text-xs uppercase tracking-wider">Back</span>
+          </Button>
+        </div>
+      )}
+
+      <div className="w-full max-w-md p-8 rounded-3xl glass-card-premium border border-white/10 shadow-2xl relative overflow-hidden flex flex-col items-center text-center space-y-6">
+        {/* Glow Accent */}
+        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 blur-3xl rounded-full -mr-16 -mt-16" />
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full -ml-16 -mb-16" />
+
+        {/* Animated Lock Icon */}
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 relative shadow-[0_0_20px_rgba(var(--primary-rgb),0.1)]">
+          <div className="absolute inset-0 rounded-full bg-primary/5 animate-ping duration-1000 opacity-60" />
+          <Lock className="w-10 h-10 text-primary" />
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black tracking-tight text-foreground">Private Room</h2>
+          <p className="text-sm font-bold text-primary uppercase tracking-widest">{roomTitle}</p>
+        </div>
+
+        {roomDescription && (
+          <p className="text-sm text-muted-foreground leading-relaxed px-2 bg-white/5 border border-white/5 rounded-2xl py-3 w-full">
+            "{roomDescription}"
+          </p>
+        )}
+
+        <div className="w-full pt-4 border-t border-border/40">
+          {requestStatus === 'loading' ? (
+            <Button disabled className="w-full h-12 rounded-xl flex items-center justify-center font-bold text-sm bg-primary/80">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Checking status...
+            </Button>
+          ) : requestStatus === 'pending' ? (
+            <div className="space-y-3 w-full">
+              <Button disabled className="w-full h-12 rounded-xl font-bold text-sm bg-muted text-muted-foreground border border-border/30 cursor-not-allowed">
+                Request Pending
+              </Button>
+              <p className="text-[11px] text-muted-foreground font-semibold">
+                Your request is awaiting admin approval. You will be notified once approved.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 w-full">
+              <Button
+                onClick={handleRequestAccess}
+                className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all duration-300"
+              >
+                Request to Join
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                This room requires admin permission to join.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 

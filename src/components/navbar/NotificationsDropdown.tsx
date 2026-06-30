@@ -18,10 +18,12 @@ import {
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu.tsx";
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 import { getDisplayMessage } from '@/lib/chat-utils';
+import { supabase } from '@/integrations/supabase/client';
+import { useNotificationMutation } from '@/hooks/mutations/useNotificationMutation';
 
 // Notification type (excluding new_message which is handled by MessageSquare icon)
 interface Notification {
@@ -56,34 +58,88 @@ const NotificationsDropdown = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const { markAsRead: mutateMarkAsRead, markAllAsRead: mutateMarkAllAsRead } = useNotificationMutation();
+  const location = useLocation();
+  const isNotificationsActive = location.pathname.startsWith('/notifications');
 
   useEffect(() => {
     if (!user) return;
 
     const fetchNotifications = async () => {
-      setLoading(false);
-      setNotifications([]);
-      setUnreadCount(0);
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .neq('type', 'new_message')
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+
+        const formatted = (data || []).map((n: any) => ({
+          id: n.id,
+          user_id: n.user_id,
+          trigger_user_id: n.trigger_user_id,
+          type: n.type as any,
+          title: n.title,
+          message: n.message,
+          action_url: n.action_url,
+          is_read: n.is_read || false,
+          created_at: n.created_at,
+          priority: n.priority as any || 'medium'
+        }));
+
+        setNotifications(formatted);
+        setUnreadCount(formatted.filter((n: any) => !n.is_read).length);
+      } catch (err) {
+        console.error('Error fetching notifications:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchNotifications();
 
-    // Removed legacy notification table subscription since the table was dropped
-    return () => {};
+    const channel = supabase.channel(`navbar-notifications-${user.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
+        fetchNotifications();
+      })
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   const markAsRead = async (notificationId: string) => {
-    const notification = notifications.find(n => n.id === notificationId);
+    const notification = notifications.find((n: Notification) => n.id === notificationId);
     if (notification && !notification.is_read) {
-        setNotifications(notifications.map(n => n.id === notificationId ? { ...n, is_read: true } : n));
+        setNotifications(notifications.map((n: Notification) => n.id === notificationId ? { ...n, is_read: true } : n));
         setUnreadCount(prev => Math.max(0, prev - 1));
+        await mutateMarkAsRead(notificationId);
     }
   };
 
   const markAllAsRead = async () => {
     if (!user || unreadCount === 0) return;
-    setNotifications(notifications.map(n => ({ ...n, is_read: true })));
+    setNotifications(notifications.map((n: Notification) => ({ ...n, is_read: true })));
     setUnreadCount(0);
+    await mutateMarkAllAsRead();
   };
 
   const NotificationItem = ({ notification }: { notification: Notification }) => (
@@ -114,10 +170,14 @@ const NotificationsDropdown = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative text-foreground/70 hover:text-primary hover:bg-primary/10 transition-all duration-300">
-          <Bell className="h-5 w-5" />
+        <Button 
+          variant={isNotificationsActive ? "default" : "ghost"} 
+          size="icon" 
+          className={`relative transition-all duration-300 ${isNotificationsActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+        >
+          <Bell className={`h-5 w-5 ${isNotificationsActive ? "text-primary-foreground" : ""}`} />
           {unreadCount > 0 && (
-            <Badge variant="destructive" className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs">
+            <Badge variant="destructive" className={`absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs ${isNotificationsActive ? 'border border-primary-foreground' : ''}`}>
               {unreadCount > 9 ? '9+' : unreadCount}
             </Badge>
           )}

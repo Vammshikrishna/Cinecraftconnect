@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import EnhancedRealTimeChat from '@/components/chat/EnhancedRealTimeChat';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { generateDirectRoomId } from '@/lib/chat-utils';
 
 interface Profile {
   id: string;
@@ -55,7 +56,7 @@ const ChatPage = () => {
 
   const channelId = useMemo(() => {
     if (!user || !partner) return null;
-    return [user.id, partner.id].sort().join('-');
+    return generateDirectRoomId(user.id, partner.id);
   }, [user, partner]);
 
   if (loading) {

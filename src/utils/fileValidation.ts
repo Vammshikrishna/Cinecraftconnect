@@ -3,8 +3,8 @@ import { z } from 'zod';
 // File size limits in bytes
 export const FILE_SIZE_LIMITS = {
   image: 10 * 1024 * 1024, // 10MB
-  video: 100 * 1024 * 1024, // 100MB
-  file: 50 * 1024 * 1024, // 50MB
+  video: 20 * 1024 * 1024, // 20MB
+  file: 15 * 1024 * 1024, // 15MB
   audio: 20 * 1024 * 1024, // 20MB
 };
 
@@ -86,10 +86,18 @@ export const validateFile = (file: File): FileValidationResult => {
   };
 };
 
+export interface UploadOptions {
+  isThumbnail?: boolean;
+  maxWidth?: number;
+  maxHeight?: number;
+  quality?: number;
+}
+
 export const uploadFileToSupabase = async (
   file: File,
   bucket: string,
-  path: string
+  path: string,
+  options?: UploadOptions
 ): Promise<{ url: string | null; error: string | null }> => {
   const validation = validateFile(file);
   
@@ -104,7 +112,10 @@ export const uploadFileToSupabase = async (
     // Compress image if it is an image file
     let fileToUpload = file;
     if (validation.fileType === 'image') {
-      fileToUpload = await compressImage(file);
+      const maxWidth = options?.maxWidth || (options?.isThumbnail ? 400 : 1200);
+      const maxHeight = options?.maxHeight || (options?.isThumbnail ? 400 : 1200);
+      const quality = options?.quality || (options?.isThumbnail ? 0.70 : 0.70);
+      fileToUpload = await compressImage(file, maxWidth, maxHeight, quality);
     }
     
     // Generate unique filename

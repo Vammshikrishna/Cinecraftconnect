@@ -1,5 +1,5 @@
-﻿
-import { useState, useEffect } from 'react';
+
+import { useState, useEffect, useRef } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
@@ -16,11 +16,19 @@ import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { getDisplayMessage } from '@/lib/chat-utils';
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptDirectMessage } from '@/lib/e2ee';
 
 const ChatMenu = () => {
   const { hasUnread, unreadCount, lastMessageToken } = useUnreadMessages();
   const [previews, setPreviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const { privateKey } = useE2EEChatKeys();
+  const privateKeyRef = useRef(privateKey);
+  useEffect(() => {
+    privateKeyRef.current = privateKey;
+  }, [privateKey]);
 
   const fetchPreviews = async () => {
     try {
@@ -29,14 +37,28 @@ const ChatMenu = () => {
       // console.log('UNREAD PREVIEWS RPC:', data, error);
       if (!error && Array.isArray(data)) {
         // Map RPC column names to what the UI template expects
-        const mapped = data.map((item: any) => ({
-          c_id: item.context_id || item.c_id,
-          name: item.sender_name || item.name,
-          avatar: item.sender_avatar || item.avatar,
-          last_message: item.last_message,
-          unread_count: item.unread_count,
-          last_timestamp: item.last_timestamp,
-          chat_type: item.chat_type || item.type,
+        const mapped = await Promise.all(data.map(async (item: any) => {
+          let decryptedContent = item.last_message;
+          if (item.last_message?.includes('__e2ee')) {
+            if (privateKeyRef.current) {
+              try {
+                decryptedContent = await decryptDirectMessage(item.last_message, privateKeyRef.current);
+              } catch (decErr) {
+                console.error('Failed to decrypt in ChatMenu:', decErr);
+              }
+            } else {
+              decryptedContent = '🔒 Encrypted Message';
+            }
+          }
+          return {
+            c_id: item.context_id || item.c_id,
+            name: item.sender_name || item.name,
+            avatar: item.sender_avatar || item.avatar,
+            last_message: decryptedContent,
+            unread_count: item.unread_count,
+            last_timestamp: item.last_timestamp,
+            chat_type: item.chat_type || item.type,
+          };
         }));
 
         // De-duplicate by c_id
@@ -54,7 +76,7 @@ const ChatMenu = () => {
     // We fetch previews on mount AND when notification triggers.
     // We do NOT clear them just because hasUnread becomes false (e.g. visiting /messages)
     fetchPreviews();
-  }, [hasUnread, lastMessageToken]);
+  }, [hasUnread, lastMessageToken, privateKey]);
 
   const getLink = (type: string, id: string) => {
     switch (type) {

@@ -114,58 +114,60 @@ export function MobileNav() {
               </button>
             ))}
 
-            {/* More dropdown for additional items */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  <MoreHorizontal className="w-5 h-5 md:w-6 md:h-6" />
-                  {isMoreActive && (
-                    <div className="w-1 h-1 bg-primary rounded-full mt-0.5 md:mt-1 animate-scale-in" />
-                  )}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
-                <DropdownMenuItem onClick={() => handleTabClick('/pitch')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <Lightbulb size={18} />
-                    <span>Pitch</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleTabClick('/ratings')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <Star size={18} />
-                    <span>Ratings</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleTabClick('/announcements')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <Megaphone size={18} />
-                    <span>Announcements</span>
-                  </div>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem onClick={() => handleTabClick('/marketplace')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <ShoppingBag size={18} />
-                    <span>Marketplace</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleTabClick('/vendors')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <VendorIcon size={18} />
-                    <span>Vendors</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleTabClick('/pages')}>
-                  <div className="flex items-center gap-3 cursor-pointer w-full">
-                    <StudioPageIcon size={18} />
-                    <span>Pages</span>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* More dropdown for additional items - Creators Only */}
+            {!isFan && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={`flex flex-col items-center justify-center py-1.5 md:py-2 px-2 md:px-3 rounded-lg transition-all duration-200 ${isMoreActive ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <MoreHorizontal className="w-5 h-5 md:w-6 md:h-6" />
+                    {isMoreActive && (
+                      <div className="w-1 h-1 bg-primary rounded-full mt-0.5 md:mt-1 animate-scale-in" />
+                    )}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="top" className="w-48 mb-2">
+                  <DropdownMenuItem onClick={() => handleTabClick('/pitch')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <Lightbulb size={18} />
+                      <span>Pitch</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleTabClick('/ratings')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <Star size={18} />
+                      <span>Ratings</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleTabClick('/announcements')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <Megaphone size={18} />
+                      <span>Announcements</span>
+                    </div>
+                  </DropdownMenuItem>
+  
+                  <DropdownMenuItem onClick={() => handleTabClick('/marketplace')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <ShoppingBag size={18} />
+                      <span>Marketplace</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleTabClick('/vendors')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <VendorIcon size={18} />
+                      <span>Vendors</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleTabClick('/pages')}>
+                    <div className="flex items-center gap-3 cursor-pointer w-full">
+                      <StudioPageIcon size={18} />
+                      <span>Pages</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </motion.nav>
       )}

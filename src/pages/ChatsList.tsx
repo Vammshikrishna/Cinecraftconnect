@@ -1,7 +1,9 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptDirectMessage } from '@/lib/e2ee';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { Input } from '@/components/ui/input';
@@ -22,6 +24,7 @@ import {
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PageHeader } from '@/components/common/PageHeader';
+import { generateDirectRoomId } from '@/lib/chat-utils';
 
 const ChatsList = () => {
   const { user } = useAuth();
@@ -36,46 +39,118 @@ const ChatsList = () => {
   const [searchingUsers, setSearchingUsers] = useState(false);
   const { onlineUserIds } = usePresence();
 
+  const { privateKey } = useE2EEChatKeys();
+  const privateKeyRef = useRef(privateKey);
   useEffect(() => {
-    const fetchConversations = async () => {
-      if (!user) return;
-      setLoading(true);
-      const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
+    privateKeyRef.current = privateKey;
+  }, [privateKey]);
 
-      if (error) {
-        console.error('Error fetching conversations:', error);
-        setConversations([]);
-      } else if (data) {
-        const processedConversations: Conversation[] = (data as any[]).map((c: any) => ({
+  const fetchConversations = useCallback(async (isInitial = true) => {
+    if (!user) return;
+    if (isInitial) setLoading(true);
+    console.log('[ChatsList] Fetching conversations for user:', user.id);
+    const { data, error } = await supabase.rpc('get_user_conversations_with_profiles' as any, { p_user_id: user.id });
+
+    if (error) {
+      console.error('[ChatsList] Error fetching conversations:', error);
+      setConversations([]);
+    } else if (data) {
+      console.log('[ChatsList] Conversations fetched count:', data.length);
+      const processedConversations: Conversation[] = await Promise.all((data as any[]).map(async (c: any) => {
+        let decryptedContent = c.last_message_content;
+        if (c.last_message_content?.includes('__e2ee')) {
+          if (privateKeyRef.current) {
+            try {
+              decryptedContent = await decryptDirectMessage(c.last_message_content, privateKeyRef.current);
+            } catch (decErr) {
+              console.error('[ChatsList] Failed to decrypt preview in ChatsList:', decErr);
+            }
+          } else {
+            decryptedContent = '🔒 Encrypted Message';
+          }
+        }
+        return {
           partner: {
             id: c.other_user_id,
             full_name: c.other_user_full_name,
             avatar_url: c.other_user_avatar_url,
           },
           last_message: {
-            content: c.last_message_content,
+            content: decryptedContent,
             created_at: c.last_message_created_at,
           },
           unread_count: c.unread_count,
-        }));
-        setConversations(processedConversations);
-      }
-      setLoading(false);
-    };
-
-    if (user) {
-      fetchConversations();
+        };
+      }));
+      setConversations(processedConversations);
     }
+    setLoading(false);
+  }, [user?.id]);
 
+  useEffect(() => {
+    if (user) {
+      fetchConversations(true);
+    }
+  }, [user?.id, fetchConversations]);
+
+  useEffect(() => {
+    if (privateKey) {
+      console.log('[ChatsList] E2EE Private key loaded/changed. Re-fetching and decrypting previews.');
+      fetchConversations(false);
+    }
+  }, [privateKey, fetchConversations]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log('[ChatsList] Setting up realtime subscription: public:direct_messages:all');
+    
     const subscription = supabase
       .channel('public:direct_messages:all')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, fetchConversations)
-      .subscribe();
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'direct_messages' }, 
+        (payload) => {
+          console.log('[ChatsList] Realtime postgres_changes event received:', payload);
+          fetchConversations(false);
+        }
+      )
+      .subscribe((status, err) => {
+        console.log('[ChatsList] Realtime channel status:', status, err || '');
+      });
+
+    // Subscribe to global broadcast updates for client-to-client sync
+    console.log('[ChatsList] Setting up global broadcast updates channel');
+    const globalChannel = supabase
+      .channel('global_chat_updates')
+      .on('broadcast', { event: 'chat_list_update' }, (payload) => {
+        const data = payload.payload;
+        if (data.senderId === user.id || data.receiverId === user.id) {
+          console.log('[ChatsList] Broadcast chat_list_update received:', data);
+          fetchConversations(false);
+        }
+      })
+      .subscribe((status, err) => {
+        console.log('[ChatsList] Global broadcast channel status:', status, err || '');
+      });
 
     return () => {
+      console.log('[ChatsList] Cleaning up subscriptions');
       supabase.removeChannel(subscription);
+      supabase.removeChannel(globalChannel);
     };
-  }, [user?.id]);
+  }, [user?.id, fetchConversations]);
+
+  useEffect(() => {
+    const handleLocalUpdate = (e: any) => {
+      console.log('[ChatsList] Local chat_list_update event received, re-fetching conversations');
+      fetchConversations(false);
+    };
+
+    window.addEventListener('chat_list_update', handleLocalUpdate);
+    return () => {
+      window.removeEventListener('chat_list_update', handleLocalUpdate);
+    };
+  }, [fetchConversations]);
 
   useEffect(() => {
     const searchUsers = async () => {
@@ -112,6 +187,38 @@ const ChatsList = () => {
   const handleStartChat = (userId: string) => {
     setIsNewChatOpen(false);
     push(`/messages/${userId}`);
+  };
+
+  const handleDeleteConversation = async (e: React.MouseEvent, partnerId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!user) return;
+    const confirmDelete = window.confirm("Are you sure you want to delete this specific conversation? This cannot be undone.");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from('direct_messages')
+      .delete()
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
+
+    if (error) {
+      console.error('Error deleting conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    } else {
+      fetchConversations(false);
+
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+
+      const globalChannel = supabase.channel('global_chat_updates');
+      globalChannel.send({
+        type: 'broadcast',
+        event: 'chat_list_update',
+        payload: { senderId: user.id, receiverId: partnerId }
+      }).catch(console.error);
+    }
   };
 
   const filteredConversations = conversations.filter(c =>
@@ -258,10 +365,11 @@ const ChatsList = () => {
             </div>
           ) : (
             <div className="p-2 sm:p-4">
-                <ChatList 
-                    conversations={filteredConversations} 
-                    onlineUserIds={onlineUserIds} 
-                />
+                 <ChatList 
+                     conversations={filteredConversations} 
+                     onlineUserIds={onlineUserIds} 
+                     onDelete={handleDeleteConversation}
+                 />
             </div>
           )}
         </div>

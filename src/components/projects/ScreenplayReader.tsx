@@ -417,24 +417,14 @@ const ScreenplayReader = ({ project_id }: ScreenplayReaderProps) => {
 
     setUploading(true);
     try {
-      const filePath = buildProjectFilePath(
-        PROJECT_FILE_FOLDERS.FILES,
-        project_id,
-        file.name
+      const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+      const { url, error: uploadError } = await uploadFileToSupabase(
+        file,
+        STORAGE_BUCKETS.PROJECT_FILES,
+        `${PROJECT_FILE_FOLDERS.FILES}/${project_id}`
       );
 
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKETS.PROJECT_FILES)
-        .upload(filePath, file, {
-          cacheControl: '31536000',
-          upsert: false
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from(STORAGE_BUCKETS.PROJECT_FILES)
-        .getPublicUrl(filePath);
+      if (uploadError || !url) throw new Error(uploadError || 'Failed to upload screenplay');
 
       const { data: insertData, error: insertError } = await supabase
         .from('files' as any)
@@ -442,7 +432,7 @@ const ScreenplayReader = ({ project_id }: ScreenplayReaderProps) => {
           {
             name: file.name,
             size: file.size,
-            url: publicUrlData.publicUrl,
+            url: url,
             project_id: project_id,
             file_type: file.type
           }

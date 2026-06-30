@@ -20,6 +20,20 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
         const hydrateData = async () => {
             if (!id || id === 'undefined') return;
             try {
+                const isNative = id.includes('-');
+                if (isNative) {
+                    const { supabase } = await import('@/integrations/supabase/client');
+                    const { data } = await supabase.from('platform_cinema').select('release_date, genre').eq('id', id).maybeSingle();
+                    if (data) {
+                        const year = data.release_date ? new Date(data.release_date).getFullYear().toString() : '....';
+                        setMetadata({
+                            language: 'NATIVE CINEMA',
+                            year: year
+                        });
+                    }
+                    return;
+                }
+
                 const details = await fetchContentDetails(parseInt(id), type);
                 if (details) {
                     const year = new Date(details.release_date || details.first_air_date).getFullYear().toString();
@@ -44,16 +58,21 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
         hydrateData();
     }, [id, type]);
 
+    const isNative = id?.includes('-');
+    const posterSrc = isNative && poster_path 
+        ? poster_path 
+        : (poster_path ? `https://image.tmdb.org/t/p/w500${poster_path}` : null);
+
     return (
         <Link 
             to={`/content/${type}/${id}`}
-            className="block w-full max-w-[160px] sm:max-w-[220px] min-w-[130px] sm:min-w-[180px] bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5"
+            className="block w-[220px] shrink-0 bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5"
         >
             {/* Poster Image */}
             <div className="relative aspect-[2/3] overflow-hidden">
-                {poster_path ? (
+                {posterSrc ? (
                     <img 
-                        src={getOptimizedImage(`https://image.tmdb.org/t/p/w500${poster_path}`, { width: 400 })} 
+                        src={getOptimizedImage(posterSrc, { width: 400 })} 
                         alt={title} 
                         className="w-full h-full object-cover" 
                     />

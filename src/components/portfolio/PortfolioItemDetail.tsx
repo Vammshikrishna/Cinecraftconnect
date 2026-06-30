@@ -1,6 +1,8 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { PortfolioItemData } from "@/types/portfolio";
+import { CachedVideo } from '@/components/common/CachedVideo';
+import { CachedImage } from '@/components/common/CachedImage';
 
 // Type moved to @/types/portfolio.ts
 
@@ -17,9 +19,9 @@ export const PortfolioItemDetail = ({ item, isOpen, onOpenChange }: PortfolioIte
     if (!item.media_url) return <div className="w-full h-64 bg-muted flex items-center justify-center text-muted-foreground">No media available</div>;
 
     if (item.media_type?.startsWith('image')) {
-      return <img src={item.media_url} alt={item.title} className="rounded-lg object-cover w-full h-auto" />;
+      return <CachedImage src={item.media_url} alt={item.title} className="rounded-lg object-cover w-full h-auto" />;
     } else if (item.media_type?.startsWith('video')) {
-      return <video src={item.media_url} controls preload="metadata" className="rounded-lg w-full" />;
+      return <CachedVideo src={item.media_url} controls preload="metadata" className="rounded-lg w-full" />;
     } else {
       return <a href={item.media_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">View File</a>;
     }

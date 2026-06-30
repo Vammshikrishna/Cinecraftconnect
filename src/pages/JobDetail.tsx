@@ -24,6 +24,10 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import ReportDialog from "@/components/common/ReportDialog";
 import { useAppRole } from "@/hooks/useAppRole";
 import { BackButton } from "@/components/common/BackButton";
+import { useScrollDirection } from "@/hooks/useScrollDirection";
+import { useKeyboard } from "@/contexts/KeyboardContext";
+import { useJobBookmark } from "@/hooks/useJobBookmark";
+import { cn } from "@/lib/utils";
 
 const JobDetail = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -38,7 +42,11 @@ const JobDetail = () => {
   const { isInternal } = useAppRole();
   const { toast } = useToast();
     const { push, goBack } = useAppNavigation();
+  const scrollDirection = useScrollDirection();
+  const { isKeyboardVisible, isEmojiPickerOpen } = useKeyboard();
+  const isNavHidden = !user || isKeyboardVisible || isEmojiPickerOpen || scrollDirection === 'down';
   const isOwner = user?.id === job?.posted_by;
+  const { isBookmarked, toggleBookmark, loading: bookmarkLoading } = useJobBookmark(jobId);
 
   const fetchJobDetail = async () => {
     if (!jobId) return;
@@ -131,9 +139,10 @@ const JobDetail = () => {
     if (!user) {
       toast({
         title: "Sign in required",
-        description: "Please sign in to apply for jobs",
+        description: "Redirecting to sign in page...",
         variant: "destructive"
       });
+      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
       return;
     }
     setIsApplying(true);
@@ -203,12 +212,10 @@ const JobDetail = () => {
             <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full h-10 w-10">
               <Share2 size={20} />
             </Button>
-            <Button variant="ghost" size="icon" className="rounded-full h-10 w-10">
-              <Bookmark size={20} />
+            <Button variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full h-10 w-10", isBookmarked && "text-primary")}>
+              <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
             </Button>
-            <Button variant="ghost" size="icon" className="rounded-full h-10 w-10">
-              <Info size={20} />
-            </Button>
+
           </div>
         </div>
 
@@ -244,8 +251,8 @@ const JobDetail = () => {
                   <Button variant="ghost" size="icon" onClick={shareJob} className="rounded-full hover:bg-muted/30">
                     <Share2 size={20} />
                   </Button>
-                  <Button variant="ghost" size="icon" className="rounded-full hover:bg-muted/30">
-                    <Bookmark size={20} />
+                  <Button variant="ghost" size="icon" onClick={toggleBookmark} disabled={bookmarkLoading} className={cn("rounded-full hover:bg-muted/30", isBookmarked && "text-primary")}>
+                    <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
                   </Button>
                   {user && !isOwner && (
                     <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(true)} className="rounded-full hover:bg-rose-500/10 hover:text-rose-500">
@@ -295,8 +302,19 @@ const JobDetail = () => {
                     </Button>
                   )}
                   
-                  <Button variant="outline" size="lg" className="h-14 px-10 rounded-full border-primary text-primary font-black hover:bg-primary/5 transition-all text-lg">
-                    Save
+                  <Button 
+                    variant={isBookmarked ? "default" : "outline"}
+                    size="lg" 
+                    onClick={toggleBookmark}
+                    disabled={bookmarkLoading}
+                    className={cn(
+                      "h-14 px-10 rounded-full font-black transition-all text-lg",
+                      isBookmarked 
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90" 
+                        : "border-primary text-primary hover:bg-primary/5"
+                    )}
+                  >
+                    {isBookmarked ? "Saved" : "Save"}
                   </Button>
                 </div>
 
@@ -419,13 +437,15 @@ const JobDetail = () => {
                       <h4 className="text-xl font-black text-foreground leading-tight">
                         {job.company_pages?.name || job.company}
                       </h4>
-                      <p className="text-sm text-primary font-bold uppercase tracking-wider italic">
-                        {job.company_pages?.tagline || "Industry Leaders"}
-                      </p>
+                      {job.company_pages?.tagline && (
+                        <p className="text-sm text-primary font-bold uppercase tracking-wider italic">
+                          {job.company_pages.tagline}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {job.company_pages?.description && (
+                  {job.company_pages?.description?.trim() && (
                     <div className="bg-muted/10 rounded-2xl p-5 border border-border/10 italic text-sm text-muted-foreground leading-relaxed relative">
                       <span className="absolute -top-2 -left-2 text-4xl text-primary/20 font-serif">"</span>
                       {job.company_pages.description}
@@ -438,19 +458,19 @@ const JobDetail = () => {
                       <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
                         <MapPin size={14} /> Location
                       </div>
-                      <span className="text-sm font-bold text-foreground/80">{job.company_pages?.headquarters || "Hyderabad, IND"}</span>
+                      <span className="text-sm font-bold text-foreground/80">{job.company_pages?.headquarters || "Not specified"}</span>
                     </div>
                     <div className="flex items-center justify-between py-3 border-b border-border/30">
                       <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
                         <Users size={14} /> Size
                       </div>
-                      <span className="text-sm font-bold text-foreground/80">{job.company_pages?.company_size || "50-100 People"}</span>
+                      <span className="text-sm font-bold text-foreground/80">{job.company_pages?.company_size || "Not specified"}</span>
                     </div>
                     <div className="flex items-center justify-between py-3">
                       <div className="flex items-center gap-2 text-muted-foreground/60 font-bold text-[10px] uppercase tracking-widest">
                         <Globe size={14} /> Presence
                       </div>
-                      <span className="text-sm font-bold text-primary">{job.company_pages?.headquarters ? "Registered" : "Worldwide"}</span>
+                      <span className="text-sm font-bold text-primary">{job.company_pages?.headquarters ? "Regional" : "Global"}</span>
                     </div>
                   </div>
                   
@@ -490,7 +510,14 @@ const JobDetail = () => {
       </main>
 
       {/* Sticky Bottom Apply Bar for Mobile */}
-      <div className="lg:hidden fixed bottom-[calc(env(safe-area-inset-bottom)+70px)] left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-transform duration-500">
+      <div 
+        className={cn(
+          "md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-3xl border-t border-white/10 p-4 shadow-2xl transition-all duration-300",
+          isNavHidden 
+            ? "pb-[calc(env(safe-area-inset-bottom,0px)+16px)]" 
+            : "pb-[calc(env(safe-area-inset-bottom,0px)+64px)] md:pb-[calc(env(safe-area-inset-bottom,0px)+74px)]"
+        )}
+      >
         <div className="flex items-center gap-3">
           {isOwner ? (
             <Button onClick={() => push('/jobs/manage')} className="h-12 flex-1 rounded-2xl bg-primary text-primary-foreground font-black shadow-lg shadow-primary/20 active:scale-95 transition-all">
@@ -515,8 +542,18 @@ const JobDetail = () => {
               {isInternal ? "Staff Only" : "Apply Now"}
             </Button>
           )}
-          <Button variant="outline" className="h-12 w-12 p-0 rounded-2xl border-primary text-primary">
-            <Bookmark size={20} />
+          <Button 
+            variant={isBookmarked ? "default" : "outline"} 
+            onClick={toggleBookmark}
+            disabled={bookmarkLoading}
+            className={cn(
+              "h-12 w-12 p-0 rounded-2xl",
+              isBookmarked
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-primary text-primary"
+            )}
+          >
+            <Bookmark size={20} className={cn(isBookmarked && "fill-current")} />
           </Button>
           <Button variant="outline" onClick={shareJob} className="h-12 w-12 p-0 rounded-2xl border-primary text-primary">
             <Share2 size={20} />

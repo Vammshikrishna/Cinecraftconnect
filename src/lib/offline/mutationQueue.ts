@@ -4,6 +4,7 @@ import { MutationDeduper } from './mutationDeduper';
 import { mutationFlusher, MutationHandler } from './mutationFlusher';
 import { networkSync } from '../sync/networkAwareSync';
 import { mutationTelemetry } from './mutationTelemetry';
+import { supabase } from '@/integrations/supabase/client';
 
 /**
  * Singleton Orchestrator for Offline Optimistic Mutations.
@@ -61,11 +62,25 @@ class OfflineMutationQueue {
   public async enqueue<T>(
     type: string, 
     payload: T, 
-    options?: { id?: string; priority?: MutationPriority; maxRetries?: number }
+    options?: { id?: string; priority?: MutationPriority; maxRetries?: number; userId?: string }
   ) {
+    const extractedUserId = options?.userId || (payload as any).userId;
+    
     if (!this.currentUserId) {
-        console.error('[MUTATION QUEUE] Cannot enqueue without active session.');
-        return;
+        if (extractedUserId) {
+            console.log(`[MUTATION QUEUE] Self-healing using provided userId: ${extractedUserId}`);
+            await this.initialize(extractedUserId);
+        } else {
+            console.warn('[MUTATION QUEUE] currentUserId is null. Attempting to self-heal...');
+            const { data } = await supabase.auth.getSession();
+            if (data?.session?.user?.id) {
+                console.log('[MUTATION QUEUE] Self-healing successful. Initializing with session user.');
+                await this.initialize(data.session.user.id);
+            } else {
+                console.error('[MUTATION QUEUE] Cannot enqueue without active session. Self-healing failed.');
+                return;
+            }
+        }
     }
 
     const mutationId = options?.id || MutationDeduper.generateId(type, Date.now().toString());
@@ -79,7 +94,7 @@ class OfflineMutationQueue {
       timestamp: Date.now(),
       retryCount: 0,
       maxRetries: options?.maxRetries ?? 3,
-      userId: this.currentUserId
+      userId: this.currentUserId!
     };
 
     const oldLength = this.queue.length;

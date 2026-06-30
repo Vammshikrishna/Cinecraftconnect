@@ -36,7 +36,7 @@ export const ProjectShareCard = ({
                     .from('projects')
                     .select('*')
                     .eq('id', projectId)
-                    .single();
+                    .maybeSingle();
 
                 if (data && !error) {
                     setTitle(data.title);
@@ -58,7 +58,7 @@ export const ProjectShareCard = ({
     return (
         <Link
             to={`/projects/${projectId}/space`}
-            className="block w-full max-w-[210px] sm:max-w-[280px] min-w-[170px] sm:min-w-[220px] glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-white/10"
+            className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
         >
             {/* Visual Header */}
             <div
@@ -71,13 +71,13 @@ export const ProjectShareCard = ({
                 <Film className="w-16 h-16 text-white/40 relative z-10 group-hover:scale-110 transition-transform duration-700 drop-shadow-2xl" />
 
                 {status && (
-                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[8px] font-black uppercase tracking-widest text-white shadow-lg">
+                    <div className="absolute top-3 right-3 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md border border-black/10 dark:border-white/10 text-[8px] font-black uppercase tracking-widest text-white shadow-lg">
                         {status}
                     </div>
                 )}
 
                 {genre && (
-                    <div className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-white/10 text-[8px] font-black uppercase tracking-widest text-white/90">
+                    <div className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-black/10 dark:border-white/10 text-[8px] font-black uppercase tracking-widest text-white/90">
                         {genre}
                     </div>
                 )}
@@ -89,7 +89,7 @@ export const ProjectShareCard = ({
             </div>
 
             {/* Content Section */}
-            <div className="p-4 space-y-4 bg-muted/30 backdrop-blur-xl">
+            <div className="p-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-xl">
                 <div className="space-y-1.5">
                     <h4 className="text-[16px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">
                         {title || 'Loading Space...'}

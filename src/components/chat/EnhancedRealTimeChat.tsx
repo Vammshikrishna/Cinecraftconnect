@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search } from 'lucide-react';
+import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info } from 'lucide-react';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
@@ -45,7 +45,11 @@ import { useChatReadStatus } from '@/hooks/useChatReadStatus';
 import VerificationBadge from '../common/VerificationBadge';
 import { TypingIndicator } from '../discussions/TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptDirectMessage, encryptDirectMessage } from '@/lib/e2ee';
+import { MessageReportDialog } from './MessageReportDialog';
+import { CachedImage } from '@/components/common/CachedImage';
+import { CachedVideo } from '@/components/common/CachedVideo';
 
 interface Message {
   id: string;
@@ -74,6 +78,19 @@ interface Message {
   deleted_for_users?: string[];
   is_read?: boolean;
   read_at?: string | null;
+  reactions?: MessageReaction[];
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+  user_profile?: {
+    full_name: string;
+    avatar_url: string;
+  };
 }
 
 interface EnhancedRealTimeChatProps {
@@ -109,21 +126,62 @@ const getUserColor = (userId: string) => {
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
 };
 
+const getMessagePreviewText = (content: string): string => {
+  if (!content) return '';
+  if (content.startsWith('POST_SHARE::')) return 'Shared a post';
+  if (content.startsWith('MARKETPLACE_SHARE::')) return 'Shared a listing';
+  if (content.startsWith('ANNOUNCEMENT_SHARE::')) return 'Shared an announcement';
+  if (content.startsWith('VENDOR_SHARE::')) return 'Shared a vendor';
+  if (content.startsWith('PROJECT_SHARE::')) return 'Shared a project';
+  if (content.startsWith('DISCUSSION_SHARE::')) return 'Shared a discussion';
+  if (content.startsWith('ROOM_SHARE::')) return 'Shared a room';
+  if (content.startsWith('COMPANY_SHARE::')) return 'Shared a company profile';
+  if (content.startsWith('PROFILE_SHARE::')) return 'Shared a user profile';
+  if (content.startsWith('PITCH_SHARE::')) return 'Shared a pitch deck';
+  if (content.startsWith('CONTENT_SHARE::')) return 'Shared a video/content';
+  if (content.includes('JOB_SHARE::')) return 'Shared a job post';
+  return content;
+};
+
+const scrollToMessage = (messageId: string) => {
+  const element = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl');
+    if (bubble) {
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      setTimeout(() => {
+        bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
+      }, 1200);
+    }
+  }
+};
+
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
+
 const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
   const { user, profile } = useAuth();
   const { push } = useAppNavigation();
   const { onlineUserIds } = usePresence();
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId || '');
+  const { privateKey, partnerPublicKey, userPublicKey, keysLoaded } = useE2EEChatKeys(partnerId);
+  const privateKeyRef = useRef(privateKey);
+  useEffect(() => {
+    privateKeyRef.current = privateKey;
+  }, [privateKey]);
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef(messages);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  const reactionLocksRef = useRef<Set<string>>(new Set());
+  const markedReadRef = useRef<Set<string>>(new Set());
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [reportingMessage, setReportingMessage] = useState<{ id: string, content: string } | null>(null);
   const { markAsRead } = useChatReadStatus();
   const { toast } = useToast();
   const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall } = useGlobalCall();
@@ -134,6 +192,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [selectedFile, setSelectedFile] = useState<{file: File, preview: string, type: 'image' | 'video' | 'other'} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const channelRef = useRef<any>(null);
+  const globalUpdatesChannelRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -141,6 +201,91 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const isInitialLoad = useRef(true);
   const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<Message | null>(null);
+  const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
+  const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+
+  const longPressTimerRef = useRef<any>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isSwipingRef = useRef<boolean>(false);
+
+  const handleTouchStart = (messageId: string, isDeleted: boolean) => (e: React.TouchEvent) => {
+    if (isDeleted) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    isSwipingRef.current = false;
+    
+    longPressTimerRef.current = setTimeout(() => {
+      if (!isSwipingRef.current) {
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        setActiveMobileReactionMessageId(messageId);
+      }
+    }, 500);
+  };
+
+  const handleTouchMove = (messageId: string) => (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const diffX = touch.clientX - touchStartRef.current.x;
+    const diffY = touch.clientY - touchStartRef.current.y;
+    
+    if (!isSwipingRef.current && diffX > 10 && Math.abs(diffY) < 15) {
+      isSwipingRef.current = true;
+      setSwipeMessageId(messageId);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === messageId) {
+      const offset = Math.max(0, Math.min(diffX, 80));
+      setSwipeOffset(offset);
+      if (offset >= 55 && swipeOffset < 55) {
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+      }
+    }
+    
+    if (Math.abs(diffY) > 10 && !isSwipingRef.current) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+  };
+
+  const handleTouchEnd = (message: Message) => () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === message.id) {
+      if (swipeOffset >= 55) {
+        setReplyingTo(message);
+      }
+    }
+    
+    setSwipeOffset(0);
+    setSwipeMessageId(null);
+    isSwipingRef.current = false;
+    touchStartRef.current = null;
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = () => {
+      setActiveMobileReactionMessageId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
   const isPartnerOnline = onlineUserIds.includes(partnerId);
   
   const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
@@ -170,10 +315,89 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     };
   }, []);
 
+  useEffect(() => {
+    // Access the global updates channel. It is managed and subscribed by the parent page/sidebar components,
+    // so we do not call removeChannel on unmount to prevent tearing down the sidebar's subscription.
+    const channel = supabase.channel('global_chat_updates');
+    channel.subscribe();
+    globalUpdatesChannelRef.current = channel;
+  }, []);
 
+
+
+  const processMessages = async (msgs: Message[]) => {
+    if (!user) return msgs;
+    return await Promise.all(msgs.map(async m => {
+      try {
+        const isSender = m.sender_id === user.id;
+        let decryptedContent = m.content;
+        
+        if (m.content.includes('__e2ee')) {
+           if (!privateKey) {
+             decryptedContent = '🔒 Encrypted Message (Unlock required)';
+           } else {
+             decryptedContent = await decryptDirectMessage(m.content, privateKey, isSender);
+           }
+        }
+        
+        let repliedToMessage = m.replied_to_message;
+        if (repliedToMessage && repliedToMessage.content.includes('__e2ee')) {
+          if (!privateKey) {
+            repliedToMessage = { ...repliedToMessage, content: '🔒 Encrypted Message' };
+          } else {
+            try {
+              const originalWasSender = repliedToMessage.sender_profile?.full_name === profile?.full_name;
+              const decryptedReply = await decryptDirectMessage(repliedToMessage.content, privateKey, originalWasSender);
+              repliedToMessage = { ...repliedToMessage, content: decryptedReply };
+            } catch (e) {
+              console.error("Failed to decrypt replied message", e);
+            }
+          }
+        }
+
+        return { ...m, content: decryptedContent, replied_to_message: repliedToMessage };
+      } catch (err) {
+        console.error("Failed to decrypt message:", err);
+        return m;
+      }
+    }));
+  };
+
+  const fetchReactions = async (msgs: Message[]) => {
+    const msgIds = msgs.map(m => m.id);
+    if (msgIds.length === 0) return msgs;
+    
+    const { data, error } = await supabase
+      .from('direct_message_reactions')
+      .select('*, profiles:user_id(full_name, avatar_url)')
+      .in('message_id', msgIds);
+      
+    if (error) {
+      console.error('Error fetching reactions:', error);
+      return msgs;
+    }
+    
+    const reactionsMap: Record<string, MessageReaction[]> = {};
+    (data || []).forEach(r => {
+      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+      reactionsMap[r.message_id].push({
+        id: r.id,
+        message_id: r.message_id,
+        user_id: r.user_id,
+        emoji: r.emoji,
+        created_at: r.created_at,
+        user_profile: Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+      });
+    });
+    
+    return msgs.map(m => ({
+      ...m,
+      reactions: reactionsMap[m.id] || []
+    }));
+  };
 
   const fetchMessages = useCallback(async (isNewRoom = true) => {
-    if (!roomId) return;
+    if (!roomId || !keysLoaded) return;
     
     if (isNewRoom) {
       setLoading(true);
@@ -192,7 +416,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         console.error('Error fetching messages:', fallbackError);
         setMessages([]);
       } else {
-        setMessages(fallbackData as Message[]);
+        const processed = await processMessages(fallbackData as Message[]);
+        const withReactions = await fetchReactions(processed);
+        setMessages(withReactions);
         setHasMore(false);
       }
     } else {
@@ -200,11 +426,13 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       const sortedMessages = [...fetchedMessages].sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
-      setMessages(sortedMessages);
+      const processed = await processMessages(sortedMessages);
+      const withReactions = await fetchReactions(processed);
+      setMessages(withReactions);
       setHasMore(fetchedMessages.length === 30);
     }
     setLoading(false);
-  }, [roomId]);
+  }, [roomId, privateKey, keysLoaded, user?.id, profile?.full_name]);
 
   const loadMoreMessages = async () => {
     if (!roomId || loadingMore || !hasMore || messages.length === 0) return;
@@ -226,7 +454,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
-        setMessages(prev => [...sortedNewMessages, ...prev]);
+        const processed = await processMessages(sortedNewMessages);
+        const withReactions = await fetchReactions(processed);
+        setMessages(prev => [...withReactions, ...prev]);
         setHasMore(fetchedMessages.length === 30);
       } else {
         setHasMore(false);
@@ -241,14 +471,49 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   }, [fetchMessages]);
 
   useEffect(() => {
+    setLoading(true);
+    setMessages([]);
+    isInitialLoad.current = true;
+  }, [roomId]);
+
+  useEffect(() => {
     fetchMessages();
   }, [fetchMessages]);
 
   useEffect(() => {
     if (partnerId && messages.length > 0) {
-      markAsRead('dm', partnerId);
+      console.log(`[EnhancedRealTimeChat] Evaluating unread messages. Total messages: ${messages.length}, partnerId: ${partnerId}`);
+      const unreadMessages = messages.filter(m => {
+        const isIncoming = m.sender_id === partnerId;
+        const isUnread = !m.is_read;
+        const isNotTemp = !String(m.id).startsWith('temp-');
+        return isIncoming && isUnread && isNotTemp;
+      });
+      console.log(`[EnhancedRealTimeChat] Unread incoming messages count: ${unreadMessages.length}`);
+      
+      const toMark = unreadMessages.filter(m => !markedReadRef.current.has(m.id));
+      console.log(`[EnhancedRealTimeChat] Unread messages not yet marked: ${toMark.length}`);
+      
+      if (toMark.length > 0) {
+        // The RPC marks all messages up to this ID as read
+        const latest = toMark[toMark.length - 1];
+        console.log(`[EnhancedRealTimeChat] Triggering markAsRead for message: ${latest.id}`);
+        markAsRead('dm', partnerId, latest.id);
+        
+        // Add to ref to prevent duplicate calls before postgres_changes arrives
+        toMark.forEach(m => markedReadRef.current.add(m.id));
+
+        // Instantly broadcast the read receipt to the sender
+        if (channelRef.current) {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'message_seen',
+            payload: { messageId: latest.id }
+          }).catch(console.error);
+        }
+      }
     }
-  }, [partnerId, messages.length, markAsRead]);
+  }, [partnerId, messages, markAsRead]);
 
 
   useEffect(() => {
@@ -281,13 +546,67 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     if (!roomId) return;
 
     const handleDirectMessageChange = async (payload: any) => {
+      console.log('[Realtime] EnhancedRealTimeChat received payload:', payload);
+      const msg = payload.new || payload.old;
+      if (msg && msg.channel_id !== roomId) return;
+      
       if (payload.eventType === 'INSERT') {
         const newMsg = payload.new;
         const isMyMessage = newMsg.sender_id === user?.id;
+        console.log('[Realtime] Processing new message:', newMsg.id);
+
+        let decryptedContent = newMsg.content;
+        if (newMsg.content?.includes('__e2ee')) {
+            if (privateKeyRef.current) {
+                try {
+                  decryptedContent = await decryptDirectMessage(newMsg.content, privateKeyRef.current, isMyMessage);
+                } catch (e) {
+                  console.error("Failed to decrypt real-time message", e);
+                }
+            } else {
+                decryptedContent = '🔒 Encrypted Message (Unlock required)';
+            }
+        }
 
         setMessages(prev => {
           const hasAlready = prev.some(m => m.id === newMsg.id);
           if (hasAlready) return prev;
+
+          // Ignore delayed broadcasts of our own optimistic messages to prevent duplicates
+          if (String(newMsg.id).startsWith('temp-') && isMyMessage) {
+            return prev;
+          }
+
+          // Deduplicate incoming broadcasts against existing real messages
+          if (String(newMsg.id).startsWith('temp-') && !isMyMessage) {
+            const hasRealMessage = prev.some(m => 
+              m.sender_id === newMsg.sender_id && 
+              m.content === decryptedContent && 
+              !String(m.id).startsWith('temp-') && 
+              Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000
+            );
+            if (hasRealMessage) {
+               return prev;
+            }
+          }
+
+          // Find if we have a pending optimistic message with matching content and update its ID
+          const pendingIdx = prev.findIndex(m => 
+            (String(m.id).startsWith('temp-')) && 
+            m.sender_id === newMsg.sender_id && 
+            m.content === decryptedContent
+          );
+
+          if (pendingIdx !== -1) {
+            const updated = [...prev];
+            updated[pendingIdx] = {
+              ...updated[pendingIdx],
+              id: newMsg.id,
+              created_at: newMsg.created_at,
+              content: decryptedContent
+            };
+            return updated;
+          }
 
           const sender_profile = isMyMessage ? {
             full_name: profile?.full_name || user?.user_metadata?.full_name || 'You',
@@ -314,7 +633,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
           const appended: Message = {
             id: newMsg.id,
-            content: newMsg.content,
+            content: decryptedContent,
             created_at: newMsg.created_at,
             sender_id: newMsg.sender_id,
             is_deleted: newMsg.is_deleted,
@@ -332,9 +651,24 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
       } else if (payload.eventType === 'UPDATE') {
         const updatedMsg = payload.new;
+        const isMyMessage = updatedMsg.sender_id === user?.id;
+
+        let decryptedContent = updatedMsg.content;
+        if (updatedMsg.content?.includes('__e2ee')) {
+            if (privateKeyRef.current) {
+                try {
+                  decryptedContent = await decryptDirectMessage(updatedMsg.content, privateKeyRef.current, isMyMessage);
+                } catch (e) {
+                  console.error("Failed to decrypt updated real-time message", e);
+                }
+            } else {
+                decryptedContent = '🔒 Encrypted Message (Unlock required)';
+            }
+        }
+
         setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
           ...m,
-          content: updatedMsg.content,
+          content: decryptedContent,
           is_deleted: updatedMsg.is_deleted,
           attachment_url: updatedMsg.attachment_url,
           attachment_type: updatedMsg.attachment_type,
@@ -348,22 +682,99 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       }
     };
 
+    const handleReactionChange = async (payload: any) => {
+      const reaction = payload.new || payload.old;
+      if (!reaction) return;
+      
+      if (payload.eventType === 'INSERT') {
+        const { data: profile } = await supabase.from('profiles').select('full_name, avatar_url').eq('id', reaction.user_id).maybeSingle();
+        setMessages(prev => {
+          const idx = prev.findIndex(m => m.id === reaction.message_id);
+          if (idx === -1) return prev;
+          const updated = [...prev];
+          let newReactions = [...(updated[idx].reactions || [])];
+          
+          // Remove any existing reactions from THIS user to prevent orphans from temp IDs
+          newReactions = newReactions.filter(r => r.user_id !== reaction.user_id);
+          
+          newReactions.push({ ...reaction, user_profile: profile || undefined });
+          
+          updated[idx] = { ...updated[idx], reactions: newReactions };
+          return updated;
+        });
+      } else if (payload.eventType === 'DELETE') {
+        // payload.old might only have { id }, so we must search messages for the matching reaction ID.
+        // If it comes from our broadcast, it has full context (message_id, user_id) so we aggressively wipe all reactions from that user.
+        setMessages(prev => {
+          const updated = [...prev];
+          
+          if (reaction.message_id && reaction.user_id) {
+            // Broadcast DELETE
+            const idx = updated.findIndex(m => m.id === reaction.message_id);
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).filter(r => r.user_id !== reaction.user_id) };
+            }
+          } else {
+            // Postgres DELETE
+            const idx = updated.findIndex(m => m.reactions?.some(r => r.id === reaction.id));
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).filter(r => r.id !== reaction.id) };
+            }
+          }
+          return updated;
+        });
+      }
+    };
+
     const channel = supabase
       .channel(`chat-v4-${roomId}`)
       .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
         handleDirectMessageChange
       )
       .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        { event: 'UPDATE', schema: 'public', table: 'direct_messages' },
         handleDirectMessageChange
       )
       .on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'direct_messages', filter: `channel_id=eq.${roomId}` },
+        { event: 'DELETE', schema: 'public', table: 'direct_messages' },
         handleDirectMessageChange
-      ).subscribe((status) => {
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'direct_message_reactions' },
+        handleReactionChange
+      )
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        const newMsg = payload.payload;
+        handleDirectMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
+      .on('broadcast', { event: 'reaction_update' }, (payload) => {
+        handleReactionChange(payload.payload);
+      })
+      .on('broadcast', { event: 'message_seen' }, (payload) => {
+        const { messageId } = payload.payload;
+        setMessages(prev => {
+          const targetIdx = prev.findIndex(m => m.id === messageId);
+          if (targetIdx === -1) return prev;
+          
+          const targetDate = new Date(prev[targetIdx].created_at).getTime();
+          let updated = false;
+          
+          const newMsgs = prev.map(m => {
+            if (m.sender_id === user?.id && !m.is_read && new Date(m.created_at).getTime() <= targetDate) {
+              updated = true;
+              return { ...m, is_read: true, read_at: new Date().toISOString() };
+            }
+            return m;
+          });
+          
+          return updated ? newMsgs : prev;
+        });
+      })
+      .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log('Successfully subscribed to real-time chat for room:', roomId);
+          channelRef.current = channel;
         } else if (status === 'CLOSED') {
           console.log('Real-time chat channel closed for room:', roomId);
         } else if (status === 'CHANNEL_ERROR') {
@@ -375,51 +786,39 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
     return () => {
       supabase.removeChannel(channel);
+      channelRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, user?.id]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 50MB", variant: "destructive" });
+    const { FILE_SIZE_LIMITS } = await import('@/utils/fileValidation');
+    const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+    const limit = type === 'video' ? FILE_SIZE_LIMITS.video : type === 'image' ? FILE_SIZE_LIMITS.image : FILE_SIZE_LIMITS.file;
+
+    if (file.size > limit) {
+      toast({ title: "File too large", description: `Maximum file size is ${Math.round(limit / (1024 * 1024))}MB`, variant: "destructive" });
       return;
     }
 
-    const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
     const preview = URL.createObjectURL(file);
     setSelectedFile({ file, preview, type });
   };
 
   const uploadMedia = async (file: File): Promise<string | null> => {
     try {
-      const isImage = file.type.startsWith('image/');
-      let fileToUpload = file;
-      
-      if (isImage) {
-        const { compressImage } = await import('@/utils/imageCompression');
-        fileToUpload = await compressImage(file);
-      }
-      
-      const fileExt = fileToUpload.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-      const filePath = `${user?.id}/${fileName}`;
+      const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+      const { url, error: uploadError } = await uploadFileToSupabase(
+        file,
+        'post-media',
+        user?.id || 'unknown'
+      );
 
-      const { error: uploadError } = await supabase.storage
-        .from('post-media')
-        .upload(filePath, fileToUpload, {
-          cacheControl: '31536000',
-          upsert: false
-        });
+      if (uploadError || !url) throw new Error(uploadError || 'Failed to upload media');
 
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('post-media')
-        .getPublicUrl(filePath);
-
-      return publicUrl;
+      return url;
     } catch (error) {
       console.error('Error uploading media:', error);
       toast({ title: "Upload failed", description: "Failed to upload media", variant: "destructive" });
@@ -443,25 +842,36 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
     const contentToSend = newMessage.trim() || (attachmentType === 'image' ? 'Shared an image' : attachmentType === 'video' ? 'Shared a video' : attachmentType ? 'Shared a file' : '');
 
-    const { error: sendError } = await supabase.from('direct_messages').insert({
-      content: contentToSend,
-      sender_id: user.id,
-      channel_id: roomId,
-      receiver_id: partnerId,
-      reply_to_id: replyingTo?.id || null,
-      attachment_url: attachmentUrl,
-      attachment_type: attachmentType
-    });
-    
-    if (sendError) {
-      console.error('Error sending message:', sendError);
-      setUploading(false);
-      return;
+    let finalContent = contentToSend;
+    if (keysLoaded && userPublicKey && partnerPublicKey) {
+      try {
+        finalContent = await encryptDirectMessage(contentToSend, userPublicKey, partnerPublicKey);
+      } catch (err) {
+        console.error('Error encrypting message payload:', err);
+      }
     }
 
-    // Immediately fetch to show the message instantly for the sender
-    fetchMessages(false);
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: contentToSend,
+      created_at: new Date().toISOString(),
+      sender_id: user.id,
+      reply_to_id: replyingTo?.id || null,
+      attachment_url: attachmentUrl,
+      attachment_type: attachmentType,
+      sender_profile: {
+        full_name: profile?.full_name || user?.user_metadata?.full_name || 'You',
+        avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || '',
+        is_verified: profile?.is_verified || false
+      },
+      is_read: false
+    };
 
+    setMessages(prev => [...prev, optimisticMessage]);
+    setTimeout(() => scrollToBottom(), 50);
+
+    // Clear input fields immediately for instant feel
     setNewMessage('');
     setSelectedFile(null);
     setUploading(false);
@@ -469,6 +879,59 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     setReplyingTo(null);
     if (!showEmojiPicker) {
       inputRef.current?.focus();
+    }
+
+    const { data: insertedMsg, error: sendError } = await supabase.from('direct_messages').insert({
+      content: finalContent,
+      sender_id: user.id,
+      channel_id: roomId,
+      receiver_id: partnerId,
+      reply_to_id: replyingTo?.id || null,
+      attachment_url: attachmentUrl,
+      attachment_type: attachmentType
+    }).select().single();
+    
+    if (sendError || !insertedMsg) {
+      console.error('Error sending message:', sendError);
+      // Remove optimistic message if insert failed
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      toast({ title: "Failed to send", description: "Message could not be saved to server", variant: "destructive" });
+      return;
+    }
+
+    // Update the local message ID from tempId to the real ID
+    setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: insertedMsg.id, created_at: insertedMsg.created_at } : m));
+
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: {
+          id: insertedMsg.id,
+          channel_id: roomId,
+          content: finalContent,
+          sender_id: user.id,
+          receiver_id: partnerId,
+          created_at: insertedMsg.created_at,
+          reply_to_id: replyingTo?.id || null,
+          attachment_url: attachmentUrl,
+          attachment_type: attachmentType
+        }
+      }).catch(console.error);
+    }
+
+    console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for send');
+    window.dispatchEvent(new CustomEvent('chat_list_update', {
+      detail: { senderId: user.id, receiverId: partnerId }
+    }));
+
+    if (globalUpdatesChannelRef.current) {
+      console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (send) to global updates channel');
+      globalUpdatesChannelRef.current.send({
+        type: 'broadcast',
+        event: 'chat_list_update',
+        payload: { senderId: user.id, receiverId: partnerId }
+      }).catch(console.error);
     }
   };
 
@@ -485,6 +948,18 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
       toast({ title: "Error", description: "Failed to undo message", variant: "destructive" });
     } else {
       setMessages(prev => prev.filter(m => m.id !== messageId));
+      console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for undo');
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+      if (globalUpdatesChannelRef.current) {
+        console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (undo) to global updates channel');
+        globalUpdatesChannelRef.current.send({
+          type: 'broadcast',
+          event: 'chat_list_update',
+          payload: { senderId: user.id, receiverId: partnerId }
+        }).catch(console.error);
+      }
     }
   };
 
@@ -542,13 +1017,31 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
     const { error } = await supabase
       .from('direct_messages')
       .delete()
-      .eq('channel_id', roomId);
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
     
     if (error) {
       console.error('Error deleting chat history:', error);
       alert('Failed to delete history. Please try again.');
     } else {
       setMessages([]);
+      
+      // Dispatch local event for instant UI update
+      console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for delete');
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+
+      // Broadcast globally to other sessions
+      if (globalUpdatesChannelRef.current) {
+        console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (delete) to global updates channel');
+        globalUpdatesChannelRef.current.send({
+          type: 'broadcast',
+          event: 'chat_list_update',
+          payload: { senderId: user.id, receiverId: partnerId }
+        }).catch(console.error);
+      }
+
+      onBackClick();
     }
   };
 
@@ -582,6 +1075,100 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
   const lastReadIndexSentByMe = visibleMessages.reduce((lastIdx, msg, idx) => 
     (msg.sender_id === user?.id && (msg.is_read || msg.read_at)) ? idx : lastIdx, -1);
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    
+    // Prevent concurrent reaction clicks for the same message to avoid duplicates
+    if (reactionLocksRef.current.has(messageId)) return;
+    reactionLocksRef.current.add(messageId);
+    
+    try {
+      // Get freshest state
+      let currentReactions: MessageReaction[] = [];
+      setMessages(prev => {
+        const msg = prev.find(m => m.id === messageId);
+        if (msg) currentReactions = msg.reactions || [];
+        return prev;
+      });
+      
+      const existingReaction = currentReactions.find(r => r.emoji === emoji && r.user_id === user.id);
+      const isTogglingOff = !!existingReaction;
+
+      // Optimistic UI Update
+      const optimisticId = `temp-react-${Date.now()}`;
+      setMessages(prev => {
+        const idx = prev.findIndex(m => m.id === messageId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        let newReactions = [...(updated[idx].reactions || [])].filter(r => r.user_id !== user.id);
+        
+        if (!isTogglingOff) {
+          newReactions.push({
+             id: optimisticId,
+             message_id: messageId,
+             user_id: user.id,
+             emoji: emoji,
+             created_at: new Date().toISOString(),
+             user_profile: profile ? { full_name: profile.full_name || '', avatar_url: profile.avatar_url || '' } : undefined
+          });
+        }
+        updated[idx] = { ...updated[idx], reactions: newReactions };
+        return updated;
+      });
+
+      // Broadcast optimistic update
+      if (channelRef.current) {
+         channelRef.current.send({
+            type: 'broadcast',
+            event: 'reaction_update',
+            payload: { 
+               eventType: isTogglingOff ? 'DELETE' : 'INSERT', 
+               [isTogglingOff ? 'old' : 'new']: isTogglingOff ? existingReaction : { id: optimisticId, message_id: messageId, user_id: user.id, emoji }
+            }
+         }).catch(console.error);
+      }
+
+      // Database Operations
+      // Always clear existing reactions for this user & message to avoid conflicts
+      await supabase.from('direct_message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id);
+
+      if (!isTogglingOff) {
+        // Insert new reaction
+        const { data, error } = await supabase.from('direct_message_reactions').insert({
+          message_id: messageId,
+          user_id: user.id,
+          emoji: emoji
+        }).select().single();
+        
+        if (error) {
+          console.error('Error adding reaction', error);
+          // Rollback UI
+          setMessages(prev => {
+            const idx = prev.findIndex(m => m.id === messageId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], reactions: currentReactions };
+            return updated;
+          });
+        } else if (data) {
+          // Update temp ID with real ID
+          setMessages(prev => {
+             const idx = prev.findIndex(m => m.id === messageId);
+             if (idx === -1) return prev;
+             const updated = [...prev];
+             updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).map(r => r.id === optimisticId ? { ...r, id: data.id } : r) };
+             return updated;
+          });
+        }
+      }
+    } finally {
+      reactionLocksRef.current.delete(messageId);
+    }
+  };
 
 
   return (
@@ -639,22 +1226,25 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 size="icon" 
                 onClick={handleStartCall}
                 className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted"
-                title="Voice Call"
-              >
-                <Phone className="h-5 w-5" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={handleStartCall}
-                className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted"
-                title="Video Call"
+                title="Start Call"
               >
                 <Video className="h-5 w-5" />
               </Button>
             </div>
           )}
           
+          <div className="h-4 w-[1px] bg-border mx-1" />
+
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            onClick={handleDeleteChat}
+            className="h-9 w-9 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+            title="Delete Chat"
+          >
+            <Trash2 className="h-5 w-5" />
+          </Button>
+
           <div className="h-4 w-[1px] bg-border mx-1" />
           
           <DropdownMenu>
@@ -746,55 +1336,55 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     <AvatarImage src={message.sender_profile?.avatar_url} />
                     <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
                   </Avatar>
-                  <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} ${message.content.includes('_SHARE::') ? 'max-w-full' : 'max-w-[85%]'}`}>
-                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative`}>
-                      <div className={cn(
-                        "relative transition-all duration-300",
-                        message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
-                        (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.startsWith('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent rounded-xl border border-border/10 overflow-hidden shadow-xl w-full max-w-[180px] sm:max-w-[240px] min-w-[150px] sm:min-w-[200px]" :
-                        isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
-                        isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md" : 
-                        "bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md"
-                      )}>
-                        {!message.is_deleted && (
-                          <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-0 group-hover:opacity-100 transition-opacity z-10`}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
-                                  <MoreVertical className="h-4 w-4" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                  <Reply className="h-4 w-4 mr-2" /> Reply
-                                </DropdownMenuItem>
-                                {isSender && (
-                                  <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
-                                    <Trash2 className="h-4 w-4 mr-2" /> Undo
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
-                                  <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        )}
+                  <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
+                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
+                      {/* Swipe to reply indicator icon behind message */}
+                      {swipeMessageId === message.id && swipeOffset > 0 && (
+                        <div 
+                          className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
+                          style={{
+                            opacity: Math.min(swipeOffset / 55, 1),
+                            transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
+                          }}
+                        >
+                          <Reply className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                      <div 
+                        className="relative select-none transition-transform duration-200"
+                        style={{
+                          transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          if (!message.is_deleted) {
+                            handleToggleReaction(message.id, '❤️');
+                          }
+                        }}
+                        onTouchStart={handleTouchStart(message.id, !!message.is_deleted)}
+                        onTouchMove={handleTouchMove(message.id)}
+                        onTouchEnd={handleTouchEnd(message)}
+                      >
+                        <div className={cn(
+                          "relative transition-all duration-300",
+                          message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
+                          (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.includes('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
+                          isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
+                          isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md" : 
+                          "bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md"
+                        )}>
+
                         {message.replied_to_message && !message.is_deleted && (
-                          <div className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 ${isSender ? 'bg-primary-foreground/10 border-primary-foreground/30 text-primary-foreground' : 'bg-muted/50 border-primary/30 text-foreground'}`}>
-                            <div className={`font-semibold text-[10px] mb-1 ${getUserColor(message.replied_to_message.sender_profile?.full_name || 'User')}`}>
+                          <div 
+                            onClick={() => scrollToMessage(message.replied_to_message!.id)}
+                            className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                          >
+                            <div className={`font-semibold text-[10px] mb-0.5 ${isSender ? 'text-white font-bold' : getUserColor(message.replied_to_message.sender_profile?.full_name || 'User')}`}>
                               {message.replied_to_message.sender_profile?.full_name || 'User'}
                             </div>
-                            <div className="opacity-90 line-clamp-1">
+                            <div className={`opacity-80 line-clamp-1 ${isSender ? 'text-white/80' : 'text-muted-foreground'}`}>
                               {message.replied_to_message.is_deleted ? <em>This message was deleted</em> : (
-                                message.replied_to_message.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                                message.replied_to_message.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                                message.replied_to_message.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                                message.replied_to_message.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                                message.replied_to_message.content.startsWith('JOB_SHARE::') ? 'Shared a job' :
-                                message.replied_to_message.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                                message.replied_to_message.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                                message.replied_to_message.content
+                                getMessagePreviewText(message.replied_to_message.content)
                               )}
                             </div>
                           </div>
@@ -811,7 +1401,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                 (message.attachment_type === 'image' || message.attachment_type === 'video') ? "" : "bg-black/5 dark:bg-white/5 border border-white/10"
                               )}>
                                 {message.attachment_type === 'image' ? (
-                                  <img 
+                                  <CachedImage 
                                     src={message.attachment_url} 
                                     alt="Attachment" 
                                     className="max-w-full h-auto max-h-[300px] object-cover cursor-pointer hover:scale-[1.02] transition-transform duration-300"
@@ -819,7 +1409,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                   />
                                 ) : message.attachment_type === 'video' ? (
                                   <div className="relative group cursor-pointer" onClick={() => message.attachment_url && setSelectedImage(message.attachment_url)}>
-                                    <video 
+                                    <CachedVideo 
                                       src={message.attachment_url} 
                                       className="max-w-full h-auto max-h-[300px]"
                                     />
@@ -962,23 +1552,145 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         )}
                       </div>
 
+                      {/* Reactions Pill */}
+                      {message.reactions && message.reactions.length > 0 && (
+                        <div className={cn(
+                          "absolute -bottom-3 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-sm",
+                          isSender ? "right-2" : "left-2"
+                        )}>
+                          {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
+                             const count = message.reactions!.filter(r => r.emoji === emoji).length;
+                             const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
+                             return (
+                               <button 
+                                  key={emoji} 
+                                  onClick={() => handleToggleReaction(message.id, emoji)}
+                                  className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors", hasReacted && "bg-primary/10 text-primary")}
+                               >
+                                 <span>{emoji}</span>
+                                 {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
+                               </button>
+                             );
+                          })}
+                        </div>
+                      )}
+                      {/* Mobile floating reactions picker */}
+                      {activeMobileReactionMessageId === message.id && (
+                        <div 
+                          className={cn(
+                            "absolute -top-12 z-50 flex items-center gap-1 p-1.5 rounded-full border border-border/50 shadow-xl bg-background/95 backdrop-blur-xl animate-in zoom-in-95 duration-100",
+                            isSender ? "right-0" : "left-0"
+                          )}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          {QUICK_REACTIONS.map(emoji => (
+                            <button 
+                              key={emoji} 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleReaction(message.id, emoji);
+                                setActiveMobileReactionMessageId(null);
+                              }} 
+                              className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMobileReactionMessageId(null);
+                            }}
+                            className="p-1 text-muted-foreground hover:text-foreground rounded-full"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Action Buttons (Absolute) */}
                       {!message.is_deleted && (
-                        <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
-                          {formatTimestamp(message.created_at)}
-                        </span>
+                        <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5`}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                                <Smile className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl">
+                                {QUICK_REACTIONS.map(emoji => (
+                                  <button 
+                                    key={emoji} 
+                                    onClick={() => handleToggleReaction(message.id, emoji)} 
+                                    className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+                                <MoreVertical className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
+                              {isSender && (
+                                <DropdownMenuItem onClick={() => {
+                                  setInfoMessage(message);
+                                  setShowInfoDialog(true);
+                                }}>
+                                  <Info className="h-4 w-4 mr-2" /> Info
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                <Reply className="h-4 w-4 mr-2" /> Reply
+                              </DropdownMenuItem>
+                              {isSender && (
+                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
+                                  <Trash2 className="h-4 w-4 mr-2" /> Undo
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
+                                  <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
+                              </DropdownMenuItem>
+                              {!isSender && (
+                                <DropdownMenuItem onClick={() => setReportingMessage({ id: message.id, content: message.content })} className="text-destructive focus:bg-red-500/10">
+                                  <Flag className="h-4 w-4 mr-2" /> Report Message
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       )}
                     </div>
+
+                    {!message.is_deleted && (
+                      <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
+                        {formatTimestamp(message.created_at)}
+                      </span>
+                    )}
                   </div>
                 </div>
+              </div>
                 {isSender && isLatestRead && (
                   <div className="flex justify-end pr-10 mb-4 -mt-1.5">
-                    <span className="text-[10px] text-primary/60 font-medium tracking-tight animate-in fade-in slide-in-from-top-1 duration-500">
+                    <span 
+                      className="text-[10px] text-primary/60 font-medium tracking-tight cursor-pointer hover:underline animate-in fade-in slide-in-from-top-1 duration-500"
+                      onClick={() => {
+                        setInfoMessage(message);
+                        setShowInfoDialog(true);
+                      }}
+                    >
                       {partnerId ? 'Seen' : `Seen by ${partnerName}`}
                     </span>
                   </div>
                 )}
-                </Fragment>
-                );
+              </Fragment>
+              );
             })}
             <div ref={messagesEndRef} />
           </div>
@@ -990,14 +1702,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     Replying to {replyingTo.sender_profile?.full_name || 'User'}
                   </div>
                   <div className="text-muted-foreground truncate">
-                    {replyingTo.content.startsWith('POST_SHARE::') ? 'Shared a post' :
-                     replyingTo.content.startsWith('MARKETPLACE_SHARE::') ? 'Shared a listing' :
-                     replyingTo.content.startsWith('ANNOUNCEMENT_SHARE::') ? 'Shared an announcement' :
-                     replyingTo.content.startsWith('VENDOR_SHARE::') ? 'Shared a vendor' :
-                     replyingTo.content.startsWith('JOB_SHARE::') ? 'Shared a job' :
-                     replyingTo.content.startsWith('PROJECT_SHARE::') ? 'Shared a project' :
-                     replyingTo.content.startsWith('DISCUSSION_SHARE::') ? 'Shared a discussion' :
-                     replyingTo.content}
+                    {getMessagePreviewText(replyingTo.content)}
                   </div>
                 </div>
                 <button 
@@ -1013,9 +1718,9 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               <div className="p-3 bg-muted/20 border-b border-border flex items-center gap-3 animate-in slide-in-from-bottom-2 duration-300">
                 <div className="relative w-20 h-20 rounded-xl overflow-hidden border border-white/10 shadow-xl bg-black">
                   {selectedFile.type === 'image' ? (
-                    <img src={selectedFile.preview} alt="Preview" className="w-full h-full object-cover" />
+                    <CachedImage src={selectedFile.preview} fallbackSrc={selectedFile.preview} alt="Preview" className="w-full h-full object-cover" />
                   ) : selectedFile.type === 'video' ? (
-                    <video src={selectedFile.preview} className="w-full h-full object-cover" />
+                    <CachedVideo src={selectedFile.preview} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <FileText className="h-8 w-8 text-primary" />
@@ -1175,6 +1880,58 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 <X className="h-4 w-4" />
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {reportingMessage && (
+        <MessageReportDialog
+          isOpen={!!reportingMessage}
+          onOpenChange={(open) => !open && setReportingMessage(null)}
+          targetType="dm"
+          messageId={reportingMessage.id}
+          channelId={roomId}
+          decryptedContent={reportingMessage.content}
+        />
+      )}
+
+      {/* Message Info Dialog */}
+      <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Message Info</DialogTitle>
+            <DialogDescription>
+              Details of who has seen this message.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[300px] overflow-y-auto py-2 divide-y divide-border/30">
+            {infoMessage && (() => {
+              const isRead = infoMessage.is_read || !!infoMessage.read_at;
+              const readTime = infoMessage.read_at ? new Date(infoMessage.read_at) : null;
+              
+              return (
+                <div className="flex items-center justify-between py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={partnerAvatarUrl} />
+                      <AvatarFallback className="text-xs bg-secondary text-secondary-foreground font-bold">
+                        {partnerName?.charAt(0) || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-semibold leading-none mb-1">
+                        {partnerName}
+                      </p>
+                      <p className={cn("text-[10px] leading-none font-medium", isRead ? "text-primary" : "text-muted-foreground")}>
+                        {isRead ? "Read" : "Delivered"}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground font-medium">
+                    {isRead && readTime ? format(readTime, 'p') : format(new Date(infoMessage.created_at), 'p')}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>

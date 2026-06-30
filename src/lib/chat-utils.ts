@@ -1,6 +1,18 @@
+export const generateDirectRoomId = (userId1: string, userId2: string): string => {
+    const [id1, id2] = [userId1, userId2].sort();
+    if (id1?.length === 36 && id2?.length === 36) {
+        return id1.slice(0, 18) + id2.slice(18);
+    }
+    return `${id1}-${id2}`.slice(0, 36);
+};
 
 export const getDisplayMessage = (content: string) => {
     if (!content) return '';
+    
+    // Check for E2EE payload structure
+    if (content.includes('__e2ee') || content.includes('__e2ee_group')) {
+        return '🔒 Encrypted Message';
+    }
     
     // Check for standard shared content format: TYPE_SHARE::JSON_DATA
     if (content.includes('_SHARE::')) {

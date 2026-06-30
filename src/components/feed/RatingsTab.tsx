@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import FeedRatingCard from "./FeedRatingCard";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -26,12 +27,13 @@ interface RatingItem extends TMDBContent {
 // CategoryRow — renders a single horizontally-scrollable row
 // ---------------------------------------------------------------
 interface CategoryRowProps {
+  categoryId?: string;
   title: string;
   items: RatingItem[];
   onRate: (id: string, rating: number) => void;
 }
 
-const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
+const CategoryRow = ({ categoryId, title, items, onRate }: CategoryRowProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const scroll = (direction: 'left' | 'right') => {
@@ -48,19 +50,26 @@ const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
     <div className="space-y-4 py-6">
       <div className="flex items-center justify-between px-4 md:px-0">
         <h3 className="text-xl md:text-2xl font-bold text-foreground tracking-tight">{title}</h3>
-        <div className="hidden md:flex gap-2">
-          <button
-            onClick={() => scroll('left')}
-            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </button>
-          <button
-            onClick={() => scroll('right')}
-            className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
+        <div className="flex items-center gap-4">
+          {categoryId && (
+            <Link to={`/category/${categoryId}`} className="text-sm font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1">
+              View All <ChevronRight className="h-4 w-4" />
+            </Link>
+          )}
+          <div className="hidden md:flex gap-2">
+            <button
+              onClick={() => scroll('left')}
+              className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              onClick={() => scroll('right')}
+              className="p-2 rounded-full bg-secondary/50 hover:bg-secondary text-foreground transition-colors"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -84,6 +93,7 @@ const CategoryRow = ({ title, items, onRate }: CategoryRowProps) => {
                   overview: item.overview,
                   original_language: item.original_language
                 }}
+                contentType={item.name && !item.title ? 'tv' : 'movie'}
                 onRate={(rating) => onRate(item.id.toString(), rating)}
                 variant="vertical"
               />
@@ -113,6 +123,8 @@ const CategorySkeleton = () => (
 // Main RatingsTab — sequential one-at-a-time loading (proven on mobile data)
 // ---------------------------------------------------------------
 const RatingsTab = () => {
+  const isMounted = useRef(true);
+  
   // State for every category
   const [trending, setTrending] = useState<RatingItem[]>([]);
   const [topRated, setTopRated] = useState<RatingItem[]>([]);
@@ -289,53 +301,57 @@ const RatingsTab = () => {
     }
 
     // Phase 1: High Priority (what user sees first)
-    await fetchCategoryData(fetchTrending, setTrending, 'trending');
-    await fetchCategoryData(fetchNowPlaying, setNowPlaying, 'nowPlaying');
+    if (isMounted.current) await fetchCategoryData(fetchTrending, setTrending, 'trending');
+    if (isMounted.current) await fetchCategoryData(fetchNowPlaying, setNowPlaying, 'nowPlaying');
 
     // Phase 2: Discovery
-    await fetchCategoryData(async () => {
+    if (isMounted.current) await fetchCategoryData(async () => {
       const [movies, tv] = await Promise.all([fetchUpcoming(), fetchUpcomingTv()]);
       return [...movies, ...tv].sort(() => Math.random() - 0.5);
     }, setUpcoming, 'upcoming');
 
-    await fetchCategoryData(fetchIndianTv, setIndianTv, 'indianTv');
-    await fetchCategoryData(fetchIndianAction, setIndianAction, 'indianAction');
-    await fetchCategoryData(fetchIndianComedy, setIndianComedy, 'indianComedy');
-    await fetchCategoryData(fetchIndianHorror, setIndianHorror, 'indianHorror');
-    await fetchCategoryData(fetchIndianMovies, setIndian, 'indian');
+    if (isMounted.current) await fetchCategoryData(fetchIndianTv, setIndianTv, 'indianTv');
+    if (isMounted.current) await fetchCategoryData(fetchIndianAction, setIndianAction, 'indianAction');
+    if (isMounted.current) await fetchCategoryData(fetchIndianComedy, setIndianComedy, 'indianComedy');
+    if (isMounted.current) await fetchCategoryData(fetchIndianHorror, setIndianHorror, 'indianHorror');
+    if (isMounted.current) await fetchCategoryData(fetchIndianMovies, setIndian, 'indian');
 
     // Phase 3: Language rows
-    await fetchCategoryData(fetchTeluguMovies, setTelugu, 'telugu');
-    await fetchCategoryData(fetchHindiMovies, setHindi, 'hindi');
-    await fetchCategoryData(fetchTamilMovies, setTamil, 'tamil');
-    await fetchCategoryData(fetchMalayalamMovies, setMalayalam, 'malayalam');
-    await fetchCategoryData(fetchKannadaMovies, setKannada, 'kannada');
+    if (isMounted.current) await fetchCategoryData(fetchTeluguMovies, setTelugu, 'telugu');
+    if (isMounted.current) await fetchCategoryData(fetchHindiMovies, setHindi, 'hindi');
+    if (isMounted.current) await fetchCategoryData(fetchTamilMovies, setTamil, 'tamil');
+    if (isMounted.current) await fetchCategoryData(fetchMalayalamMovies, setMalayalam, 'malayalam');
+    if (isMounted.current) await fetchCategoryData(fetchKannadaMovies, setKannada, 'kannada');
 
     // Phase 4: Global genres
-    await fetchCategoryData(fetchTopRated, setTopRated, 'topRated');
-    await fetchCategoryData(fetchActionMovies, setAction, 'action');
-    await fetchCategoryData(fetchComedyMovies, setComedy, 'comedy');
-    await fetchCategoryData(fetchHorrorMovies, setHorror, 'horror');
-    await fetchCategoryData(fetchSciFiMovies, setSciFi, 'scifi');
-    await fetchCategoryData(fetchRomanceMovies, setRomance, 'romance');
-    await fetchCategoryData(() => fetchTvSeries(), setTvSeries, 'tv');
+    if (isMounted.current) await fetchCategoryData(fetchTopRated, setTopRated, 'topRated');
+    if (isMounted.current) await fetchCategoryData(fetchActionMovies, setAction, 'action');
+    if (isMounted.current) await fetchCategoryData(fetchComedyMovies, setComedy, 'comedy');
+    if (isMounted.current) await fetchCategoryData(fetchHorrorMovies, setHorror, 'horror');
+    if (isMounted.current) await fetchCategoryData(fetchSciFiMovies, setSciFi, 'scifi');
+    if (isMounted.current) await fetchCategoryData(fetchRomanceMovies, setRomance, 'romance');
+    if (isMounted.current) await fetchCategoryData(() => fetchTvSeries(), setTvSeries, 'tv');
 
     // Phase 5: Extended genres
-    await fetchCategoryData(fetchAnime, setAnime, 'anime');
-    await fetchCategoryData(fetchDocumentaries, setDocumentaries, 'documentaries');
-    await fetchCategoryData(fetchMystery, setMystery, 'mystery');
-    await fetchCategoryData(fetchSciFiFantasy, setSciFiFantasy, 'scifiFantasy');
-    await fetchCategoryData(fetchFamilyMovies, setFamily, 'family');
-    await fetchCategoryData(fetchAnimation, setAnimation, 'animation');
-    await fetchCategoryData(fetchAdventure, setAdventure, 'adventure');
-    await fetchCategoryData(fetchCrimeMovies, setCrime, 'crime');
-    await fetchCategoryData(fetchWarMovies, setWar, 'war');
-    await fetchCategoryData(fetchMusicals, setMusicals, 'musicals');
-    await fetchCategoryData(fetchIndianFamily, setIndianFamily, 'indianFamily');
+    if (isMounted.current) await fetchCategoryData(fetchAnime, setAnime, 'anime');
+    if (isMounted.current) await fetchCategoryData(fetchDocumentaries, setDocumentaries, 'documentaries');
+    if (isMounted.current) await fetchCategoryData(fetchMystery, setMystery, 'mystery');
+    if (isMounted.current) await fetchCategoryData(fetchSciFiFantasy, setSciFiFantasy, 'scifiFantasy');
+    if (isMounted.current) await fetchCategoryData(fetchFamilyMovies, setFamily, 'family');
+    if (isMounted.current) await fetchCategoryData(fetchAnimation, setAnimation, 'animation');
+    if (isMounted.current) await fetchCategoryData(fetchAdventure, setAdventure, 'adventure');
+    if (isMounted.current) await fetchCategoryData(fetchCrimeMovies, setCrime, 'crime');
+    if (isMounted.current) await fetchCategoryData(fetchWarMovies, setWar, 'war');
+    if (isMounted.current) await fetchCategoryData(fetchMusicals, setMusicals, 'musicals');
+    if (isMounted.current) await fetchCategoryData(fetchIndianFamily, setIndianFamily, 'indianFamily');
   };
 
   useEffect(() => {
+    isMounted.current = true;
     loadAllDataSequentially();
+    return () => {
+      isMounted.current = false;
+    };
   }, [user?.id]);
 
   // ---------------------------------------------------------------
@@ -439,37 +455,37 @@ const RatingsTab = () => {
         {/* Discovery Grid — each row appears as soon as it loads */}
         <div className={`${searchQuery.trim() !== "" ? 'opacity-40 grayscale-[0.5]' : 'opacity-100'} transition-all duration-700 space-y-2`}>
           {loadingStates.platformCinema ? <CategorySkeleton /> : <CategoryRow title="Native Cinema & Originals" items={platformCinema} onRate={handleRate} />}
-          {loadingStates.trending ? <CategorySkeleton /> : <CategoryRow title="Trending Now" items={trending} onRate={handleRate} />}
-          {loadingStates.nowPlaying ? <CategorySkeleton /> : <CategoryRow title="In Cinemas & Streaming Now" items={nowPlaying} onRate={handleRate} />}
-          {loadingStates.upcoming ? <CategorySkeleton /> : <CategoryRow title="Upcoming Masterpieces" items={upcoming} onRate={handleRate} />}
-          {loadingStates.tv ? <CategorySkeleton /> : <CategoryRow title="Popular TV Series (Global)" items={tvSeries} onRate={handleRate} />}
-          {loadingStates.indianTv ? <CategorySkeleton /> : <CategoryRow title="Indian TV Originals" items={indianTv} onRate={handleRate} />}
-          {loadingStates.indianAction ? <CategorySkeleton /> : <CategoryRow title="Indian Action Thrillers" items={indianAction} onRate={handleRate} />}
-          {loadingStates.indianComedy ? <CategorySkeleton /> : <CategoryRow title="Indian Comedy & Drama" items={indianComedy} onRate={handleRate} />}
-          {loadingStates.indianHorror ? <CategorySkeleton /> : <CategoryRow title="Indian Horror & Mystery" items={indianHorror} onRate={handleRate} />}
-          {loadingStates.indianFamily ? <CategorySkeleton /> : <CategoryRow title="Indian Family Cinema" items={indianFamily} onRate={handleRate} />}
-          {loadingStates.indian ? <CategorySkeleton /> : <CategoryRow title="Top Rated Indian Cinema" items={indian} onRate={handleRate} />}
-          {loadingStates.telugu ? <CategorySkeleton /> : <CategoryRow title="Telugu Blockbusters" items={telugu} onRate={handleRate} />}
-          {loadingStates.hindi ? <CategorySkeleton /> : <CategoryRow title="Hindi Cinematic Excellence" items={hindi} onRate={handleRate} />}
-          {loadingStates.tamil ? <CategorySkeleton /> : <CategoryRow title="Tamil Masterpieces" items={tamil} onRate={handleRate} />}
-          {loadingStates.malayalam ? <CategorySkeleton /> : <CategoryRow title="Malayalam Art & Cinema" items={malayalam} onRate={handleRate} />}
-          {loadingStates.kannada ? <CategorySkeleton /> : <CategoryRow title="Kannada Creative Success" items={kannada} onRate={handleRate} />}
-          {loadingStates.anime ? <CategorySkeleton /> : <CategoryRow title="Anime Collection" items={anime} onRate={handleRate} />}
-          {loadingStates.scifi ? <CategorySkeleton /> : <CategoryRow title="Sci-Fi Masterpieces" items={scifi} onRate={handleRate} />}
-          {loadingStates.scifiFantasy ? <CategorySkeleton /> : <CategoryRow title="Sci-Fi & Fantasy (Global)" items={scifiFantasy} onRate={handleRate} />}
-          {loadingStates.action ? <CategorySkeleton /> : <CategoryRow title="Action Thrillers (Global)" items={action} onRate={handleRate} />}
-          {loadingStates.horror ? <CategorySkeleton /> : <CategoryRow title="Horror Hits (Global)" items={horror} onRate={handleRate} />}
-          {loadingStates.mystery ? <CategorySkeleton /> : <CategoryRow title="Mystery Masterpieces" items={mystery} onRate={handleRate} />}
-          {loadingStates.adventure ? <CategorySkeleton /> : <CategoryRow title="Adventure Epics" items={adventure} onRate={handleRate} />}
-          {loadingStates.animation ? <CategorySkeleton /> : <CategoryRow title="Animation Classics" items={animation} onRate={handleRate} />}
-          {loadingStates.crime ? <CategorySkeleton /> : <CategoryRow title="Crime Thrillers" items={crime} onRate={handleRate} />}
-          {loadingStates.war ? <CategorySkeleton /> : <CategoryRow title="War Epics" items={war} onRate={handleRate} />}
-          {loadingStates.comedy ? <CategorySkeleton /> : <CategoryRow title="Comedy Hits (Global)" items={comedy} onRate={handleRate} />}
-          {loadingStates.romance ? <CategorySkeleton /> : <CategoryRow title="Romance Classics" items={romance} onRate={handleRate} />}
-          {loadingStates.musicals ? <CategorySkeleton /> : <CategoryRow title="Musicals & Music" items={musicals} onRate={handleRate} />}
-          {loadingStates.family ? <CategorySkeleton /> : <CategoryRow title="Family Favorites (Global)" items={family} onRate={handleRate} />}
-          {loadingStates.documentaries ? <CategorySkeleton /> : <CategoryRow title="Documentary Masterpieces" items={documentaries} onRate={handleRate} />}
-          {loadingStates.topRated ? <CategorySkeleton /> : <CategoryRow title="Top Rated Global" items={topRated} onRate={handleRate} />}
+          {loadingStates.trending ? <CategorySkeleton /> : <CategoryRow categoryId="trending" title="Trending Now" items={trending} onRate={handleRate} />}
+          {loadingStates.nowPlaying ? <CategorySkeleton /> : <CategoryRow categoryId="nowPlaying" title="In Cinemas & Streaming Now" items={nowPlaying} onRate={handleRate} />}
+          {loadingStates.upcoming ? <CategorySkeleton /> : <CategoryRow categoryId="upcoming" title="Upcoming Masterpieces" items={upcoming} onRate={handleRate} />}
+          {loadingStates.tv ? <CategorySkeleton /> : <CategoryRow categoryId="tv" title="Popular TV Series (Global)" items={tvSeries} onRate={handleRate} />}
+          {loadingStates.indianTv ? <CategorySkeleton /> : <CategoryRow categoryId="indianTv" title="Indian TV Originals" items={indianTv} onRate={handleRate} />}
+          {loadingStates.indianAction ? <CategorySkeleton /> : <CategoryRow categoryId="indianAction" title="Indian Action Thrillers" items={indianAction} onRate={handleRate} />}
+          {loadingStates.indianComedy ? <CategorySkeleton /> : <CategoryRow categoryId="indianComedy" title="Indian Comedy & Drama" items={indianComedy} onRate={handleRate} />}
+          {loadingStates.indianHorror ? <CategorySkeleton /> : <CategoryRow categoryId="indianHorror" title="Indian Horror & Mystery" items={indianHorror} onRate={handleRate} />}
+          {loadingStates.indianFamily ? <CategorySkeleton /> : <CategoryRow categoryId="indianFamily" title="Indian Family Cinema" items={indianFamily} onRate={handleRate} />}
+          {loadingStates.indian ? <CategorySkeleton /> : <CategoryRow categoryId="indian" title="Top Rated Indian Cinema" items={indian} onRate={handleRate} />}
+          {loadingStates.telugu ? <CategorySkeleton /> : <CategoryRow categoryId="telugu" title="Telugu Blockbusters" items={telugu} onRate={handleRate} />}
+          {loadingStates.hindi ? <CategorySkeleton /> : <CategoryRow categoryId="hindi" title="Hindi Cinematic Excellence" items={hindi} onRate={handleRate} />}
+          {loadingStates.tamil ? <CategorySkeleton /> : <CategoryRow categoryId="tamil" title="Tamil Masterpieces" items={tamil} onRate={handleRate} />}
+          {loadingStates.malayalam ? <CategorySkeleton /> : <CategoryRow categoryId="malayalam" title="Malayalam Art & Cinema" items={malayalam} onRate={handleRate} />}
+          {loadingStates.kannada ? <CategorySkeleton /> : <CategoryRow categoryId="kannada" title="Kannada Creative Success" items={kannada} onRate={handleRate} />}
+          {loadingStates.anime ? <CategorySkeleton /> : <CategoryRow categoryId="anime" title="Anime Collection" items={anime} onRate={handleRate} />}
+          {loadingStates.scifi ? <CategorySkeleton /> : <CategoryRow categoryId="scifi" title="Sci-Fi Masterpieces" items={scifi} onRate={handleRate} />}
+          {loadingStates.scifiFantasy ? <CategorySkeleton /> : <CategoryRow categoryId="scifiFantasy" title="Sci-Fi & Fantasy (Global)" items={scifiFantasy} onRate={handleRate} />}
+          {loadingStates.action ? <CategorySkeleton /> : <CategoryRow categoryId="action" title="Action Thrillers (Global)" items={action} onRate={handleRate} />}
+          {loadingStates.horror ? <CategorySkeleton /> : <CategoryRow categoryId="horror" title="Horror Hits (Global)" items={horror} onRate={handleRate} />}
+          {loadingStates.mystery ? <CategorySkeleton /> : <CategoryRow categoryId="mystery" title="Mystery Masterpieces" items={mystery} onRate={handleRate} />}
+          {loadingStates.adventure ? <CategorySkeleton /> : <CategoryRow categoryId="adventure" title="Adventure Epics" items={adventure} onRate={handleRate} />}
+          {loadingStates.animation ? <CategorySkeleton /> : <CategoryRow categoryId="animation" title="Animation Classics" items={animation} onRate={handleRate} />}
+          {loadingStates.crime ? <CategorySkeleton /> : <CategoryRow categoryId="crime" title="Crime Thrillers" items={crime} onRate={handleRate} />}
+          {loadingStates.war ? <CategorySkeleton /> : <CategoryRow categoryId="war" title="War Epics" items={war} onRate={handleRate} />}
+          {loadingStates.comedy ? <CategorySkeleton /> : <CategoryRow categoryId="comedy" title="Comedy Hits (Global)" items={comedy} onRate={handleRate} />}
+          {loadingStates.romance ? <CategorySkeleton /> : <CategoryRow categoryId="romance" title="Romance Classics" items={romance} onRate={handleRate} />}
+          {loadingStates.musicals ? <CategorySkeleton /> : <CategoryRow categoryId="musicals" title="Musicals & Music" items={musicals} onRate={handleRate} />}
+          {loadingStates.family ? <CategorySkeleton /> : <CategoryRow categoryId="family" title="Family Favorites (Global)" items={family} onRate={handleRate} />}
+          {loadingStates.documentaries ? <CategorySkeleton /> : <CategoryRow categoryId="documentaries" title="Documentary Masterpieces" items={documentaries} onRate={handleRate} />}
+          {loadingStates.topRated ? <CategorySkeleton /> : <CategoryRow categoryId="topRated" title="Top Rated Global" items={topRated} onRate={handleRate} />}
         </div>
       </div>
     </div>

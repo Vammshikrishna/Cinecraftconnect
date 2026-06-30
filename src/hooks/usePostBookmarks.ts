@@ -77,8 +77,7 @@ export function usePostBookmarks() {
           posts (
             id,
             content,
-            media_url,
-            media_items,
+            media_urls,
             media_type,
             like_count,
             comment_count,

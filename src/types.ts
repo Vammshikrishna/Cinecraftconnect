@@ -3,6 +3,7 @@ export interface Post {
   author_id: string;
   content: string;
   media_url?: string;
+  media_urls?: string[];
   media_type?: string;
   media_items?: { url: string; type: "image" | "video" }[];
   has_ai_generated: boolean;

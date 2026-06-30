@@ -129,10 +129,10 @@ export const useProjectTasks = (projectId: string) => {
         .from('tasks' as any)
         .insert([
           {
-            title,
+            name: title,
             description: null,
             due_date: null,
-            status: 'pending',
+            is_completed: false,
             project_space_id: projectId,
           },
         ])
@@ -180,7 +180,7 @@ export const useProjectTasks = (projectId: string) => {
     mutationFn: async ({ id, currentStatus }: { id: string; currentStatus: boolean }) => {
       const { error } = await supabase
         .from('tasks' as any)
-        .update({ status: currentStatus ? 'pending' : 'completed' })
+        .update({ is_completed: !currentStatus })
         .eq('id', id);
 
       if (error) throw error;

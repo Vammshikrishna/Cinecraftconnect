@@ -36,7 +36,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAppRole } from "@/hooks/useAppRole";
+import { StaffBadge } from '@/components/internal/shared/StaffBadge';
+import { useAppRole } from '@/hooks/useAppRole';
+import { CachedImage } from '@/components/common/CachedImage';
+import { CachedVideo } from '@/components/common/CachedVideo';
 
 interface UserPostsProps {
   targetUserId: string;
@@ -223,7 +226,13 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
   useEffect(() => {
     if (selectedPost) {
-      setEditContent(selectedPost.content);
+      if (selectedPost.content && selectedPost.content.includes('JOB_SHARE::')) {
+        const parts = selectedPost.content.split('JOB_SHARE::');
+        const caption = parts[0].trim();
+        setEditContent(caption);
+      } else {
+        setEditContent(selectedPost.content || "");
+      }
       setEditMediaItems(selectedPost.media_items || []);
     }
   }, [selectedPost]);
@@ -241,13 +250,20 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
     setIsSaving(true);
     try {
+      let finalContent = editContent.trim();
+      
+      // Preserve JOB_SHARE metadata if it exists
+      if (selectedPost.content && selectedPost.content.includes('JOB_SHARE::')) {
+        const parts = selectedPost.content.split('JOB_SHARE::');
+        const jsonPart = parts[parts.length - 1];
+        finalContent = finalContent ? `${finalContent}\n\nJOB_SHARE::${jsonPart}` : `JOB_SHARE::${jsonPart}`;
+      }
+
       const { error } = await supabase
         .from('posts')
         .update({
-          content: editContent.trim(),
+          content: finalContent,
           media_items: editMediaItems,
-          media_url: editMediaItems.length > 0 ? editMediaItems[0].url : null,
-          media_type: editMediaItems.length > 0 ? editMediaItems[0].type : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedPost.id);
@@ -260,7 +276,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       });
       setIsEditOpen(false);
       // Data sync via channel but update selection for immediate feel
-      setSelectedPost(prev => prev ? ({ ...prev, content: editContent.trim(), media_items: editMediaItems }) : null);
+      setSelectedPost(prev => prev ? ({ ...prev, content: finalContent, media_items: editMediaItems }) : null);
     } catch (error) {
       console.error('Error updating post:', error);
       toast({
@@ -404,9 +420,11 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
       {/* Instagram-style Grid */}
       <div className="grid grid-cols-3 gap-1 md:gap-2">
         {posts.map((post) => {
-          const hasMedia = !!post.media_url || (post.media_items && post.media_items.length > 0);
-          const isVideo = post.media_type === 'video' || (post.media_items && post.media_items[0]?.type === 'video');
-          const isMulti = post.media_items && post.media_items.length > 1;
+          const effectiveMediaItems = post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items || [];
+          const effectiveMediaUrl = post.media_urls?.[0] || post.media_url;
+          const hasMedia = !!effectiveMediaUrl || effectiveMediaItems.length > 0;
+          const isVideo = post.media_type === 'video' || (effectiveMediaItems.length > 0 && effectiveMediaItems[0].type === 'video');
+          const isMulti = effectiveMediaItems.length > 1;
 
           return (
             <div
@@ -416,14 +434,14 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
             >
               {hasMedia ? (
                 isVideo ? (
-                  <video
-                    src={post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url}
+                  <CachedVideo
+                    src={effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl}
                     className="w-full h-full object-cover"
                     preload="none"
                   />
                 ) : (
-                  <LazyImage
-                    src={getOptimizedImage(post.media_items && post.media_items.length > 0 ? post.media_items[0].url : post.media_url, { width: 400, height: 400 })}
+                  <CachedImage
+                    src={getOptimizedImage(effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl, { width: 400, height: 400 })}
                     alt="Post"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                   />
@@ -526,7 +544,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
 
           {(() => {
             if (!selectedPost) return null;
-            const items = selectedPost?.media_items || (selectedPost?.media_url ? [{ url: selectedPost.media_url, type: selectedPost.media_type as 'image' | 'video' }] : []);
+            const effectiveSelectedMediaItems = selectedPost.media_urls?.map((url: string) => ({ url, type: selectedPost.media_type || 'image' })) || selectedPost.media_items || [];
+            const effectiveSelectedMediaUrl = selectedPost.media_urls?.[0] || selectedPost.media_url;
+            const items = effectiveSelectedMediaItems.length > 0 ? effectiveSelectedMediaItems : (effectiveSelectedMediaUrl ? [{ url: effectiveSelectedMediaUrl, type: selectedPost.media_type as 'image' | 'video' }] : []);
             const hasMedia = items.length > 0;
             const hasMultiple = items.length > 1;
 
@@ -674,7 +694,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       {items.map((item, i) => (
                         <div key={i} className="w-full h-full shrink-0 snap-center relative flex items-center justify-center">
                           {item.type === 'video' ? (
-                            <video
+                            <CachedVideo
                               src={item.url}
                               controls
                               className="w-full h-full object-contain transition-all duration-700 animate-in fade-in"
@@ -683,7 +703,7 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                               preload="metadata"
                             />
                           ) : (
-                            <img
+                            <CachedImage
                               src={getOptimizedImage(item.url, { width: 1200, quality: 90 })}
                               alt={`Work ${i + 1}`}
                               className="w-full h-full object-contain transition-all duration-700 animate-in fade-in shadow-[0_0_80px_rgba(0,0,0,0.8)]"
@@ -951,9 +971,9 @@ export const UserPosts = ({ targetUserId }: UserPostsProps) => {
                       <div key={idx} className="relative group/edit flex-shrink-0">
                         <div className="w-24 h-24 rounded-lg overflow-hidden ring-1 ring-white/10 shadow-lg bg-black/40">
                           {item.type === 'video' ? (
-                            <video src={item.url} preload="none" className="w-full h-full object-cover" />
+                            <CachedVideo src={item.url} preload="none" className="w-full h-full object-cover" />
                           ) : (
-                            <img src={item.url} alt="" className="w-full h-full object-cover" />
+                            <CachedImage src={item.url} alt="" className="w-full h-full object-cover" />
                           )}
                         </div>
                         <button

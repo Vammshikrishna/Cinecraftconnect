@@ -76,15 +76,6 @@ const Features = () => {
       color: "bg-purple-500/10 text-purple-500",
       image: "/assets/features/discussions.png",
       details: ["Spatial Audio", "Screen Sharing", "Whiteboarding", "Room Categories"]
-    },
-    {
-      id: "pricing",
-      title: "Flexible Pricing",
-      description: "Start free and scale as you grow. From indie filmmakers to large studios, there's a plan designed for every stage of your journey.",
-      icon: Crown,
-      color: "bg-amber-500/10 text-amber-500",
-      image: "/assets/features/projects.png",
-      details: ["Free Tier Forever", "Pro Creator Plans", "Studio Packages", "Custom Enterprise"]
     }
   ];
 
@@ -124,11 +115,6 @@ const Features = () => {
                   <Link to="/auth">
                     <Button size="lg" className="h-14 px-8 rounded-2xl bg-primary text-white text-lg font-bold hover:scale-105 transition-all">
                       Start Creating Now
-                    </Button>
-                  </Link>
-                  <Link to="/pricing">
-                    <Button size="lg" variant="outline" className="h-14 px-8 rounded-2xl border-border hover:bg-muted text-lg font-bold">
-                      View Pricing
                     </Button>
                   </Link>
                 </div>

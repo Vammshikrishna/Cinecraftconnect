@@ -130,14 +130,28 @@ export const useConnections = () => {
   // Realtime subscription
   useEffect(() => {
     if (!user) return;
-    const channel = supabase.channel('user_connections_changes')
+    
+    // Separate channels to avoid filter overwrite issues in Supabase JS
+    const followerChannel = supabase.channel(`user_connections_follower_${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections', filter: `follower_id=eq.${user.id}` },
-        () => queryClient.invalidateQueries({ queryKey: ['connections_manual'] }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections', filter: `following_id=eq.${user.id}` },
-        () => queryClient.invalidateQueries({ queryKey: ['connections_manual'] }))
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
+          queryClient.invalidateQueries({ queryKey: ['users'] });
+        })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const followingChannel = supabase.channel(`user_connections_following_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_connections', filter: `following_id=eq.${user.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
+          queryClient.invalidateQueries({ queryKey: ['users'] });
+        })
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(followerChannel); 
+      supabase.removeChannel(followingChannel);
+    };
   }, [user, queryClient]);
 
   return {

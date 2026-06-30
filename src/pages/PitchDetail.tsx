@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PitchCall } from "@/hooks/usePitch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAccountType } from "@/hooks/useAccountType";
 import { formatDistanceToNow, isPast, parseISO } from "date-fns";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { PitchSubmissionModal } from "@/components/pitch/PitchSubmissionModal";
@@ -54,9 +55,19 @@ const PitchDetail = () => {
     const { user } = useAuth();
     const { toast } = useToast();
     const { push, goBack } = useAppNavigation();
+    const { isFan } = useAccountType();
+
+    useEffect(() => {
+        if (isFan) {
+            push('/404');
+        }
+    }, [isFan, push]);
 
     const fetchPitchDetail = async () => {
-        if (!pitchId) return;
+        if (!pitchId || pitchId === 'undefined') {
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
             const { data, error } = await supabase

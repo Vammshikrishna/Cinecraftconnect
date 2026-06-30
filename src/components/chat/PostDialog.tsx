@@ -82,7 +82,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                     )
                 `)
                 .eq('id', postId)
-                .single();
+                .maybeSingle();
 
             if (error) throw error;
 
@@ -240,7 +240,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
 
                                                     {/* Hard constrain JobCard on mobile so it doesn't push the modal wider than the screen! */}
                                                     <div className="w-[90vw] max-w-[340px] md:max-w-sm lg:max-w-md transition-all duration-700 animate-in fade-in zoom-in-95 fill-mode-both shadow-[0_0_100px_rgba(0,0,0,0.6)]">
-                                                        <JobShareCard {...shareData} />
+                                                        <JobShareCard {...shareData} className="w-full" />
                                                     </div>
                                                 </div>
                                             </>

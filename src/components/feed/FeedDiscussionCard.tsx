@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
 import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
+import { useToast } from '@/hooks/use-toast';
+import { copyToClipboard } from '@/lib/utils/share';
 
 interface FeedDiscussionCardProps {
     discussion: {
@@ -21,6 +23,7 @@ interface FeedDiscussionCardProps {
 const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) => {
     const { push } = useAppNavigation();
     const { unreadDiscussionIds } = useUnreadMessages();
+    const { toast } = useToast();
     const hasUnread = unreadDiscussionIds.includes(discussion.id);
 
     const timeAgo = (dateStr: string) => {
@@ -37,15 +40,34 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
         push(`/discussion-rooms/${discussion.id}`);
     };
 
-    const handleShare = (e: React.MouseEvent) => {
+    const handleShare = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        // Share logic could be added here if needed
+        const shareUrl = window.location.origin + `/discussion-rooms/${discussion.id}`;
+        
+        const copyFallback = async () => {
+            const success = await copyToClipboard(shareUrl);
+            if (success) {
+                toast({ title: "Copied", description: "Link copied to clipboard" });
+            } else {
+                toast({ title: "Error", description: "Failed to copy link", variant: "destructive" });
+            }
+        };
+
         if (navigator.share) {
-            navigator.share({
-                title: discussion.title,
-                text: discussion.description,
-                url: window.location.origin + `/discussion-rooms/${discussion.id}`
-            }).catch(() => {});
+            try {
+                await navigator.share({
+                    title: discussion.title,
+                    text: discussion.description,
+                    url: shareUrl
+                });
+            } catch (err) {
+                if ((err as Error).name !== 'AbortError') {
+                    console.error("Share failed, falling back to copy link", err);
+                    await copyFallback();
+                }
+            }
+        } else {
+            await copyFallback();
         }
     };
 

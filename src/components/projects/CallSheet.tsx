@@ -111,23 +111,17 @@ const CallSheet = ({ project_id }: CallSheetProps) => {
     }
     setUploading(true);
     try {
-      const filePath = buildProjectFilePath(
-        PROJECT_FILE_FOLDERS.CALL_SHEETS,
-        project_id,
-        selectedFile.name
+      const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+      const { url, error: uploadError } = await uploadFileToSupabase(
+        selectedFile,
+        STORAGE_BUCKETS.PROJECT_FILES,
+        `${PROJECT_FILE_FOLDERS.CALL_SHEETS}/${project_id}`
       );
-
-      const { error: uploadError } = await supabase.storage
-        .from(STORAGE_BUCKETS.PROJECT_FILES)
-        .upload(filePath, selectedFile);
-      if (uploadError) throw uploadError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(STORAGE_BUCKETS.PROJECT_FILES).getPublicUrl(filePath);
+      
+      if (uploadError || !url) throw new Error(uploadError || 'Failed to upload file');
 
       createCallSheet.mutate(
-        { date, notes: `Uploaded file: ${publicUrl}` },
+        { date, notes: `Uploaded file: ${url}` },
         {
           onSuccess: () => {
             setUploadDialogOpen(false);

@@ -20,7 +20,7 @@ export const executeSessionValidation = async (session: any): Promise<boolean> =
   const generation = getCurrentGeneration();
   const tokenHash = await hashToken(session.refresh_token);
   let retryCount = 0;
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 3; // Allow more retries on hard refresh – DB propagation can take time
 
   while (retryCount <= MAX_RETRIES) {
     try {
@@ -46,9 +46,9 @@ export const executeSessionValidation = async (session: any): Promise<boolean> =
 
        if (!data) {
            if (retryCount < MAX_RETRIES) {
-               console.warn(`[SECURITY VALIDATION] Session record missing. Retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+               console.warn(`[SECURITY VALIDATION] Session record not yet in DB. Retrying (${retryCount + 1}/${MAX_RETRIES}) in 1.5s...`);
                retryCount++;
-               await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1s for propagation
+               await new Promise(resolve => setTimeout(resolve, 1500)); // Wait 1.5s for propagation
                continue;
            }
            console.warn('[SECURITY VALIDATION] Active session missing from DB after retries. Enforcing local logout.');

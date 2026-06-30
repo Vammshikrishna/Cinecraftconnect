@@ -199,7 +199,7 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                     disabled={isSubmitting} 
                                     className="w-full sm:w-auto bg-primary hover:bg-primary/80 h-11 sm:h-12 rounded-xl font-bold px-8 shadow-lg shadow-primary/20 whitespace-nowrap active:scale-95 transition-all"
                                 >
-                                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4 mr-2" /> Add Shot</>}
+                                    {isSubmitting ? <Loader2 className="animate-spin" /> : <><Plus className="w-4 h-4 mr-2" />Add Shot</>}
                                 </Button>
                             </div>
                         </div>
@@ -219,41 +219,39 @@ const ShotList = ({ project_id }: ShotListProps) => {
                 </div>
             ) : shots && shots.length > 0 ? (
                 <div className="flex flex-col gap-12 max-w-4xl mx-auto">
-                    {/* Grouping by Scene ... */}
                     {Array.from(new Set(shots.map(s => s.scene))).map((sceneNumber) => (
-                        <div key={`scene-${sceneNumber}`} className="relative pl-8 sm:pl-16 border-l-[3px] border-primary/20 last:border-l-0 pb-8 snap-start">
-                            {/* ... Content ... */}
+                        <div key={`scene-${sceneNumber}`} className="relative pl-5 sm:pl-16 border-l-[3px] border-primary/20 last:border-l-0 pb-8 snap-start">
                             <div className="absolute top-0 left-[-12px] w-[21px] h-[21px] bg-primary rounded-full border-4 border-background shadow-lg shadow-primary/40 z-20" />
                             
-                            {/* Scene Header - Natural Scroll */}
-                            <div className="relative mb-6 flex items-end gap-4 z-10 p-3 rounded-2xl -ml-3">
-                                <div className="space-y-0.5">
+                            {/* Scene Header */}
+                            <div className="relative mb-6 flex items-end gap-3 z-10 p-3 rounded-2xl -ml-3">
+                                <div className="space-y-0.5 min-w-0">
                                     <p className="text-[10px] font-black tracking-[0.4em] text-primary uppercase ml-1 opacity-60">Production Block</p>
-                                    <h2 className="text-3xl sm:text-5xl font-black text-foreground tracking-tighter">SCENE {sceneNumber}</h2>
+                                    <h2 className="text-2xl sm:text-5xl font-black text-foreground tracking-tighter">SCENE {sceneNumber}</h2>
                                 </div>
-                                <div className="h-px flex-grow bg-primary/10 mb-4 ml-2" />
+                                <div className="h-px flex-grow bg-primary/10 mb-3 ml-2 shrink" />
                             </div>
 
-                            <div className="space-y-6">
+                            <div className="space-y-4 sm:space-y-6">
                                 {shots.filter(s => s.scene === sceneNumber).map(shot => (
-                                    <div key={shot.id} className="group relative bg-card/60 border border-border rounded-[32px] p-6 sm:p-8 hover:bg-accent/40 active:scale-[0.99] transition-all duration-500 shadow-2xl backdrop-blur-xl overflow-hidden">
+                                    <div key={shot.id} className="group relative bg-card/60 border border-border rounded-[20px] sm:rounded-[32px] p-4 sm:p-8 hover:bg-accent/40 active:scale-[0.99] transition-all duration-500 shadow-xl backdrop-blur-xl overflow-hidden">
                                         <div className="absolute -top-12 -right-12 w-48 h-48 bg-primary/5 blur-3xl rounded-full group-hover:bg-primary/10 transition-all pointer-events-none" />
 
                                         {editingId === shot.id ? (
-                                            <div className="space-y-6 relative z-10">
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                            <div className="space-y-5 relative z-10">
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                                     <div className="space-y-1">
                                                         <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Scene</Label>
-                                                        <Input value={editScene} onChange={(e) => setEditScene(e.target.value)} className="bg-background border-border h-12 text-center font-bold rounded-xl" />
+                                                        <Input value={editScene} onChange={(e) => setEditScene(e.target.value)} className="bg-background border-border h-11 text-center font-bold rounded-xl" />
                                                     </div>
                                                     <div className="space-y-1">
                                                         <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Shot</Label>
-                                                        <Input value={editShot} onChange={(e) => setEditShot(e.target.value)} className="bg-background border-border h-12 text-center font-bold rounded-xl" />
+                                                        <Input value={editShot} onChange={(e) => setEditShot(e.target.value)} className="bg-background border-border h-11 text-center font-bold rounded-xl" />
                                                     </div>
                                                     <div className="col-span-2 space-y-1">
                                                         <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Status</Label>
                                                         <Select value={editStatus} onValueChange={setEditStatus}>
-                                                            <SelectTrigger className="bg-background border-border h-12 rounded-xl">
+                                                            <SelectTrigger className="bg-background border-border h-11 rounded-xl">
                                                                 <SelectValue />
                                                             </SelectTrigger>
                                                             <SelectContent className="bg-popover border-border">
@@ -266,64 +264,69 @@ const ShotList = ({ project_id }: ShotListProps) => {
                                                 </div>
                                                 <div className="space-y-1">
                                                     <Label className="text-[9px] font-black text-primary uppercase tracking-widest ml-1">Composition Description</Label>
-                                                    <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="bg-background border-border h-12 rounded-xl" />
+                                                    <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} className="bg-background border-border h-11 rounded-xl" />
                                                 </div>
-                                                <div className="flex gap-3 pt-2">
-                                                    <Button onClick={() => handleSaveEdit(shot.id)} className="flex-1 bg-primary font-bold h-12 rounded-xl">Apply Changes</Button>
-                                                    <Button variant="ghost" onClick={() => setEditingId(null)} className="h-12 px-6 rounded-xl text-muted-foreground">Cancel</Button>
+                                                <div className="flex gap-3 pt-1">
+                                                    <Button onClick={() => handleSaveEdit(shot.id)} className="flex-1 bg-primary font-bold h-11 rounded-xl">Apply Changes</Button>
+                                                    <Button variant="ghost" onClick={() => setEditingId(null)} className="h-11 px-5 rounded-xl text-muted-foreground">Cancel</Button>
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-8 relative z-10">
-                                                <div className="flex-shrink-0 flex sm:flex-col items-center justify-center bg-primary/10 rounded-2xl p-4 min-w-[100px] border border-primary/5 group-hover:bg-primary/20 transition-all shadow-inner">
-                                                    <p className="text-[9px] font-black text-primary/60 uppercase tracking-tighter mb-0.5 sm:mb-1">Shot</p>
-                                                    <p className="text-3xl font-black text-foreground tracking-tighter">{shot.shot}</p>
-                                                </div>
-                                                
-                                                <div className="flex-grow min-w-0 space-y-4">
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex items-center gap-3">
-                                                            <span className={`text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest border transition-colors ${
-                                                                shot.status === 'completed' ? 'bg-primary/10 text-primary/80 border-primary/20' :
-                                                                shot.status === 'in-progress' ? 'bg-primary/10 text-primary border-primary/20' :
-                                                                'bg-muted/30 text-muted-foreground border-border'
-                                                            }`}>
-                                                                {shot.status.replace('-', ' ')}
-                                                            </span>
-                                                            <div className="w-1 h-1 rounded-full bg-border" />
-                                                            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Composition {parseInt(shot.shot)}</p>
+                                            <div className="flex flex-col gap-3 relative z-10">
+                                                {/* Top row: shot badge + status + actions */}
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        {/* Shot number badge */}
+                                                        <div className="flex items-center gap-1.5 bg-primary/10 rounded-xl px-3 py-1.5 border border-primary/10 group-hover:bg-primary/20 transition-all shrink-0">
+                                                            <p className="text-[8px] font-black text-primary/60 uppercase tracking-tighter">Shot</p>
+                                                            <p className="text-lg font-black text-foreground leading-none">{shot.shot}</p>
                                                         </div>
-                                                        {!isInternal && (
-                                                            <div className="flex opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all lg:translate-x-4 lg:group-hover:translate-x-0 shrink-0">
-                                                                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
-                                                                    <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                                </Button>
-                                                                <Button size="icon" variant="ghost" className="h-9 w-9 sm:h-10 sm:w-10 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
-                                                                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                                </Button>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    <div className="relative">
-                                                        <Film className="absolute -left-2 -top-2 w-12 h-12 text-primary/5 -rotate-12 pointer-events-none" />
-                                                        <p className="text-base sm:text-lg font-bold text-foreground/90 leading-relaxed italic border-l-4 border-primary/30 pl-4 sm:pl-6 py-1 break-words">
-                                                            "{shot.description}"
-                                                        </p>
+
+                                                        {/* Status badge */}
+                                                        <span className={`text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest border transition-colors shrink-0 ${
+                                                            shot.status === 'completed' ? 'bg-primary/10 text-primary/80 border-primary/20' :
+                                                            shot.status === 'in-progress' ? 'bg-primary/10 text-primary border-primary/20' :
+                                                            'bg-muted/30 text-muted-foreground border-border'
+                                                        }`}>
+                                                            {shot.status.replace('-', ' ')}
+                                                        </span>
+
+                                                        <p className="hidden sm:block text-[9px] font-black text-muted-foreground uppercase tracking-widest opacity-40">Composition {parseInt(shot.shot)}</p>
                                                     </div>
 
-                                                     <div className="flex items-center gap-6 pt-2">
-                                                        <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)} disabled={isInternal}>
-                                                            <SelectTrigger className={`w-full sm:w-40 h-10 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl ${!isInternal ? 'opacity-60 hover:opacity-100 transition-all hover:border-primary/30' : 'opacity-40 cursor-default'}`}>
-                                                                <SelectValue />
-                                                            </SelectTrigger>
-                                                            <SelectContent className="bg-popover border-border rounded-2xl">
-                                                                <SelectItem value="pending">Pending</SelectItem>
-                                                                <SelectItem value="in-progress">In Progress</SelectItem>
-                                                                <SelectItem value="completed">Completed</SelectItem>
-                                                            </SelectContent>
-                                                        </Select>
-                                                    </div>
+                                                    {/* Action buttons */}
+                                                    {!isInternal && (
+                                                        <div className="flex shrink-0 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all lg:translate-x-4 lg:group-hover:translate-x-0">
+                                                            <Button size="icon" variant="ghost" className="h-9 w-9 hover:text-primary rounded-xl" onClick={() => handleEdit(shot)}>
+                                                                <Pencil className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            <Button size="icon" variant="ghost" className="h-9 w-9 hover:text-destructive rounded-xl" onClick={() => handleDelete(shot.id)}>
+                                                                <Trash2 className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                {/* Description */}
+                                                <div className="relative">
+                                                    <Film className="absolute -left-1 -top-2 w-10 h-10 text-primary/5 -rotate-12 pointer-events-none" />
+                                                    <p className="text-sm sm:text-base font-bold text-foreground/90 leading-relaxed italic border-l-4 border-primary/30 pl-4 py-1 break-words">
+                                                        "{shot.description}"
+                                                    </p>
+                                                </div>
+
+                                                {/* Status changer */}
+                                                <div>
+                                                    <Select value={shot.status} onValueChange={(value) => handleStatusChange(shot.id, value)} disabled={isInternal}>
+                                                        <SelectTrigger className={`w-full sm:w-44 h-9 text-[10px] font-black uppercase bg-background/50 border-border/50 rounded-xl ${!isInternal ? 'opacity-60 hover:opacity-100 transition-all hover:border-primary/30' : 'opacity-40 cursor-default'}`}>
+                                                            <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-popover border-border rounded-2xl">
+                                                            <SelectItem value="pending">Pending</SelectItem>
+                                                            <SelectItem value="in-progress">In Progress</SelectItem>
+                                                            <SelectItem value="completed">Completed</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
                                                 </div>
                                             </div>
                                         )}

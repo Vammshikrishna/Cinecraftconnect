@@ -209,7 +209,7 @@ export const ProfileCompletion = () => {
                                     {accountType === 'fan'
                                         ? '🎬 As a Fan you can like, comment, follow creators, rate content, and join public discussion spaces anonymously.'
                                         : accountType === 'studio'
-                                        ? 'ðŸ¢ As a Studio/Company you can post jobs, search for vendors, hire creators, and manage professional film projects.'
+                                        ? '🏢 As a Studio/Company Admin, you are registering your individual profile. You will create public Company Pages representing your corporate brands after onboarding is complete.'
                                         : '🎥 As a Creator you get full access — posts, projects, analytics, private rooms, DMs to anyone, and a verified badge.'}
                                 </div>
                             )}
@@ -250,6 +250,11 @@ export const ProfileCompletion = () => {
                             <div>
                                 <Label htmlFor="fullName">Full Name *</Label>
                                 <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="John Doe" />
+                                {accountType === 'studio' && (
+                                    <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+                                        Please enter your individual name (e.g., Jane Doe), not your company name. You will create your company page later.
+                                    </p>
+                                )}
                             </div>
 
                             <div className="flex gap-2">

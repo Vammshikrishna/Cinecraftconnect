@@ -16,11 +16,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { usePostBookmarks } from "@/hooks/usePostBookmarks";
 import { useRealtimePostStats } from "@/hooks/useRealtimePostStats";
 import { useAppRole } from "@/hooks/useAppRole";
+import { useAccountType } from "@/hooks/useAccountType";
+import { useFollows } from "@/hooks/useFollows";
+import { useConnections } from "@/hooks/useConnections";
+import { useFollowedPageIds, useToggleFollowPage } from "@/hooks/useCompanyPages";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { cn } from "@/lib/utils";
 import { getOptimizedImage } from "@/utils/image-optimization";
 import { StaffBadge } from "../internal/shared/StaffBadge";
+import { CachedImage } from "@/components/common/CachedImage";
+import { CachedVideo } from "@/components/common/CachedVideo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +61,7 @@ interface PostAuthor {
   initials: string;
   avatar?: string;
   isVerified?: boolean;
+  account_type?: string;
 }
 
 interface PostProps {
@@ -93,7 +100,7 @@ const PostCard = ({
   id,
   author,
   timeAgo,
-  content,
+  content: initialContent,
   hasImage,
   imageAlt,
   hasVideo,
@@ -105,18 +112,62 @@ const PostCard = ({
   currentUserLiked,
   onLikeToggle,
   mediaUrl,
-  mediaItems,
+  mediaItems: initialMediaItems,
   createdAt,
   onDelete,
   pageInfo,
   authorId
 }: PostProps) => {
 
+  const [content, setContent] = useState(initialContent);
+  const [mediaItems, setMediaItems] = useState<{ url: string; type: "image" | "video" }[] | undefined>(initialMediaItems);
+
+  useEffect(() => {
+    setContent(initialContent);
+  }, [initialContent]);
+
+  useEffect(() => {
+    setMediaItems(initialMediaItems);
+  }, [initialMediaItems]);
+
   const [showComments, setShowComments] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const { push } = useAppNavigation();
+  const { isFan } = useAccountType();
+  const { following, sendFollow, isSendingFollow } = useFollows();
+  const { connections, sentRequests, pendingRequests, sendConnectionRequest } = useConnections();
+  const { data: followedPageIds } = useFollowedPageIds();
+  const toggleFollowPage = useToggleFollowPage();
+
+  const isFollowRelationship = isFan || author.account_type === 'fan';
+  const isFollowing = following?.some((f: any) => f.following_id === (author.id || authorId));
+  const isConnected = connections?.some((c: any) => c.following_id === (author.id || authorId) || c.follower_id === (author.id || authorId)) || 
+                      sentRequests?.some((c: any) => c.following_id === (author.id || authorId)) ||
+                      pendingRequests?.some((c: any) => c.follower_id === (author.id || authorId));
+  
+  const isFollowingPage = pageInfo ? followedPageIds?.includes(pageInfo.id) : false;
+
+  const shouldShowInlineAction = user && 
+    (pageInfo ? !isFollowingPage : ((author.id || authorId) && user.id !== (author.id || authorId) && (isFollowRelationship ? !isFollowing : !isConnected)));
+
+  const handleInlineAction = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) return;
+    
+    if (pageInfo) {
+      toggleFollowPage.mutate({ pageId: pageInfo.id, isFollowing: false });
+    } else if (isFollowRelationship) {
+      sendFollow(author.id || authorId || '');
+    } else {
+      try {
+        await sendConnectionRequest(author.id || authorId || '');
+      } catch (err: any) {
+        // toast is handled by useConnections hook
+      }
+    }
+  };
 
   // Edit/Delete State
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -309,6 +360,15 @@ const PostCard = ({
   const isLiked = currentUserLiked || false;
 
   const handleLike = async () => {
+    if (!user) {
+      toast({
+        title: "Sign in required",
+        description: "Redirecting to sign in page...",
+        variant: "destructive"
+      });
+      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+      return;
+    }
     if (isLiking) return;
 
     setIsLiking(true);
@@ -401,14 +461,14 @@ const PostCard = ({
         .update({
           content: finalContent,
           media_items: editMediaItems,
-          // Sync legacy fields
-          media_url: editMediaItems.length > 0 ? editMediaItems[0].url : null,
-          media_type: editMediaItems.length > 0 ? editMediaItems[0].type : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', id);
 
       if (error) throw error;
+
+      setContent(finalContent);
+      setMediaItems(editMediaItems);
 
       toast({
         title: "Success",
@@ -443,23 +503,23 @@ const PostCard = ({
     if (items.length === 1) {
       const item = items[0];
       return (
-        <div className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto sm:h-[400px] lg:h-[420px] flex items-center justify-center">
+        <div className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto flex items-center justify-center">
           {item.type === 'image' ? (
-            <img
+            <CachedImage
               src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
               alt={imageAlt || "Post content"}
-              className="w-full h-auto sm:h-full sm:object-contain object-cover block hover:scale-[1.01] transition-transform duration-700"
+              className="w-full h-auto block hover:scale-[1.01] transition-transform duration-700"
             />
           ) : (
-            <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
-              <video
+            <div className="relative w-full h-auto flex items-center justify-center overflow-hidden">
+              <CachedVideo
                 src={item.url}
                 controls
-                className="w-full h-auto sm:h-full sm:object-contain object-cover"
+                className="w-full h-auto block"
                 preload="metadata"
               >
                 Your browser does not support video playback.
-              </video>
+              </CachedVideo>
             </div>
           )}
           {isAIGenerated && (
@@ -485,32 +545,30 @@ const PostCard = ({
         onWheel={(e) => handleWheel(e, items.length, false)}
       >
         <div
-          className="relative flex transition-transform duration-500 ease-out h-auto sm:h-[400px] lg:h-[420px] w-full"
+          className="relative flex transition-transform duration-500 ease-out h-auto w-full"
           style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
         >
           {items.map((item, idx) => (
             <div
               key={`${id}-carousel-${idx}`}
-              className="w-full h-full flex-none"
+              className="w-full flex-none"
             >
               {item.type === 'image' ? (
-                <div className="w-full h-auto sm:h-full relative overflow-hidden flex items-center justify-center bg-black/5 sm:bg-black">
-                  <img
-                    src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
-                    alt={`Media ${idx + 1}`}
-                    className="w-full h-auto sm:h-full sm:object-contain object-cover"
-                  />
-                </div>
+                <CachedImage
+                  src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
+                  alt={`Media ${idx + 1}`}
+                  className="w-full h-auto block"
+                />
               ) : (
-                <div className="relative w-full h-auto sm:h-full bg-black/5 sm:bg-black flex items-center justify-center overflow-hidden">
-                  <video
+                <div className="relative w-full h-auto flex items-center justify-center overflow-hidden">
+                  <CachedVideo
                     src={item.url}
-                    className="w-full h-auto sm:h-full sm:object-contain object-cover"
+                    className="w-full h-auto block"
                     muted
                     loop
                     preload="metadata"
-                    onMouseOver={e => e.currentTarget.play()}
-                    onMouseOut={e => e.currentTarget.pause()}
+                    onMouseOver={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.play()}
+                    onMouseOut={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.pause()}
                   />
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30">
@@ -592,11 +650,11 @@ const PostCard = ({
                 {editMediaItems.map((item: { url: string, type: 'image' | 'video' }, idx: number) => (
                   <div key={idx} className="relative group/edit flex-shrink-0 w-24 aspect-square rounded-xl overflow-hidden border border-white/10 hover:border-primary/50 transition-all duration-300">
                     {item.type === 'image' ? (
-                      <img src={item.url} className="w-full h-full object-cover" alt="Edit thumbnail" />
+                      <CachedImage src={item.url} className="w-full h-full object-cover" alt="Edit thumbnail" />
                     ) : (
                       <div className="w-full h-full bg-black/40 flex items-center justify-center relative">
                         <Play className="w-6 h-6 text-white fill-white opacity-50" />
-                        <video src={item.url} preload="none" className="w-full h-full object-cover absolute inset-0 opacity-40" />
+                        <CachedVideo src={item.url} preload="none" className="w-full h-full object-cover absolute inset-0 opacity-40" />
                       </div>
                     )}
 
@@ -694,14 +752,38 @@ const PostCard = ({
                       <div onClick={() => push(`/pages/${pageInfo.slug}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{pageInfo.name}</p>
                         {pageInfo.is_verified && <VerificationBadge size="sm" />}
+                        {shouldShowInlineAction && (
+                          <>
+                            <span className="text-muted-foreground/50 mx-0.5">•</span>
+                            <button
+                              onClick={handleInlineAction}
+                              disabled={toggleFollowPage.isPending}
+                              className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
+                            >
+                              Follow
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : author.id ? (
-                      <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
+                      <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer group/name">
                         <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
                         {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
                         {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
                           <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
+                        )}
+                        {shouldShowInlineAction && (
+                          <>
+                            <span className="text-muted-foreground/50 mx-0.5">•</span>
+                            <button
+                              onClick={handleInlineAction}
+                              disabled={isSendingFollow}
+                              className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
+                            >
+                              {isFollowRelationship ? 'Follow' : 'Connect'}
+                            </button>
+                          </>
                         )}
                       </div>
                   ) : (
@@ -785,7 +867,7 @@ const PostCard = ({
                               </button>
                             )}
                           <div className="w-full">
-                            <JobShareCard {...shareData} />
+                            <JobShareCard {...shareData} compact={true} className="w-full max-w-[450px]" />
                           </div>
                         </div>
                       );
@@ -862,7 +944,7 @@ const PostCard = ({
           </div>
 
           {/* Media - Full width */}
-          <div className="w-full bg-black/5" onClick={handleViewMedia}>
+          <div className="w-full" onClick={handleViewMedia}>
             {renderMediaGallery()}
           </div>
 
@@ -919,6 +1001,15 @@ const PostCard = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (!user) {
+                      toast({
+                        title: "Sign in required",
+                        description: "Redirecting to sign in page...",
+                        variant: "destructive"
+                      });
+                      push(`/auth?redirect=${encodeURIComponent(window.location.pathname)}`);
+                      return;
+                    }
                     toggleBookmark.mutate({ postId: id, isBookmarked });
                   }}
                   disabled={isTogglingBookmark}
