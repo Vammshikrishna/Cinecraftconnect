@@ -1,8 +1,0 @@
-node_modules/
-dist/
-build/
-coverage/
-scratch/
-.system_generated/
-.gemini/
-*.log
