@@ -1,10 +1,8 @@
 
 import { useState } from "react";
 import { Star, StarOff } from "lucide-react";
-import { toast } from "@/components/ui/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-
 import { useAppRole } from "@/hooks/useAppRole";
+import { useRateMovie } from "@/hooks/mutations/useRateMovie";
 
 interface StarRatingProps {
   title: string;
@@ -14,12 +12,6 @@ interface StarRatingProps {
   className?: string;
   size?: number;
   showValue?: boolean;
-}
-
-interface MovieRating {
-  user_id: string;
-  movie_title: string;
-  rating: number;
 }
 
 const StarRating = ({
@@ -33,50 +25,17 @@ const StarRating = ({
   const [rating, setRating] = useState(initialRating);
   const [hovered, setHovered] = useState<number | null>(null);
   const { isInternal } = useAppRole();
+  const rateMovie = useRateMovie();
 
   const handleRate = async (selectedRating: number) => {
     if (readOnly || isInternal) return;
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        toast({
-          title: "Login Required",
-          description: "Please log in to rate this movie.",
-          variant: "destructive"
-        });
-        return;
+    rateMovie.mutate(
+      { title, rating: selectedRating },
+      {
+        onSuccess: () => setRating(selectedRating),
       }
-
-      const ratingData: MovieRating = {
-        user_id: user.id,
-        movie_title: title,
-        rating: selectedRating
-      };
-
-      // Use the correct type for the "onConflict" option
-      const { error } = await supabase
-        .from('movie_ratings' as any)
-        .upsert(ratingData, { 
-          onConflict: 'user_id,movie_title'
-        });
-
-      if (error) throw error;
-
-      setRating(selectedRating);
-      toast({
-        title: "Rating Submitted",
-        description: `You rated "${title}" ${selectedRating} stars.`
-      });
-    } catch (error) {
-      console.error('Error submitting rating:', error);
-      toast({
-        title: "Error",
-        description: "Could not submit rating. Please try again.",
-        variant: "destructive"
-      });
-    }
+    );
   };
 
   return (

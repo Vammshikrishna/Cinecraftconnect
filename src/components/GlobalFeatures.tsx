@@ -72,7 +72,7 @@ const GlobalFeatures = () => {
         });
 
         // Listen for direct notification taps (Foreground and Background)
-        let pushSub: any = null;
+        let pushSub: { remove: () => void } | null = null;
         if (Capacitor.isNativePlatform()) {
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
                 const data = action.notification.data;

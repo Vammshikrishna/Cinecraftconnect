@@ -10,7 +10,7 @@ const ScrollToTop = () => {
         // 1. It's a new navigation (PUSH or REPLACE)
         // 2. AND we haven't explicitly disabled scrolling via state
         // 3. AND it's not a POP (back/forward button)
-        const shouldScroll = navType !== 'POP' && !(state && (state as any).noScroll);
+        const shouldScroll = navType !== 'POP' && !(state && (state as Record<string, unknown>).noScroll);
 
         if (shouldScroll) {
             window.scrollTo(0, 0);
