@@ -1,5 +1,6 @@
 import { mutationQueue } from './mutationQueue';
 import { supabase } from '@/integrations/supabase/client';
+import { queryClient } from '@/lib/queryClient';
 
 /**
  * Global Registry for all Offline Mutation execution logic.

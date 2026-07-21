@@ -55,7 +55,7 @@ const MoreMenu = () => {
                     className={`flex items-center gap-1 px-3 py-2 rounded-lg transition-all duration-200 hover-lift relative ${isAnyActive ? 'nav-item-active' : 'nav-item-inactive'
                         }`}
                 >
-                    <span className="font-medium text-sm">More</span>
+                    <span className="font-serif font-bold uppercase tracking-tight text-[12px] lg:text-[13px]">More</span>
                     <ChevronDown size={16} className="flex-shrink-0" />
                     {isAnyActive && (
                         <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-primary to-primary/80 rounded-full"></div>
@@ -71,7 +71,7 @@ const MoreMenu = () => {
                                 }`}
                         >
                             <Icon size={18} />
-                            <span>{label}</span>
+                            <span className="font-serif font-bold uppercase tracking-tight text-[11px] lg:text-[12px]">{label}</span>
                         </Link>
                     </DropdownMenuItem>
                 ))}
@@ -88,7 +88,7 @@ const MoreMenu = () => {
                                         }`}
                                 >
                                     <Icon size={18} />
-                                    <span className="flex-1">{label}</span>
+                                    <span className="font-serif font-bold uppercase tracking-tight text-[11px] lg:text-[12px] flex-1">{label}</span>
                                     {/* Notification badge for Pitch inbox */}
                                     {path === '/pitch' && (isCreator || isStudio) && hasUnreadPitches && (
                                         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">

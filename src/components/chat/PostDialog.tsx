@@ -44,6 +44,35 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
         }
     };
 
+    const handleTogglePin = async () => {
+        try {
+            const newPinState = !post.is_pinned;
+            const { error } = await supabase
+                .from('posts')
+                .update({ is_pinned: newPinState } as any)
+                .eq('id', postId);
+
+            if (error) throw error;
+
+            setPost((prev: any) => ({
+                ...prev,
+                is_pinned: newPinState
+            }));
+
+            toast({
+                title: "Success",
+                description: `Post ${newPinState ? 'pinned to' : 'unpinned from'} your profile`,
+            });
+        } catch (error) {
+            console.error('Error toggling pin:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update pin status",
+                variant: "destructive",
+            });
+        }
+    };
+
     // Real-time metrics
     const { likeCount: displayLikeCount } = useRealtimePostStats(
         postId, 
@@ -174,7 +203,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                         <div className="flex flex-col flex-1 min-w-0 font-outfit">
                             <div className="flex items-center gap-1 truncate">
                                 <p className="font-black text-[15px] tracking-tight text-foreground truncate uppercase">{authorName}</p>
-                                {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                                {author.is_verified && <VerificationBadge size="xs" />}
                             </div>
                             <p className="text-[10px] text-muted-foreground uppercase tracking-[0.25em] font-black opacity-80 -mt-0.5 truncate">{author.craft || 'Creator'}</p>
                         </div>
@@ -288,7 +317,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                 <div>
                                     <div className="flex items-center gap-1.5">
                                         <p className="font-bold text-sm tracking-tight">{authorName}</p>
-                                        {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
+                                        {author.is_verified && <VerificationBadge size="sm" />}
                                     </div>
                                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-black opacity-80">{author.craft || 'Creator'}</p>
                                 </div>
@@ -334,7 +363,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                                         <span className="font-bold text-foreground tracking-tight hover:underline cursor-pointer">
                                             {authorName}
                                         </span>
-                                        {(author.is_verified || authorName.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+                                        {author.is_verified && <VerificationBadge size="xs" />}
                                     </div>
                                         {post.content.includes('JOB_SHARE::') ? (
                                             (() => {

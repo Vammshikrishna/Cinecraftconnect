@@ -19,8 +19,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// Type moved to @/types/portfolio.ts
-
 interface PortfolioGridProps {
   userId?: string;
   isOwner?: boolean;

@@ -36,6 +36,7 @@ const AdminDashboard = () => {
     revenue_mtd: 42800.50,
     pending_support: 0
   });
+  const [platformEvents, setPlatformEvents] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -47,6 +48,7 @@ const AdminDashboard = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => { fetchUsers(); fetchStats(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_reports' }, () => fetchStats())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => fetchStats())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, () => fetchPlatformEvents())
       .subscribe();
 
     return () => {
@@ -56,7 +58,7 @@ const AdminDashboard = () => {
 
   const fetchData = async () => {
     setLoading(true);
-    await Promise.all([fetchUsers(), fetchVerification(), fetchStats()]);
+    await Promise.all([fetchUsers(), fetchVerification(), fetchStats(), fetchPlatformEvents()]);
     setLoading(false);
   };
 
@@ -68,9 +70,18 @@ const AdminDashboard = () => {
   const fetchVerification = async () => {
     const { data } = await (supabase as any)
       .from('verification_requests')
-      .select('*, profile:user_id(username, avatar_url, craft)')
+      .select('*, profile:user_id(username, avatar_url, craft, trust_score)')
       .eq('status', 'pending');
     if (data) setVerificationRequests(data);
+  };
+
+  const fetchPlatformEvents = async () => {
+    const { data } = await (supabase as any)
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5);
+    if (data) setPlatformEvents(data);
   };
 
   const fetchUsers = async () => {
@@ -219,20 +230,24 @@ const AdminDashboard = () => {
               <div className="lg:col-span-2 glass-card p-6 border-border/50">
                 <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-6">Recent Platform Events</h3>
                 <div className="space-y-4">
-                  {[1, 2, 3, 4, 5].map((_, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border border-border/30">
+                  {platformEvents.length > 0 ? platformEvents.map((event, i) => (
+                    <div key={event.id || i} className="flex items-center justify-between p-3 bg-muted/20 rounded-xl border border-border/30">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                           <Activity className="w-4 h-4 text-primary" />
                         </div>
                         <div>
-                          <p className="text-xs font-bold">System Health Check Passed</p>
-                          <p className="text-[9px] text-muted-foreground font-medium uppercase tracking-widest">Global Edge Nodes • 2m ago</p>
+                          <p className="text-xs font-bold">{event.action.replace(/_/g, ' ')}</p>
+                          <p className="text-[9px] text-muted-foreground font-medium uppercase tracking-widest">
+                            {event.actor_role} • {new Date(event.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-[9px] border-emerald-500/20 text-emerald-500 font-black">OK</Badge>
+                      <Badge variant="outline" className="text-[9px] border-emerald-500/20 text-emerald-500 font-black">LOGGED</Badge>
                     </div>
-                  ))}
+                  )) : (
+                    <p className="text-sm text-muted-foreground italic text-center py-4">No recent events logged.</p>
+                  )}
                 </div>
               </div>
 

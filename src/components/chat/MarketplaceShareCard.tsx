@@ -1,3 +1,4 @@
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 import { Link } from 'react-router-dom';
 import { ShoppingBag, MapPin } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -74,6 +75,7 @@ export const MarketplaceShareCard = ({
             to={`/marketplace/${listingId}`}
             className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
+            <CornerBrackets />
             {/* Visual Header - High Impact Media */}
             <div className="relative aspect-video w-full overflow-hidden bg-muted">
                 {previewUrl ? (
@@ -91,50 +93,22 @@ export const MarketplaceShareCard = ({
                 {/* Glassmorphic Overlays */}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
 
-                {/* Category Badge - Top Left */}
+                {/* Category Badge - bottom-left of image */}
                 {category && (
-                    <div className="absolute top-2 left-2 px-2 py-0.5 bg-primary text-black text-[8px] font-black uppercase tracking-[0.2em] rounded-md shadow-2xl animate-in fade-in slide-in-from-left-2 duration-700">
-                        {category}
+                    <div className="font-mono absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/60 border border-white/20 text-white text-[7px] font-bold uppercase tracking-widest rounded backdrop-blur-md">
+                        CAT // {category}
                     </div>
                 )}
 
-                {/* Premium Price Tag - Top Right */}
-                {price !== undefined && (
-                    <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-xl rounded-xl border border-black/20 dark:border-white/20 shadow-2xl animate-in fade-in zoom-in duration-700">
-                        <span className="text-[10px] font-black text-white tracking-tight">₹{price.toLocaleString()}</span>
-                        <span className="text-[7px] font-bold text-white/50 uppercase tracking-widest">/ Day</span>
-                    </div>
-                )}
 
-                {/* Identity Overlay - Bottom Center-ish */}
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-[90%] flex items-center gap-2 px-3 py-1.5 bg-white/10 backdrop-blur-2xl rounded-xl border border-black/20 dark:border-white/20 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-700">
-                    <Avatar className="h-8 w-8 rounded-xl border border-black/20 dark:border-white/20 shadow-sm">
-                        <AvatarImage src={author?.avatar_url || undefined} />
-                        <AvatarFallback className="text-[10px] bg-primary text-black font-black">
-                            {author?.username?.[0]?.toUpperCase() || 'S'}
-                        </AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-black text-white uppercase tracking-widest truncate">
-                            {author?.username || 'Verified Seller'}
-                        </span>
-                        <span className="text-[7px] text-primary font-bold uppercase tracking-[0.2em]">Verified Listing</span>
-                    </div>
-                </div>
             </div>
 
             {/* Premium Content Footer */}
             <div className="p-5 space-y-5 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-2">
-                    <h3 className="text-[18px] font-black text-foreground leading-tight tracking-tighter group-hover:text-primary transition-colors uppercase">
+                    <h3 className="font-serif text-[13px] font-bold text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase">
                         {title || 'Equipment Listing'}
                     </h3>
-                    {location && (
-                        <div className="flex items-center gap-2 text-[9px] text-muted-foreground font-black uppercase tracking-[0.15em]">
-                            <MapPin size={10} className="text-primary/80" />
-                            <span className="truncate">{location}</span>
-                        </div>
-                    )}
                 </div>
 
                 {description && (
@@ -143,6 +117,34 @@ export const MarketplaceShareCard = ({
                     </p>
                 )}
 
+                <div className="flex items-center gap-2 flex-wrap">
+                    {location && (
+                        <div className="font-mono flex items-center text-[7.5px] text-muted-foreground font-bold uppercase tracking-widest bg-muted/10 border border-border/40 px-2 py-0.5 rounded w-max">
+                            <span className="truncate">LOC // {location}</span>
+                        </div>
+                    )}
+                    {price !== undefined && (
+                        <div className="font-mono flex items-center gap-0.5 px-2 py-0.5 bg-green-500/5 border border-green-500/20 rounded text-[7.5px] font-bold text-green-600 dark:text-green-400 uppercase tracking-widest">
+                            ₹{price.toLocaleString()} <span className="text-[6.5px] text-muted-foreground">/ Day</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Who posted - above CTA */}
+                {author && (
+                    <div className="flex items-center gap-2.5 pt-2 border-t border-border/10">
+                        <Avatar className="h-7 w-7 rounded-lg border border-border/40 shadow-sm shrink-0">
+                            <AvatarImage src={author?.avatar_url || undefined} />
+                            <AvatarFallback className="text-[9px] bg-primary text-black font-black">
+                                {author?.username?.[0]?.toUpperCase() || 'S'}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col min-w-0">
+                            <span className="text-[10px] font-black text-foreground uppercase tracking-wider truncate leading-tight">{author?.username || 'Verified Seller'}</span>
+                            <span className="text-[7.5px] text-primary font-black uppercase tracking-widest leading-tight">Verified Listing</span>
+                        </div>
+                    </div>
+                )}
                 <div className="pt-2">
                     <div className="w-full py-3 bg-primary text-black text-center rounded-2xl hover:bg-primary/90 transition-all text-[11px] font-black uppercase tracking-[0.2em] shadow-xl shadow-primary/20 flex items-center justify-center gap-3">
                         <ShoppingBag size={14} className="fill-black" />

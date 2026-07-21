@@ -123,8 +123,8 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                 
                 {/* Status Badge */}
                 <div className="absolute bottom-4 left-4">
-                    <span className="px-3 py-1.5 rounded-xl bg-white/90 dark:bg-black/60 backdrop-blur-md text-xs font-bold text-foreground/80 shadow-lg border border-white/20">
-                        {project.status || 'Active'}
+                    <span className="font-mono px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] font-bold uppercase tracking-widest text-white shadow-lg border border-white/20">
+                        STATUS // {project.status || 'Active'}
                     </span>
                 </div>
             </Link>
@@ -132,28 +132,28 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
             <div className="p-6 space-y-4 text-left">
                 <div className="space-y-2">
                     <Link to={`/projects/${project.id}/space`} className="flex items-start justify-between gap-2">
-                        <h3 className="text-2xl font-black text-foreground hover:text-primary transition-colors leading-none tracking-tight">
+                        <h3 className="font-serif text-lg font-bold text-foreground hover:text-primary transition-colors leading-tight tracking-tight">
                             {project.title}
                         </h3>
                     </Link>
-                    <p className="text-[15px] text-muted-foreground/90 font-medium leading-relaxed line-clamp-2">
+                    <p className="text-xs text-muted-foreground/90 font-medium leading-relaxed line-clamp-2">
                         {project.description || 'No description provided.'}
                     </p>
                 </div>
 
-                <div className="flex items-center gap-6 py-1">
-                    <div className="flex items-center gap-2 text-foreground/80 font-medium">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{project.location || 'Remote'}</span>
+                <div className="flex flex-col gap-1.5 py-1">
+                    <div className="flex items-center gap-2 text-foreground/80 font-medium min-w-0">
+                        <MapPin className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="font-mono text-[9px] font-bold tracking-widest uppercase bg-muted/10 border border-border/40 px-1.5 py-0.5 rounded truncate w-full">LOC // {project.location || 'Remote'}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-foreground/80 font-medium">
-                        <Film className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm">{project.genre?.[0] || 'Uncategorized'}</span>
+                    <div className="flex items-center gap-2 text-foreground/80 font-medium min-w-0">
+                        <Film className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="font-mono text-[9px] font-bold tracking-widest uppercase bg-muted/10 border border-border/40 px-1.5 py-0.5 rounded truncate w-full">GENRE // {project.genre?.[0] || 'Uncategorized'}</span>
                     </div>
                 </div>
 
-                <div className="pt-4 border-t border-border/50 flex items-center justify-between">
-                    <span className="text-xs font-bold text-muted-foreground/60 uppercase tracking-widest">
+                <div className="pt-3 border-t border-border/50 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest">
                         {(() => {
                             try {
                                 const d = project.created_at ? new Date(project.created_at) : new Date();

@@ -758,13 +758,30 @@ export const LiveKitCallContainer = ({ roomId, onLeave, userRole, roomName }: Li
     };
 
     checkNodeAndUpdate();
-    // Use an interval to catch layout shifts early
-    const interval = setInterval(checkNodeAndUpdate, 50);
+    
+    // Set up ResizeObserver to catch layout/size shifts of the anchor element
+    let resizeObserver: ResizeObserver | null = null;
+    const anchorId = location.pathname.includes('/projects/') ? 'project-call-container' : 'discussion-call-container';
+    const el = document.getElementById(anchorId) || document.getElementById('discussion-call-container');
+    if (el && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        checkNodeAndUpdate();
+      });
+      resizeObserver.observe(el);
+    }
+
+    // Listen to scroll events (capturing) and window resize events to keep the call container aligned
+    window.addEventListener('scroll', checkNodeAndUpdate, true);
     window.addEventListener('resize', checkNodeAndUpdate);
     
+    // Fallback interval (much slower, e.g. every 1000ms) to ensure sync in all edge cases
+    const interval = setInterval(checkNodeAndUpdate, 1000);
+    
     return () => {
-      clearInterval(interval);
+      if (resizeObserver) resizeObserver.disconnect();
+      window.removeEventListener('scroll', checkNodeAndUpdate, true);
       window.removeEventListener('resize', checkNodeAndUpdate);
+      clearInterval(interval);
     };
   }, [location.pathname, isMinimized]);
 

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, use
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { App as CapApp } from '@capacitor/app';
 import { useKeyboard } from './KeyboardContext';
+import { useAuth } from './AuthContext';
 
 interface NavigationContextType {
   history: string[];
@@ -18,28 +19,92 @@ const NavigationContext = createContext<NavigationContextType | undefined>(undef
 // Internal component to handle hooks that depend on other providers
 const NavigationHandler = ({ goBack, location }: { goBack: (fallback?: string) => void, location: any }) => {
   const { isEmojiPickerOpen, setIsEmojiPickerOpen } = useKeyboard();
+  const { switchAccount } = useAuth();
+
+  // Create refs to capture current values for a stable single-listener effect
+  const locationRef = useRef(location);
+  const goBackRef = useRef(goBack);
+  const isEmojiPickerOpenRef = useRef(isEmojiPickerOpen);
+  const setIsEmojiPickerOpenRef = useRef(setIsEmojiPickerOpen);
+  const switchAccountRef = useRef(switchAccount);
 
   useEffect(() => {
-    const listener = CapApp.addListener('backButton', () => {
+    switchAccountRef.current = switchAccount;
+  }, [switchAccount]);
+
+  useEffect(() => {
+    locationRef.current = location;
+  }, [location]);
+
+  useEffect(() => {
+    goBackRef.current = goBack;
+  }, [goBack]);
+
+  useEffect(() => {
+    isEmojiPickerOpenRef.current = isEmojiPickerOpen;
+  }, [isEmojiPickerOpen]);
+
+  useEffect(() => {
+    setIsEmojiPickerOpenRef.current = setIsEmojiPickerOpen;
+  }, [setIsEmojiPickerOpen]);
+
+  useEffect(() => {
+    const listenerPromise = CapApp.addListener('backButton', () => {
       // Priority 1: Close emoji picker if open
-      if (isEmojiPickerOpen) {
-        setIsEmojiPickerOpen(false);
+      if (isEmojiPickerOpenRef.current) {
+        setIsEmojiPickerOpenRef.current(false);
         return;
       }
 
-      // Priority 2: Exit app if at root
-      if (location.pathname === '/feed' || location.pathname === '/' || location.pathname === '/auth') {
+      // Priority 2: Blur active input/textarea to hide the keyboard
+      const activeEl = document.activeElement;
+      if (activeEl instanceof HTMLElement && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        activeEl.blur();
+        return;
+      }
+
+      // Priority 3: Close open modals, dialogs, drawers, dropdowns, sheet overlays, listboxes, popovers
+      // Using selectors matching standard Radix/Vaul elements
+      const activeModal = document.querySelector('[role="dialog"], [role="menu"], [role="listbox"], [data-radix-portal], .dialog-content');
+      if (activeModal) {
+        // Dispatch synthetic Escape key event to close the modal
+        const event = new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          keyCode: 27,
+          which: 27,
+          bubbles: true,
+          cancelable: true
+        });
+        document.dispatchEvent(event);
+        return;
+      }
+
+      // Priority 4: Exit app if at root/landing pages
+      const pathname = locationRef.current.pathname;
+      const search = locationRef.current.search;
+
+      if (pathname === '/auth') {
+        const queryParams = new URLSearchParams(search);
+        const prevUserId = queryParams.get('previous_user_id');
+        if (prevUserId) {
+          switchAccountRef.current(prevUserId);
+          return;
+        }
+      }
+
+      if (pathname === '/feed' || pathname === '/' || pathname === '/auth') {
         CapApp.exitApp();
       } else {
-        // Priority 3: Normal back navigation
-        goBack();
+        // Priority 5: Normal back navigation
+        goBackRef.current();
       }
     });
 
     return () => {
-      listener.then(l => l.remove());
+      listenerPromise.then(l => l.remove());
     };
-  }, [location.pathname, goBack, isEmojiPickerOpen, setIsEmojiPickerOpen]);
+  }, []);
 
   return null;
 };

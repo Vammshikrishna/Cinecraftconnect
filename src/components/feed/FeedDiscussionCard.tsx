@@ -87,7 +87,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
             {/* Header */}
             <div className="flex justify-between items-start mb-4">
                 <div className="flex items-start gap-2">
-                    <h3 className="text-xl font-bold tracking-tight text-foreground leading-tight group-hover:text-primary transition-colors">
+                    <h3 className="font-serif text-lg font-bold tracking-tight text-foreground leading-tight group-hover:text-primary transition-colors">
                         {discussion.title}
                     </h3>
                     {hasUnread && (
@@ -118,19 +118,16 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
 
             {/* Category & Time */}
             <div className="flex items-center justify-between mb-5">
-                <Badge
-                    className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-3 py-1 font-bold text-[11px] uppercase tracking-wider gap-1 rounded-full"
-                >
-                    <Hash className="w-3 h-3" />
-                    {categoryName}
-                </Badge>
-                <span className="text-sm text-muted-foreground/70 font-medium">
+                <div className="font-mono bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 px-1.5 py-0.5 font-bold text-[9px] uppercase tracking-widest gap-1 rounded inline-flex items-center">
+                    CAT // {categoryName}
+                </div>
+                <span className="text-[10px] text-muted-foreground/70 font-medium">
                     {timeAgo(discussion.created_at)}
                 </span>
             </div>
 
             {/* Description */}
-            <p className="text-[15px] text-foreground/80 leading-relaxed mb-6 flex-1 line-clamp-2">
+            <p className="text-xs text-foreground/80 leading-relaxed mb-6 flex-1 line-clamp-2">
                 {discussion.description || 'Join this space to share ideas and connect with others.'}
             </p>
 
@@ -139,7 +136,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                 <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
                     <Users className="h-4 w-4 text-primary" />
                 </div>
-                <span className="text-sm font-bold text-foreground/70">{memberCount} members</span>
+                <span className="font-mono text-[9px] font-bold tracking-widest uppercase text-foreground/70 bg-muted/10 border border-border/40 px-1.5 py-0.5 rounded">MEMBERS // {memberCount}</span>
             </div>
 
             {/* Divider */}

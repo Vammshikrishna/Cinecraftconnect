@@ -1,88 +1,99 @@
-import { Cookie, Info, ShieldCheck } from 'lucide-react';
-import LegalPageLayout from '@/components/legal/LegalPageLayout';
+import { Cookie, ShieldCheck, Info, Settings, ToggleLeft } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import { useScroll } from 'framer-motion';
+import Footer from "@/components/Footer";
+import SEO from "@/components/common/SEO";
+
+const CREAM = '#F8F5F0'; const INK = '#0D0D0D'; const ORANGE = '#f97316';
+const SERIF = "'Lora', Georgia, serif"; const MONO = "'Inconsolata', 'Courier New', monospace"; const SANS = "'Work Sans', system-ui, sans-serif";
+
+const FilmGrain = () => <div aria-hidden style={{ position:'fixed', inset:0, zIndex:998, pointerEvents:'none', backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`, backgroundRepeat:'repeat', backgroundSize:'220px', opacity:0.025, mixBlendMode:'multiply' }} />;
+const Slug = ({ text }: { text: string }) => <div style={{ fontFamily:MONO, fontSize:10, fontWeight:700, letterSpacing:'0.22em', textTransform:'uppercase', color:'rgba(13,13,13,0.35)', marginBottom:16, display:'flex', alignItems:'center', gap:8 }}><span style={{ width:6, height:6, borderRadius:'50%', background:ORANGE, display:'inline-block' }} />{text}</div>;
+
+const Sec = ({ num, Icon, title, tag, children }: { num:string; Icon:any; title:string; tag:string; children:React.ReactNode }) => (
+  <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-8 md:gap-16 py-10 md:py-14 border-b border-black/10">
+    <div style={{ display:'flex', gap:14 }}>
+      <span style={{ fontFamily:MONO, fontSize:12, fontWeight:700, color:ORANGE, marginTop:4 }}>[ {num} ]</span>
+      <div>
+        <div style={{ width:36, height:36, borderRadius:8, border:`1px solid rgba(249,115,22,0.3)`, background:'rgba(249,115,22,0.06)', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:12 }}>
+          <Icon size={16} style={{ color:ORANGE }} />
+        </div>
+        <h2 style={{ fontFamily:SERIF, fontSize:20, fontWeight:400, color:INK, marginBottom:6 }}>{title}</h2>
+        <span style={{ fontFamily:MONO, fontSize:9, color:'rgba(13,13,13,0.3)', letterSpacing:'0.18em', textTransform:'uppercase' }}>{tag}</span>
+      </div>
+    </div>
+    <div style={{ fontSize:15, color:'rgba(13,13,13,0.62)', lineHeight:1.8 }}>{children}</div>
+  </div>
+);
+
+const COOKIE_TYPES = [
+  { type:'Essential Cookies',  required:true,  desc:'Required to maintain your encrypted session. Stores JWT auth tokens to verify API access. Cannot be disabled.' },
+  { type:'Functional Cookies', required:false, desc:'Configure interface aesthetics, keeping forced-light parameters active across logins, and caching showreel lists.' },
+  { type:'Analytical Cookies', required:false, desc:'Optionally calculate anonymous server load metrics, tracking peak casting schedules to prevent latency spikes.' },
+];
 
 const CookiePolicy = () => {
   const lastUpdated = "April 17, 2026";
 
   return (
-    <LegalPageLayout 
-      title="Cookie Policy"
-      subtitle="Last updated"
-      lastUpdated={lastUpdated}
-      icon={<Cookie className="h-7 w-7 text-primary" />}
-    >
-      <section className="glass-card p-10 rounded-3xl border-border/50 bg-card/30 hover:border-primary/20 transition-all duration-500 shadow-xl shadow-black/5">
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">
-          <Info className="h-6 w-6 text-primary" />
-          What Are Cookies?
-        </h2>
-        <p className="text-muted-foreground leading-relaxed text-lg">
-          Cookies are small text files that are used to store small pieces of information. They are stored on your device when the website is loaded on your browser. 
-        </p>
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 text-sm italic">
-            Make the website function properly
-          </div>
-          <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 text-sm italic">
-            Improve security and performance
-          </div>
-        </div>
-      </section>
+    <div style={{ background:CREAM, color:INK, fontFamily:SANS, overflowX:'hidden' }}>
+      <SEO title="Cookie Policy — CineCraft Connect" description="Learn how and why CineCraft Connect uses cookies to provide a functional and secure creator workspace." />
+      <FilmGrain />
+      <main className="max-w-[1440px] mx-auto px-6 md:px-12 pt-32 md:pt-40 pb-16 md:pb-24">
 
-      <section className="px-6">
-        <h2 className="text-2xl font-bold mb-8 flex items-center gap-3">
-          <ShieldCheck className="h-6 w-6 text-primary" />
-          How We Use Cookies
-        </h2>
-        <p className="text-muted-foreground leading-relaxed mb-8 max-w-2xl">
-          As most online services, our website uses first-party and third-party cookies for several purposes.
-        </p>
-        
-        <div className="grid gap-6">
-          {[
-            {
-              type: "Essential Cookies",
-              desc: "Some cookies are essential for you to be able to experience the full functionality of our site. They allow us to maintain user sessions and prevent any security threats."
-            },
-            {
-              type: "Functional Cookies",
-              desc: "These cookies help certain non-essential functionalities on our website, such as embedding content like videos or sharing content on social media."
-            },
-            {
-              type: "Analytical Cookies",
-              desc: "These cookies help us understand how visitors interact with the website, providing information on metrics like the number of visitors, bounce rate, and traffic source."
-            }
-          ].map((cookie, i) => (
-            <div key={i} className="group p-6 rounded-2xl bg-card border border-border/40 hover:border-primary/20 hover:bg-primary/5 transition-all duration-300">
-              <h4 className="font-bold text-foreground text-xl mb-2 group-hover:text-primary transition-colors">{cookie.type}</h4>
-              <p className="text-muted-foreground leading-relaxed">{cookie.desc}</p>
+        <motion.div initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.7, ease:[0.22,1,0.36,1] }}>
+          <Slug text="EXT. Legal Board — Cookie Manifest" />
+          <div style={{ display:'flex', alignItems:'center', gap:20, marginBottom:32 }}>
+            <div style={{ width:48, height:48, borderRadius:8, border:`1px solid rgba(249,115,22,0.3)`, background:'rgba(249,115,22,0.06)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <Cookie size={20} style={{ color:ORANGE }} />
             </div>
-          ))}
-        </div>
-      </section>
+            <div>
+              <h1 style={{ fontFamily:SERIF, fontSize:'clamp(36px,5vw,60px)', fontWeight:300, color:INK, lineHeight:1.1 }}>Cookie Policy</h1>
+              <p style={{ fontFamily:MONO, fontSize:10, color:'rgba(13,13,13,0.3)', letterSpacing:'0.18em', textTransform:'uppercase', marginTop:6 }}>Last Updated // {lastUpdated.toUpperCase()}</p>
+            </div>
+          </div>
+          <p style={{ fontSize:16, color:'rgba(13,13,13,0.6)', maxWidth:600, lineHeight:1.75, marginBottom:60, paddingBottom:48, borderBottom:'1px solid rgba(13,13,13,0.1)' }}>
+            This policy explains what cookies are, how we use them, and how you can control them when using CineCraft Connect.
+          </p>
+        </motion.div>
 
-      <section className="glass-card p-10 rounded-3xl border-border/50 bg-card/30">
-        <h2 className="text-2xl font-bold mb-6">Controlling Cookies</h2>
-        <p className="text-muted-foreground leading-relaxed mb-6">
-          Different browsers provide different methods to block and delete cookies used by websites. You can change the settings of your browser to block/delete the cookies.
-        </p>
-        <a 
-          href="https://allaboutcookies.org" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="inline-flex items-center px-6 py-3 rounded-xl bg-primary/10 border border-primary/20 text-primary font-bold hover:bg-primary/20 transition-all group"
-        >
-          More about cookies
-          <Info className="ml-2 h-4 w-4 group-hover:scale-110 transition-transform" />
-        </a>
-      </section>
+        <Sec num="01" Icon={Cookie} title="What Are Cookies?" tag="Definition // Storage Spec">
+          <p>Cookies are small data blocks downloaded onto your device's browser memory when visiting websites. They allow the host application to maintain session consistency, secure private workspaces, and store interface theme configurations.</p>
+        </Sec>
 
-      <section className="pt-12 border-t border-border text-center pb-8">
-        <p className="text-muted-foreground/60 italic text-sm">
-          By using CineCraft Connect, you consent to our use of cookies as described in this policy.
-        </p>
-      </section>
-    </LegalPageLayout>
+        <Sec num="02" Icon={ShieldCheck} title="How We Use Cookies" tag="Policies // Disclosures">
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            {COOKIE_TYPES.map((c,i) => (
+              <div key={i} style={{ display:'flex', gap:20, padding:'20px 22px', border:'1px solid rgba(13,13,13,0.1)', borderRadius:4 }}>
+                <div>
+                  <span style={{ fontFamily:MONO, fontSize:9, fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase', padding:'3px 8px', borderRadius:3, background: c.required ? 'rgba(249,115,22,0.1)' : 'rgba(13,13,13,0.06)', color: c.required ? ORANGE : 'rgba(13,13,13,0.4)', border: c.required ? `1px solid rgba(249,115,22,0.3)` : '1px solid rgba(13,13,13,0.12)', display:'inline-block', marginBottom:10 }}>
+                    {c.required ? 'Required' : 'Optional'}
+                  </span>
+                  <div style={{ fontFamily:SERIF, fontSize:16, color:INK, marginBottom:6 }}>{c.type}</div>
+                  <div style={{ fontSize:13, color:'rgba(13,13,13,0.52)', lineHeight:1.65 }}>{c.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Sec>
+
+        <Sec num="03" Icon={Settings} title="Controlling Cookies" tag="User Control // Instructions">
+          <p style={{ marginBottom:20 }}>Most browser settings allow you to block, audit, or purge local cookies. Doing so will invalidate cached authentication state and log you out of protected workspaces.</p>
+          <a href="https://allaboutcookies.org" target="_blank" rel="noopener noreferrer" style={{ fontFamily:MONO, fontSize:11, fontWeight:700, letterSpacing:'0.16em', textTransform:'uppercase', color:ORANGE, textDecoration:'none', display:'flex', alignItems:'center', gap:6 }}>
+            More About Cookies <Info size={12} />
+          </a>
+        </Sec>
+
+        <Sec num="04" Icon={ToggleLeft} title="Cookie Preferences" tag="Consent // Opt-Out">
+          <p style={{ marginBottom:16 }}>You can manage your cookie preferences at any time through our Cookie Consent Banner, accessible from the settings menu. Withdrawing consent for optional cookies will not affect core functionality.</p>
+          <div style={{ padding:'16px 20px', border:`1px solid rgba(249,115,22,0.2)`, background:'rgba(249,115,22,0.04)', borderRadius:4, fontSize:13, color:'rgba(13,13,13,0.55)', fontStyle:'italic' }}>
+            Essential cookies cannot be disabled as they are required for the platform to function securely.
+          </div>
+        </Sec>
+      </main>
+      <Footer />
+    </div>
   );
 };
 

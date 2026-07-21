@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Menu, X, WifiOff } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { motion, AnimatePresence } from 'framer-motion';
 import AppLogo from '@/components/common/AppLogo';
+import { useScroll } from 'framer-motion';
 
 const LandingNavbar = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [scrolled, setScrolled] = useState(false);
+  const { scrollY } = useScroll();
+
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => scrollY.on('change', v => setScrolled(v > 50)), [scrollY]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -29,110 +32,123 @@ const LandingNavbar = () => {
   ];
 
   return (
-    <motion.nav 
-      initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-6 py-3 sm:py-4"
+    <nav
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        transition: 'all 0.3s ease',
+        background: scrolled ? 'rgba(248,245,240,0.92)' : 'transparent',
+        backdropFilter: scrolled ? 'blur(12px)' : 'none',
+        borderBottom: scrolled ? '1px solid rgba(13,13,13,0.08)' : '1px solid transparent',
+      }}
     >
       {!isOnline && (
-        <div className="max-w-7xl mx-auto mb-2.5 text-center py-2 px-4 bg-amber-500/90 text-white text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl backdrop-blur-md shadow-md flex items-center justify-center gap-2 border border-amber-400/20">
-          <WifiOff size={14} className="animate-pulse" />
-          <span>Offline Mode active — browsing features is enabled, but login/registration is paused.</span>
+        <div style={{ background: '#f97316', color: '#fff', fontSize: 11, fontFamily: "'Inconsolata', monospace", letterSpacing: '0.15em', textTransform: 'uppercase', padding: '8px 16px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <WifiOff size={12} />
+          Offline — login paused
         </div>
       )}
-      <div className="max-w-7xl mx-auto flex items-center justify-between glass-card p-1 sm:p-1.5 px-3 sm:px-6 rounded-2xl border-border/30 backdrop-blur-xl bg-background/60">
-        <AppLogo size="sm" />
 
-        <div className="flex items-center gap-1.5 sm:gap-6">
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-6 mr-6 border-r border-border pr-6">
-            {navLinks.map((link) => (
-              <Link 
-                key={link.name} 
-                to={link.href} 
-                className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
-              >
-                {link.name}
-              </Link>
-            ))}
-          </div>
+      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <AppLogo size="sm" textColor="ink" />
 
-          <div className="flex items-center gap-1 sm:gap-3">
-            <div className="scale-90 sm:scale-100">
-              <ThemeToggle />
-            </div>
-            
-            {/* Desktop Actions */}
-            <div className="hidden md:flex items-center gap-3">
-              <Link to="/auth">
-                <Button variant="ghost" className="text-xs font-bold text-foreground hover:bg-muted rounded-xl px-4">
-                  Sign In
-                </Button>
-              </Link>
-              <Link to="/register">
-                <Button className="bg-primary text-white text-xs font-bold rounded-xl px-4 hover:scale-105 transition-all h-9">
-                  Join Community
-                  <ArrowRight size={14} className="ml-2" />
-                </Button>
-              </Link>
-            </div>
-
-            {/* Mobile Menu Toggle */}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="md:hidden h-8 w-8 rounded-lg hover:bg-muted"
-              onClick={() => setIsOpen(!isOpen)}
+        {/* Desktop links */}
+        <div className="hidden md:flex items-center gap-8">
+          {navLinks.map((link) => (
+            <Link
+              key={link.name}
+              to={link.href}
+              style={{
+                fontFamily: "'Work Sans', sans-serif",
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                color: 'rgba(13,13,13,0.6)',
+                textDecoration: 'none',
+                transition: 'color 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#0D0D0D')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'rgba(13,13,13,0.6)')}
             >
-              {isOpen ? <X size={18} /> : <Menu size={18} />}
-            </Button>
-          </div>
+              {link.name}
+            </Link>
+          ))}
         </div>
+
+        {/* Desktop actions */}
+        <div className="hidden md:flex items-center gap-5">
+          <Link
+            to="/auth"
+            style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(13,13,13,0.55)', textDecoration: 'none' }}
+          >
+            [ Sign In ]
+          </Link>
+          <Link to="/register">
+            <button
+              style={{
+                background: '#0D0D0D',
+                color: '#F8F5F0',
+                fontFamily: "'Work Sans', sans-serif",
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                border: 'none',
+                padding: '11px 22px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'background 0.2s',
+                borderRadius: 4,
+              }}
+              onMouseEnter={e => ((e.currentTarget as HTMLButtonElement).style.background = '#f97316')}
+              onMouseLeave={e => ((e.currentTarget as HTMLButtonElement).style.background = '#0D0D0D')}
+            >
+              Join Now <ArrowRight size={13} />
+            </button>
+          </Link>
+        </div>
+
+        {/* Mobile toggle */}
+        <button
+          className="md:hidden"
+          onClick={() => setIsOpen(!isOpen)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0D0D0D', padding: 4 }}
+        >
+          {isOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
       </div>
 
-      {/* Mobile Navigation Dropdown */}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.95 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="md:hidden mt-2 w-full"
-          >
-            <div className="glass-card p-4 flex flex-col gap-2 border-border/30 backdrop-blur-2xl bg-background/80 shadow-xl overflow-hidden">
-              {navLinks.map((link) => (
-                <Link 
-                  key={link.name} 
-                  to={link.href} 
-                  className="text-base font-bold text-foreground p-3 rounded-xl hover:bg-muted transition-colors flex items-center justify-between group"
-                  onClick={() => setIsOpen(false)}
-                >
-                  {link.name}
-                  <ArrowRight size={16} className="opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
-                </Link>
-              ))}
-              
-              <div className="h-px bg-border/20 my-2 mx-2" />
-              
-              <div className="flex flex-col gap-2 pt-2">
-                <Link to="/auth" onClick={() => setIsOpen(false)}>
-                  <Button variant="ghost" className="w-full justify-start text-base font-bold h-12 rounded-xl">
-                    Sign In
-                  </Button>
-                </Link>
-                <Link to="/register" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full justify-between text-base font-bold h-12 rounded-xl bg-primary text-white px-6">
-                    Join Community
-                    <ArrowRight size={18} />
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.nav>
+      {/* Mobile menu */}
+      {isOpen && (
+        <div style={{ background: '#F8F5F0', borderTop: '1px solid rgba(13,13,13,0.08)', padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {navLinks.map((link) => (
+            <Link
+              key={link.name}
+              to={link.href}
+              onClick={() => setIsOpen(false)}
+              style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(13,13,13,0.7)', textDecoration: 'none' }}
+            >
+              {link.name}
+            </Link>
+          ))}
+          <div style={{ height: 1, background: 'rgba(13,13,13,0.08)' }} />
+          <Link to="/auth" onClick={() => setIsOpen(false)} style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 14, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(13,13,13,0.6)', textDecoration: 'none' }}>
+            [ Sign In ]
+          </Link>
+          <Link to="/register" onClick={() => setIsOpen(false)}>
+            <button style={{ width: '100%', background: '#0D0D0D', color: '#F8F5F0', fontFamily: "'Work Sans', sans-serif", fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', border: 'none', padding: '14px 22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 4 }}>
+              Join Community <ArrowRight size={15} />
+            </button>
+          </Link>
+        </div>
+      )}
+    </nav>
   );
 };
 

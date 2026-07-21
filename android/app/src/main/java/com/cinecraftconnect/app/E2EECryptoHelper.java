@@ -26,14 +26,16 @@ import java.security.spec.MGF1ParameterSpec;
  *
  * Payload Formats (must match JS):
  * - Symmetric ciphertext: "ivBase64:ciphertextBase64"
- * - DM payload: {"__e2ee":true, "type":"dm", "for_sender":"...", "for_recipient":"..."}
- * - Group payload: {"__e2ee_group":true, "type":"group", "ciphertext":"ivBase64:ciphertextBase64"}
+ * - DM payload: {"__e2ee":true, "type":"dm", "for_sender":"...",
+ * "for_recipient":"..."}
+ * - Group payload: {"__e2ee_group":true, "type":"group",
+ * "ciphertext":"ivBase64:ciphertextBase64"}
  */
 public class E2EECryptoHelper {
 
     private static final String TAG = "E2EECrypto";
     private static final int GCM_TAG_LENGTH = 128; // bits
-    private static final int GCM_IV_LENGTH = 12;   // bytes
+    private static final int GCM_IV_LENGTH = 12; // bytes
 
     /**
      * Imports a Base64-encoded PKCS8 RSA private key.
@@ -62,8 +64,7 @@ public class E2EECryptoHelper {
                 "SHA-256",
                 "MGF1",
                 MGF1ParameterSpec.SHA256,
-                PSource.PSpecified.DEFAULT
-        );
+                PSource.PSpecified.DEFAULT);
         cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
 
         byte[] decrypted = cipher.doFinal(ciphertext);
@@ -103,9 +104,10 @@ public class E2EECryptoHelper {
      * Matches: decryptGroupMessage() in e2ee.ts
      *
      * The encryptedContent is a JSON string:
-     * {"__e2ee_group":true, "type":"group", "ciphertext":"ivBase64:ciphertextBase64"}
+     * {"__e2ee_group":true, "type":"group",
+     * "ciphertext":"ivBase64:ciphertextBase64"}
      *
-     * @param encryptedContent JSON payload string
+     * @param encryptedContent   JSON payload string
      * @param base64SymmetricKey decrypted AES-256 key in base64
      * @return decrypted message text
      */
@@ -130,10 +132,11 @@ public class E2EECryptoHelper {
      *
      * @param encryptedContent JSON payload string
      * @param base64PrivateKey PKCS8 RSA private key in base64
-     * @param isSender true if the current user is the message sender
+     * @param isSender         true if the current user is the message sender
      * @return decrypted message text
      */
-    public static String decryptDirectMessage(String encryptedContent, String base64PrivateKey, boolean isSender) throws Exception {
+    public static String decryptDirectMessage(String encryptedContent, String base64PrivateKey, boolean isSender)
+            throws Exception {
         JSONObject json = new JSONObject(encryptedContent);
 
         if (!json.optBoolean("__e2ee", false)) {
@@ -159,7 +162,8 @@ public class E2EECryptoHelper {
      * Checks if a message content string is an E2EE encrypted payload.
      */
     public static boolean isEncryptedContent(String content) {
-        if (content == null) return false;
+        if (content == null)
+            return false;
         return content.contains("__e2ee") || content.contains("__e2ee_group");
     }
 
@@ -169,8 +173,8 @@ public class E2EECryptoHelper {
      * AES-GCM encrypt.
      * Matches: encryptWithSymmetricKey() in e2ee.ts
      *
-     * @param plaintext     the message text to encrypt
-     * @param base64RawKey  256-bit AES key in base64 (raw format)
+     * @param plaintext    the message text to encrypt
+     * @param base64RawKey 256-bit AES key in base64 (raw format)
      * @return encrypted payload in format: "ivBase64:ciphertextBase64"
      */
     public static String aesGcmEncrypt(String plaintext, String base64RawKey) throws Exception {
@@ -197,7 +201,8 @@ public class E2EECryptoHelper {
      * Matches: encryptGroupMessage() in e2ee.ts
      *
      * Returns a JSON string:
-     * {"__e2ee_group":true, "type":"group", "ciphertext":"ivBase64:ciphertextBase64"}
+     * {"__e2ee_group":true, "type":"group",
+     * "ciphertext":"ivBase64:ciphertextBase64"}
      *
      * @param plaintext          the message text to encrypt
      * @param base64SymmetricKey decrypted AES-256 key in base64

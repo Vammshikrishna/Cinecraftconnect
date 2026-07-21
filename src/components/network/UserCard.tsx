@@ -191,20 +191,20 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
         {/* Name and Info */}
         <div className="space-y-0.5 mb-2 w-full">
           <div onClick={() => push(`/profile/${user.id}`)} className="block cursor-pointer">
-            <h3 className="font-bold text-[15px] text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-tight pt-1 flex items-center justify-center gap-1 uppercase">
+            <h3 className="font-serif font-bold text-[11px] md:text-[12px] text-foreground group-hover:text-primary transition-colors line-clamp-2 leading-tight pt-1 flex items-center justify-center gap-1 uppercase text-center flex-wrap">
               {user.full_name || user.username}
-              {(user.is_verified || user.username?.toLowerCase().includes('vamshi') || user.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+              {user.is_verified && <VerificationBadge size="xs" />}
             </h3>
           </div>
           
           <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
-            <Badge variant="secondary" className="bg-primary/10 text-primary hover:bg-primary/20 border-none px-1.5 py-0 h-4 text-[9px] font-bold uppercase tracking-tighter">
-              <Briefcase size={8} className="mr-1" /> {user.craft || 'Filmmaker'}
-            </Badge>
+            <div className="font-mono text-[6.5px] md:text-[7px] font-bold uppercase tracking-widest text-primary bg-primary/5 border border-primary/20 px-2 py-0.5 rounded text-center">
+              CRAFT // {user.craft || 'FILMMAKER'}
+            </div>
           </div>
  
           {user.bio && (
-            <p className="text-[10px] text-muted-foreground/80 line-clamp-2 mt-1.5 px-2 leading-tight h-6 overflow-hidden italic italic-serif">
+            <p className="text-[9px] text-muted-foreground/80 line-clamp-2 mt-1.5 px-2 leading-tight h-6 overflow-hidden italic italic-serif">
                "{user.bio}"
             </p>
           )}
@@ -219,8 +219,8 @@ const UserCard: React.FC<UserCardProps> = ({ user, onConnect, onAccept, onReject
             {user.suggestion_reason === 'Based on location' && <MapPin size={9} className="text-primary/60" />}
             {user.suggestion_reason === 'Based on network' && <Globe size={9} className="text-primary/60" />}
             {(user.suggestion_reason === 'Suggested for you' || user.suggestion_reason === 'Connected' || user.suggestion_reason === 'Pending connection') && <Sparkles size={9} className="text-primary/60" />}
-            <span className="text-[9px] font-bold text-muted-foreground/60 uppercase tracking-widest">
-              {user.suggestion_reason}
+            <span className="font-mono text-[6px] md:text-[6.5px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/10 border border-border/40 px-2 py-0.5 rounded text-center truncate max-w-[140px]">
+              REASON // {user.suggestion_reason}
             </span>
           </div>
         )}

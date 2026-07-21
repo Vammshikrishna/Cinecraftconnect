@@ -155,7 +155,7 @@ export function ShareToConnectionDialog({ isOpen, onOpenChange, postId }: ShareT
 
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[400px] bg-card text-card-foreground border-border">
+            <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="sm:max-w-[400px] bg-card text-card-foreground border-border">
                 <DialogHeader>
                     <DialogTitle>Send to Connection</DialogTitle>
                 </DialogHeader>

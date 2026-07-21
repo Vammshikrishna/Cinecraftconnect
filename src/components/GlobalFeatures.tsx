@@ -4,6 +4,8 @@ import { BackToTop } from '@/components/ui/back-to-top';
 import { GlobalCallOverlay } from '@/components/calls/GlobalCallOverlay';
 
 import { GlobalNotificationListener } from '@/components/notifications/GlobalNotificationListener';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Preferences } from '@capacitor/preferences';
@@ -21,6 +23,7 @@ import { Capacitor } from '@capacitor/core';
 const GlobalFeatures = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { user, switchAccount } = useAuth();
 
     // Activate global keyboard shortcuts
     useKeyboardShortcuts();
@@ -74,10 +77,30 @@ const GlobalFeatures = () => {
         // Listen for direct notification taps (Foreground and Background)
         let pushSub: { remove: () => void } | null = null;
         if (Capacitor.isNativePlatform()) {
-            PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+            PushNotifications.addListener('pushNotificationActionPerformed', async (action) => {
                 const data = action.notification.data;
-                if (data && data.actionUrl) {
-                    navigate(data.actionUrl);
+                if (data) {
+                    // Mark notification as read in database
+                    if (data.id) {
+                        supabase
+                            .from('notifications')
+                            .update({ is_read: true })
+                            .eq('id', data.id)
+                            .then(({ error }) => {
+                                if (error) console.error('[PUSH ROUTER] Failed to mark notification as read:', error);
+                                else console.log('[PUSH ROUTER] Notification marked as read:', data.id);
+                            });
+                    }
+
+                    if (data.targetUserId && user && data.targetUserId !== user.id) {
+                        console.log('[PUSH ROUTER] Foreground tap for a different account, switching...');
+                        if (data.actionUrl) {
+                            await Preferences.set({ key: 'pending_push_url', value: data.actionUrl });
+                        }
+                        switchAccount(data.targetUserId);
+                    } else if (data.actionUrl) {
+                        navigate(data.actionUrl);
+                    }
                 }
             }).then(s => pushSub = s);
         }

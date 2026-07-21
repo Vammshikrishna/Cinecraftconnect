@@ -19,8 +19,8 @@ export const useE2EEChatKeys = (partnerId?: string) => {
     const loadKeys = async () => {
       if (!user) return;
       
-      if (isChecking || isSetupRequired || isRecoveryRequired) {
-        console.log(`[useE2EEChatKeys] E2EE backup/recovery in progress or required. Delaying key loading.`);
+      if (isChecking) {
+        console.log(`[useE2EEChatKeys] E2EE backup/recovery check in progress. Delaying key loading.`);
         if (mounted) setKeysLoaded(false);
         return;
       }

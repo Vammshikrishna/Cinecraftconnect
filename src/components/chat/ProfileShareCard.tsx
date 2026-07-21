@@ -6,6 +6,7 @@ import VerificationBadge from '../common/VerificationBadge';
 import { getOptimizedImage } from '@/utils/image-optimization';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Zap } from 'lucide-react';
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 
 interface ProfileShareCardProps {
     name: string;
@@ -86,6 +87,7 @@ export const ProfileShareCard = ({
                 !isValidLink ? "cursor-default opacity-75 grayscale-[0.5]" : "cursor-pointer active:scale-[0.98]"
             )}
         >
+            <CornerBrackets />
             {/* Artistic Background Element */}
             <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent -z-10" />
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-primary/10 blur-[60px] rounded-full" />
@@ -110,15 +112,12 @@ export const ProfileShareCard = ({
 
                 {/* Name and Info */}
                 <div className="space-y-2 w-full px-2">
-                    <h3 className="font-black text-[18px] text-foreground group-hover:text-primary transition-colors line-clamp-1 leading-tight flex items-center justify-center gap-1.5 uppercase tracking-tighter">
+                    <h3 className="font-serif text-[13px] font-bold text-foreground group-hover:text-primary transition-colors line-clamp-2 leading-tight flex items-center justify-center gap-1.5 uppercase tracking-tight">
                         {name}
                     </h3>
                     
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
-                        <Zap size={10} className="text-primary fill-primary" />
-                        <span className="text-[9px] font-black text-primary uppercase tracking-[0.2em]">
-                            {craft || 'Filmmaker'}
-                        </span>
+                    <div className="font-mono inline-flex items-center justify-center mx-auto text-[7.5px] font-bold text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded w-max">
+                        CRAFT // {craft || 'Filmmaker'}
                     </div>
 
                     {bio && (

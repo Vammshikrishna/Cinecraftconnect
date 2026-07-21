@@ -36,13 +36,14 @@ const SuperAdminDashboard = () => {
   const [staff, setStaff] = useState<any[]>([]);
   const [flags, setFlags] = useState<any[]>([]);
   const [policies, setPolicies] = useState<any[]>([]);
-  const [economics, setEconomics] = useState<any>({
-    total_gmv: 0,
-    commission_rate: 15,
-    payout_status: 'Scheduled'
-  });
   const [selectedPolicy, setSelectedPolicy] = useState<any>(null);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
+  const [fraudLogs, setFraudLogs] = useState<any[]>([]);
+  const [riskStats, setRiskStats] = useState({
+    low: { label: 'Low Risk Users', count: 0, percent: '0%', color: 'bg-emerald-500' },
+    medium: { label: 'Suspicious Active', count: 0, percent: '0%', color: 'bg-amber-500' },
+    high: { label: 'High Risk / Bot', count: 0, percent: '0%', color: 'bg-red-500' },
+  });
   const { toast } = useToast();
   const { user } = useAuth();
   const { hasPermission, requiresApproval } = useGovernance();
@@ -50,8 +51,8 @@ const SuperAdminDashboard = () => {
   useEffect(() => {
     fetchStaff();
     fetchFlags();
-    fetchEconomics();
     fetchPolicies();
+    fetchRiskData();
 
     // Subscribe to real-time changes
     const channel = supabase
@@ -77,6 +78,33 @@ const SuperAdminDashboard = () => {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  const fetchRiskData = async () => {
+    const { data: logs } = await (supabase as any)
+      .from('audit_logs')
+      .select('*')
+      .ilike('action', '%FRAUD%')
+      .order('created_at', { ascending: false })
+      .limit(3);
+    if (logs) setFraudLogs(logs);
+
+    const { data: profiles } = await (supabase as any).from('profiles').select('trust_score');
+    if (profiles && profiles.length > 0) {
+      let low = 0, medium = 0, high = 0;
+      profiles.forEach((p: any) => {
+        const score = p.trust_score || 50; 
+        if (score >= 70) low++;
+        else if (score >= 40) medium++;
+        else high++;
+      });
+      const total = profiles.length;
+      setRiskStats({
+        low: { label: 'Low Risk Users', count: low, percent: ((low / total) * 100).toFixed(1) + '%', color: 'bg-emerald-500' },
+        medium: { label: 'Suspicious Active', count: medium, percent: ((medium / total) * 100).toFixed(1) + '%', color: 'bg-amber-500' },
+        high: { label: 'High Risk / Bot', count: high, percent: ((high / total) * 100).toFixed(1) + '%', color: 'bg-red-500' },
+      });
+    }
+  };
 
   const fetchStaff = async () => {
     const { data } = await (supabase as any)
@@ -128,11 +156,6 @@ const SuperAdminDashboard = () => {
     } catch (error: any) {
       toast({ title: 'Update Failed', description: error.message, variant: 'destructive' });
     }
-  };
-
-  const fetchEconomics = async () => {
-    const { data, error } = await (supabase as any).rpc('get_platform_economics');
-    if (!error && data) setEconomics(data);
   };
 
   const fetchFlags = async () => {
@@ -300,9 +323,6 @@ const SuperAdminDashboard = () => {
             <TabsTrigger value="risk" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
               <AlertTriangle className="w-4 h-4" /> Trust & Risk
             </TabsTrigger>
-            <TabsTrigger value="infrastructure" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
-              <HardDrive className="w-4 h-4" /> Infrastructure
-            </TabsTrigger>
             <TabsTrigger value="growth" className="rounded-xl px-6 py-2.5 text-xs font-bold gap-2 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
               <Globe className="w-4 h-4" /> Growth
             </TabsTrigger>
@@ -313,8 +333,7 @@ const SuperAdminDashboard = () => {
           </TabsContent>
 
           <TabsContent value="governance" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 space-y-6">
+            <div className="space-y-6">
                 <div className="glass-card p-6 border-border/50">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
@@ -393,56 +412,6 @@ const SuperAdminDashboard = () => {
                    </div>
                 </div>
               </div>
-
-              <div className="space-y-6">
-                <div className="glass-card p-6 border-amber-500/20 bg-amber-500/5">
-                  <h3 className="text-sm font-black uppercase tracking-widest text-amber-700 mb-4">Revenue Governance</h3>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
-                      <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest mb-1">Total Platform GMV</p>
-                      <p className="text-2xl font-black text-foreground">₹{economics.total_gmv.toLocaleString()}</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
-                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">Commission</p>
-                        <p className="text-lg font-black text-foreground">{economics.commission_rate}%</p>
-                      </div>
-                      <div className="p-3 bg-white/50 dark:bg-black/20 rounded-xl border border-amber-500/10">
-                        <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-1">Payouts</p>
-                        <p className="text-lg font-black text-foreground capitalize">{economics.payout_status}</p>
-                      </div>
-                    </div>
-                    <Button variant="outline" className="w-full h-10 rounded-xl border-amber-500/20 text-amber-700 font-bold text-[10px] uppercase tracking-widest">
-                      Manage Commissions
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="glass-card p-6 border-border/50">
-                  <h3 className="text-sm font-black uppercase tracking-widest text-muted-foreground mb-4">Security Center</h3>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
-                      <div className="flex items-center gap-2 text-xs font-bold">
-                        <Key className="w-4 h-4 text-blue-500" /> API Keys
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
-                      <div className="flex items-center gap-2 text-xs font-bold">
-                        <Database className="w-4 h-4 text-emerald-500" /> Backup Vault
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                    <div className="flex items-center justify-between p-2 hover:bg-muted/30 rounded-lg cursor-pointer transition-colors">
-                      <div className="flex items-center gap-2 text-xs font-bold">
-                        <Globe className="w-4 h-4 text-purple-500" /> DNS Health
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="growth" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
@@ -467,41 +436,40 @@ const SuperAdminDashboard = () => {
                   <AlertTriangle className="w-4 h-4 text-amber-500" /> Fraud Intelligence Feed
                 </h3>
                 <div className="space-y-4">
-                  {[1, 2, 3].map((_, i) => (
-                    <div key={i} className="flex items-center justify-between p-4 bg-red-500/5 rounded-2xl border border-red-500/10 transition-all hover:bg-red-500/10">
+                  {fraudLogs.length > 0 ? fraudLogs.map((log, i) => (
+                    <div key={log.id || i} className="flex items-center justify-between p-4 bg-red-500/5 rounded-2xl border border-red-500/10 transition-all hover:bg-red-500/10">
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
                           <ShieldAlert className="w-5 h-5 text-red-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-bold">Suspicious Withdrawal Attempt</p>
-                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">User ID: 882x-11 • Mumbai, IN • 4m ago</p>
+                          <p className="text-sm font-bold">{log.action.replace(/_/g, ' ')}</p>
+                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-widest">
+                            Target ID: {log.target_id?.slice(0, 8)} • {new Date(log.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
                       </div>
                       <Badge variant="destructive" className="bg-red-500 text-white border-none text-[9px] font-black uppercase">Blocked</Badge>
                     </div>
-                  ))}
-                  <div className="py-8 text-center text-muted-foreground text-xs font-medium border-2 border-dashed border-border/30 rounded-2xl">
-                    Scanning global traffic for anomalies...
-                  </div>
+                  )) : (
+                    <div className="py-8 text-center text-muted-foreground text-xs font-medium border-2 border-dashed border-border/30 rounded-2xl">
+                      No active fraud anomalies detected. Scanning traffic...
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="glass-card p-6 border-amber-500/20 bg-amber-500/5">
                 <h3 className="text-sm font-black uppercase tracking-widest text-amber-700 mb-6">Risk Distribution</h3>
                 <div className="space-y-6">
-                  {[
-                    { label: 'Low Risk Users', value: '98.2%', color: 'bg-emerald-500' },
-                    { label: 'Suspicious Active', value: '1.4%', color: 'bg-amber-500' },
-                    { label: 'High Risk / Bot', value: '0.4%', color: 'bg-red-500' },
-                  ].map((risk, i) => (
+                  {[riskStats.low, riskStats.medium, riskStats.high].map((risk, i) => (
                     <div key={i} className="space-y-2">
                       <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
-                        <span>{risk.label}</span>
-                        <span className="text-foreground">{risk.value}</span>
+                        <span>{risk.label} ({risk.count})</span>
+                        <span className="text-foreground">{risk.percent}</span>
                       </div>
                       <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                        <div className={`h-full ${risk.color}`} style={{ width: risk.value }} />
+                        <div className={`h-full ${risk.color}`} style={{ width: risk.percent }} />
                       </div>
                     </div>
                   ))}
@@ -512,27 +480,6 @@ const SuperAdminDashboard = () => {
 
           <TabsContent value="security" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <AuditLedger />
-          </TabsContent>
-
-          <TabsContent value="infrastructure" className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {[
-                   { label: 'Compute Engine', value: '42%', icon: Cpu, color: 'text-blue-500' },
-                   { label: 'Database I/O', value: '18%', icon: Database, color: 'text-emerald-500' },
-                   { label: 'Network Latency', value: '24ms', icon: Network, color: 'text-purple-500' },
-                ].map((node, i) => (
-                   <div key={i} className="glass-card p-6 border-border/50">
-                      <div className="flex items-center justify-between mb-4">
-                         <div className={`w-10 h-10 rounded-xl bg-muted/50 flex items-center justify-center`}>
-                            <node.icon className={`w-5 h-5 ${node.color}`} />
-                         </div>
-                         <Badge className="bg-emerald-500/10 text-emerald-500 border-none text-[9px] font-black">HEALTHY</Badge>
-                      </div>
-                      <p className="text-2xl font-black text-foreground">{node.value}</p>
-                      <p className="text-[10px] text-muted-foreground font-black uppercase tracking-widest mt-1">{node.label}</p>
-                   </div>
-                ))}
-             </div>
           </TabsContent>
         </Tabs>
 

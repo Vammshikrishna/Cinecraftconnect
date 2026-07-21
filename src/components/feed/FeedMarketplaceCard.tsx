@@ -56,13 +56,13 @@ const FeedMarketplaceCard = ({ item, onDismiss }: FeedMarketplaceCardProps) => {
                         )}
                     </div>
                     <div className="p-4 flex flex-col flex-1 px-3">
-                        <h3 className="font-bold text-sm tracking-tight line-clamp-2 group-hover:text-primary transition-colors mb-1.5">
+                        <h3 className="font-serif text-lg font-bold tracking-tight line-clamp-2 group-hover:text-primary transition-colors mb-1.5">
                             {item.title}
                         </h3>
                         {item.category && (
                             <div className="flex items-center justify-between mt-auto pt-2">
-                                <span className="text-[10px] font-bold tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-full uppercase border border-primary/20">
-                                    {item.category}
+                                <span className="font-mono text-[10px] font-bold tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded uppercase border border-primary/20">
+                                    CAT // {item.category}
                                 </span>
                             </div>
                         )}

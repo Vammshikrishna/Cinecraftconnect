@@ -21,7 +21,8 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-        if (action == null) return;
+        if (action == null)
+            return;
 
         String conversationId = intent.getStringExtra("conversationId");
         String targetUserId = intent.getStringExtra("targetUserId");
@@ -55,7 +56,8 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                         }
                     }
 
-                    sendReplyToSupabase(context, conversationId, targetUserId, contentToSend, displayText, notificationId, senderName, avatarUrl, actionUrl, intent);
+                    sendReplyToSupabase(context, conversationId, targetUserId, contentToSend, displayText,
+                            notificationId, senderName, avatarUrl, actionUrl, intent);
                 }
             }
         } else if ("MARK_READ_ACTION".equals(action)) {
@@ -69,18 +71,22 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
         }
     }
 
-    private void sendReplyToSupabase(Context context, String conversationId, String targetUserId, String contentToSend, String displayText, int notificationId, String senderName, String avatarUrl, String actionUrl, Intent originalIntent) {
+    private void sendReplyToSupabase(Context context, String conversationId, String targetUserId, String contentToSend,
+            String displayText, int notificationId, String senderName, String avatarUrl, String actionUrl,
+            Intent originalIntent) {
         new Thread(() -> {
             try {
-                URL url = java.net.URI.create("https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-reply").toURL();
+                URL url = java.net.URI.create("https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-reply")
+                        .toURL();
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
-                
+
                 String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
-                        .getString("supabase_anon_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
+                        .getString("supabase_anon_key",
+                                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
                 conn.setRequestProperty("Authorization", "Bearer " + anonKey);
-                
+
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();
@@ -100,7 +106,8 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 int responseCode = conn.getResponseCode();
                 if (responseCode == 200) {
                     // Show plaintext in local notification bubble
-                    appendReplyToNotification(context, conversationId, notificationId, displayText, senderName, avatarUrl, actionUrl, originalIntent);
+                    appendReplyToNotification(context, conversationId, notificationId, displayText, senderName,
+                            avatarUrl, actionUrl, originalIntent);
                 } else {
                     updateNotification(context, notificationId, "Failed: " + responseCode);
                 }
@@ -114,15 +121,17 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
     private void markAsReadInSupabase(Context context, String conversationId, int notificationId) {
         new Thread(() -> {
             try {
-                URL url = java.net.URI.create("https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-reply").toURL();
+                URL url = java.net.URI.create("https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-reply")
+                        .toURL();
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
-                
+
                 String anonKey = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
-                        .getString("supabase_anon_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
+                        .getString("supabase_anon_key",
+                                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1Z3RkdXRpbXVsaWJheHdubGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MDQ2MjQsImV4cCI6MjA5MjA2NDYyNH0.StwROJi2Jbn0T-hPaisynp3YNDj0-coFET0BJWrsYdM");
                 conn.setRequestProperty("Authorization", "Bearer " + anonKey);
-                
+
                 conn.setDoOutput(true);
 
                 JSONObject jsonParam = new JSONObject();
@@ -138,9 +147,10 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
 
                 int responseCode = conn.getResponseCode();
                 if (responseCode == 200) {
-                    NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                    NotificationManager manager = (NotificationManager) context
+                            .getSystemService(Context.NOTIFICATION_SERVICE);
                     manager.cancel(notificationId);
-                    
+
                     // Clear the history cache so it doesn't pile up!
                     context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
                             .edit()
@@ -156,8 +166,10 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
         }).start();
     }
 
-    private void appendReplyToNotification(Context context, String conversationId, int notificationId, String replyText, String senderName, String avatarUrl, String actionUrl, Intent originalIntent) {
-        android.content.SharedPreferences prefs = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+    private void appendReplyToNotification(Context context, String conversationId, int notificationId, String replyText,
+            String senderName, String avatarUrl, String actionUrl, Intent originalIntent) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("CapacitorStorage",
+                Context.MODE_PRIVATE);
         String historyJson = prefs.getString("push_history_" + conversationId, "[]");
 
         org.json.JSONArray historyArray;
@@ -174,7 +186,8 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 newMsg.put("text", replyText);
                 newMsg.put("isMe", true);
                 historyArray.put(newMsg);
-            } catch (org.json.JSONException ignored) {}
+            } catch (org.json.JSONException ignored) {
+            }
         }
         prefs.edit().putString("push_history_" + conversationId, historyArray.toString()).apply();
 
@@ -189,12 +202,14 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
                 android.graphics.Bitmap myBitmap = android.graphics.BitmapFactory.decodeStream(input);
                 if (myBitmap != null) {
                     myBitmap = FCMService.getCircularBitmap(myBitmap);
-                    androidx.core.graphics.drawable.IconCompat icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(myBitmap);
+                    androidx.core.graphics.drawable.IconCompat icon = androidx.core.graphics.drawable.IconCompat
+                            .createWithBitmap(myBitmap);
                     personBuilder.setIcon(icon);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {
+            }
         }
-        
+
         androidx.core.app.Person sender = personBuilder.build();
         androidx.core.app.Person me = new androidx.core.app.Person.Builder().setName("Me").build();
 
@@ -214,20 +229,27 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
             } catch (org.json.JSONException e) {
                 try {
                     messagingStyle.addMessage(historyArray.getString(i), System.currentTimeMillis(), sender);
-                } catch (org.json.JSONException ignored) {}
+                } catch (org.json.JSONException ignored) {
+                }
             }
         }
 
-        android.app.PendingIntent replyPendingIntent = android.app.PendingIntent.getBroadcast(context, notificationId + 2, originalIntent, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
+        android.app.PendingIntent replyPendingIntent = android.app.PendingIntent.getBroadcast(context,
+                notificationId + 2, originalIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE);
         RemoteInput remoteInput = new RemoteInput.Builder("key_text_reply").setLabel("Reply...").build();
-        NotificationCompat.Action replyAction = new NotificationCompat.Action.Builder(0, "Reply", replyPendingIntent).addRemoteInput(remoteInput).build();
+        NotificationCompat.Action replyAction = new NotificationCompat.Action.Builder(0, "Reply", replyPendingIntent)
+                .addRemoteInput(remoteInput).build();
 
         Intent readIntent = new Intent(context, NotificationReplyReceiver.class);
         readIntent.setAction("MARK_READ_ACTION");
         readIntent.putExtra("conversationId", conversationId);
         readIntent.putExtra("notificationId", notificationId);
-        android.app.PendingIntent readPendingIntent = android.app.PendingIntent.getBroadcast(context, notificationId + 1, readIntent, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
-        NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(0, "Mark as Read", readPendingIntent).build();
+        android.app.PendingIntent readPendingIntent = android.app.PendingIntent.getBroadcast(context,
+                notificationId + 1, readIntent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Action readAction = new NotificationCompat.Action.Builder(0, "Mark as Read",
+                readPendingIntent).build();
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, "default")
                 .setSmallIcon(R.mipmap.ic_launcher)
@@ -244,18 +266,20 @@ public class NotificationReplyReceiver extends BroadcastReceiver {
             builder.setSubText(currentUsername);
         }
 
-        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager notificationManager = (NotificationManager) context
+                .getSystemService(Context.NOTIFICATION_SERVICE);
         notificationManager.notify(notificationId, builder.build());
     }
 
     private void updateNotification(Context context, int notificationId, String text) {
-        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager notificationManager = (NotificationManager) context
+                .getSystemService(Context.NOTIFICATION_SERVICE);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, "default")
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentText(text)
                 .setAutoCancel(true)
                 .setTimeoutAfter(2000); // Disappear after 2 seconds
-        
+
         notificationManager.notify(notificationId, builder.build());
     }
 }

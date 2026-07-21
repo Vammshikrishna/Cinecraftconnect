@@ -92,7 +92,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                 </div>
 
                 <div className="p-4 flex flex-col gap-3 flex-1 bg-gradient-to-b from-background/50 to-background">
-                    <h3 className="text-base font-bold tracking-tight text-foreground line-clamp-2 leading-tight" title={rating.title}>
+                    <h3 className="font-serif font-bold text-xl tracking-tight text-foreground line-clamp-2 leading-tight" title={rating.title}>
                         {rating.title}
                     </h3>
 
@@ -190,13 +190,13 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                 <div className="flex-1 p-4 flex flex-col justify-between relative z-10">
                     <div className="space-y-2">
                         <div className="flex justify-between items-start gap-2">
-                            <h3 className="text-base font-bold tracking-tight text-foreground line-clamp-2 leading-tight">
+                            <h3 className="font-serif font-bold text-xl tracking-tight text-foreground line-clamp-2 leading-tight">
                                 {rating.title}
                             </h3>
                             {language && (
-                                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 bg-muted text-muted-foreground rounded shrink-0">
-                                    {language}
-                                </span>
+                                <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded shrink-0">
+                                    LANG // {language}
+                                </div>
                             )}
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2">

@@ -58,62 +58,61 @@ export const useUnreadMessages = () => {
     // Unique identifier for this hook instance's channels
     const hookId = Math.random().toString(36).substring(7);
 
-    const handleNewMessage = (payload: any, type: 'dm' | 'discussion' | 'project') => {
-      const senderId = payload.new.sender_id || payload.new.user_id;
-      const contextId = payload.new.room_id || payload.new.project_space_id || payload.new.space_id || payload.new.sender_id;
+    const handleNotification = (payload: any) => {
+      const notif = payload.new;
+      if (!notif) return;
 
-      if (senderId !== user.id) {
-        // Optimistically update UI instantly while we wait for RPC
-        setLastMessageToken(prev => prev + 1);
-        if (type === 'dm') {
-          setUnreadCount(prev => prev + 1);
-          setHasUnread(true);
-        } else if (type === 'project') {
-          setUnreadProjectIds(prev => Array.from(new Set([...prev, contextId])));
-          setHasUnreadProjects(true);
-        } else if (type === 'discussion') {
-          setUnreadDiscussionIds(prev => Array.from(new Set([...prev, contextId])));
+      const triggerUserId = notif.trigger_user_id;
+      if (triggerUserId === user.id) return;
+
+      setLastMessageToken(prev => prev + 1);
+
+      const actionUrl = notif.action_url || '';
+      if (actionUrl.startsWith('/messages')) {
+        setUnreadCount(prev => prev + 1);
+        setHasUnread(true);
+      } else if (actionUrl.startsWith('/discussion-rooms')) {
+        const roomId = actionUrl.split('/').pop();
+        if (roomId) {
+          setUnreadDiscussionIds(prev => Array.from(new Set([...prev, roomId])));
           setHasUnreadDiscussions(true);
         }
-
-        // Force a re-fetch to ensure the database correctly calculates unread status
-        fetchInitialUnreadStatus();
+      } else if (actionUrl.includes('/space')) {
+        const match = actionUrl.match(/\/projects\/([a-zA-Z0-9-]+)\/space/);
+        const projectId = match ? match[1] : null;
+        if (projectId) {
+          setUnreadProjectIds(prev => Array.from(new Set([...prev, projectId])));
+          setHasUnreadProjects(true);
+        }
       }
+
+      fetchInitialUnreadStatus();
     };
 
-    const directMessagesChannel = supabase
-      .channel(`user_dm_realtime_${user.id}_${hookId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, (p) => handleNewMessage(p, 'dm'))
+    const unreadChannel = supabase
+      .channel(`user_unread_sync_${user.id}_${hookId}`)
+      // 1. Listen for incoming direct messages (only for this user)
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
         table: 'direct_messages',
         filter: `receiver_id=eq.${user.id}`
-      }, () => fetchInitialUnreadStatus()) // Catch updates/reads
-      .subscribe();
-
-    const roomMessagesChannel = supabase
-      .channel(`user_room_realtime_${user.id}_${hookId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'room_messages' }, (p) => handleNewMessage(p, 'discussion'))
-      .subscribe();
-
-    const projectMessagesChannel = supabase
-      .channel(`user_project_realtime_${user.id}_${hookId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'project_space_messages' }, (p) => handleNewMessage(p, 'project'))
-      .subscribe();
-
-    const roomReadStatusChannel = supabase
-      .channel(`user_room_read_realtime_${user.id}_${hookId}`)
+      }, () => fetchInitialUnreadStatus())
+      // 2. Listen for new notifications (room & project message triggers populate notifications for members)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`
+      }, handleNotification)
+      // 3. Listen for room read status updates (when messages are marked read on another tab/session)
       .on('postgres_changes', {
         event: '*', 
         schema: 'public', 
         table: 'room_message_read_status',
         filter: `user_id=eq.${user.id}`
       }, () => fetchInitialUnreadStatus())
-      .subscribe();
-
-    const projectReadStatusChannel = supabase
-      .channel(`user_project_read_realtime_${user.id}_${hookId}`)
+      // 4. Listen for project read status updates (when messages are marked read on another tab/session)
       .on('postgres_changes', {
         event: '*', 
         schema: 'public', 
@@ -123,11 +122,7 @@ export const useUnreadMessages = () => {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(directMessagesChannel);
-      supabase.removeChannel(roomMessagesChannel);
-      supabase.removeChannel(projectMessagesChannel);
-      supabase.removeChannel(roomReadStatusChannel);
-      supabase.removeChannel(projectReadStatusChannel);
+      supabase.removeChannel(unreadChannel);
     };
   }, [user?.id, fetchInitialUnreadStatus]);
 

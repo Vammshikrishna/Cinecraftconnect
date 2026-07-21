@@ -21,7 +21,7 @@ export const FirstContentBlock = ({ announcements, projects, discussions, rating
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {announcements.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal">
                                     <FeedAnnouncementCard announcement={item} onDismiss={onDismiss} isWidget={true} />
                                 </div>
                             ))}
@@ -38,7 +38,7 @@ export const FirstContentBlock = ({ announcements, projects, discussions, rating
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {projects.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal">
                                     <FeedProjectCard project={item} onDismiss={onDismiss} />
                                 </div>
                             ))}
@@ -55,7 +55,7 @@ export const FirstContentBlock = ({ announcements, projects, discussions, rating
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {discussions.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal h-full">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal h-full">
                                     <FeedDiscussionCard discussion={item} onDismiss={onDismiss} />
                                 </div>
                             ))}
@@ -72,7 +72,7 @@ export const FirstContentBlock = ({ announcements, projects, discussions, rating
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {ratings.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal">
                                     <FeedRatingCard rating={item} onDismiss={onDismiss} />
                                 </div>
                             ))}
@@ -116,8 +116,8 @@ export const SecondContentBlock = ({ creators, marketplace, vendors, onConnect, 
                                         </Avatar>
                                     </Link>
                                     <div className="text-center w-full">
-                                        <p className="font-semibold text-sm lg:text-base truncate w-full">{creator.full_name || creator.username}</p>
-                                        <p className="text-[11px] lg:text-xs text-muted-foreground truncate w-full">{creator.craft || 'Creator'}</p>
+                                        <p className="font-serif font-bold text-base lg:text-lg truncate w-full">{creator.full_name || creator.username}</p>
+                                        <p className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded truncate mx-auto w-max max-w-full">CRAFT // {creator.craft || 'Creator'}</p>
                                     </div>
                                     <Button size="sm" className="w-full gap-1.5 lg:gap-2 h-8 lg:h-9" variant="outline" onClick={() => onConnect?.(creator.id)}>
                                         <UserPlus className="h-3.5 w-3.5 lg:h-4 lg:w-4" /> <span className="text-xs lg:text-sm">Connect</span>
@@ -137,7 +137,7 @@ export const SecondContentBlock = ({ creators, marketplace, vendors, onConnect, 
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {marketplace.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal">
                                     <FeedMarketplaceCard item={item} onDismiss={onDismiss} />
                                 </div>
                             ))}
@@ -154,7 +154,7 @@ export const SecondContentBlock = ({ creators, marketplace, vendors, onConnect, 
                     <ScrollArea className="w-full whitespace-nowrap rounded-md border">
                         <div className="flex w-max space-x-3 lg:space-x-4 p-3 lg:p-4">
                             {vendors.map((item) => (
-                                <div key={item.id} className="w-[220px] lg:w-[240px] whitespace-normal">
+                                <div key={item.id} className="w-[180px] lg:w-[200px] whitespace-normal">
                                     <FeedVendorCard vendor={item} onDismiss={onDismiss} />
                                 </div>
                             ))}

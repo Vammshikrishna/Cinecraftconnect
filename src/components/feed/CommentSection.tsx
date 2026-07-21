@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeComments } from "@/hooks/useRealtimeComments";
 import { useAppRole } from "@/hooks/useAppRole";
-import { Trash2, MoreHorizontal, Smile } from "lucide-react";
+import { Trash2, MoreHorizontal, Smile, ArrowUp } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useCommentMutation } from "@/hooks/mutations/useCommentMutation";
 import {
@@ -192,7 +192,14 @@ const CommentSection = ({ postId }: { postId: string }) => {
     setReplyTo(comment);
     const authorName = comment.profiles?.username || comment.profiles?.full_name?.split(' ')[0] || "user";
     setNewComment(`@${authorName} `);
-    setTimeout(() => textareaRef.current?.focus(), 100);
+    setTimeout(() => {
+      const textarea = textareaRef.current;
+      if (textarea) {
+        textarea.focus();
+        const len = textarea.value.length;
+        textarea.setSelectionRange(len, len);
+      }
+    }, 100);
   };
 
   const getInitials = (name: string) => {
@@ -295,7 +302,15 @@ const CommentSection = ({ postId }: { postId: string }) => {
                    )}
                  </div>
                </div>
-               <Button type="submit" className="rounded-xl h-10 px-6 font-black uppercase tracking-widest text-xs bg-primary hover:bg-primary/90 text-primary-foreground">Post</Button>
+               {newComment.trim().length > 0 ? (
+                 <Button type="submit" size="icon" className="rounded-full h-10 w-10 bg-primary hover:bg-primary/90 text-primary-foreground shrink-0 shadow-md transition-all">
+                   <ArrowUp className="h-5 w-5" />
+                 </Button>
+               ) : (
+                 <Button type="submit" disabled className="rounded-xl h-10 px-6 font-black uppercase tracking-widest text-xs bg-primary/50 text-primary-foreground shrink-0">
+                   Post
+                 </Button>
+               )}
              </div>
 
              {/* Emoji Picker Extension (Mobile Only) */}
@@ -372,10 +387,7 @@ const CommentItem = ({
             <Link to={`/profile/${comment.user_id}`} className="inline-block mr-1.5 focus:outline-none">
               <span className="font-bold hover:text-muted-foreground transition-colors flex items-center gap-1 uppercase">
                 {authorName}
-                {(comment.profiles?.is_verified || 
-                  authorName.toLowerCase().includes('vamshi') || 
-                  comment.profiles?.username?.toLowerCase().includes('vamshi') ||
-                  comment.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                {comment.profiles?.is_verified && (
                   <VerificationBadge size="xs" className="scale-75" />
                 )}
               </span>

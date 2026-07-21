@@ -247,9 +247,9 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
           {/* Status Badge */}
           <div className="absolute bottom-3 left-3">
-            <Badge variant={getStatusVariant(project.status)} className={`capitalize shadow-lg ${hasUnread ? 'bg-red-500 text-white' : 'bg-background/80 backdrop-blur-sm'}`}>
-              {project.status}
-            </Badge>
+            <div className={`font-mono text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded ${hasUnread ? 'bg-red-500 text-white' : 'bg-background/90 backdrop-blur-md border border-border/50 text-foreground'}`}>
+              [SCENE: {project.status}]
+            </div>
           </div>
         </div>
 
@@ -262,7 +262,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
           {/* Title */}
           <div className="flex items-center gap-2">
-            <h3 className={`font-bold text-xl line-clamp-1 transition-colors ${hasUnread ? 'text-red-500' : 'text-foreground group-hover:text-primary'}`}>
+            <h3 className={`font-serif font-bold text-2xl line-clamp-1 transition-colors tracking-tight ${hasUnread ? 'text-red-500' : 'text-foreground group-hover:text-primary'}`}>
               {project.title}
             </h3>
             {hasUnread && (
@@ -278,23 +278,20 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           {/* Metadata */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {project.location && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 border border-border/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <MapPin className="w-3 h-3 text-primary/60" />
-                <span>{project.location}</span>
+              <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/10 border border-border/40 rounded px-2 py-1">
+                LOC // {project.location}
               </div>
             )}
 
             {rolesCount > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-wider text-primary">
-                <Users className="w-3 h-3" />
-                <span>{rolesCount} {rolesCount === 1 ? 'Role' : 'Roles'} Open</span>
+              <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/5 border border-primary/20 rounded px-2 py-1">
+                ROLES // {rolesCount} OPEN
               </div>
             )}
 
             {project.genre && project.genre.length > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 border border-border/50 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <Film className="w-3 h-3 text-primary/60" />
-                <span className="line-clamp-1">{project.genre.slice(0, 1).join(', ')}</span>
+              <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/10 border border-border/40 rounded px-2 py-1">
+                GENRE // {project.genre.slice(0, 1).join(', ').toUpperCase()}
               </div>
             )}
           </div>

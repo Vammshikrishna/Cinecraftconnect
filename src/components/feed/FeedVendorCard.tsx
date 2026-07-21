@@ -52,20 +52,19 @@ const FeedVendorCard = ({ vendor, onDismiss }: FeedVendorCardProps) => {
                             </div>
                         </div>
 
-                        <h3 className="font-bold text-sm tracking-tight line-clamp-1 group-hover:text-primary transition-colors mb-2 w-full">
+                        <h3 className="font-serif font-bold text-xl tracking-tight line-clamp-1 group-hover:text-primary transition-colors mb-2 w-full">
                             {vendor.business_name}
                         </h3>
 
                         {vendor.category && (
-                            <span className="text-[10px] uppercase font-black tracking-wider text-primary bg-primary/10 px-2.5 py-1 rounded-full mb-3 border border-primary/20">
-                                {vendor.category}
-                            </span>
+                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded mb-3 w-max">
+                                CAT // {vendor.category}
+                            </div>
                         )}
 
                         {vendor.location && (
-                            <div className="flex items-center justify-center gap-1.5 text-[11px] font-medium text-muted-foreground mt-auto bg-black/5 dark:bg-white/5 py-1.5 px-3 rounded-full w-full">
-                                <MapPin className="h-3.5 w-3.5 text-primary/70" />
-                                <span className="line-clamp-1">{vendor.location}</span>
+                            <div className="font-mono flex items-center justify-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-muted-foreground mt-auto bg-muted/10 border border-border/40 py-1.5 px-3 rounded w-full">
+                                <span className="line-clamp-1">LOC // {vendor.location}</span>
                             </div>
                         )}
                     </div>

@@ -2,7 +2,7 @@ import { useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-quer
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchLatestRatings } from '@/services/tmdb';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export interface HomeFeedData {
     posts: any[];
@@ -17,33 +17,48 @@ export interface HomeFeedData {
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
     fetchNextPage?: () => void;
+    newPostsAvailable?: boolean;
+    resetNewPosts?: () => void;
 }
 
 export const useHomeFeed = () => {
     const { user, profile } = useAuth();
     const queryClient = useQueryClient();
+    const [newPostsAvailable, setNewPostsAvailable] = useState(false);
 
-    // 2. Infinite Posts Query (5 posts per load)
+    // 2. Algorithmic Posts Query (10 posts per load)
     const infinitePostsQuery = useInfiniteQuery({
         queryKey: ['home-feed-posts', user?.id],
         queryFn: async ({ pageParam }: { pageParam: string | null }) => {
-            let query = supabase
-                .from('posts')
-                .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
-                .order('created_at', { ascending: false })
-                .limit(5);
+            const { data, error } = await (supabase as any)
+                .rpc('get_algorithmic_feed', {
+                    current_user_id: user?.id || null,
+                    limit_val: 10,
+                    created_at_cursor: pageParam
+                });
 
-            if (pageParam) {
-                query = query.lt('created_at', pageParam);
+            if (error) {
+                console.warn("Algorithmic RPC failed, falling back to chronological query:", error);
+                let query = supabase
+                    .from('posts')
+                    .select('*, profiles:author_id(id, full_name, username, avatar_url, craft, is_verified), company_pages:page_id(id, name, logo_url, slug, is_verified)')
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (pageParam) {
+                    query = query.lt('created_at', pageParam);
+                }
+
+                const { data: fallbackData, error: fallbackError } = await query;
+                if (fallbackError) throw fallbackError;
+                return fallbackData || [];
             }
 
-            const { data, error } = await query;
-            if (error) throw error;
             return data || [];
         },
         initialPageParam: null as string | null,
         getNextPageParam: (lastPage: any[]) => {
-            if (lastPage.length < 5) return undefined;
+            if (lastPage.length < 10) return undefined;
             return lastPage[lastPage.length - 1].created_at;
         },
         staleTime: 1000 * 60 * 2,
@@ -154,10 +169,20 @@ export const useHomeFeed = () => {
         const postsChannel = supabase
             .channel('posts_updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload: any) => {
-                if (payload.eventType === 'INSERT' || payload.eventType === 'DELETE') {
-                    // Refetch the whole feed to get joined data (author profiles, etc.)
-                    queryClient.invalidateQueries({ queryKey: ['home-feed-posts', user.id] });
-                    queryClient.invalidateQueries({ queryKey: ['home-feed-static', user.id] });
+                if (payload.eventType === 'INSERT') {
+                    // Set flag for new posts available instead of automatic refetching (less DB stress)
+                    setNewPostsAvailable(true);
+                } else if (payload.eventType === 'DELETE') {
+                    // Update cache directly to remove the deleted post
+                    queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
+                        if (!old) return old;
+                        return {
+                            ...old,
+                            pages: old.pages.map((page: any[]) =>
+                                page.filter((post: any) => post.id !== payload.old.id)
+                            )
+                        };
+                    });
                 } else if (payload.eventType === 'UPDATE') {
                     queryClient.setQueryData(['home-feed-posts', user.id], (old: any) => {
                         if (!old) return old;
@@ -197,9 +222,14 @@ export const useHomeFeed = () => {
         };
     }, [user?.id, queryClient]);
 
-    // Flatten posts from infinite pages
     const posts = useMemo(() => {
-        return infinitePostsQuery.data?.pages.flat() || [];
+        const allPosts = infinitePostsQuery.data?.pages.flat() || [];
+        const seen = new Set();
+        return allPosts.filter((post: any) => {
+            if (seen.has(post.id)) return false;
+            seen.add(post.id);
+            return true;
+        });
     }, [infinitePostsQuery.data]);
 
     const combinedData: HomeFeedData = useMemo(() => {
@@ -216,8 +246,10 @@ export const useHomeFeed = () => {
             hasNextPage: infinitePostsQuery.hasNextPage,
             isFetchingNextPage: infinitePostsQuery.isFetchingNextPage,
             fetchNextPage: infinitePostsQuery.fetchNextPage,
+            newPostsAvailable,
+            resetNewPosts: () => setNewPostsAvailable(false)
         };
-    }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery]);
+    }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery, newPostsAvailable]);
 
     return {
         data: combinedData,

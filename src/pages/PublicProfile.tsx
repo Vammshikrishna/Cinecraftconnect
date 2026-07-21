@@ -415,43 +415,37 @@ const PublicProfile = () => {
                 <div className="flex flex-col items-center lg:items-start gap-3 w-full">
                   <div className="flex flex-wrap items-center justify-center lg:justify-start gap-2">
                     {profile.account_type === 'fan' ? (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full text-[9px] font-black uppercase tracking-wider">
-                        <Star size={10} className="fill-amber-500" />
-                        <span>Fan Account</span>
+                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+                        TYPE // FAN
                       </div>
                     ) : (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/20 text-[9px] font-black uppercase tracking-wider text-primary">
-                        {profile.account_type === 'studio' ? <Building2 size={10} /> : <Zap size={10} className="fill-primary" />}
-                        <span>{profile.account_type === 'studio' ? 'Studio' : 'Pro'}</span>
+                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                        TYPE // {profile.account_type === 'studio' ? 'STUDIO' : 'PRO'}
                       </div>
                     )}
 
                     {profile.craft && (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted/30 border border-border/50 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                        <Briefcase size={10} />
-                        <span>{profile.craft}</span>
+                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                        CRAFT // {profile.craft}
                       </div>
                     )}
                     {profile.location && (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted/20 border border-border/30 text-[9px] font-medium text-muted-foreground">
-                        <MapPin size={10} />
-                        <span>{profile.location}</span>
+                      <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                        LOC // {profile.location}
                       </div>
                     )}
                   </div>
 
                   <div className="flex flex-col items-center lg:items-start leading-tight w-full">
-                    <h1 className="text-lg sm:text-xl md:text-2xl font-black text-foreground tracking-tight text-center lg:text-left">
+                    <h1 className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-foreground tracking-tight text-center lg:text-left">
                       <span className="inline-block">
                         {profile.full_name || profile.username}
-                        {(profile.is_verified || 
-                          profile.username?.toLowerCase().includes('vamshi') || 
-                          profile.full_name?.toLowerCase().includes('vamshi')) && (
+                        {profile.is_verified && (
                           <VerificationBadge size="sm" className="ml-1.5 align-middle" />
                         )}
                       </span>
                     </h1>
-                    <p className="text-primary font-bold text-xs uppercase tracking-[0.15em] mt-0.5">
+                    <p className="font-mono text-primary font-bold text-[11px] uppercase tracking-widest mt-0.5">
                       @{profile.username}
                     </p>
                   </div>
@@ -557,7 +551,6 @@ const PublicProfile = () => {
                         ) : (
                           <Button onClick={handleConnect} className="h-9 w-[110px] bg-primary text-white hover:bg-primary/90 rounded-lg text-[10px] font-bold uppercase tracking-wider"><UserPlus className="mr-2 h-3 w-3" />Follow</Button>
                         )}
-                        {/* Only allow Fan-to-Fan messaging if it's a mutual follow */}
                         {(isFan && profile.account_type === 'fan' && isMutualFollow) && (
                           <Button 
                             className="h-9 w-[110px] bg-secondary text-white hover:bg-secondary/80 rounded-lg text-[10px] font-bold uppercase tracking-wider"
@@ -659,7 +652,7 @@ const PublicProfile = () => {
               </div>
 
               <TabsContent value="posts" className={isFan ? "py-2" : "py-6"}>
-                <UserPosts targetUserId={profile.id} />
+                <UserPosts targetUserId={profile.id} isOwner={user?.id === profile.id} />
               </TabsContent>
               <TabsContent value="portfolio" className="py-6">
                 <PortfolioGrid userId={profile.id} isOwner={false} />

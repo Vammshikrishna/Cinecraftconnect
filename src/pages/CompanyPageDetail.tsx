@@ -638,9 +638,7 @@ const CompanyPageDetail = () => {
                       </div>
                       <div className="flex items-center justify-center gap-1.5 mb-1 group-hover:text-primary transition-colors">
                         <h4 className="text-xl font-black tracking-tight">{member.profiles?.full_name}</h4>
-                        {(member.profiles?.is_verified || 
-                          member.profiles?.username?.toLowerCase().includes('vamshi') || 
-                          member.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                        {member.profiles?.is_verified && (
                           <VerificationBadge size="sm" />
                         )}
                       </div>

@@ -199,7 +199,7 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                 <div className="p-5 md:p-6 flex flex-col flex-1 gap-4">
                     <div className="space-y-1">
                         <div className="flex items-start justify-between gap-3">
-                            <h3 className="font-black text-lg md:text-xl tracking-tight text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-2 leading-tight">
+                            <h3 className="font-serif text-xl md:text-2xl font-bold tracking-tight text-foreground group-hover:text-primary transition-colors duration-300 line-clamp-2 leading-tight">
                                 {listing.title}
                             </h3>
                             {reviewCount > 0 && (
@@ -221,15 +221,13 @@ export const ListingCard = ({ listing, onDismiss }: ListingCardProps) => {
                     <div className="space-y-2.5 mt-auto pt-2">
                         {/* Meta Rows */}
                         <div className="flex flex-wrap items-center gap-2 mt-auto">
-                            <div className="flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-black/5 dark:bg-white/5 py-1 px-2.5 rounded-lg border border-black/5 dark:border-white/5 max-w-full">
-                                <MapPin size={10} className="text-primary/60 shrink-0" />
-                                <span className="truncate">{listing.location}</span>
+                            <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
+                                <span className="truncate">LOC // {listing.location}</span>
                             </div>
                             
                             {listing.profiles && (
-                                <div className="flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-black/5 dark:bg-white/5 py-1 px-2.5 rounded-lg border border-black/5 dark:border-white/5 max-w-full">
-                                    <User size={10} className="text-primary/60 shrink-0" />
-                                    <span className="truncate">{listing.profiles.username || listing.profiles.full_name || 'Anonymous'}</span>
+                                <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-1.5 bg-muted/10 py-1 px-2.5 rounded border border-border/40 max-w-full">
+                                    <span className="truncate">USER // {listing.profiles.username || listing.profiles.full_name || 'Anonymous'}</span>
                                 </div>
                             )}
                         </div>

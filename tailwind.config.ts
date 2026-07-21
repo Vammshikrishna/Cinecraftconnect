@@ -21,6 +21,7 @@ export default {
 		extend: {
 			fontFamily: {
 				sans: [
+					"'Work Sans'",
 					'ui-sans-serif',
 					'system-ui',
 					'sans-serif',
@@ -30,11 +31,12 @@ export default {
 					'Noto Color Emoji'
 				],
 				display: [
-					'Inter',
+					"'Work Sans'",
 					'system-ui',
 					'sans-serif'
 				],
 				serif: [
+					"'Lora'",
 					'ui-serif',
 					'Georgia',
 					'Cambria',
@@ -43,6 +45,7 @@ export default {
 					'serif'
 				],
 				mono: [
+					"'Inconsolata'",
 					'ui-monospace',
 					'SFMono-Regular',
 					'Menlo',

@@ -1,3 +1,4 @@
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 import { Film, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getOptimizedImage } from '@/utils/image-optimization';
@@ -66,8 +67,9 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
     return (
         <Link 
             to={`/content/${type}/${id}`}
-            className="block w-[220px] shrink-0 bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5"
+            className="block w-[220px] shrink-0 bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-1 active:scale-[0.99] no-underline group shadow-xl border border-black/5 dark:border-white/5 relative"
         >
+            <CornerBrackets />
             {/* Poster Image */}
             <div className="relative aspect-[2/3] overflow-hidden">
                 {posterSrc ? (
@@ -83,9 +85,9 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
                 )}
             </div>
 
-            {/* Content Details - Perfectly matching the reference */}
+            {/* Content Details */}
             <div className="p-4 bg-white dark:bg-zinc-900">
-                <h3 className="text-zinc-900 dark:text-white font-bold text-lg tracking-tight mb-3">
+                <h3 className="font-serif text-zinc-900 dark:text-white font-bold text-[13px] tracking-tight mb-3">
                     {title}
                 </h3>
                 
@@ -94,12 +96,12 @@ export const ContentShareCard = ({ id, type, title, poster_path }: ContentShareC
 
                 {/* Metadata Row: Language & Year */}
                 <div className="flex items-center justify-between mb-5">
-                    <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                        {metadata?.language || 'LOADING...'}
-                    </span>
-                    <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 tracking-wider">
-                        {metadata?.year || '....'}
-                    </span>
+                    <div className="font-mono text-[7.5px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
+                        LANG // {metadata?.language || 'LOADING...'}
+                    </div>
+                    <div className="font-mono text-[7.5px] font-bold text-zinc-500 dark:text-zinc-400 tracking-widest bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 px-2 py-0.5 rounded">
+                        YEAR // {metadata?.year || '....'}
+                    </div>
                 </div>
 
                 {/* Star Rating Section */}

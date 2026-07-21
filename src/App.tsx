@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter as Router, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter as Router, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { Toaster } from "@/components/ui/toaster";
@@ -40,6 +40,7 @@ import Profile from "./pages/Profile";
 const PublicProfile = lazy(() => import("./pages/PublicProfile"));
 import Projects from "./pages/Projects";
 const ProjectSpacePage = lazy(() => import("./pages/ProjectSpacePage"));
+const CreatePost = lazy(() => import("./pages/CreatePost"));
 import Jobs from "./pages/Jobs";
 import Network from "./pages/Network";
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -112,6 +113,22 @@ const LandingRoute = () => {
   return user ? <Navigate to="/feed" /> : <Index />;
 };
 
+// Clean navigation wrapper that selects and hides navbars based on auth state and current route
+const NavigationWrapper = ({ isLoading, user, profile }: { isLoading: boolean; user: any; profile: any }) => {
+  const location = useLocation();
+  const isAuthPage = location.pathname === '/auth' || location.pathname === '/register';
+  
+  if (isLoading || isAuthPage) {
+    return null;
+  }
+  
+  const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
+  const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
+  
+  return showFullNavbar ? <Navbar /> : <LandingNavbar />;
+};
+
+
 import PageLoader from "@/components/common/PageLoader";
 import { NavigationProvider } from "@/contexts/NavigationContext";
 import { useE2EEInit } from "@/hooks/useE2EEInit";
@@ -155,11 +172,8 @@ const App = () => {
                 <PremiumNotificationOverlay />
                 <GlobalFeatures />
 
-                {!isLoading && (() => {
-                  const isInternal = profile?.is_internal || (profile?.role && ['admin', 'moderator', 'super_admin'].includes(profile.role));
-                  const showFullNavbar = user && (profile?.onboarding_completed || isInternal);
-                  return showFullNavbar ? <Navbar /> : <LandingNavbar />;
-                })()}
+                <NavigationWrapper isLoading={isLoading} user={user} profile={profile} />
+
                 <MaintenanceGuard>
                   <ErrorBoundary>
                     <Suspense
@@ -182,6 +196,7 @@ const App = () => {
                           <Route path="/feed" element={<ProtectedRoute><Feed /></ProtectedRoute>} />
                           <Route path="/post/:postId" element={<PostDetailPage />} />
                           <Route path="/posts/:postId" element={<PostDetailPage />} />
+                          <Route path="/create" element={<ProtectedRoute><CreatePost /></ProtectedRoute>} />
                           <Route path="/profile/:userId" element={<FeatureGuard flag="talent_network_enabled" fallbackTitle="Network Restricted"><PublicProfile /></FeatureGuard>} />
                           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
                           <Route path="/profile/availability" element={<ProtectedRoute><AvailabilityCalendar /></ProtectedRoute>} />

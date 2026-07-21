@@ -43,7 +43,7 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
       <div className="pt-10 px-4 pb-4">
         <Link to={`/pages/${page.slug}`} className="block group/link">
           <div className="flex items-center gap-1.5 mb-1">
-            <h3 className="font-semibold text-base text-foreground group-hover/link:text-primary transition-colors truncate">
+            <h3 className="font-serif font-bold text-xl text-foreground group-hover/link:text-primary transition-colors truncate">
               {page.name}
             </h3>
             {page.is_verified && (
@@ -71,14 +71,14 @@ export function CompanyPageCard({ page }: CompanyPageCardProps) {
         {page.industry.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {page.industry.slice(0, 2).map((ind, i) => (
-              <Badge key={i} variant="secondary" className="text-[10px] px-2 py-0">
-                {ind}
-              </Badge>
+              <div key={i} className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                IND // {ind}
+              </div>
             ))}
             {page.industry.length > 2 && (
-              <Badge variant="outline" className="text-[10px] px-2 py-0">
-                +{page.industry.length - 2}
-              </Badge>
+              <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">
+                +{page.industry.length - 2} MORE
+              </div>
             )}
           </div>
         )}

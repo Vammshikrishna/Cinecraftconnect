@@ -300,7 +300,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
               {!isInternal && <JobCreationModal onJobCreated={fetchJobs} />}
             </motion.div>
           ) : (
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               <AnimatePresence mode="popLayout">
               {jobs.map((job, index) => {
                 const isApplied = appliedJobIds.includes(job.id);
@@ -314,64 +314,63 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => push(`/jobs/${job.id}`)}
-                    className="group glass-card-premium p-4 md:p-8 cursor-pointer relative overflow-hidden"
+                    className="group glass-card-premium p-4 md:p-6 cursor-pointer relative overflow-hidden flex flex-col h-full"
                   >
                     {/* Hover Glow */}
                     <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
                     
-                    <div className="flex flex-col md:flex-row justify-between gap-6 relative z-10">
+                    <div className="flex flex-col justify-between gap-6 h-full relative z-10">
                       <div className="flex-grow space-y-4">
                         <div className="flex items-center gap-4">
                           <motion.div whileHover={{ scale: 1.05 }} className="shrink-0 p-0.5 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-transparent">
-                            <Avatar className="h-12 w-12 md:h-16 md:w-16 lg:h-20 lg:w-20 rounded-[0.8rem] md:rounded-[1.5rem] border-2 border-background">
+                            <Avatar className="h-10 w-10 md:h-12 md:w-12 lg:h-14 lg:w-14 rounded-[0.8rem] md:rounded-[1rem] border-2 border-background">
                               <AvatarImage src={job.company_pages?.logo_url || ""} />
-                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-lg md:text-2xl">
+                              <AvatarFallback className="bg-primary/10 text-primary font-black uppercase text-base md:text-lg">
                                 {(job.company_pages?.name || job.company).charAt(0)}
                               </AvatarFallback>
                             </Avatar>
                           </motion.div>
                           <div className="space-y-0.5 md:space-y-1">
-                            <h3 className="text-base md:text-xl lg:text-2xl font-black tracking-tight group-hover:text-primary transition-colors leading-tight line-clamp-1">
+                            <h3 className="font-serif text-lg lg:text-xl font-bold tracking-tight group-hover:text-primary transition-colors leading-tight line-clamp-1">
                               {job.title}
                             </h3>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               {job.company_pages ? (
-                                <span className="font-bold text-muted-foreground/60 text-[11px] md:text-base">{job.company_pages.name}</span>
+                                <span className="font-bold text-muted-foreground/60 text-[10px] md:text-sm">{job.company_pages.name}</span>
                               ) : (
-                                <span className="font-bold text-muted-foreground/60 text-[11px] md:text-base">{job.company}</span>
+                                <span className="font-bold text-muted-foreground/60 text-[10px] md:text-sm">{job.company}</span>
                               )}
                               <span className="w-0.5 h-0.5 rounded-full bg-muted-foreground/20 hidden min-[400px]:block" />
-                              <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-primary/60">
+                              <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-primary/60">
                                 {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
                               </span>
                             </div>
                           </div>
                         </div>
 
-                        <p className="text-sm md:text-base lg:text-lg text-muted-foreground font-medium leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-3">
+                        <p className="text-xs md:text-sm lg:text-base text-muted-foreground font-medium leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-3">
                           {job.description}
                         </p>
 
                         <div className="flex flex-wrap gap-3">
                           {[
-                            { icon: MapPin, text: job.location || "Remote" },
-                            { icon: Briefcase, text: job.type.replace('-', ' ') },
-                            { icon: Clock, text: `${job.experience_level} Level` }
+                            { label: "LOC", text: job.location || "Remote" },
+                            { label: "TYPE", text: job.type.replace('-', ' ') },
+                            { label: "EXP", text: `${job.experience_level} Level` }
                           ].map((tag, i) => (
-                            <div key={i} className="flex items-center gap-2 border border-border/50 bg-muted/20 px-4 py-2 rounded-xl text-muted-foreground/80 font-bold text-xs uppercase tracking-widest hover:bg-muted/30 hover:text-foreground transition-colors">
-                              <tag.icon size={14} className="text-primary/60" />
-                              {tag.text}
+                            <div key={i} className="font-mono text-[9px] md:text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-1 rounded">
+                              {tag.label} // {tag.text}
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col items-start md:items-end justify-between md:min-w-[240px]">
-                        <div className="text-left md:text-right w-full mb-6">
+                      <div className="shrink-0 flex flex-col items-start justify-end mt-auto pt-6 border-t border-border/10 w-full">
+                        <div className="text-left w-full mb-4">
                           {(job.salary_min || job.salary_max) ? (
                             <div className="space-y-1">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50">Est. Salary Range</p>
-                              <p className="text-lg md:text-xl lg:text-2xl font-black text-primary tracking-tighter">
+                              <p className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Est. Salary Range</p>
+                              <p className="text-base md:text-lg lg:text-xl font-black text-primary tracking-tighter">
                                 {job.salary_min ? `₹${job.salary_min.toLocaleString()}` : ''}
                                 {job.salary_min && job.salary_max ? ' - ' : ''}
                                 {job.salary_max ? `₹${job.salary_max.toLocaleString()}` : ''}
@@ -382,23 +381,23 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
                           )}
                         </div>
 
-                        <div className="w-full md:w-auto min-w-[200px]">
+                        <div className="w-full">
                           {(isOwner || isInternal) ? (
                             <Button 
                               variant="ghost" 
                               onClick={(e) => { e.stopPropagation(); push("/jobs/manage"); }} 
-                              className="w-full h-14 rounded-2xl border border-border/50 hover:bg-muted/20 font-bold uppercase tracking-widest text-xs"
+                              className="w-full h-10 rounded-xl border border-border/50 hover:bg-muted/20 font-bold uppercase tracking-widest text-[10px]"
                             >
                               Manage Listing
                             </Button>
                           ) : isApplied ? (
-                            <Button disabled className="w-full h-14 rounded-2xl bg-primary/10 text-primary border border-primary/20 font-bold">
-                              <CheckCircle className="mr-2 h-5 w-5" />
+                              <Button disabled className="w-full h-10 rounded-xl bg-primary/10 text-primary border border-primary/20 font-bold text-sm">
+                              <CheckCircle className="mr-2 h-4 w-4" />
                               Applied
                             </Button>
                           ) : (
                             <Button 
-                              className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-black text-lg shadow-xl shadow-primary/10 group-hover:scale-[1.02] transition-all" 
+                              className="w-full h-10 rounded-xl bg-primary text-primary-foreground font-black text-sm shadow-xl shadow-primary/10 group-hover:scale-[1.02] transition-all" 
                               onClick={(e) => { e.stopPropagation(); handleApplyClick(job); }}
                             >
                               Apply Now
