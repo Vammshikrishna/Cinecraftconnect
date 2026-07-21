@@ -27,7 +27,7 @@ public class FCMService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(RemoteMessage remoteMessage) {
         super.onMessageReceived(remoteMessage);
-        
+
         // Forward to Capacitor PushNotificationsPlugin so JS listeners work
         com.capacitorjs.plugins.pushnotifications.PushNotificationsPlugin.sendRemoteMessage(remoteMessage);
 
@@ -78,7 +78,8 @@ public class FCMService extends FirebaseMessagingService {
                             // Try cached group key as fallback
                             String cachedGroupKey = E2EEKeyStore.getGroupKey(context, conversationId);
                             if (cachedGroupKey != null) {
-                                String decrypted = E2EECryptoHelper.decryptGroupMessage(encryptedContent, cachedGroupKey);
+                                String decrypted = E2EECryptoHelper.decryptGroupMessage(encryptedContent,
+                                        cachedGroupKey);
                                 messageBody = decrypted;
                                 Log.d("FCMService", "E2EE: Decrypted group message using cached key");
                             }
@@ -105,31 +106,38 @@ public class FCMService extends FirebaseMessagingService {
 
         boolean wasEncrypted = "true".equals(isEncrypted);
 
-        SharedPreferences capacitorPrefs = getApplicationContext().getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
+        SharedPreferences capacitorPrefs = getApplicationContext().getSharedPreferences("CapacitorStorage",
+                Context.MODE_PRIVATE);
         String activeConversationId = capacitorPrefs.getString("active_conversation_id", "");
-        
+
         if (isAppInForeground(getApplicationContext()) && conversationId.equals(activeConversationId)) {
             Log.d("FCMService", "App is in foreground and user is looking at this conversation, skipping banner.");
             return;
         }
 
         if (type != null && !type.equals("conversation") && !type.equals("chat")) {
-            showBasicNotification(conversationId, title != null ? title : senderName, messageBody, actionUrl, remoteMessage.getMessageId());
+            showBasicNotification(conversationId, title != null ? title : senderName, messageBody, actionUrl,
+                    remoteMessage.getMessageId());
         } else {
-            showInboxStyleNotification(conversationId, senderName, messageBody, actionUrl, targetUserId, avatarUrl, remoteMessage.getMessageId(), wasEncrypted);
+            showInboxStyleNotification(conversationId, senderName, messageBody, actionUrl, targetUserId, avatarUrl,
+                    remoteMessage.getMessageId(), wasEncrypted);
         }
     }
 
-    private void showBasicNotification(String notificationIdStr, String title, String body, String actionUrl, String messageId) {
+    private void showBasicNotification(String notificationIdStr, String title, String body, String actionUrl,
+            String messageId) {
         Context context = getApplicationContext();
-        NotificationManager notificationManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationManager notificationManager = (NotificationManager) context
+                .getSystemService(Context.NOTIFICATION_SERVICE);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Updates", NotificationManager.IMPORTANCE_DEFAULT);
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "Updates",
+                    NotificationManager.IMPORTANCE_DEFAULT);
             notificationManager.createNotificationChannel(channel);
         }
 
-        int notificationId = notificationIdStr != null ? notificationIdStr.hashCode() : (int) System.currentTimeMillis();
+        int notificationId = notificationIdStr != null ? notificationIdStr.hashCode()
+                : (int) System.currentTimeMillis();
 
         Intent intent = new Intent(this, MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -162,7 +170,8 @@ public class FCMService extends FirebaseMessagingService {
         SharedPreferences capacitorPrefs = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE);
         String currentUserId = capacitorPrefs.getString("user_id", "");
         if (!currentUserId.isEmpty() && !currentUserId.equals(targetUserId)) {
-            Log.w("FCMService", "Ignoring notification intended for user " + targetUserId + " because current user is " + currentUserId);
+            Log.w("FCMService", "Ignoring notification intended for user " + targetUserId + " because current user is "
+                    + currentUserId);
             return;
         }
 
@@ -193,7 +202,8 @@ public class FCMService extends FirebaseMessagingService {
                 newMsg.put("text", newBody);
                 newMsg.put("isMe", false);
                 historyArray.put(newMsg);
-            } catch (JSONException ignored) {}
+            } catch (JSONException ignored) {
+            }
         }
 
         // Save back to prefs
@@ -267,10 +277,11 @@ public class FCMService extends FirebaseMessagingService {
         }
         Person sender = personBuilder.build();
         Person me = new Person.Builder().setName("Me").build();
-        
+
         NotificationCompat.MessagingStyle messagingStyle = new NotificationCompat.MessagingStyle(me);
-        
-        // Only set conversation title if it's a group chat (actionUrl starts with /discussion-rooms/)
+
+        // Only set conversation title if it's a group chat (actionUrl starts with
+        // /discussion-rooms/)
         if (actionUrl != null && actionUrl.contains("/discussion-rooms/")) {
             messagingStyle.setConversationTitle(senderName);
             messagingStyle.setGroupConversation(true);
@@ -287,7 +298,8 @@ public class FCMService extends FirebaseMessagingService {
                 try {
                     // Fallback for old string-based history
                     messagingStyle.addMessage(historyArray.getString(i), System.currentTimeMillis(), sender);
-                } catch (JSONException ignored) {}
+                } catch (JSONException ignored) {
+                }
             }
         }
 
@@ -323,7 +335,7 @@ public class FCMService extends FirebaseMessagingService {
                 .setGroupSummary(true)
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true);
-                
+
         if (!currentUsername.isEmpty()) {
             summaryBuilder.setSubText(currentUsername);
         }
@@ -340,9 +352,11 @@ public class FCMService extends FirebaseMessagingService {
     }
 
     public static android.graphics.Bitmap getCircularBitmap(android.graphics.Bitmap bitmap) {
-        if (bitmap == null) return null;
+        if (bitmap == null)
+            return null;
         int size = Math.min(bitmap.getWidth(), bitmap.getHeight());
-        android.graphics.Bitmap output = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Bitmap output = android.graphics.Bitmap.createBitmap(size, size,
+                android.graphics.Bitmap.Config.ARGB_8888);
         android.graphics.Canvas canvas = new android.graphics.Canvas(output);
         final int color = 0xff424242;
         final android.graphics.Paint paint = new android.graphics.Paint();
@@ -361,13 +375,18 @@ public class FCMService extends FirebaseMessagingService {
     }
 
     private boolean isAppInForeground(Context context) {
-        android.app.ActivityManager activityManager = (android.app.ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-        if (activityManager == null) return false;
-        java.util.List<android.app.ActivityManager.RunningAppProcessInfo> appProcesses = activityManager.getRunningAppProcesses();
-        if (appProcesses == null) return false;
+        android.app.ActivityManager activityManager = (android.app.ActivityManager) context
+                .getSystemService(Context.ACTIVITY_SERVICE);
+        if (activityManager == null)
+            return false;
+        java.util.List<android.app.ActivityManager.RunningAppProcessInfo> appProcesses = activityManager
+                .getRunningAppProcesses();
+        if (appProcesses == null)
+            return false;
         final String packageName = context.getPackageName();
         for (android.app.ActivityManager.RunningAppProcessInfo appProcess : appProcesses) {
-            if (appProcess.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND && appProcess.processName.equals(packageName)) {
+            if (appProcess.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                    && appProcess.processName.equals(packageName)) {
                 return true;
             }
         }

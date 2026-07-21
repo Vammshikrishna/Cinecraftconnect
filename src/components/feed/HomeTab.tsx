@@ -232,7 +232,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                             const isPending = sentRequests.some(r => r.following_id === profile.id);
 
                             return (
-                                <div key={profile.id} className="w-[170px] md:w-[220px] flex-none snap-start mx-1.5 first:ml-0 h-full">
+                                <div key={profile.id} className="w-[240px] md:w-[280px] flex-none snap-start mx-1 first:ml-0 h-full">
                                     <UserCard
                                         user={{
                                             ...profile,
@@ -376,7 +376,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-2 md:pt-6">
             {/* Main Feed Column */}
             <div className="w-full max-w-[480px] space-y-6">
-                <div className="px-1 sm:px-4">
+                <div className="px-0 sm:px-4">
                     {/* Only creators can compose posts */}
                     {!isFan && <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />}
                     {isFan && (
@@ -403,7 +403,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
                         return (
                             <div key={post.id}>
-                                <div className="px-1 sm:px-4">
+                                <div className="px-0 sm:px-4">
                                     <PostCard
                                         id={post.id}
                                         author={{
@@ -502,7 +502,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                             </AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
-                                <span className="text-[13px] font-bold text-foreground truncate max-w-[120px] group-hover:text-primary transition-colors flex items-center gap-1.5">
+                                <span className="font-serif font-bold uppercase tracking-tight text-[11px] lg:text-[12px] text-foreground truncate max-w-[120px] group-hover:text-primary transition-colors flex items-center gap-1.5">
                                     {profile?.full_name || user?.email?.split('@')[0]}
                                     {profile?.is_verified && <VerificationBadge size="xs" />}
                                 </span>
@@ -513,7 +513,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                     </div>
                     <button 
                         onClick={() => push('/settings/account')}
-                        className="text-primary text-xs font-bold hover:opacity-80"
+                        className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80"
                     >
                         Switch
                     </button>
@@ -523,11 +523,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 {myPages && myPages.length > 0 && (
                     <div className="space-y-3">
                         <div className="flex items-center justify-between px-1">
-                            <span className="text-[13px] font-bold text-muted-foreground">Your Companies</span>
+                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest font-mono">Your Companies</span>
                             {myPages.length > 3 && (
                                 <button 
                                     onClick={() => push('/pages')}
-                                    className="text-foreground text-[11px] font-bold hover:opacity-80"
+                                    className="text-foreground text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80"
                                 >
                                     See All
                                 </button>
@@ -548,7 +548,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col">
-                                            <span className="text-[12px] font-bold text-foreground truncate max-w-[120px] group-hover:text-primary transition-colors">
+                                            <span className="font-serif font-bold uppercase tracking-tight text-[10px] lg:text-[11px] text-foreground truncate max-w-[120px] group-hover:text-primary transition-colors">
                                                 {page.name}
                                             </span>
                                             <span className="text-[10px] text-muted-foreground">
@@ -556,7 +556,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             </span>
                                         </div>
                                     </div>
-                                    <button className="text-foreground/60 text-[10px] font-bold hover:text-foreground">View</button>
+                                    <button className="text-foreground/60 text-[9px] font-black uppercase tracking-widest font-mono hover:text-foreground">View</button>
                                 </div>
                             ))}
                         </div>
@@ -566,10 +566,10 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 {/* Suggested Creators Section */}
                 <div className="space-y-3 mt-4">
                     <div className="flex items-center justify-between px-1">
-                        <span className="text-[13px] font-bold text-muted-foreground">Suggestions for you</span>
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest font-mono">Suggestions for you</span>
                         <button 
                             onClick={() => push('/network')}
-                            className="text-foreground text-[11px] font-bold hover:opacity-80"
+                            className="text-foreground text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80"
                         >
                             See All
                         </button>
@@ -601,7 +601,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col">
-                                            <span className="text-[12px] font-bold leading-tight flex items-center gap-1">
+                                            <span className="font-serif font-bold uppercase tracking-tight text-[10px] lg:text-[11px] leading-tight flex items-center gap-1">
                                                 {conn.username || conn.full_name?.split(' ')[0].toLowerCase()}
                                                 {conn.is_verified && <VerificationBadge size="xs" />}
                                             </span>
@@ -614,7 +614,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         <button 
                                             onClick={() => isFan ? sendFollow(conn.id) : sendConnectionRequest(conn.id)}
                                             disabled={isFan ? existingFollows.some(f => f.following_id === conn.id) : sentRequests.some(r => r.following_id === conn.id)}
-                                            className="text-primary text-[11px] font-bold hover:opacity-80 disabled:text-muted-foreground"
+                                            className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80 disabled:text-muted-foreground"
                                         >
                                             {isFan 
                                                 ? (existingFollows.some(f => f.following_id === conn.id) ? 'Following' : 'Follow') 
@@ -644,10 +644,10 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 {allPages && allPages.length > 0 && (
                     <div className="space-y-3 mt-4">
                         <div className="flex items-center justify-between px-1">
-                            <span className="text-[13px] font-bold text-muted-foreground">Suggested Pages</span>
+                            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest font-mono">Suggested Pages</span>
                             <button 
                                 onClick={() => push('/pages')}
-                                className="text-foreground text-[11px] font-bold hover:opacity-80"
+                                className="text-foreground text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80"
                             >
                                 See All
                             </button>
@@ -673,7 +673,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                             </AvatarFallback>
                                         </Avatar>
                                         <div className="flex flex-col">
-                                            <span className="text-[11px] font-bold leading-tight truncate max-w-[100px] group-hover:text-primary transition-colors">
+                                            <span className="font-serif font-bold uppercase tracking-tight text-[10px] lg:text-[11px] leading-tight truncate max-w-[100px] group-hover:text-primary transition-colors">
                                                 {page.name}
                                             </span>
                                             <span className="text-[10px] text-muted-foreground leading-tight">
@@ -683,7 +683,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                     </div>
                                     <button 
                                         onClick={() => toggleFollowPage.mutate({ pageId: page.id, isFollowing: false })}
-                                        className="text-primary text-[11px] font-bold hover:opacity-80 disabled:text-muted-foreground"
+                                        className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80 disabled:text-muted-foreground"
                                     >
                                         Follow
                                     </button>

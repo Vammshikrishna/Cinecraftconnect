@@ -111,20 +111,19 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
 
                     {/* Title */}
                     <div>
-                        <h3 className="font-black text-base leading-tight group-hover:text-primary transition-colors">{pitchCall.title}</h3>
+                        <h3 className="font-serif text-xl font-bold leading-tight group-hover:text-primary transition-colors">{pitchCall.title}</h3>
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{pitchCall.requirement_description}</p>
                     </div>
 
                     {/* Meta Badges */}
                     <div className="flex flex-wrap gap-1.5">
                         {pitchCall.project_type && (
-                            <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-wide">
-                                <Film className="h-2.5 w-2.5 mr-1" />
-                                {FORMAT_LABELS[pitchCall.project_type] || pitchCall.project_type}
-                            </Badge>
+                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                                TYPE // {FORMAT_LABELS[pitchCall.project_type] || pitchCall.project_type}
+                            </div>
                         )}
                         {pitchCall.genre?.slice(0, 2).map(g => (
-                            <Badge key={g} variant="outline" className="text-[10px]">{g}</Badge>
+                            <div key={g} className="font-mono text-[10px] uppercase tracking-widest font-bold text-muted-foreground bg-muted/10 border border-border/40 px-2 py-0.5 rounded">GENRE // {g}</div>
                         ))}
                         {pitchCall.language?.slice(0, 2).map(l => (
                             <Badge key={l} variant="outline" className="text-[10px]">

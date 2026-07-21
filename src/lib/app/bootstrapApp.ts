@@ -2,6 +2,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { migrateLocalStorageSession } from '../auth/secureStorage';
 import { handleSessionRecovery } from '../auth/sessionRecovery';
 import { Session } from '@supabase/supabase-js';
+import { Preferences } from '@capacitor/preferences';
+import { clearNativeE2EEKeys } from '../e2ee-bridge';
+import { Capacitor } from '@capacitor/core';
+import { SecureStorage } from '@aparajita/capacitor-secure-storage';
 
 export interface BootstrapResult {
   session: Session | null;
@@ -18,6 +22,26 @@ export interface BootstrapResult {
 export const bootstrapAuthSequence = async (): Promise<BootstrapResult> => {
   console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: bootstrapApp event: bootstrap_start previousState: undefined nextState: bootstrapping reason: app_init`);
   
+  // 0. Detect fresh install and wipe SecureStorage to force E2EE PIN recovery
+  try {
+    const { value: hasRun } = await Preferences.get({ key: 'has_run_before' });
+    if (!hasRun) {
+      console.log('Bootstrap: Fresh install detected! Wiping retained native E2EE keystore and SecureStorage.');
+      await clearNativeE2EEKeys();
+      try {
+        if (Capacitor.isNativePlatform()) {
+          await SecureStorage.clear();
+          console.log('Bootstrap: SecureStorage cleared successfully on fresh install.');
+        }
+      } catch (secErr) {
+        console.error('Bootstrap: Failed to clear SecureStorage:', secErr);
+      }
+      await Preferences.set({ key: 'has_run_before', value: 'true' });
+    }
+  } catch (e) {
+    console.warn('Bootstrap: Failed to check or wipe fresh install state', e);
+  }
+
   // 1. Secure Storage Migration (Non-blocking but awaited for safety)
   await migrateLocalStorageSession();
 

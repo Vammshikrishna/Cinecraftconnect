@@ -97,6 +97,35 @@ export const importPrivateKey = async (base64Key: string): Promise<CryptoKey> =>
 };
 
 /**
+ * Extracts and re-derives the public key from a Base64 PKCS8 private key string.
+ * RSA private keys contain the public modulus (n) and exponent (e),
+ * so we can reconstruct the matching public key without needing to store it separately.
+ */
+export const extractPublicKeyFromPrivateKey = async (privateKeyB64: string): Promise<string> => {
+  const buffer = base64ToBuffer(privateKeyB64);
+  const privateKey = await window.crypto.subtle.importKey("pkcs8", buffer, RSA_ALGO, true, ["decrypt"]);
+  
+  // Export as JWK to access public components (n = modulus, e = public exponent)
+  const jwk = await window.crypto.subtle.exportKey("jwk", privateKey);
+  
+  // Reconstruct the public key JWK using only the public components
+  const publicKeyJwk = {
+    kty: jwk.kty,
+    n: jwk.n,     // modulus (public)
+    e: jwk.e,     // public exponent
+    alg: "RSA-OAEP-256",
+    ext: true,
+    key_ops: ["encrypt"]
+  };
+  
+  // Import it as a public key and export as SPKI base64
+  const publicKey = await window.crypto.subtle.importKey("jwk", publicKeyJwk, RSA_ALGO, true, ["encrypt"]);
+  const spki = await window.crypto.subtle.exportKey("spki", publicKey);
+  return bufferToBase64(spki);
+};
+
+
+/**
  * Encrypts text using a recipient's RSA Public Key.
  */
 export const encryptWithPublicKey = async (text: string, publicKey: CryptoKey): Promise<string> => {
@@ -225,24 +254,82 @@ export const decryptDirectMessage = async (
     const payload = JSON.parse(jsonPayload);
     if (!payload.__e2ee) return jsonPayload; // Not an E2EE payload, return raw
     
-    // Always use auto-detect to prevent UI state staleness from breaking decryption
-    try {
-      if (payload.for_recipient) {
-        return await decryptWithPrivateKey(payload.for_recipient, privateKey);
+    // Try to decrypt with the provided key against both ciphertext blocks silently.
+    // The correct one will succeed; the wrong one will throw (expected behavior).
+    const attempts: string[] = [];
+    if (payload.for_sender) attempts.push(payload.for_sender);
+    if (payload.for_recipient) attempts.push(payload.for_recipient);
+    
+    // If isSender is known, try the expected copy first for speed
+    if (isSender === true && payload.for_sender) {
+      attempts.unshift(payload.for_sender);
+    } else if (isSender === false && payload.for_recipient) {
+      attempts.unshift(payload.for_recipient);
+    }
+    
+    // Deduplicate while preserving order
+    const seen = new Set<string>();
+    const uniqueAttempts = attempts.filter(a => {
+      if (seen.has(a)) return false;
+      seen.add(a);
+      return true;
+    });
+    
+    for (const cipher of uniqueAttempts) {
+      try {
+        const decrypted = await decryptWithPrivateKey(cipher, privateKey);
+        return decrypted;
+      } catch {
+        // This is expected when trying the wrong copy — continue silently
       }
-    } catch (recipientErr) {
-      // If recipient decryption fails, it might be our own sent message, try decrypting the sender copy
     }
     
-    if (payload.for_sender) {
-      return await decryptWithPrivateKey(payload.for_sender, privateKey);
-    }
-    
-    throw new Error("Missing E2EE ciphertext blocks");
+    // Both copies failed — key mismatch
+    throw new Error("Both E2EE ciphertext copies failed to decrypt");
   } catch (e) {
-    // Fallback if parsing fails or decryption fails
-    console.error("E2EE Decryption Error:", e);
-    return "unable to show this message";
+    // Only log if it's a real unexpected error (not the normal key-mismatch path)
+    const isKeyMismatch = e instanceof Error && e.message.includes('ciphertext copies failed');
+    if (!isKeyMismatch) {
+      console.error("E2EE Decryption Error:", e);
+    }
+    return "🔒 Unable to decrypt message";
+  }
+};
+
+/**
+ * Utility to encrypt a DM using a shared AES-GCM key,
+ * returning a stringified JSON payload that can be stored in the DB.
+ */
+export const encryptSymmetricDirectMessage = async (
+  text: string, 
+  dmKey: CryptoKey
+): Promise<string> => {
+  const ciphertext = await encryptWithSymmetricKey(text, dmKey);
+  
+  return JSON.stringify({
+    __e2ee_dm: true,
+    type: 'dm_symmetric',
+    ciphertext
+  });
+};
+
+/**
+ * Utility to decrypt a Symmetric DM JSON payload.
+ */
+export const decryptSymmetricDirectMessage = async (
+  jsonPayload: string,
+  dmKey: CryptoKey
+): Promise<string> => {
+  try {
+    const payload = JSON.parse(jsonPayload);
+    if (!payload.__e2ee_dm) return jsonPayload; // Not an E2EE payload, return raw
+    
+    if (!payload.ciphertext) throw new Error("Missing E2EE ciphertext block");
+    
+    return await decryptWithSymmetricKey(payload.ciphertext, dmKey);
+  } catch (e) {
+    console.error("Symmetric DM E2EE Decryption Error:", e);
+    return "🔒 Unable to decrypt message";
   }
 };
 

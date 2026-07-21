@@ -3,10 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { getLocalPrivateKey, setLocalPrivateKey, removeLocalPrivateKey } from '@/lib/e2ee-storage';
 import { syncPrivateKeyToNative } from '@/lib/e2ee-bridge';
-import { 
-  generateUserKeyPair, 
-  exportPublicKey, 
-  exportPrivateKey, 
+import {
+  generateUserKeyPair,
+  exportPublicKey,
+  exportPrivateKey,
   importPrivateKey,
   encryptPrivateKeyWithPin,
   decryptPrivateKeyWithPin
@@ -57,8 +57,10 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return privateKeyStr;
   };
 
-  const checkBackupStatus = async () => {
+  const checkBackupStatus = async (retryCount = 0) => {
+    console.log(`🔐 [E2EE Context] checkBackupStatus called (attempt ${retryCount + 1}) for user ${user?.id}`);
     if (!user) {
+      console.log("🔐 [E2EE Context] No user active, skipping status check.");
       setIsChecking(false);
       setIsSetupRequired(false);
       setIsRecoveryRequired(false);
@@ -67,14 +69,21 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     // Don't re-run if already running or if we've already checked with this exact token
     const currentToken = session?.access_token ?? null;
-    if (checkingRef.current) return;
-    if (lastCheckedTokenRef.current === currentToken && currentToken !== null) return;
+    if (checkingRef.current && retryCount === 0) {
+      console.log("🔐 [E2EE Context] Already checking backup status, skipping parallel call.");
+      return;
+    }
+    if (lastCheckedTokenRef.current === currentToken && currentToken !== null && retryCount === 0) {
+      console.log("🔐 [E2EE Context] Token has not changed, skipping redundant check.");
+      return;
+    }
 
     checkingRef.current = true;
     lastCheckedTokenRef.current = currentToken;
     setIsChecking(true);
 
     try {
+      console.log("🔐 [E2EE Context] Checking local private key...");
       const localPrivateKeyStr = await getLocalPrivateKey(user.id);
 
       // Verify local private key is valid if present
@@ -83,21 +92,41 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         try {
           await importPrivateKey(localPrivateKeyStr);
           hasValidLocalKey = true;
+          console.log("🔐 [E2EE Context] Valid local private key exists.");
           // Sync to native secure store
           await syncPrivateKeyToNative(user.id, localPrivateKeyStr);
         } catch (e) {
-          console.error("Local private key is corrupted, treating as missing:", e);
+          console.error("🔐 [E2EE Context] Local private key is corrupted, treating as missing:", e);
         }
+      } else {
+        console.log("🔐 [E2EE Context] No local private key found.");
       }
+
+      console.log("🔐 [E2EE Context] Fetching key backup and profile from database...");
+      
+      // Create a dedicated client instance with the explicit Authorization header
+      // to completely eliminate any race condition with the global client's token storage.
+      const { createClient } = await import('@supabase/supabase-js');
+      const authClient = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY,
+        {
+          global: {
+            headers: {
+              Authorization: `Bearer ${session?.access_token}`
+            }
+          }
+        }
+      );
 
       // Fetch both remote backup and the profile public key from Supabase in parallel
       const [backupResult, profileResult] = await Promise.all([
-        (supabase as any)
+        authClient
           .from('key_backups')
           .select('encrypted_private_key, salt')
           .eq('user_id', user.id)
           .maybeSingle(),
-        supabase
+        authClient
           .from('profiles')
           .select('public_key')
           .eq('id', user.id)
@@ -105,17 +134,9 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       ]);
 
       if (backupResult.error) {
-        // If we get a 401/JWT error, the auth token hasn't been applied to the client yet.
-        // Throw so the outer catch can handle it, and the caller can retry.
-        if (backupResult.error.code === 'PGRST301' || backupResult.error.message?.includes('JWT') || backupResult.error.message?.includes('401')) {
-          throw new Error(`Auth token not ready: ${backupResult.error.message}`);
-        }
         throw new Error(`Failed to fetch key backup: ${backupResult.error.message}`);
       }
       if (profileResult.error) {
-        if (profileResult.error.code === 'PGRST301' || profileResult.error.message?.includes('JWT') || profileResult.error.message?.includes('401')) {
-          throw new Error(`Auth token not ready: ${profileResult.error.message}`);
-        }
         throw new Error(`Failed to fetch profile public key: ${profileResult.error.message}`);
       }
 
@@ -124,20 +145,23 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const hasRemoteBackup = !!backupData?.encrypted_private_key;
       const profilePublicKey = profileData?.public_key;
 
+      console.log(`🔐 [E2EE Context] DB results: hasRemoteBackup=${hasRemoteBackup}, profilePublicKeyExists=${!!profilePublicKey}`);
+
       if (hasValidLocalKey) {
         if (!profilePublicKey) {
           // Desynced state: Local key exists but public key is missing from profile.
-          // Since we can't extract the public key from the WebCrypto private key easily, we must regenerate.
-          console.warn("Local key exists but profile public key missing. Forcing key regeneration.");
+          console.warn("🔐 [E2EE Context] Local key exists but profile public key missing. Forcing key regeneration.");
           await generateNewKeyPairAndSave(user.id);
           setIsSetupRequired(true);
           setIsRecoveryRequired(false);
         } else if (hasRemoteBackup) {
           // Perfectly synced and backed up
+          console.log("🔐 [E2EE Context] Device synced and remote backup complete. No action required.");
           setIsSetupRequired(false);
           setIsRecoveryRequired(false);
         } else {
           // Key exists locally but has no backup. Prompt setup.
+          console.log("🔐 [E2EE Context] Local key exists but no backup. Prompting backup setup.");
           setIsSetupRequired(true);
           setIsRecoveryRequired(false);
         }
@@ -145,6 +169,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // No valid local key
         if (!profilePublicKey) {
           // 1. New user (no public key on profiles)
+          console.log("🔐 [E2EE Context] Fresh account. Generating key pair and prompting backup setup.");
           await generateNewKeyPairAndSave(user.id);
           setIsSetupRequired(true);
           setIsRecoveryRequired(false);
@@ -152,6 +177,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           // 2. Existing user (public key exists on profiles)
           if (hasRemoteBackup) {
             // Backup exists! Prompt recovery.
+            console.log("🔐 [E2EE Context] Existing keys found in backup. Prompting recovery.");
             setBackupSalt(backupData.salt);
             setEncryptedPrivateKey(backupData.encrypted_private_key);
             setIsSetupRequired(false);
@@ -159,18 +185,29 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           } else {
             // Public key exists on profiles, but no local key and no backup.
             // Private key is unrecoverable, we must generate fresh.
-            console.warn("E2EE key is unrecoverable. Generating fresh key pair.");
+            console.warn("🔐 [E2EE Context] E2EE key is unrecoverable (no backup exists). Generating fresh key pair.");
             await generateNewKeyPairAndSave(user.id);
             setIsSetupRequired(true);
             setIsRecoveryRequired(false);
           }
         }
       }
-    } catch (err) {
-      console.error("Error checking E2EE backup status:", err);
-    } finally {
+
       setIsChecking(false);
       checkingRef.current = false;
+    } catch (err) {
+      console.error(`🔐 [E2EE Context] Error checking E2EE backup status (attempt ${retryCount + 1}):`, err);
+      if (retryCount < 3) {
+        const retryDelay = (retryCount + 1) * 1500;
+        console.log(`🔐 [E2EE Context] Scheduling retry in ${retryDelay}ms...`);
+        setTimeout(() => {
+          checkBackupStatus(retryCount + 1);
+        }, retryDelay);
+      } else {
+        console.error("🔐 [E2EE Context] All E2EE backup checks failed. Stopping checking state.");
+        setIsChecking(false);
+        checkingRef.current = false;
+      }
     }
   };
 
@@ -216,7 +253,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     try {
       const decryptedKeyStr = await decryptPrivateKeyWithPin(encryptedPrivateKey, pin, backupSalt);
-      
+
       // Verify the decrypted key can be imported
       await importPrivateKey(decryptedKeyStr);
 

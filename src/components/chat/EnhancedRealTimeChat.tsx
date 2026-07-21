@@ -47,6 +47,8 @@ import { TypingIndicator } from '../discussions/TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
 import { decryptDirectMessage, encryptDirectMessage } from '@/lib/e2ee';
+import { useE2EEBackup } from '@/contexts/E2EEBackupContext';
+import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp';
 import { MessageReportDialog } from './MessageReportDialog';
 import { CachedImage } from '@/components/common/CachedImage';
 import { CachedVideo } from '@/components/common/CachedVideo';
@@ -165,10 +167,16 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const { onlineUserIds } = usePresence();
   const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId || '');
   const { privateKey, partnerPublicKey, userPublicKey, keysLoaded } = useE2EEChatKeys(partnerId);
+  const { recoverBackup, performReset, encryptedPrivateKey, backupSalt, isRecoveryRequired } = useE2EEBackup();
   const privateKeyRef = useRef(privateKey);
   useEffect(() => {
     privateKeyRef.current = privateKey;
   }, [privateKey]);
+  const [showKeyRecovery, setShowKeyRecovery] = useState(false);
+  const [recoveryPin, setRecoveryPin] = useState('');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [hasDecryptionFailures, setHasDecryptionFailures] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesRef = useRef(messages);
   useEffect(() => {
@@ -327,7 +335,8 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   const processMessages = async (msgs: Message[]) => {
     if (!user) return msgs;
-    return await Promise.all(msgs.map(async m => {
+    let anyFailed = false;
+    const processed = await Promise.all(msgs.map(async m => {
       try {
         const isSender = m.sender_id === user.id;
         let decryptedContent = m.content;
@@ -336,7 +345,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
            if (!privateKey) {
              decryptedContent = '🔒 Encrypted Message (Unlock required)';
            } else {
-             decryptedContent = await decryptDirectMessage(m.content, privateKey, isSender);
+             try {
+               decryptedContent = await decryptDirectMessage(m.content, privateKey, isSender);
+             } catch (e: any) {
+               if (e.name === 'OperationError') {
+                 anyFailed = true;
+                 decryptedContent = '🔒 Unable to decrypt message (Key mismatch)';
+               } else {
+                 console.error("Failed to decrypt message:", e);
+                 decryptedContent = '🔒 Decryption Error';
+               }
+             }
            }
         }
         
@@ -357,10 +376,16 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
         return { ...m, content: decryptedContent, replied_to_message: repliedToMessage };
       } catch (err) {
-        console.error("Failed to decrypt message:", err);
+        console.error("Failed to process message:", err);
         return m;
       }
     }));
+    
+    if (anyFailed && !hasDecryptionFailures) {
+      setHasDecryptionFailures(true);
+    }
+    
+    return processed;
   };
 
   const fetchReactions = async (msgs: Message[]) => {
@@ -1190,7 +1215,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
                   <h2 className="font-bold text-lg leading-tight group-hover/partner:text-primary transition-colors">{partnerName}</h2>
-                  {(partnerIsVerified || partnerName?.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
+                  {partnerIsVerified && <VerificationBadge size="sm" />}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
@@ -1302,6 +1327,80 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 <LoadingSpinner size="sm" />
               </div>
             )}
+
+            {hasDecryptionFailures && (
+              <div className="sticky top-0 z-10 mx-2 mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-sm overflow-hidden">
+                {!showKeyRecovery ? (
+                  <div className="flex items-start gap-3 px-4 py-3 text-sm">
+                    <span className="text-lg mt-0.5">🔑</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-amber-600 dark:text-amber-400">Encryption Key Mismatch</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Messages are locked because your security keys changed. Enter your recovery PIN to restore access.</p>
+                    </div>
+                    <button
+                      onClick={() => { setShowKeyRecovery(true); setRecoveryError(null); setRecoveryPin(''); }}
+                      className="shrink-0 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 transition-colors"
+                    >
+                      Recover
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 px-4 py-4 text-sm">
+                    <p className="font-semibold text-amber-600 dark:text-amber-400 text-center">Enter your 6-digit Recovery PIN</p>
+                    <InputOTP
+                      maxLength={6}
+                      value={recoveryPin}
+                      onChange={async (val) => {
+                        setRecoveryPin(val);
+                        setRecoveryError(null);
+                        if (val.length === 6) {
+                          setRecoveryLoading(true);
+                          try {
+                            const success = await recoverBackup(val);
+                            if (success) {
+                              setShowKeyRecovery(false);
+                              setHasDecryptionFailures(false);
+                              setRecoveryPin('');
+                            } else {
+                              setRecoveryError('Incorrect PIN. Please try again.');
+                              setRecoveryPin('');
+                            }
+                          } finally {
+                            setRecoveryLoading(false);
+                          }
+                        }
+                      }}
+                      disabled={recoveryLoading}
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={1} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={2} className="w-10 h-10 text-base" />
+                      </InputOTPGroup>
+                      <InputOTPSeparator />
+                      <InputOTPGroup>
+                        <InputOTPSlot index={3} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={4} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={5} className="w-10 h-10 text-base" />
+                      </InputOTPGroup>
+                    </InputOTP>
+                    {recoveryError && <p className="text-xs text-destructive font-medium">{recoveryError}</p>}
+                    {recoveryLoading && <p className="text-xs text-muted-foreground animate-pulse">Recovering keys...</p>}
+                    <div className="flex gap-4 items-center mt-1">
+                      <button onClick={() => setShowKeyRecovery(false)} className="text-xs text-muted-foreground hover:underline">Cancel</button>
+                      <span className="text-muted-foreground">·</span>
+                      <button
+                        onClick={() => push('/settings/security')}
+                        className="text-xs text-amber-600 dark:text-amber-400 hover:underline"
+                      >
+                        Forgot PIN? Go to Settings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {visibleMessages.map((message, idx) => {
                 const isSender = message.sender_id === user?.id;
                 const isLatestRead = idx === lastReadIndexSentByMe;

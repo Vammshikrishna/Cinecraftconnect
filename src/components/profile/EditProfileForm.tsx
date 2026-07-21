@@ -198,6 +198,9 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile.avatar_url);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(profile.cover_image_url);
+  const [customLinks, setCustomLinks] = useState<{ title: string; url: string }[]>(
+    (profile.social_links as any)?.custom_links || []
+  );
 
   const form = useForm<z.infer<typeof profileFormSchema>>({
     resolver: zodResolver(profileFormSchema),

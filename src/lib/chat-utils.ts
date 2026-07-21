@@ -9,6 +9,9 @@ export const generateDirectRoomId = (userId1: string, userId2: string): string =
 export const getDisplayMessage = (content: string) => {
     if (!content) return '';
     
+    // Pending decryption state
+    if (content === '__PENDING_DECRYPT__') return '🔑 Decrypting...';
+    
     // Check for E2EE payload structure
     if (content.includes('__e2ee') || content.includes('__e2ee_group')) {
         return '🔒 Encrypted Message';

@@ -1,14 +1,14 @@
-import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Bookmark, Flag, Plus } from "lucide-react";
+import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Bookmark, Flag, Plus, Pin } from "lucide-react";
 import ReportDialog from "../common/ReportDialog";
 import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppNavigation } from "@/contexts/NavigationContext";
 import { useState, useEffect, useRef } from "react";
+import useEmblaCarousel from "embla-carousel-react";
 import { motion, AnimatePresence } from "framer-motion";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
-import { PostDialog } from "../chat/PostDialog";
 import { useToast } from "@/hooks/use-toast";
 import { togglePostLike } from "@/services/postService";
 import { useAuth } from "@/contexts/AuthContext";
@@ -83,7 +83,7 @@ interface PostProps {
   onRate?: (postId: string, rating: number) => void;
   onLikeToggle?: (postId: string, isLiked: boolean) => void;
   mediaUrl?: string;
-  mediaItems?: { url: string; type: "image" | "video" }[];
+  mediaItems?: { url: string; type: "image" | "video"; crop?: any; zoom?: number; pan?: any; filter?: string; aspectRatio?: string }[];
   createdAt?: string;
   onDelete?: (postId: string) => void;
   pageInfo?: {
@@ -120,7 +120,7 @@ const PostCard = ({
 }: PostProps) => {
 
   const [content, setContent] = useState(initialContent);
-  const [mediaItems, setMediaItems] = useState<{ url: string; type: "image" | "video" }[] | undefined>(initialMediaItems);
+  const [mediaItems, setMediaItems] = useState<{ url: string; type: "image" | "video"; crop?: any; zoom?: number; pan?: any; filter?: string; aspectRatio?: string }[] | undefined>(initialMediaItems);
 
   useEffect(() => {
     setContent(initialContent);
@@ -143,19 +143,19 @@ const PostCard = ({
 
   const isFollowRelationship = isFan || author.account_type === 'fan';
   const isFollowing = following?.some((f: any) => f.following_id === (author.id || authorId));
-  const isConnected = connections?.some((c: any) => c.following_id === (author.id || authorId) || c.follower_id === (author.id || authorId)) || 
-                      sentRequests?.some((c: any) => c.following_id === (author.id || authorId)) ||
-                      pendingRequests?.some((c: any) => c.follower_id === (author.id || authorId));
-  
+  const isConnected = connections?.some((c: any) => c.following_id === (author.id || authorId) || c.follower_id === (author.id || authorId)) ||
+    sentRequests?.some((c: any) => c.following_id === (author.id || authorId)) ||
+    pendingRequests?.some((c: any) => c.follower_id === (author.id || authorId));
+
   const isFollowingPage = pageInfo ? followedPageIds?.includes(pageInfo.id) : false;
 
-  const shouldShowInlineAction = user && 
+  const shouldShowInlineAction = user &&
     (pageInfo ? !isFollowingPage : ((author.id || authorId) && user.id !== (author.id || authorId) && (isFollowRelationship ? !isFollowing : !isConnected)));
 
   const handleInlineAction = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!user) return;
-    
+
     if (pageInfo) {
       toggleFollowPage.mutate({ pageId: pageInfo.id, isFollowing: false });
     } else if (isFollowRelationship) {
@@ -214,9 +214,9 @@ const PostCard = ({
       const { data } = supabase.storage
         .from('portfolios')
         .getPublicUrl(filePath);
-      
+
       setEditMediaItems(prev => [...prev, { url: data.publicUrl, type: mediaType as 'image' | 'video' }]);
-      
+
       toast({
         title: "Success",
         description: "Media uploaded successfully",
@@ -297,7 +297,6 @@ const PostCard = ({
   const canManage = isOwner || isAdmin;
 
   // View States
-  const [isViewOpen, setIsViewOpen] = useState(false);
   const [viewIndex, setViewIndex] = useState(0);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
@@ -397,11 +396,6 @@ const PostCard = ({
 
   const handleComment = () => {
     setShowComments(!showComments);
-  };
-
-  const handleViewMedia = () => {
-    setViewIndex(currentMediaIndex);
-    setIsViewOpen(true);
   };
 
   const handleDelete = async () => {
@@ -523,8 +517,8 @@ const PostCard = ({
             </div>
           )}
           {isAIGenerated && (
-            <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded-full z-10 shadow-lg">
-              AI Generated
+            <div className="font-mono absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded z-10 shadow-lg">
+              TYPE // AI GENERATED
             </div>
           )}
         </div>
@@ -533,7 +527,7 @@ const PostCard = ({
 
     // Carousel for multiple items
     return (
-      <div 
+      <div
         className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -669,9 +663,9 @@ const PostCard = ({
                     <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors pointer-events-none" />
                   </div>
                 ))}
-                
+
                 {/* Add Media Button */}
-                <div 
+                <div
                   onClick={() => !isUploading && fileInputRef.current?.click()}
                   className={cn(
                     "w-24 aspect-square rounded-xl border-2 border-dashed border-white/10 hover:border-primary/50 flex flex-col items-center justify-center cursor-pointer transition-all group/add shrink-0 bg-white/5 hover:bg-primary/5",
@@ -688,12 +682,12 @@ const PostCard = ({
                   )}
                 </div>
               </div>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-                accept="image/*,video/*" 
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                accept="image/*,video/*"
               />
             </div>
           </div>
@@ -726,7 +720,7 @@ const PostCard = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      <div className="relative overflow-hidden rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 group">
+      <div className="relative overflow-hidden rounded-none sm:rounded-xl border-y border-x-0 sm:border-x border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 group">
         <div className="relative">
           {/* Header - Padded */}
           <div className="flex items-center px-3 lg:px-4 py-2 lg:py-3">
@@ -750,7 +744,7 @@ const PostCard = ({
                   {pageInfo ? (
                     <div className="flex items-center gap-1.5 truncate">
                       <div onClick={() => push(`/pages/${pageInfo.slug}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer">
-                        <p className="font-semibold truncate text-[13px] lg:text-[14px]">{pageInfo.name}</p>
+                        <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{pageInfo.name}</p>
                         {pageInfo.is_verified && <VerificationBadge size="sm" />}
                         {shouldShowInlineAction && (
                           <>
@@ -767,29 +761,29 @@ const PostCard = ({
                       </div>
                     </div>
                   ) : author.id ? (
-                      <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer group/name">
-                        <p className="font-semibold truncate text-[13px] lg:text-[14px]">{author.name}</p>
-                        {(author.isVerified || author.name.toLowerCase().includes('vamshi')) && <VerificationBadge size="sm" />}
-                        {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
-                          <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
-                        )}
-                        {shouldShowInlineAction && (
-                          <>
-                            <span className="text-muted-foreground/50 mx-0.5">•</span>
-                            <button
-                              onClick={handleInlineAction}
-                              disabled={isSendingFollow}
-                              className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
-                            >
-                              {isFollowRelationship ? 'Follow' : 'Connect'}
-                            </button>
-                          </>
-                        )}
-                      </div>
+                    <div onClick={() => push(`/profile/${author.id}`)} className="hover:text-primary transition-colors relative z-10 flex items-center gap-1.5 truncate cursor-pointer group/name">
+                      <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{author.name}</p>
+                      {author.isVerified && <VerificationBadge size="sm" />}
+                      {['admin', 'moderator', 'super_admin'].includes(author.role?.toLowerCase() || '') && (
+                        <StaffBadge role={author.role} showLabel={false} className="h-4 px-1" />
+                      )}
+                      {shouldShowInlineAction && (
+                        <>
+                          <span className="text-muted-foreground/50 mx-0.5">•</span>
+                          <button
+                            onClick={handleInlineAction}
+                            disabled={isSendingFollow}
+                            className="text-primary hover:text-primary/80 font-bold text-[12px] lg:text-[13px] transition-colors focus:outline-none"
+                          >
+                            {isFollowRelationship ? 'Follow' : 'Connect'}
+                          </button>
+                        </>
+                      )}
+                    </div>
                   ) : (
-                    <p className="font-semibold truncate text-[13px] lg:text-[14px] uppercase">{author.name}</p>
+                    <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{author.name}</p>
                   )}
-                  <p className="text-[11px] lg:text-[12px] text-muted-foreground truncate">
+                  <p className="text-[8px] text-muted-foreground truncate uppercase tracking-widest font-mono font-bold opacity-80 mt-0.5">
                     {pageInfo ? "Company Page" : author.role} • {timeAgo}
                   </p>
                 </div>
@@ -822,8 +816,8 @@ const PostCard = ({
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  <ReportDialog 
-                    open={isReportOpen} 
+                  <ReportDialog
+                    open={isReportOpen}
                     onOpenChange={setIsReportOpen}
                     targetId={id}
                     targetType="post"
@@ -832,11 +826,11 @@ const PostCard = ({
               </div>
             </div>
           </div>
-          
+
           {/* Caption & Content - Now at the Top */}
           <div className="px-3 lg:px-4 py-2">
             <div className="space-y-2">
-              <div className="text-[13px] lg:text-[14px] leading-relaxed">
+              <div className="text-[11px] lg:text-[12px] leading-relaxed">
                 {content.includes('JOB_SHARE::') ? (
                   (() => {
                     try {
@@ -846,26 +840,26 @@ const PostCard = ({
                       const shareData = JSON.parse(jsonStr);
                       return (
                         <div className="flex flex-col gap-3">
-                            <div 
-                              ref={contentRef}
-                              className={cn(
-                                "block",
-                                !isExpanded && "line-clamp-3 overflow-hidden"
-                              )}
-                            >
-                               {caption && <FormattedText text={caption} className="text-foreground/90" />}
-                            </div>
-                            {shouldShowMore && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsExpanded(!isExpanded);
-                                }} 
-                                className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
-                              >
-                                {isExpanded ? "see less" : "...more"}
-                              </button>
+                          <div
+                            ref={contentRef}
+                            className={cn(
+                              "block",
+                              !isExpanded && "line-clamp-3 overflow-hidden"
                             )}
+                          >
+                            {caption && <FormattedText text={caption} className="text-foreground/90" />}
+                          </div>
+                          {shouldShowMore && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsExpanded(!isExpanded);
+                              }}
+                              className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
+                            >
+                              {isExpanded ? "see less" : "...more"}
+                            </button>
+                          )}
                           <div className="w-full">
                             <JobShareCard {...shareData} compact={true} className="w-full max-w-[450px]" />
                           </div>
@@ -874,7 +868,7 @@ const PostCard = ({
                     } catch (e) {
                       return (
                         <div className="block">
-                          <div 
+                          <div
                             ref={contentRef}
                             className={cn(
                               "block text-foreground/90",
@@ -884,11 +878,11 @@ const PostCard = ({
                             <FormattedText text={content} />
                           </div>
                           {shouldShowMore && (
-                            <button 
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setIsExpanded(!isExpanded);
-                              }} 
+                              }}
                               className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
                             >
                               {isExpanded ? "see less" : "...more"}
@@ -900,7 +894,7 @@ const PostCard = ({
                   })()
                 ) : (
                   <div className="block">
-                    <div 
+                    <div
                       ref={contentRef}
                       className={cn(
                         "block text-foreground/90",
@@ -910,11 +904,11 @@ const PostCard = ({
                       <FormattedText text={content} />
                     </div>
                     {shouldShowMore && (
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setIsExpanded(!isExpanded);
-                        }} 
+                        }}
                         className="text-primary text-[11px] lg:text-[12px] font-semibold hover:underline mt-1.5 block"
                       >
                         {isExpanded ? "see less" : "...more"}
@@ -927,8 +921,8 @@ const PostCard = ({
               {tags && tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pb-1">
                   {tags.map((tag) => (
-                    <div 
-                      key={tag} 
+                    <div
+                      key={tag}
                       onClick={(e) => {
                         e.stopPropagation();
                         push(`/search?q=${encodeURIComponent(tag)}`);
@@ -944,7 +938,7 @@ const PostCard = ({
           </div>
 
           {/* Media - Full width */}
-          <div className="w-full" onClick={handleViewMedia}>
+          <div className="w-full">
             {renderMediaGallery()}
           </div>
 
@@ -971,7 +965,7 @@ const PostCard = ({
                     <span className="text-[13px] font-semibold">{displayLikeCount}</span>
                   </div>
                 )}
-                
+
                 <button
                   onClick={handleComment}
                   className="flex items-center gap-1.5 transition-all duration-300 group/comment text-foreground/80 hover:text-primary"
@@ -983,20 +977,20 @@ const PostCard = ({
                 </button>
 
                 {!isInternal && (
-                  <ShareButton 
-                    postId={id} 
-                    shareCount={share_count} 
+                  <ShareButton
+                    postId={id}
+                    shareCount={share_count}
                     previewUrl={mediaUrl || (mediaItems && mediaItems[0]?.url)}
                     caption={content}
                     author={{
                       username: author.name,
                       avatar_url: author.avatar || null,
-                      is_verified: author.isVerified || author.name.toLowerCase().includes('vamshi')
+                      is_verified: author.isVerified
                     }}
                   />
                 )}
               </div>
-              
+
               {!isInternal && (
                 <button
                   onClick={(e) => {
@@ -1020,11 +1014,11 @@ const PostCard = ({
               )}
             </div>
 
-              <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
-                View all {displayCommentCount} comments
-              </button>
-            </div>
+            <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
+              View all {displayCommentCount} comments
+            </button>
           </div>
+        </div>
         <AnimatePresence>
           {showComments && (
             <motion.div
@@ -1041,31 +1035,6 @@ const PostCard = ({
           )}
         </AnimatePresence>
 
-        <PostDialog 
-          postId={id}
-          isOpen={isViewOpen}
-          onOpenChange={setIsViewOpen}
-          initialIndex={viewIndex}
-          initialData={{
-            id,
-            content,
-            created_at: createdAt,
-            like_count,
-            comment_count,
-            user_has_liked: currentUserLiked,
-            media_items: mediaItems,
-            media_url: mediaUrl,
-            media_type: hasImage ? 'image' : (hasVideo ? 'video' : null),
-            profiles: {
-              id: authorId || author.id,
-              full_name: author.name,
-              username: author.name.toLowerCase().replace(/\s/g, ''),
-              avatar_url: author.avatar,
-              craft: author.role,
-              is_verified: author.isVerified
-            }
-          }}
-        />
       </div>
     </>
   );

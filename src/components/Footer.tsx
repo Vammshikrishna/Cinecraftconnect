@@ -1,152 +1,100 @@
-import { Instagram, Twitter, Youtube, Facebook, ArrowUpRight, Clapperboard, Globe } from 'lucide-react';
+import { Instagram, Twitter, Youtube, Facebook, ArrowUpRight, Clapperboard, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
 import AppLogo from '@/components/common/AppLogo';
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="relative bg-card pt-24 pb-12 px-6 overflow-hidden border-t border-border">
-      {/* Cinematic Background Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[60vw] h-[20vw] bg-primary/10 blur-[120px] rounded-full opacity-30" />
-      </div>
+    <footer style={{ background: '#0D0D0D', color: '#F8F5F0' }}>
+      {/* Top accent rule */}
+      <div style={{ height: 3, background: 'linear-gradient(90deg, #f97316, #0D0D0D)' }} />
 
-      <div className="max-w-7xl mx-auto relative z-10">
-        <div className="grid grid-cols-2 md:grid-cols-12 gap-12 mb-20">
-          {/* Brand Section */}
-          <div className="col-span-full md:col-span-4 lg:col-span-5">
-            <AppLogo size="md" className="mb-8" />
+      <div style={{ maxWidth: 1440, margin: '0 auto', padding: '72px 48px 40px' }}>
 
-            <p className="text-muted-foreground text-lg max-w-md mb-10 leading-relaxed">
-              The premier ecosystem for the entire entertainment community.
-              Built for film, television, and digital creators to simplify production and collaboration.
+        {/* Brand row */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 40, paddingBottom: 56, borderBottom: '1px solid rgba(248,245,240,0.08)', marginBottom: 56 }}>
+          <div style={{ maxWidth: 340 }}>
+            <AppLogo size="md" className="mb-6" textColor="cream" />
+            <p style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 14, color: 'rgba(248,245,240,0.5)', lineHeight: 1.7, marginTop: 20 }}>
+              The professional ecosystem for the film and creator community — built for directors, cinematographers, and digital storytellers worldwide.
             </p>
-
-            <div className="flex items-center gap-4">
-              {[
-                { icon: Instagram, label: 'Instagram' },
-                { icon: Twitter, label: 'Twitter' },
-                { icon: Youtube, label: 'YouTube' },
-                { icon: Facebook, label: 'Facebook' },
-              ].map((social, i) => (
-                <a
-                  key={i}
-                  href="#"
-                  className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/30 hover:bg-muted transition-all duration-300"
-                  aria-label={social.label}
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              {[Instagram, Twitter, Youtube, Facebook].map((Icon, i) => (
+                <a key={i} href="#" style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(248,245,240,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(248,245,240,0.4)', textDecoration: 'none', transition: 'all 0.2s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.color = '#f97316'; (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(249,115,22,0.4)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.color = 'rgba(248,245,240,0.4)'; (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(248,245,240,0.1)'; }}
                 >
-                  <social.icon size={18} />
+                  <Icon size={15} />
                 </a>
               ))}
             </div>
           </div>
 
-          {/* Links Sections */}
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="col-span-1 md:col-span-2 lg:ml-auto"
-          >
-            <h3 className="text-foreground font-semibold text-sm tracking-widest uppercase mb-8">Platform</h3>
-            <ul className="space-y-4">
-              {[
-                { label: 'About', path: '/about' },
-                { label: 'Features', path: '/features' },
-                { label: 'Marketplace', path: '/features#marketplace' },
-                { label: 'Pricing', path: '/features#pricing' },
-                { label: 'Documentation', path: '/documentation' },
-              ].map((link) => (
-                <li key={link.label}>
-                  <Link 
-                    to={link.path} 
-                    className="text-muted-foreground hover:text-primary flex items-center gap-1 group transition-colors duration-300"
-                  >
-                    {link.label}
-                    <ArrowUpRight className="h-3 w-3 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-300 outline-none" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="col-span-1 md:col-span-2"
-          >
-            <h3 className="text-foreground font-semibold text-sm tracking-widest uppercase mb-8">Community</h3>
-            <ul className="space-y-4">
-              {[
-                { label: 'Feed', path: '/features#feed' },
-                { label: 'Network', path: '/features#network' },
-                { label: 'Projects', path: '/features#projects' },
-                { label: 'Job Board', path: '/features#jobs' },
-                { label: 'Support Hub', path: '/support' },
-              ].map((link) => (
-                <li key={link.label}>
-                  <Link 
-                    to={link.path} 
-                    className="text-muted-foreground hover:text-primary flex items-center gap-1 group transition-colors duration-300"
-                  >
-                    {link.label}
-                    <ArrowUpRight className="h-3 w-3 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-300" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.5, delay: 0.3 }}
-            className="col-span-full md:col-span-2"
-          >
-            <h3 className="text-foreground font-semibold text-sm tracking-widest uppercase mb-8">Legal</h3>
-            <ul className="space-y-4">
-              {[
-                { label: 'Terms', path: '/terms' },
-                { label: 'Privacy', path: '/privacy' },
-                { label: 'Guidelines', path: '/community-guidelines' },
-                { label: 'Safety', path: '/safety-center' },
-                { label: 'Cookie', path: '/cookie' },
-              ].map((link) => (
-                <li key={link.label}>
-                  <Link 
-                    to={link.path} 
-                    className="text-muted-foreground hover:text-primary flex items-center gap-1 group transition-colors duration-300"
-                  >
-                    {link.label}
-                    <ArrowUpRight className="h-3 w-3 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all duration-300" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
+          {/* Link columns */}
+          <div style={{ display: 'flex', gap: 64, flexWrap: 'wrap' }}>
+            {[
+              {
+                label: 'Platform',
+                links: [
+                  { name: 'About', to: '/about' },
+                  { name: 'Features', to: '/features' },
+                  { name: 'Marketplace', to: '/features#marketplace' },
+                  { name: 'Documentation', to: '/documentation' },
+                ]
+              },
+              {
+                label: 'Community',
+                links: [
+                  { name: 'Network', to: '/features#network' },
+                  { name: 'Job Board', to: '/features#jobs' },
+                  { name: 'Projects', to: '/features#projects' },
+                  { name: 'Support Hub', to: '/support' },
+                ]
+              },
+              {
+                label: 'Legal',
+                links: [
+                  { name: 'Terms', to: '/terms' },
+                  { name: 'Privacy', to: '/privacy' },
+                  { name: 'Cookies', to: '/cookie' },
+                  { name: 'Guidelines', to: '/community-guidelines' },
+                  { name: 'Safety Center', to: '/safety-center' },
+                ]
+              },
+            ].map((col) => (
+              <div key={col.label}>
+                <h3 style={{ fontFamily: "'Inconsolata', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.25em', textTransform: 'uppercase', color: '#f97316', marginBottom: 20 }}>
+                  {col.label}
+                </h3>
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {col.links.map((link) => (
+                    <li key={link.name}>
+                      <Link
+                        to={link.to}
+                        style={{ fontFamily: "'Work Sans', sans-serif", fontSize: 13, color: 'rgba(248,245,240,0.45)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4, transition: 'color 0.2s' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#F8F5F0')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(248,245,240,0.45)')}
+                      >
+                        {link.name}
+                        <ArrowUpRight size={11} style={{ opacity: 0 }} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Footer Bottom */}
-        <div className="pt-12 border-t border-border flex flex-col md:flex-row items-center justify-between gap-6">
-          <p className="text-muted-foreground text-sm">
-            &copy; {currentYear} CineCraft Connect. All rights reserved.
+        {/* Bottom bar */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+          <p style={{ fontFamily: "'Inconsolata', monospace", fontSize: 11, color: 'rgba(248,245,240,0.2)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            © {currentYear} CineCraft Connect. All rights reserved.
           </p>
-
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              <Globe className="h-3.5 w-3.5" />
-              <span>English (US)</span>
-            </div>
-            <div className="flex items-center gap-2 text-muted-foreground text-xs">
-              <Clapperboard className="h-3.5 w-3.5" />
-              <span>Version 2.4.0</span>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'Inconsolata', monospace", fontSize: 11, color: 'rgba(248,245,240,0.2)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+            <Clapperboard size={12} style={{ color: '#f97316' }} />
+            Version 2.4.0
           </div>
         </div>
       </div>

@@ -163,7 +163,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
 
   if (localLoading) {
     return (
-      <div className="grid grid-cols-3 md:grid-cols-4 gap-[2px] pb-20">
+      <div className="grid grid-cols-4 gap-[2px] pb-20">
         {[1, 2, 3, 4, 5, 6, 7, 8].map((i: number) => (
           <div key={i} className="aspect-[4/5] md:aspect-[3/4] lg:aspect-[4/5] bg-white/5 animate-pulse" />
         ))}
@@ -190,11 +190,11 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
             <Card key={project.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => push(`/projects/${project.id}/space`)}>
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-blue-500/10 text-blue-400 border-blue-500/20 px-2 py-0">Project</Badge>
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">TYPE // PROJECT</div>
                   <span className="text-[10px] text-muted-foreground opacity-60">• {formatDistanceToNow(new Date(project.created_at), { addSuffix: true })}</span>
                 </div>
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-xl font-bold tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{project.title}</h3>
+                  <h3 className="font-serif font-bold text-xl tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{project.title}</h3>
                   <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-4 h-10">{project.description || 'No description provided.'}</p>
@@ -220,13 +220,13 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
             <Card key={room.id} className="group glass-card hover:bg-white/5 transition-all overflow-hidden border-white/5 cursor-pointer" onClick={() => push(`/discussion-rooms/${room.id}`)}>
               <CardContent className="p-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Badge variant="outline" className="text-[10px] uppercase tracking-wider bg-primary/10 text-green-400 border-primary/20 px-2 py-0">Live Discussion</Badge>
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-green-400 bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">TYPE // LIVE DISCUSSION</div>
                   <div className="flex items-center gap-1 text-[10px] text-green-500 font-bold animate-pulse">
                     <Activity className="h-3 w-3" />
                   </div>
                 </div>
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-xl font-bold tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{room.title || room.name}</h3>
+                  <h3 className="font-serif font-bold text-xl tracking-tight line-clamp-1 group-hover:text-primary transition-colors">{room.title || room.name}</h3>
                   <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2 mb-4 h-10">{room.description || 'Join the conversation.'}</p>
@@ -255,7 +255,7 @@ const SearchResults = ({ query, filters }: SearchResultsProps) => {
             <h2 className="text-xl font-black uppercase tracking-widest">Discover Feed</h2>
           </div>
           
-          <div className="grid grid-cols-3 md:grid-cols-4 gap-[2px]">
+          <div className="grid grid-cols-4 gap-[2px]">
             {posts.map((post: any) => {
               const items = post.media_items || (post.media_url ? [{ url: post.media_url, type: post.media_type as 'image'|'video' }] : []);
               const currentItem = items[0];

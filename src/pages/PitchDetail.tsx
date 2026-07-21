@@ -457,7 +457,7 @@ const PitchDetail = () => {
                             </div>
 
                             {/* Trust Markers */}
-                            <div className="bg-secondary/10 border border-border/30 rounded-3xl p-6">
+                            <div className="bg-card border border-border/50 shadow-sm rounded-3xl p-6">
                                 <div className="flex items-center gap-3 mb-4">
                                     <Shield className="text-primary h-5 w-5" />
                                     <h4 className="font-black text-sm uppercase tracking-tight">Secure Pitching</h4>

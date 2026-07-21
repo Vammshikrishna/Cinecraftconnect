@@ -84,7 +84,7 @@ const NavLinks = () => {
                 <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-red-500 border-2 border-background animate-pulse" />
               )}
             </div>
-            <span className="font-medium text-sm">{label}</span>
+            <span className="font-serif font-bold uppercase tracking-tight text-[12px] lg:text-[13px]">{label}</span>
             {isActive(path) && (
               <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-0.5 bg-gradient-to-r from-primary to-primary/80 rounded-full"></div>
             )}

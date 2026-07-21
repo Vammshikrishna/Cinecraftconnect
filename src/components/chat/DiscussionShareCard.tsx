@@ -1,3 +1,4 @@
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 import { Link } from 'react-router-dom';
 import { Users, Lock, Clock } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -61,6 +62,7 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
             to={`/discussion-rooms/${roomId}`}
             className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
+            <CornerBrackets />
             {/* Compact Header */}
             <div className="p-4 bg-black/60 backdrop-blur-xl border-b border-black/10 dark:border-white/10 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -87,12 +89,12 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
             {/* Content */}
             <div className="p-5 space-y-4 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-1">
-                    <h4 className="text-[16px] font-black text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors tracking-tight uppercase">
+                    <h4 className="font-serif text-[13px] font-bold text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors tracking-tight uppercase">
                         {title}
                     </h4>
                     {category && (
-                        <div className="inline-block px-2 py-0.5 rounded bg-primary text-black text-[9px] font-black uppercase tracking-widest mt-1">
-                            {category}
+                        <div className="font-mono inline-block px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary text-[7.5px] font-bold uppercase tracking-widest mt-1">
+                            CAT // {category}
                         </div>
                     )}
                 </div>
@@ -106,14 +108,14 @@ export const DiscussionShareCard = ({ roomId, title: initialTitle, description: 
                 <div className="flex flex-col gap-2 pt-1">
                     <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-primary/60" />
-                        <span className="text-[10px] font-black text-foreground/70 uppercase tracking-widest">
+                        <span className="text-[8px] font-black text-foreground/70 uppercase tracking-widest">
                             {memberCount || 0} Members
                         </span>
                     </div>
                     {createdAt && (
                         <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-primary/60" />
-                            <span className="text-[10px] font-black text-foreground/50 uppercase tracking-widest">
+                            <span className="text-[8px] font-black text-foreground/50 uppercase tracking-widest">
                                 {formatDistanceToNow(new Date(createdAt), { addSuffix: true })}
                             </span>
                         </div>

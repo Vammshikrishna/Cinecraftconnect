@@ -455,7 +455,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
             </Avatar>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
-                <span className="text-[13px] font-bold text-foreground line-clamp-1">
+                <span className="font-serif font-bold uppercase tracking-tight text-[11px] lg:text-[12px] text-foreground line-clamp-1">
                   {profile?.username || profile?.full_name || user?.email?.split('@')[0]}
                 </span>
                 {profile?.is_verified && <VerificationBadge size="xs" />}
@@ -465,14 +465,14 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               </span>
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-primary text-xs font-bold hover:bg-transparent">Switch</Button>
+          <Button variant="ghost" size="sm" className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:bg-transparent">Switch</Button>
         </div>
 
         {/* Suggestions Section */}
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <span className="text-[13px] font-bold text-muted-foreground">Suggestions for you</span>
-            <Button variant="ghost" size="sm" className="text-foreground text-[11px] font-bold hover:bg-transparent p-0 h-auto">See All</Button>
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest font-mono">Suggestions for you</span>
+            <Button variant="ghost" size="sm" className="text-foreground text-[9px] font-black uppercase tracking-widest font-mono hover:bg-transparent p-0 h-auto">See All</Button>
           </div>
           
           <div className="space-y-3 px-1">
@@ -482,11 +482,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     <AvatarFallback className="bg-secondary/20 text-[10px]">TR</AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
-                    <span className="text-[12px] font-bold leading-tight">tech_renaissance</span>
+                    <span className="font-serif font-bold uppercase tracking-tight text-[10px] lg:text-[11px] leading-tight">tech_renaissance</span>
                     <span className="text-[10px] text-muted-foreground leading-tight">Followed by art_daily + 2 more</span>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-bold hover:bg-transparent p-0 h-auto">Follow</Button>
+                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-semibold hover:bg-transparent p-0 h-auto">Follow</Button>
              </div>
              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -494,11 +494,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     <AvatarFallback className="bg-secondary/20 text-[10px]">CD</AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col">
-                    <span className="text-[12px] font-bold leading-tight">cine_director</span>
+                    <span className="font-serif font-bold uppercase tracking-tight text-[10px] lg:text-[11px] leading-tight">cine_director</span>
                     <span className="text-[10px] text-muted-foreground leading-tight">Suggested for you</span>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-bold hover:bg-transparent p-0 h-auto">Follow</Button>
+                <Button variant="ghost" size="sm" className="text-primary text-[11px] font-semibold hover:bg-transparent p-0 h-auto">Follow</Button>
              </div>
           </div>
         </div>

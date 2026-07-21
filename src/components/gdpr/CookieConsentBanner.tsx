@@ -20,6 +20,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Cookie, ChevronDown, ChevronUp, Shield, BarChart2, Megaphone, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Capacitor } from '@capacitor/core';
 
 // ── Storage key & shape ───────────────────────────────────────────────────────
 
@@ -76,6 +77,8 @@ export function CookieConsentBanner() {
   const [analytics, setAnalytics] = useState(true);
   const [marketing, setMarketing] = useState(false);
   const [mounted, setMounted] = useState(false);
+  
+  const isNative = Capacitor.isNativePlatform();
 
   // Slide-in state
   useEffect(() => {
@@ -121,6 +124,7 @@ export function CookieConsentBanner() {
   const rejectOptional = () => dismiss({ analytics: false, marketing: false });
   const saveCustom = () => dismiss({ analytics, marketing });
 
+  if (isNative) return null;
   if (!visible) return null;
 
   return (

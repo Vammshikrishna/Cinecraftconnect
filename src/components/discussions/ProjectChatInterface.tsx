@@ -1434,7 +1434,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                 <Smile className="h-4 w-4" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl">
+                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl z-[9999]">
                                 {QUICK_REACTIONS.map(emoji => (
                                   <button 
                                     key={emoji} 
@@ -1453,7 +1453,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                 <MoreVertical className="h-4 w-4" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36">
+                            <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36 z-[9999]">
                               {isOwn && (
                                 <DropdownMenuItem onClick={() => {
                                   setInfoMessage(message);

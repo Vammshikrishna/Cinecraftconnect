@@ -114,13 +114,13 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                 <div className="space-y-2 flex-1">
                     <div className="flex flex-wrap gap-1.5">
                         {vendor.category.slice(0, 2).map((cat, index) => (
-                            <Badge key={index} variant="secondary" className="bg-primary/5 text-primary border-primary/10 text-[9px] font-black uppercase tracking-[0.15em] px-2 py-0.5 rounded-md">
-                                {cat}
-                            </Badge>
+                            <div key={index} className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                                CAT // {cat}
+                            </div>
                         ))}
                     </div>
 
-                    <h3 className="font-black text-xl tracking-tight text-foreground group-hover:text-primary transition-colors duration-300 leading-tight">
+                    <h3 className="font-serif font-bold text-2xl tracking-tight text-foreground group-hover:text-primary transition-colors duration-300 leading-tight">
                         {vendor.business_name}
                     </h3>
 
@@ -130,9 +130,8 @@ export const VendorCard = ({ vendor, onDismiss }: VendorCardProps) => {
                 </div>
 
                 {/* Location Footer */}
-                <div className="flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-2 bg-black/5 dark:bg-white/5 py-1.5 px-3 rounded-xl border border-black/5 dark:border-white/5">
-                    <MapPin size={12} className="text-primary/60" />
-                    <span className="truncate">{vendor.location}</span>
+                <div className="font-mono flex items-center text-[10px] font-bold text-muted-foreground uppercase tracking-widest gap-2 bg-muted/10 py-1.5 px-3 rounded border border-border/40">
+                    <span className="truncate">LOC // {vendor.location}</span>
                 </div>
 
                 {/* Contact Divider */}

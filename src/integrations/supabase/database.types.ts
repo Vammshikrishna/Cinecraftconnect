@@ -729,6 +729,7 @@ export type Database = {
       }
       files: {
         Row: {
+          category: string | null
           created_at: string
           file_type: string | null
           id: string
@@ -740,6 +741,7 @@ export type Database = {
           url: string
         }
         Insert: {
+          category?: string | null
           created_at?: string
           file_type?: string | null
           id?: string
@@ -751,6 +753,7 @@ export type Database = {
           url: string
         }
         Update: {
+          category?: string | null
           created_at?: string
           file_type?: string | null
           id?: string
@@ -3159,11 +3162,13 @@ export type Database = {
           last_activity_at: string | null
           location: string | null
           name: string
+          pinned_message_id: string | null
           project_id: string | null
           project_space_type:
             | Database["public"]["Enums"]["project_space_type"]
             | null
           required_roles: string[] | null
+          settings: Json | null
           start_date: string | null
           status: string | null
           tags: string[] | null
@@ -3181,11 +3186,13 @@ export type Database = {
           last_activity_at?: string | null
           location?: string | null
           name: string
+          pinned_message_id?: string | null
           project_id?: string | null
           project_space_type?:
             | Database["public"]["Enums"]["project_space_type"]
             | null
           required_roles?: string[] | null
+          settings?: Json | null
           start_date?: string | null
           status?: string | null
           tags?: string[] | null
@@ -3203,11 +3210,13 @@ export type Database = {
           last_activity_at?: string | null
           location?: string | null
           name?: string
+          pinned_message_id?: string | null
           project_id?: string | null
           project_space_type?:
             | Database["public"]["Enums"]["project_space_type"]
             | null
           required_roles?: string[] | null
+          settings?: Json | null
           start_date?: string | null
           status?: string | null
           tags?: string[] | null

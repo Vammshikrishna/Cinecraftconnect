@@ -8,9 +8,9 @@
 @layer base {
   :root {
     /* Tangerine Dream - Default Mode */
-    --background: 0 0% 96%;
+    --background: 0 0% 94%; /* Darkened from 96% to increase contrast */
     --foreground: 0 0% 9%;
-    --card: 0 0% 98%;
+    --card: 0 0% 100%; /* Changed from 98% to pure white to pop against background */
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 89%;
     --popover-foreground: 0 0% 9%;
@@ -77,8 +77,8 @@
 
   .light {
     /* Tangerine Dream - Light Mode */
-    --background: 7 20% 97%;
-    /* Very warm off-white */
+    --background: 7 20% 94%;
+    /* Very warm off-white - Darkened to increase contrast */
     --foreground: 0 0% 10%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 10%;
@@ -154,8 +154,8 @@
 
   .dark {
     /* Tangerine Dream - Dark Mode */
-    --background: 0 0% 9%;
-    /* Deep charcoal */
+    --background: 0 0% 5%;
+    /* Deep charcoal - Darkened from 9% to increase contrast with cards */
     --foreground: 0 0% 98%;
     --card: 0 0% 14%;
     --card-foreground: 0 0% 98%;

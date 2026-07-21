@@ -1529,9 +1529,7 @@ export const DiscussionChatInterface = ({
                                   <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
                                     {message.profiles?.username || message.profiles?.full_name || 'User'}
                                   </p>
-                                  {(message.profiles?.is_verified ||
-                                    message.profiles?.username?.toLowerCase().includes('vamshi') ||
-                                    message.profiles?.full_name?.toLowerCase().includes('vamshi')) && (
+                                  {message.profiles?.is_verified && (
                                       <VerificationBadge size="xs" />
                                     )}
                                 </div>

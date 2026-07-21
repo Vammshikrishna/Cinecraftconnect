@@ -81,7 +81,17 @@ interface MarketplaceResult {
     type: 'marketplace';
 }
 
-type SearchResult = ProjectResult | UserResult | DiscussionResult | PostResult | AnnouncementResult | VendorResult | MarketplaceResult;
+interface CompanyResult {
+    id: string;
+    name: string;
+    description: string;
+    logo_url: string | undefined;
+    industry: string | undefined;
+    location: string | undefined;
+    type: 'company';
+}
+
+type SearchResult = ProjectResult | UserResult | DiscussionResult | PostResult | AnnouncementResult | VendorResult | MarketplaceResult | CompanyResult;
 
 const CATEGORIES: { id: string; label: string; type?: ExploreItemType }[] = [
     { id: 'all', label: 'All' },
@@ -91,6 +101,7 @@ const CATEGORIES: { id: string; label: string; type?: ExploreItemType }[] = [
     { id: 'posts', label: 'Posts', type: 'post' },
     { id: 'vendors', label: 'Vendors', type: 'vendor' },
     { id: 'marketplace', label: 'Marketplace', type: 'marketplace' },
+    { id: 'companies', label: 'Companies', type: 'company' },
 ];
 
 const SearchPage = () => {
@@ -116,10 +127,12 @@ const SearchPage = () => {
         try {
             const promises = [
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').limit(12),
+                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified, craft, bio').limit(12),
                 supabase.from('discussion_rooms').select('id, title, description').limit(12),
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').order('created_at', { ascending: false }).limit(32),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12)
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12),
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url').limit(12)
             ];
 
             const results = await Promise.allSettled(promises as any[]);
@@ -132,12 +145,15 @@ const SearchPage = () => {
             };
 
             const projects = getData(results[0]);
-            const discussions = getData(results[1]);
-            const posts = getData(results[2]);
-            const vendors = getData(results[3]);
-            const marketplace = getData(results[4]);
+            const users = getData(results[1]);
+            const discussions = getData(results[2]);
+            const posts = getData(results[3]);
+            const vendors = getData(results[4]);
+            const marketplace = getData(results[5]);
+            const companies = getData(results[6]);
 
             if (projects) items.push(...projects.map((p: any) => ({ ...p, title: p.title, name: p.title, description: p.description || undefined, location: p.location, genre: p.genre, status: p.status, image_url: p.image_url, type: 'project' as const })));
+            if (users) items.push(...users.map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, craft: u.craft, description: u.bio || undefined, type: 'user' as const })));
             if (discussions) items.push(...discussions.map((d: any) => ({ ...d, description: d.description || undefined, type: 'discussion' as const })));
             if (posts) items.push(...posts.map((p: any) => ({
                 id: p.id,
@@ -165,6 +181,13 @@ const SearchPage = () => {
                 image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]),
                 listing_type: m.listing_type as 'equipment' | 'location',
                 type: 'marketplace' as const
+            })));
+            if (companies) items.push(...companies.map((c: any) => ({
+                ...c,
+                description: c.description || c.tagline || undefined,
+                location: c.headquarters,
+                industry: Array.isArray(c.industry) ? c.industry[0] : c.industry,
+                type: 'company' as const
             })));
 
             setExploreItems(items.sort(() => Math.random() - 0.5));
@@ -195,12 +218,23 @@ const SearchPage = () => {
 
             const promises = [
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
-                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified').or(profilesFilter).limit(10),
+                supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified, craft, bio').or(profilesFilter).limit(10),
                 supabase.from('discussion_rooms').select('id, title, description').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
-                supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').ilike('content', `%${searchQuery}%`).limit(24),
+                (() => {
+                    let q = supabase
+                        .from('posts')
+                        .select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)');
+                    
+                    if (searchQuery.startsWith('#')) {
+                        const cleanTag = searchQuery.substring(1).toLowerCase();
+                        return q.or(`tags.cs.{${cleanTag}},content.ilike.%${searchQuery}%`).limit(24);
+                    }
+                    return q.ilike('content', `%${searchQuery}%`).limit(24);
+                })(),
                 supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10)
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10),
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url').or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tagline.ilike.%${searchQuery}%`).limit(10)
             ];
 
             const results = await Promise.allSettled(promises as any[]);
@@ -217,23 +251,24 @@ const SearchPage = () => {
             const announcementsData = getData(results[4]);
             const vendorsData = getData(results[5]);
             const marketplaceData = getData(results[6]);
+            const companiesData = getData(results[7]);
 
             const projects = (projectsData || []).map((p: any) => ({ ...p, id: p.id, title: p.title, description: p.description || '', location: p.location, genre: p.genre, status: p.status, image_url: p.image_url, type: 'project' as const }));
-            const users = (usersData || []).map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, type: 'user' as const }));
+            const users = (usersData || []).map((u: any) => ({ ...u, id: u.id, username: u.username || '', full_name: u.full_name || '', avatar_url: u.avatar_url || undefined, is_verified: u.is_verified, craft: u.craft, description: u.bio || undefined, type: 'user' as const }));
             const discussions = (discussionsData || []).map((d: any) => ({ ...d, id: d.id, title: d.title, name: d.title, description: d.description || '', type: 'discussion' as const }));
             const posts = (postsData || []).map((p: any) => ({ id: p.id, content: p.content, image_url: p.media_type === 'image' ? p.media_url : undefined, video_url: p.media_type === 'video' ? p.media_url : undefined, like_count: p.like_count || 0, comment_count: p.comment_count || 0, author: p.author ? (Array.isArray(p.author) ? p.author[0] : p.author) : null, type: 'post' as const }));
             const announcements = (announcementsData || []).map((a: any) => ({ id: a.id, title: a.title, content: a.content, type: 'announcement' as const }));
             const vendors = (vendorsData || []).map((v: any) => ({ ...v, id: v.id, business_name: v.business_name, logo_url: v.logo_url || undefined, category: v.category || v.specialization, city: v.city || v.location, type: 'vendor' as const }));
             const marketplace = (marketplaceData || []).map((m: any) => ({ ...m, id: m.id, title: m.title, description: m.description, image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]), price_per_day: m.price_per_day, listing_type: m.listing_type as 'equipment' | 'location', type: 'marketplace' as const }));
+            const companies = (companiesData || []).map((c: any) => ({ ...c, id: c.id, name: c.name, description: c.description || c.tagline || '', industry: Array.isArray(c.industry) ? c.industry[0] : c.industry, location: c.headquarters, logo_url: c.logo_url || undefined, type: 'company' as const }));
 
-            setResults([...projects, ...users, ...discussions, ...posts, ...announcements, ...vendors, ...marketplace]);
+            setResults([...projects, ...users, ...discussions, ...posts, ...announcements, ...vendors, ...marketplace, ...companies]);
         } catch (error) {
             console.error('Error during search:', error);
         } finally {
             setLoading(false);
         }
     }, [isFan]);
-
 
     useEffect(() => {
         if (initialQuery) performSearch(initialQuery);

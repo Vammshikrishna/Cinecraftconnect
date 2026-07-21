@@ -3,7 +3,7 @@ import {
   BadgeCheck, User, FileText, 
   CheckCircle, XCircle, 
   RefreshCw, Eye, Globe,
-  Briefcase, Landmark, History
+  Briefcase, Landmark, History, Activity, Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +23,8 @@ interface VerificationRequest {
     username: string;
     avatar_url: string | null;
     craft: string | null;
+    trust_score?: number | null;
+    created_at?: string;
   };
 }
 
@@ -105,6 +107,30 @@ const VerificationReview: React.FC<VerificationReviewProps> = ({ requests, onApp
                         <div className="bg-muted/30 px-3 py-1.5 rounded-lg flex items-center justify-between">
                           <span className="text-[9px] font-bold text-muted-foreground uppercase">Platform ID</span>
                           <span className="text-[10px] font-mono text-foreground font-bold">{req.id.slice(0, 8)}</span>
+                        </div>
+                        {req.profile.created_at && (
+                          <div className="bg-muted/30 px-3 py-1.5 rounded-lg flex items-center justify-between border border-border/30">
+                            <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1"><Calendar className="w-2.5 h-2.5" /> Account Age</span>
+                            <span className="text-[10px] font-mono text-foreground font-bold">{new Date(req.profile.created_at).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 mt-4">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-1 flex items-center gap-1.5"><Activity className="w-3 h-3" /> Platform Risk</p>
+                      <div className="bg-muted/30 p-3 rounded-xl border border-border/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-bold text-foreground uppercase tracking-widest">Trust Score</span>
+                          <span className={`text-[11px] font-black ${req.profile.trust_score ? req.profile.trust_score >= 70 ? 'text-green-500' : req.profile.trust_score >= 40 ? 'text-amber-500' : 'text-red-500' : 'text-muted-foreground'}`}>
+                            {req.profile.trust_score ? `${req.profile.trust_score}/100` : 'N/A'}
+                          </span>
+                        </div>
+                        <div className="w-full bg-background rounded-full h-1.5 overflow-hidden border border-border/30">
+                          <div 
+                            className={`h-full rounded-full ${req.profile.trust_score ? req.profile.trust_score >= 70 ? 'bg-green-500' : req.profile.trust_score >= 40 ? 'bg-amber-500' : 'bg-red-500' : 'bg-muted'}`} 
+                            style={{ width: `${req.profile.trust_score || 0}%` }} 
+                          />
                         </div>
                       </div>
                     </div>

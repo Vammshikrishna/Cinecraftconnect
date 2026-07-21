@@ -458,7 +458,6 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
                 <div className="relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#ff4d4d] h-4 w-4" />
                     <Input
-                        autoFocus
                         placeholder={`Search connections...`}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
@@ -583,7 +582,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
     if (isDesktop) {
         return (
             <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[420px] max-h-[85vh] md:max-h-[620px] flex flex-col p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-[32px]">
+                <DialogContent onOpenAutoFocus={(e) => e.preventDefault()} className="sm:max-w-[420px] max-h-[85vh] md:max-h-[620px] flex flex-col p-0 gap-0 bg-background border-none shadow-2xl overflow-hidden rounded-[32px]">
                     <DialogHeader className="p-6 pb-2 text-center shrink-0">
                         <DialogTitle className="text-2xl font-black text-foreground">{titleText}</DialogTitle>
                         <DialogDescription className="sr-only">Share this content with your network</DialogDescription>
@@ -605,7 +604,7 @@ export function UniversalShareSheet({ isOpen, onOpenChange, shareType, shareId, 
             setActiveSnapPoint={setSnap}
             shouldScaleBackground
         >
-            <DrawerContent className="bg-background flex flex-col border-none rounded-t-[32px] max-h-[96dvh] h-full outline-none">
+            <DrawerContent onOpenAutoFocus={(e) => e.preventDefault()} className="bg-background flex flex-col border-none rounded-t-[32px] max-h-[96dvh] h-full outline-none">
                 <div className="mx-auto mt-2.5 h-1.5 w-12 rounded-full bg-muted/20 shrink-0" />
                 <DrawerHeader className="pt-2 pb-1 text-center shrink-0">
                     <DrawerTitle className="text-2xl font-black text-foreground">{titleText}</DrawerTitle>

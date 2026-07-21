@@ -29,6 +29,24 @@ export const clearGroupKeyCache = (targetType: 'room' | 'project_space', targetI
   console.log(`[useGroupKey] Cache cleared for ${cacheKey} after access revocation.`);
 };
 
+/**
+ * Retrieve a decrypted group key directly from the in-memory cache.
+ */
+export const getCachedGroupKey = (targetType: 'room' | 'project_space', targetId: string): CryptoKey | undefined => {
+  return groupKeyCache.get(`${targetType}_${targetId}`);
+};
+
+/**
+ * Save a decrypted group key to the in-memory cache.
+ */
+export const setCachedGroupKey = (targetType: 'room' | 'project_space', targetId: string, key: CryptoKey, rawBase64?: string) => {
+  const cacheKey = `${targetType}_${targetId}`;
+  groupKeyCache.set(cacheKey, key);
+  if (rawBase64) {
+    rawGroupKeyCache.set(cacheKey, rawBase64);
+  }
+};
+
 export const useGroupKey = (targetType: 'room' | 'project_space', targetId: string) => {
   const { user } = useAuth();
   const { isChecking, isSetupRequired, isRecoveryRequired } = useE2EEBackup();
@@ -47,12 +65,8 @@ export const useGroupKey = (targetType: 'room' | 'project_space', targetId: stri
         return;
       }
 
-      if (isChecking || isSetupRequired || isRecoveryRequired) {
-        console.log(`[useGroupKey] E2EE backup/recovery in progress or required. Delaying key loading for target: ${targetId}`);
-        if (mounted) setKeysLoaded(false);
-        return;
-      }
-
+      // FAST PATH: serve from in-memory cache immediately, even if backup check is running.
+      // This means re-entering a room/space is always instant after the first load.
       const cacheKey = `${targetType}_${targetId}`;
       if (groupKeyCache.has(cacheKey)) {
         const cachedKey = groupKeyCache.get(cacheKey)!;
@@ -65,6 +79,13 @@ export const useGroupKey = (targetType: 'room' | 'project_space', targetId: stri
         if (rawCached) {
           syncGroupKeyToNative(targetId, rawCached).catch(console.error);
         }
+        return;
+      }
+
+      // Only block on isChecking if we don't have a cached key — avoids gating on DB backup check for returning users.
+      if (isChecking || isSetupRequired || isRecoveryRequired) {
+        console.log(`[useGroupKey] E2EE backup/recovery in progress or required. Delaying key loading for target: ${targetId}`);
+        if (mounted) setKeysLoaded(false);
         return;
       }
 
@@ -468,12 +489,19 @@ export const useGroupKey = (targetType: 'room' | 'project_space', targetId: stri
       }
     };
 
-    syncMissingKeys();
+    // Delay initial sync by 10s to avoid competing with message fetch + key loading on mount.
+    // The periodic interval keeps keys in sync for members who join mid-session.
+    const startDelay = setTimeout(() => {
+      syncMissingKeys();
+    }, 10000);
 
-    // Run periodically every 20 seconds to catch newly logged-in/initialized members
-    const interval = setInterval(syncMissingKeys, 20000);
+    // Run periodically every 60 seconds to catch newly logged-in/initialized members
+    const interval = setInterval(syncMissingKeys, 60000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(startDelay);
+      clearInterval(interval);
+    };
   }, [user?.id, targetId, targetType, symmetricKey]);
 
   return { symmetricKey, keysLoaded, provisionKey, isProvisioning, isInitialized };

@@ -3,16 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
-import { useAppRole } from '@/hooks/useAppRole';
 
 export type ChatType = 'dm' | 'project' | 'discussion';
 
 export const useChatReadStatus = () => {
     const { user } = useAuth();
-    const { isInternal } = useAppRole();
 
     const markAsRead = useCallback(async (type: ChatType, id: string, exactMessageId?: string) => {
-        if (!user || !id || isInternal) return;
+        if (!user || !id) return;
 
         try {
             if (Capacitor.isNativePlatform()) {
@@ -60,23 +58,31 @@ export const useChatReadStatus = () => {
                 };
 
                 console.log(`[useChatReadStatus] markAsRead triggered for partner: ${id}, exactMessageId: ${exactMessageId || 'none'}`);
+                
+                // Directly update ALL unread messages from this sender to ensure ghost messages
+                // (which might have incorrect channel_ids from old edge functions) are also marked as read.
+                const { error: directUpdateError } = await supabase
+                    .from('direct_messages')
+                    .update({ is_read: true })
+                    .eq('receiver_id', user.id)
+                    .eq('sender_id', id)
+                    .eq('is_read', false);
+
+                if (directUpdateError) {
+                    console.error('[useChatReadStatus] Error marking messages as seen via direct update:', directUpdateError);
+                } else {
+                    console.log('[useChatReadStatus] Direct update succeeded for all unread messages from:', id);
+                }
+
+                // Still call the RPC for exact message if provided, just for completeness
                 if (exactMessageId) {
-                    console.log(`[useChatReadStatus] Calling mark_message_as_seen RPC for exact message: ${exactMessageId}, user: ${user.id}`);
-                    const { error } = await (supabase.rpc as any)('mark_message_as_seen', {
+                    await (supabase.rpc as any)('mark_message_as_seen', {
                         p_message_id: exactMessageId,
                         p_user_id: user.id
                     });
-                    if (error) {
-                        console.error('[useChatReadStatus] Error marking exact message as seen:', error);
-                    } else {
-                        console.log('[useChatReadStatus] RPC mark_message_as_seen succeeded for exact message:', exactMessageId);
-                        broadcastSidebarUpdate();
-                    }
                 } else {
-                    console.log(`[useChatReadStatus] Fetching latest unread message from partner: ${id}`);
-                    // Fetch the latest unread message from this partner to use its ID for the RPC
-                    // The RPC 'mark_message_as_seen' marks all messages up to that timestamp as read.
-                    const { data: latestMessage, error: fetchErr } = await (supabase.from('direct_messages') as any)
+                    // Try to find latest message to pass to RPC as fallback
+                    const { data: latestMessage } = await (supabase.from('direct_messages') as any)
                         .select('id')
                         .match({ receiver_id: user.id, sender_id: id })
                         .eq('is_read', false)
@@ -84,26 +90,16 @@ export const useChatReadStatus = () => {
                         .limit(1)
                         .maybeSingle();
 
-                    if (fetchErr) {
-                        console.error('[useChatReadStatus] Error fetching latest unread message:', fetchErr);
-                    }
-
                     if (latestMessage) {
-                        console.log(`[useChatReadStatus] Calling mark_message_as_seen RPC for latest message: ${latestMessage.id}, user: ${user.id}`);
-                        const { error } = await (supabase.rpc as any)('mark_message_as_seen', {
+                        await (supabase.rpc as any)('mark_message_as_seen', {
                             p_message_id: latestMessage.id,
                             p_user_id: user.id
                         });
-                        if (error) {
-                            console.error('[useChatReadStatus] Error marking latest message as seen:', error);
-                        } else {
-                            console.log('[useChatReadStatus] RPC mark_message_as_seen succeeded for latest message:', latestMessage.id);
-                            broadcastSidebarUpdate();
-                        }
-                    } else {
-                        console.log('[useChatReadStatus] No unread messages found to mark as read.');
                     }
                 }
+
+                // Always broadcast sidebar update so the UI clears the red badge
+                broadcastSidebarUpdate();
             } else if (type === 'project') {
                 await supabase
                     .from('project_message_read_status')
@@ -124,7 +120,7 @@ export const useChatReadStatus = () => {
         } catch (err) {
             console.error('Error marking as read:', err);
         }
-    }, [user, isInternal]);
+    }, [user]);
 
     return { markAsRead };
 };

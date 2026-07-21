@@ -6,6 +6,7 @@ import { JobShareCard } from './JobShareCard';
 import { getOptimizedImage } from '@/utils/image-optimization';
 import { supabase } from '@/integrations/supabase/client';
 import VerificationBadge from '../common/VerificationBadge';
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 
 interface PostShareCardProps {
     postId: string;
@@ -77,8 +78,9 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         <>
             <div
                 onClick={() => setIsOpen(true)}
-                className="block w-[220px] shrink-0 glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
+                className="relative block w-[220px] shrink-0 glass-card-premium rounded-xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] cursor-pointer group shadow-lg"
             >
+                <CornerBrackets />
                 {/* Header Section */}
                 <div className="p-3 flex items-center gap-2.5 bg-white dark:bg-black/60 backdrop-blur-md border-b border-black/10 dark:border-white/10">
                     <div className="relative shrink-0">
@@ -90,7 +92,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                         </Avatar>
                     </div>
                     <div className="flex items-center gap-1.5 truncate">
-                        <span className="text-[12px] font-bold text-foreground truncate tracking-tight">
+                        <span className="font-serif text-base font-bold text-foreground truncate tracking-tight">
                             {author?.full_name || author?.username || 'User'}
                         </span>
                         {(author?.is_verified || (author?.full_name?.toLowerCase().includes('vamshi'))) && (

@@ -7,13 +7,13 @@ import { Shield, Lock, AlertTriangle, KeyRound, ArrowRight, RefreshCw, CheckCirc
 import { motion, AnimatePresence } from 'framer-motion';
 
 export const E2EEKeyBackupModal: React.FC = () => {
-  const { 
-    isChecking, 
-    isSetupRequired, 
-    isRecoveryRequired, 
-    setupBackup, 
-    recoverBackup, 
-    performReset 
+  const {
+    isChecking,
+    isSetupRequired,
+    isRecoveryRequired,
+    setupBackup,
+    recoverBackup,
+    performReset
   } = useE2EEBackup();
 
   const [pin, setPin] = useState('');
@@ -22,7 +22,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   // Forgot PIN reset confirmation state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
@@ -77,7 +77,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
       setErrorMsg("Please type 'RESET' to confirm.");
       return;
     }
-    
+
     setIsSubmitting(true);
     try {
       await performReset();
@@ -124,7 +124,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
   const isOpen = isSetupRequired || isRecoveryRequired;
 
   return (
-    <Dialog open={isOpen} onOpenChange={() => {}} modal>
+    <Dialog open={isOpen} onOpenChange={() => { }} modal>
       <DialogContent hideClose className="max-w-md border border-border/40 bg-background/95 shadow-2xl backdrop-blur-lg sm:rounded-2xl z-[999] overflow-hidden">
         <DialogHeader className="flex flex-col items-center text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-2">
@@ -138,7 +138,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
             {isSetupRequired ? "Secure E2EE Chat Backup" : "Restore Encrypted Chats"}
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground max-w-sm mt-1">
-            {isSetupRequired 
+            {isSetupRequired
               ? "Create a recovery PIN to back up your secure conversations. This allows you to restore your chats on other devices."
               : "This device is not yet verified. Please enter your 6-digit recovery PIN to restore your end-to-end encrypted chats."}
           </DialogDescription>
@@ -147,7 +147,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
         <div className="flex flex-col items-center justify-center py-4 space-y-4">
           <AnimatePresence mode="wait">
             {!showResetConfirm ? (
-              <motion.div 
+              <motion.div
                 key="pin-entry"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -195,7 +195,7 @@ export const E2EEKeyBackupModal: React.FC = () => {
                 )}
               </motion.div>
             ) : (
-              <motion.div 
+              <motion.div
                 key="reset-confirm"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

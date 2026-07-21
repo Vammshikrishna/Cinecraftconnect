@@ -94,12 +94,36 @@ export const useConnections = () => {
         .insert({ follower_id: user.id, following_id: userId, status: 'pending' });
       if (error) throw error;
     },
+    onMutate: async (userId: string) => {
+      if (!user) return;
+      await queryClient.cancelQueries({ queryKey: ['connections_manual'] });
+      const previousData = queryClient.getQueryData(['connections_manual', user?.id]);
+
+      queryClient.setQueryData(['connections_manual', user?.id], (old: any) => {
+        if (!old) return old;
+        const tempConn = {
+          id: `temp_${Date.now()}`,
+          follower_id: user?.id,
+          following_id: userId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        return {
+          ...old,
+          sentRequests: [...(old.sentRequests || []), tempConn]
+        };
+      });
+
+      return { previousData };
+    },
     onSuccess: () => {
-      toast({ title: 'Success', description: 'Connection request sent' });
       queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
-    onError: (error: any) => {
+    onError: (error: any, newTodo, context: any) => {
+      if (context?.previousData && user) {
+        queryClient.setQueryData(['connections_manual', user.id], context.previousData);
+      }
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   });
@@ -110,7 +134,6 @@ export const useConnections = () => {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast({ title: 'Success', description: 'Connection request accepted' });
       queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
     }
@@ -121,9 +144,32 @@ export const useConnections = () => {
       const { error } = await supabase.from('user_connections').delete().eq('id', id);
       if (error) throw error;
     },
+    onMutate: async (id: string) => {
+      if (!user) return;
+      await queryClient.cancelQueries({ queryKey: ['connections_manual'] });
+      const previousData = queryClient.getQueryData(['connections_manual', user?.id]);
+
+      queryClient.setQueryData(['connections_manual', user?.id], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          connections: old.connections?.filter((c: any) => c.id !== id),
+          pendingRequests: old.pendingRequests?.filter((c: any) => c.id !== id),
+          sentRequests: old.sentRequests?.filter((c: any) => c.id !== id),
+        };
+      });
+
+      return { previousData };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connections_manual'] });
       queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error: any, newTodo, context: any) => {
+      if (context?.previousData && user) {
+        queryClient.setQueryData(['connections_manual', user.id], context.previousData);
+      }
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   });
 
@@ -162,13 +208,13 @@ export const useConnections = () => {
     sendConnectionRequest: (userId: string) => sendMutation.mutate(userId),
     acceptConnectionRequest: (id: string) => updateStatusMutation.mutate({ id, status: 'accepted' }),
     rejectConnectionRequest: (id: string) => {
-      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection request rejected' }) });
+      deleteMutation.mutate(id);
     },
     cancelConnectionRequest: (id: string) => {
-      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection request cancelled' }) });
+      deleteMutation.mutate(id);
     },
     removeConnection: (id: string) => {
-      deleteMutation.mutate(id, { onSuccess: () => toast({ title: 'Success', description: 'Connection removed' }) });
+      deleteMutation.mutate(id);
     },
   };
 };

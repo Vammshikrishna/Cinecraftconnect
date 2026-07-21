@@ -1,3 +1,4 @@
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 import { MapPin, Building2, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import VerificationBadge from '../common/VerificationBadge';
@@ -64,6 +65,7 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
             to={`/pages/${slug || id}`}
             className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-2xl border border-black/10 dark:border-white/10"
         >
+            <CornerBrackets />
             {/* Premium Header: Banner + Floating Logo */}
             <div className="relative h-28 w-full overflow-hidden bg-muted">
                 {/* Banner Background */}
@@ -104,8 +106,8 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
                 {/* Industry Label */}
                 {industry && (
                     <div className="absolute bottom-2 left-0 right-0 flex justify-center px-3">
-                        <div className="px-2.5 py-0.5 rounded-full bg-primary text-black text-[7px] font-black uppercase tracking-[0.2em] shadow-lg">
-                            {industry}
+                        <div className="font-mono px-2 py-0.5 rounded bg-primary/20 backdrop-blur-md border border-primary/40 text-[7.5px] font-bold uppercase tracking-widest text-primary shadow-lg">
+                            IND // {industry}
                         </div>
                     </div>
                 )}
@@ -115,16 +117,15 @@ export const CompanyShareCard = ({ id, name: initialName, slug: initialSlug, log
             <div className="p-4 space-y-4 bg-card/90 dark:bg-black/40 backdrop-blur-xl border-t border-white/5">
                 <div className="text-center space-y-1.5">
                     <div className="flex items-center justify-center gap-1.5 px-2">
-                        <h4 className="text-[15px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">
+                        <h4 className="font-serif text-[13px] font-bold text-foreground leading-tight group-hover:text-primary transition-colors tracking-tight uppercase truncate">
                             {name}
                         </h4>
                         {(isVerified || name?.toLowerCase().includes('cinecraft')) && (
                             <VerificationBadge size="sm" />
                         )}
                     </div>
-                    <div className="flex items-center justify-center gap-1 text-[9px] text-muted-foreground font-bold uppercase tracking-widest">
-                        <MapPin className="h-3 w-3 text-primary/60" />
-                        {location || 'Global Operations'}
+                    <div className="font-mono flex items-center justify-center mx-auto text-[7.5px] text-muted-foreground font-bold uppercase tracking-widest bg-muted/10 border border-border/40 px-2 py-0.5 rounded w-max">
+                        LOC // {location || 'Global Operations'}
                     </div>
                 </div>
 

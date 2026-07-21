@@ -1,3 +1,4 @@
+import { CornerBrackets } from '@/components/ui/CornerBrackets';
 import { Link } from 'react-router-dom';
 import { Store, MapPin, Star, Phone, Mail, CheckCircle2, Briefcase } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -91,6 +92,7 @@ export const VendorShareCard = ({
             to={`/vendors/${vendorId}`}
             className="block w-[220px] shrink-0 glass-card-premium rounded-2xl overflow-hidden transition-all duration-500 hover:-translate-y-2 active:scale-[0.98] no-underline group shadow-xl border border-black/10 dark:border-white/10"
         >
+            <CornerBrackets />
             {/* Premium Header: Banner + Floating Logo */}
             <div className="relative h-28 w-full overflow-hidden bg-muted">
                 {/* Banner Background */}
@@ -131,8 +133,8 @@ export const VendorShareCard = ({
                 {/* Categories */}
                 <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5 px-3">
                     {categories.slice(0, 2).map((cat, i) => (
-                        <div key={i} className="px-2 py-0.5 rounded-md bg-white/10 backdrop-blur-md border border-black/10 dark:border-white/10 text-[7px] font-black uppercase tracking-widest text-white/90">
-                            {cat}
+                        <div key={i} className="font-mono px-2 py-0.5 rounded bg-black/40 backdrop-blur-md border border-white/20 text-[8px] font-bold uppercase tracking-widest text-white/90">
+                            CAT // {cat}
                         </div>
                     ))}
                 </div>
@@ -142,7 +144,7 @@ export const VendorShareCard = ({
             <div className="p-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-xl">
                 <div className="text-center space-y-1">
                     <div className="flex items-center justify-center gap-1.5 px-2">
-                        <h4 className="text-[16px] font-black text-foreground leading-tight group-hover:text-primary transition-colors tracking-tighter uppercase truncate">
+                        <h4 className="font-serif text-[13px] font-bold text-foreground leading-tight group-hover:text-primary transition-colors tracking-tight uppercase truncate">
                             {name}
                         </h4>
                         {isVerified && (
@@ -151,9 +153,8 @@ export const VendorShareCard = ({
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center justify-center gap-1 text-[9px] text-muted-foreground font-bold uppercase tracking-widest">
-                        <MapPin className="h-3 w-3 text-primary/60" />
-                        {location || 'Global'}
+                    <div className="font-mono flex items-center justify-center mx-auto text-[7.5px] text-muted-foreground font-bold uppercase tracking-widest bg-muted/10 border border-border/40 px-2 py-0.5 rounded w-max">
+                        LOC // {location || 'Global'}
                     </div>
                 </div>
 

@@ -9,10 +9,11 @@ class RenderTelemetry {
   private isDevelopment = import.meta.env.DEV;
 
   constructor() {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && this.isDevelopment) {
       this.startFPSMonitor();
     }
   }
+
 
   private startFPSMonitor() {
     const loop = () => {

@@ -263,7 +263,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                         </div>
 
                         <div className="flex-1 min-w-0 pr-16">
-                            <h3 className="text-lg font-bold tracking-tight text-foreground group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors line-clamp-2 leading-tight mb-1">
+                            <h3 className="font-serif font-bold text-xl tracking-tight text-foreground group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors line-clamp-2 leading-tight mb-1">
                                 {announcement.title}
                             </h3>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
@@ -411,9 +411,9 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                     )}
 
                     <div className="flex items-center justify-between pt-4 border-t border-black/5 dark:border-white/5 mt-auto">
-                        <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest bg-orange-500/10 px-2 py-1 rounded-md">
-                            {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
-                        </span>
+                        <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded">
+                            FROM // {announcement.company_pages?.name || (announcement.profiles?.full_name || announcement.profiles?.username) || 'Official Announcement'}
+                        </div>
 
                         <Button
                             variant="ghost"
@@ -467,7 +467,6 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
             {/* Delete Confirmation Drawer */}
             <Drawer open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
                 <DrawerContent className="bg-background border-none rounded-t-[32px]">
-                    <div className="mx-auto w-12 h-1.5 rounded-full bg-muted/40 my-4" />
                     <DrawerHeader>
                         <DrawerTitle className="text-xl font-black text-center text-red-500">Delete Announcement?</DrawerTitle>
                         <p className="text-center text-muted-foreground text-sm font-medium mt-1">This action is permanent and cannot be reversed.</p>

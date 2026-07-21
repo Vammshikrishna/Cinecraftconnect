@@ -9,6 +9,8 @@ interface AppLogoProps {
   className?: string;
   /** Link destination */
   to?: string;
+  /** Explicit text color variant for custom backgrounds */
+  textColor?: 'foreground' | 'ink' | 'cream';
 }
 
 const sizeMap = {
@@ -21,7 +23,7 @@ const sizeMap = {
  * CineCraft Connect branded logo component.
  * Uses the custom aperture/connect SVG icon with cinematic styling.
  */
-const AppLogo = ({ showText = true, size = 'md', to = '/', className = '' }: AppLogoProps) => {
+const AppLogo = ({ showText = true, size = 'md', to = '/', className = '', textColor = 'foreground' }: AppLogoProps) => {
   const s = sizeMap[size];
 
   const LogoIcon = (
@@ -37,8 +39,8 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '' }: App
     <span className={`flex items-center ${s.gap} group ${className}`}>
       {LogoIcon}
       {showText && (
-        <span className={`text-[13px] sm:text-base md:${s.text} font-black tracking-tight whitespace-nowrap select-none flex items-center gap-0.5 sm:gap-1`}>
-          <span className="text-foreground">CineCraft</span>
+        <span className={`text-[13px] sm:text-base md:${s.text} font-serif font-bold uppercase tracking-tight whitespace-nowrap select-none flex items-center gap-0.5 sm:gap-1`}>
+          <span className={textColor === 'ink' ? 'text-[#0D0D0D]' : textColor === 'cream' ? 'text-[#F8F5F0]' : 'text-foreground'}>CineCraft</span>
           <span className="text-primary">Connect</span>
         </span>
       )}

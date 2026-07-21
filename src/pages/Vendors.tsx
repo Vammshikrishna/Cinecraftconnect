@@ -63,7 +63,7 @@ const Vendors = () => {
                 .from('vendor_services' as any)
                 .select('*')
                 .eq('is_active', true);
-            
+
             if (searchQuery) {
                 query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
             }
@@ -73,7 +73,7 @@ const Vendors = () => {
             if (filterMinCapacity) {
                 query = query.gte('crew_capacity', parseInt(filterMinCapacity));
             }
-            
+
             const { data, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
             setServices((data || []) as unknown as VendorService[]);
@@ -133,30 +133,30 @@ const Vendors = () => {
             </div>
 
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
-                <PageHeader 
-                  title="Vendor Directory" 
-                  subtitle="Find film equipment rentals, studios, and production services" 
-                  Icon={Truck}
-                  actionsAtTop={true}
-                  actions={
-                    !isInternal && (
-                      <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
-                          <Plus size={18} strokeWidth={3} />
-                          <span>Register Business</span>
-                      </Button>
-                    )
-                  }
+                <PageHeader
+                    title="Vendor Directory"
+                    subtitle="Find film equipment rentals, studios, and production services"
+                    Icon={Truck}
+                    actionsAtTop={true}
+                    actions={
+                        !isInternal && (
+                            <Button onClick={() => setShowRegistrationModal(true)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-10 px-4 shadow-lg shadow-primary/20 hover:scale-105 transition-all shrink-0 text-sm">
+                                <Plus size={18} strokeWidth={3} />
+                                <span>Register Business</span>
+                            </Button>
+                        )
+                    }
                 />
 
                 {/* Tabs */}
                 <div className="flex gap-4 mb-6 border-b border-border/50">
-                    <button 
+                    <button
                         onClick={() => setActiveTab('vendors')}
                         className={`pb-3 font-bold uppercase tracking-widest text-sm transition-colors ${activeTab === 'vendors' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
                     >
                         Vendor Directory
                     </button>
-                    <button 
+                    <button
                         onClick={() => setActiveTab('services')}
                         className={`pb-3 font-bold uppercase tracking-widest text-sm transition-colors ${activeTab === 'services' ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}
                     >
@@ -187,7 +187,7 @@ const Vendors = () => {
                     <div className="flex flex-wrap gap-4 mb-10 p-4 bg-secondary/10 rounded-2xl border border-border/50">
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Type:</span>
-                            <select 
+                            <select
                                 value={filterProductionType}
                                 onChange={(e) => setFilterProductionType(e.target.value)}
                                 className="bg-background border border-border rounded-lg text-sm px-3 py-2 outline-none"
@@ -200,9 +200,9 @@ const Vendors = () => {
                         </div>
                         <div className="flex items-center gap-2">
                             <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Min Capacity:</span>
-                            <Input 
-                                type="number" 
-                                placeholder="e.g. 50" 
+                            <Input
+                                type="number"
+                                placeholder="e.g. 50"
                                 value={filterMinCapacity}
                                 onChange={(e) => setFilterMinCapacity(e.target.value)}
                                 className="w-24 bg-background border-border"
@@ -215,63 +215,63 @@ const Vendors = () => {
                 {activeTab === 'vendors' ? (
                     <>
                         {/* Featured Verified Vendors */}
-                {vendors.filter(v => v.is_verified).length > 0 && (
-                    <div className="mb-12">
-                        <div className="flex items-center gap-2 mb-6">
-                            <CheckCircle2 size={24} className="text-primary" />
-                            <h2 className="text-2xl font-black tracking-tight uppercase">Verified Professionals</h2>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-                            {vendors
-                                .filter(v => v.is_verified)
-                                .slice(0, 8)
-                                .map((vendor) => (
-                                    <VendorCard key={vendor.id} vendor={vendor} />
-                                ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* All Vendors */}
-                <div className="mt-12">
-                    <div className="flex items-center gap-2 mb-6">
-                        <VendorIcon size={24} className="text-primary/60" />
-                        <h2 className="text-2xl font-black tracking-tight uppercase">Industry Directory</h2>
-                    </div>
-                    {loading ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                                <EnhancedSkeleton key={i} className="h-[250px] rounded-[2.5rem]" />
-                            ))}
-                        </div>
-                    ) : vendors.length === 0 ? (
-                        <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
-                            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
-                                <VendorIcon size={32} className="text-primary" />
+                        {vendors.filter(v => v.is_verified).length > 0 && (
+                            <div className="mb-12">
+                                <div className="flex items-center gap-2 mb-6">
+                                    <CheckCircle2 size={24} className="text-primary" />
+                                    <h2 className="text-2xl font-black tracking-tight uppercase">Verified Professionals</h2>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+                                    {vendors
+                                        .filter(v => v.is_verified)
+                                        .slice(0, 8)
+                                        .map((vendor) => (
+                                            <VendorCard key={vendor.id} vendor={vendor} />
+                                        ))}
+                                </div>
                             </div>
-                            <h3 className="text-2xl font-black mb-2">No vendors found</h3>
-                            <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
-                                Be the first to establish a presence in this directory!
-                            </p>
-                            {!searchQuery && !isInternal && (
-                                <Button onClick={() => setShowRegistrationModal(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-8 font-bold">
-                                    Register Your Business
-                                </Button>
+                        )}
+
+                        {/* All Vendors */}
+                        <div className="mt-12">
+                            <div className="flex items-center gap-2 mb-6">
+                                <VendorIcon size={24} className="text-primary/60" />
+                                <h2 className="text-2xl font-black tracking-tight uppercase">Industry Directory</h2>
+                            </div>
+                            {loading ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8">
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                        <EnhancedSkeleton key={i} className="h-[250px] rounded-[2.5rem]" />
+                                    ))}
+                                </div>
+                            ) : vendors.length === 0 ? (
+                                <div className="text-center py-24 bg-card/10 border border-border/50 border-dashed rounded-[3rem]">
+                                    <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
+                                        <VendorIcon size={32} className="text-primary" />
+                                    </div>
+                                    <h3 className="text-2xl font-black mb-2">No vendors found</h3>
+                                    <p className="text-muted-foreground mb-8 max-w-sm mx-auto">
+                                        Be the first to establish a presence in this directory!
+                                    </p>
+                                    {!searchQuery && !isInternal && (
+                                        <Button onClick={() => setShowRegistrationModal(true)} className="bg-primary hover:bg-primary/90 rounded-xl h-12 px-8 font-bold">
+                                            Register Your Business
+                                        </Button>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+                                    {vendors.map((vendor) => (
+                                        <VendorCard key={vendor.id} vendor={vendor} />
+                                    ))}
+                                </div>
                             )}
                         </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-                            {vendors.map((vendor) => (
-                                <VendorCard key={vendor.id} vendor={vendor} />
-                            ))}
-                        </div>
-                    )}
-                </div>
-                </>
+                    </>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
                         {loading ? (
-                             [1, 2, 3, 4, 5, 6].map((i) => (
+                            [1, 2, 3, 4, 5, 6].map((i) => (
                                 <EnhancedSkeleton key={i} className="h-[200px] rounded-[2rem]" />
                             ))
                         ) : services.length === 0 ? (
@@ -289,7 +289,7 @@ const Vendors = () => {
                                         </div>
                                     </div>
                                     <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{service.description}</p>
-                                    
+
                                     <div className="flex flex-wrap gap-2 mt-auto">
                                         <div className="px-2 py-1 rounded bg-secondary/20 text-xs font-semibold text-secondary-foreground border border-border/50">
                                             {service.coverage_area}

@@ -66,8 +66,8 @@ export const handleSessionRecovery = async () => {
  * Performs a clean, graceful logout, wiping all secure tokens and offline caches
  * to prevent zombie sessions or data leaks.
  */
-export const forceSoftLogout = async () => {
-  console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: sessionRecovery event: force_logout_start reason: system_revocation`);
+export const forceSoftLogout = async (preventRedirect: boolean = false, localOnly: boolean = false) => {
+  console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: sessionRecovery event: force_logout_start reason: system_revocation localOnly: ${localOnly}`);
   
   transitionTo('LOGGING_OUT', 'system_revocation');
   
@@ -82,8 +82,10 @@ export const forceSoftLogout = async () => {
   resetBootstrap();
 
   try {
-    // 4. Supabase Sign Out (Local only if network fails)
-    await supabase.auth.signOut();
+    // 4. Supabase Sign Out (Skip completely for localOnly logout to preserve session tokens on server)
+    if (!localOnly) {
+      await supabase.auth.signOut();
+    }
   } catch (e) {
     console.error('Error during remote signOut:', e);
   } finally {
@@ -106,8 +108,8 @@ export const forceSoftLogout = async () => {
     console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: sessionRecovery event: logout_complete generation: ${newGeneration}`);
     transitionTo('UNAUTHENTICATED', 'logout_complete');
 
-    // 7. Safely redirect to auth
-    if (window.location.pathname !== '/auth' && window.location.pathname !== '/') {
+    // 7. Safely redirect to auth if not prevented
+    if (!preventRedirect && window.location.pathname !== '/auth' && window.location.pathname !== '/') {
         window.location.replace('/auth');
     }
   }

@@ -24,7 +24,8 @@ public class E2EEBridge extends Plugin {
     private static final String TAG = "E2EEBridge";
 
     /**
-     * Stores the user's RSA private key in the Android Keystore-backed secure store.
+     * Stores the user's RSA private key in the Android Keystore-backed secure
+     * store.
      * Called from useE2EEInit.ts after key generation or import.
      *
      * @param call { userId: string, privateKey: string (base64 PKCS8) }
@@ -53,7 +54,8 @@ public class E2EEBridge extends Plugin {
      * Stores a decrypted group symmetric key in the secure store.
      * Called from useGroupKey.ts after successfully decrypting the group key.
      *
-     * @param call { targetId: string (room/space ID), symmetricKey: string (base64 raw AES) }
+     * @param call { targetId: string (room/space ID), symmetricKey: string (base64
+     *             raw AES) }
      */
     @PluginMethod
     public void storeGroupKey(PluginCall call) {

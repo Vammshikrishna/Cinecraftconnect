@@ -62,7 +62,7 @@ export const ConnectionRequestCard = ({
         <Link to={`/profile/${profile.id}`} className="block">
           <h3 className="text-[15px] font-bold text-foreground hover:text-primary transition-colors truncate flex items-center justify-center gap-1 uppercase">
             {profile.full_name || profile.username}
-            {(profile.is_verified || profile.username?.toLowerCase().includes('vamshi') || profile.full_name?.toLowerCase().includes('vamshi')) && <VerificationBadge size="xs" />}
+            {profile.is_verified && <VerificationBadge size="xs" />}
           </h3>
         </Link>
         <p className="text-primary text-[11px] font-bold uppercase tracking-tight">{profile.craft || 'Filmmaker'}</p>

@@ -760,9 +760,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                             {room.last_message ? (
                               <>
                                 <span className="font-bold shrink-0">{room.last_message.sender_name}</span>
-                                {(room.last_message.is_verified ||
-                                  room.last_message.sender_name?.toLowerCase().includes('vamshi') ||
-                                  room.last_message.sender_username?.toLowerCase().includes('vamshi')) && (
+                                {room.last_message.is_verified && (
                                     <VerificationBadge size="xs" className="scale-75" />
                                   )}
                                 <span className="truncate">: {getDisplayMessage(decryptedLastMessages[room.id] || room.last_message.content)}</span>
@@ -1115,7 +1113,7 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive }: { roo
           <div className="flex justify-between items-start mb-3">
             <div className="flex items-center gap-2 pr-2 flex-1">
               <h3 className={cn(
-                "text-lg font-bold tracking-tight line-clamp-2 break-all duration-300 flex items-center",
+                "font-serif text-2xl font-bold tracking-tight line-clamp-2 break-all duration-300 flex items-center",
                 hasUnread ? "text-red-400" : "text-foreground group-hover:text-primary transition-colors"
               )}>
                 {room.settings?.roomEmoji && <span className="mr-2 text-2xl shrink-0">{room.settings.roomEmoji}</span>}
@@ -1193,20 +1191,18 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive }: { roo
 
           {/* Category & Time Row */}
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <Badge
-              variant="secondary"
+            <div
               className={cn(
-                "transition-all uppercase text-[10px] tracking-widest font-bold px-2.5 py-0.5 rounded-md border-0",
-                hasUnread ? "bg-red-500/20 text-red-400" : "bg-primary/10 text-primary hover:bg-primary/20"
+                "font-mono transition-all uppercase text-[10px] tracking-widest font-bold px-2 py-1 rounded border border-primary/20",
+                hasUnread ? "bg-red-500/10 text-red-400" : "bg-primary/5 text-primary"
               )}
             >
-              # {categoryName}
-            </Badge>
+              CATEGORY // {categoryName}
+            </div>
             {room.room_type === 'private' && (
-              <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap text-[10px] tracking-wider font-bold uppercase bg-amber-500/10 text-amber-400 border-0 rounded-md px-2.5 py-0.5">
-                <Lock className="h-2.5 w-2.5" />
-                Private
-              </Badge>
+              <div className="font-mono whitespace-nowrap text-[10px] tracking-widest font-bold uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded px-2 py-1">
+                TYPE // PRIVATE
+              </div>
             )}
             <span className="text-[11px] text-muted-foreground/70 flex items-center gap-1 ml-auto">
               {timeAgo(room.created_at)}
@@ -1220,11 +1216,8 @@ const RoomCard = ({ room, onJoin, onDelete, onShare, onReport, isActive }: { roo
 
           {/* Members/Notification Row */}
           <div className="flex items-center justify-between mt-auto mb-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <div className="flex items-center justify-center w-6 h-6 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                <Users className="h-3 w-3 text-primary" />
-              </div>
-              <span className="font-medium">{room.member_count} {room.member_count === 1 ? 'member' : 'members'}</span>
+            <div className="font-mono text-[10px] font-bold uppercase tracking-widest bg-muted/10 border border-border/40 text-muted-foreground px-2 py-1 rounded">
+              MEMBERS // {room.member_count}
             </div>
             {hasUnread && (
               <span className="text-[10px] font-black text-red-500 animate-pulse flex items-center gap-1">

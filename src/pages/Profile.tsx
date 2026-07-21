@@ -306,17 +306,15 @@ const ProfilePage = () => {
                   </div>
 
                   <div className="flex flex-col items-center lg:items-start leading-tight w-full">
-                    <h1 className="text-lg sm:text-xl md:text-2xl font-black text-foreground tracking-tight text-center lg:text-left uppercase">
+                    <h1 className="text-lg sm:text-xl md:text-2xl font-serif font-bold text-foreground tracking-tight text-center lg:text-left uppercase">
                       <span className="inline-block">
                         {profile.full_name || profile.username}
-                        {(profile.is_verified || 
-                          profile.username?.toLowerCase().includes('vamshi') || 
-                          profile.full_name?.toLowerCase().includes('vamshi')) && (
+                        {profile.is_verified && (
                           <VerificationBadge size="sm" className="ml-2 inline-flex" />
                         )}
                       </span>
                     </h1>
-                    <p className="text-primary font-bold text-xs uppercase tracking-[0.15em] mt-0.5">
+                    <p className="text-primary font-serif font-bold text-xs uppercase tracking-[0.15em] mt-0.5">
                       @{profile.username}
                     </p>
                   </div>
@@ -376,8 +374,8 @@ const ProfilePage = () => {
               <div className="flex items-center gap-8 md:gap-12">
                 {!isFan && (
                   <div className="flex flex-col items-center lg:items-start">
-                    <span className="text-xl md:text-2xl font-black text-foreground">{postCount}</span>
-                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Posts</span>
+                    <span className="font-serif font-bold text-xl md:text-2xl text-foreground">{postCount}</span>
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-mono font-black opacity-60">Posts</span>
                   </div>
                 )}
                 <div 
@@ -387,8 +385,8 @@ const ProfilePage = () => {
                     setIsNetworkDialogOpen(true);
                   }}
                 >
-                  <span className="text-xl md:text-2xl font-black text-foreground">{followersCount}</span>
-                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">Followers</span>
+                  <span className="font-serif font-bold text-xl md:text-2xl text-foreground">{followersCount}</span>
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-mono font-black opacity-60">Followers</span>
                 </div>
                 <div 
                   className="flex flex-col items-center lg:items-start cursor-pointer hover:opacity-70 transition-opacity"
@@ -397,8 +395,8 @@ const ProfilePage = () => {
                     setIsNetworkDialogOpen(true);
                   }}
                 >
-                  <span className="text-xl md:text-2xl font-black text-foreground">{isFan ? followingCount : connectionsCount}</span>
-                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black opacity-60">
+                  <span className="font-serif font-bold text-xl md:text-2xl text-foreground">{isFan ? followingCount : connectionsCount}</span>
+                  <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-mono font-black opacity-60">
                     {isFan ? 'Following' : 'Connections'}
                   </span>
                 </div>
@@ -411,7 +409,7 @@ const ProfilePage = () => {
                   className="flex-none w-[110px] gap-2 bg-primary hover:bg-primary/90 text-white rounded-lg h-9 px-0 shadow-md shadow-primary/10 transition-all hover:scale-[1.02] active:scale-95"
                 >
                   <Pencil className="h-3 w-3" />
-                  <span className="font-bold uppercase tracking-wider text-[9px]">Edit</span>
+                  <span className="font-black uppercase tracking-widest font-mono text-[9px]">Edit</span>
                 </Button>
                 <Button 
                   variant="outline" 
@@ -464,7 +462,7 @@ const ProfilePage = () => {
                     <TabsTrigger
                       key={tab}
                       value={tab}
-                      className="flex items-center gap-2 px-5 py-2.5 md:px-7 md:py-3 rounded-2xl text-xs md:text-sm font-bold whitespace-nowrap transition-all duration-300 border-2 shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_8px_20px_-6px_rgba(var(--primary),0.5)] data-[state=active]:scale-105 bg-card/40 border-border/40 text-muted-foreground hover:bg-card/60 hover:text-foreground hover:border-border/80 capitalize"
+                      className="flex items-center gap-2 px-5 py-2.5 md:px-7 md:py-3 rounded-2xl font-serif font-bold uppercase tracking-tight text-[11px] md:text-[12px] whitespace-nowrap transition-all duration-300 border-2 shrink-0 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:border-primary data-[state=active]:shadow-[0_8px_20px_-6px_rgba(var(--primary),0.5)] data-[state=active]:scale-105 bg-card/40 border-border/40 text-muted-foreground hover:bg-card/60 hover:text-foreground hover:border-border/80"
                     >
                       {tab}
                     </TabsTrigger>
@@ -479,7 +477,7 @@ const ProfilePage = () => {
           <TabsContent value="saved" className={isFan ? "py-2" : "py-8"}><SavedPosts /></TabsContent>
           {!isFan && (
             <>
-              <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} /></TabsContent>
+              <TabsContent value="posts" className="py-8"><UserPosts targetUserId={user.id} isOwner={true} /></TabsContent>
               <TabsContent value="portfolio" className="py-8">
                 <PortfolioGrid userId={user.id} isOwner={true} />
               </TabsContent>

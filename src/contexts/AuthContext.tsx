@@ -98,6 +98,63 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isInitializingRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
 
+  const syncPushToken = async (userId: string, token: string, profile?: any, email?: string) => {
+    try {
+      // Always write user identity to CapacitorStorage immediately so FCMService.java
+      // security check never incorrectly silences notifications.
+      await Preferences.set({ key: 'user_id', value: userId });
+      const displayUsername = profile?.username || profile?.full_name?.replace(/\s+/g, '').toLowerCase() || email?.split('@')[0] || '';
+      await Preferences.set({ key: 'username', value: displayUsername });
+
+      // Generate or retrieve a stable unique device_id for this install
+      let { value: deviceId } = await Preferences.get({ key: 'device_install_id' });
+      if (!deviceId) {
+        deviceId = 'android-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+        await Preferences.set({ key: 'device_install_id', value: deviceId });
+      }
+
+      // Step 1: Deactivate any previous tokens that don't match the current token for this user
+      // This removes stale tokens from old installs so they don't accumulate.
+      const { error: deactivateError } = await supabase
+        .from('user_push_tokens' as any)
+        .update({ active: false })
+        .eq('user_id', userId)
+        .neq('token', token);
+      if (deactivateError) console.warn('📱 [PUSH REGISTRATION] Could not deactivate old tokens:', deactivateError);
+
+      // Step 2: Upsert the current token (create or update last_seen)
+      const { error } = await supabase
+        .from('user_push_tokens' as any)
+        .upsert({
+          user_id: userId,
+          token: token,
+          device_id: deviceId,
+          platform: 'android',
+          active: true,
+          last_seen: new Date().toISOString()
+        }, {
+          onConflict: 'user_id,token'
+        });
+
+      if (error) {
+        console.error('📱 [PUSH REGISTRATION] Error upserting token into user_push_tokens:', error);
+      } else {
+        console.log('📱 [PUSH REGISTRATION] Token synced to user_push_tokens successfully. Token:', token.substring(0, 20) + '...');
+      }
+
+      // Step 3: Also update profiles table as fallback for old versions of push-delivery
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ push_token: token })
+        .eq('id', userId);
+
+      if (profileError) console.error('📱 [PUSH REGISTRATION] Error updating profiles push_token:', profileError);
+      else console.log('📱 [PUSH REGISTRATION] Token synced to profiles.push_token successfully.');
+
+    } catch (e) {
+      console.error('📱 [PUSH REGISTRATION] syncPushToken Exception:', e);
+    }
+  };
   // Synchronous refs to access latest user and profile inside mount-level listeners
   const userRef = useRef<User | null>(null);
   const profileRef = useRef<Profile | null>(null);
@@ -154,47 +211,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const currentUser = userRef.current;
         if (currentUser) {
-          // CRITICAL: Save user_id to CapacitorStorage so FCMService.java can read it and block stray notifications!
-          await Preferences.set({ key: 'user_id', value: currentUser.id });
-          
-          const currentProfile = profileRef.current;
-          // Save username for the notification SubText (Instagram-style account indicator)
-          const displayUsername = currentProfile?.username || currentProfile?.full_name?.replace(/\s+/g, '').toLowerCase() || currentUser.email?.split('@')[0] || '';
-          await Preferences.set({ key: 'username', value: displayUsername });
-
-          console.log('📱 [PUSH REGISTRATION] Syncing token to database for user:', currentUser.id);
-
-          // Sync with Supabase user_push_tokens table
-          const { error } = await supabase
-            .from('user_push_tokens' as any)
-            .upsert({
-              user_id: currentUser.id,
-              token: token,
-              device_id: 'android-device',
-              platform: 'android',
-              active: true,
-              last_seen: new Date().toISOString()
-            }, {
-              onConflict: 'user_id,token'
-            });
-
-          if (error) {
-            console.warn('📱 [PUSH REGISTRATION] user_push_tokens table sync failed. Trying profiles.push_token fallback...', error);
-          } else {
-            console.log('📱 [PUSH REGISTRATION] Successfully synced token to user_push_tokens.');
-          }
-
-          // Dual Storage / Migration Fallback: Also save to profiles table
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .update({ push_token: token })
-            .eq('id', currentUser.id);
-
-          if (profileError) {
-            console.error('📱 [PUSH REGISTRATION] profiles table sync failed:', profileError);
-          } else {
-            console.log('📱 [PUSH REGISTRATION] Successfully synced token to profiles.');
-          }
+          await syncPushToken(currentUser.id, token, profileRef.current, currentUser.email);
         } else {
           console.log('📱 [PUSH REGISTRATION] FCM token registered but no user session active. Cached locally.');
         }
@@ -319,6 +336,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
         if (session) {
+          initializedRef.current = false;
           supabase.realtime.setAuth(session.access_token);
           transitionTo('AUTHENTICATED', `onAuthStateChange_${event}`);
 
@@ -418,71 +436,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             console.error('[AUTH] Background realtime initialization error:', err);
           });
 
-          // Register/Sync Capacitor Push Notifications on mobile devices
-          if (Capacitor.isNativePlatform()) {
-            // 1. Request notifications permissions
-            PushNotifications.requestPermissions().then(async (result) => {
-              if (result.receive === 'granted') {
-                console.log('📱 [PUSH REGISTRATION] Push permissions granted, registering with FCM...');
-                // 2. Register with FCM (triggers registration listener if token is refreshed/changed)
-                PushNotifications.register();
-
-                // 3. Sync cached token immediately if it exists in local Preferences
-                try {
-                  const { value: cachedToken } = await Preferences.get({ key: 'fcm_token' });
-                  if (cachedToken) {
-                    console.log('📱 [PUSH REGISTRATION] Found cached token on login. Syncing immediately...', cachedToken);
-                    
-                    // CRITICAL: Save user_id to CapacitorStorage so FCMService.java can read it and block stray notifications!
-                    await Preferences.set({ key: 'user_id', value: user.id });
-                    
-                    const displayUsername = profile?.username || profile?.full_name?.replace(/\s+/g, '').toLowerCase() || user.email?.split('@')[0] || '';
-                    await Preferences.set({ key: 'username', value: displayUsername });
-
-                    // Sync with Supabase user_push_tokens table
-                    const { error } = await supabase
-                      .from('user_push_tokens' as any)
-                      .upsert({
-                        user_id: user.id,
-                        token: cachedToken,
-                        device_id: 'android-device',
-                        platform: 'android',
-                        active: true,
-                        last_seen: new Date().toISOString()
-                      }, {
-                        onConflict: 'user_id,token'
-                      });
-
-                    if (error) {
-                      console.warn('📱 [PUSH REGISTRATION] Syncing cached token to user_push_tokens failed:', error);
-                    } else {
-                      console.log('📱 [PUSH REGISTRATION] Cached token synced to user_push_tokens successfully.');
-                    }
-
-                    // Sync with profiles table
-                    const { error: profileError } = await supabase
-                      .from('profiles')
-                      .update({ push_token: cachedToken })
-                      .eq('id', user.id);
-
-                    if (profileError) {
-                      console.error('📱 [PUSH REGISTRATION] Syncing cached token to profiles failed:', profileError);
-                    } else {
-                      console.log('📱 [PUSH REGISTRATION] Cached token synced to profiles successfully.');
-                    }
-                  } else {
-                    console.log('📱 [PUSH REGISTRATION] No cached token found in Preferences on login.');
-                  }
-                } catch (prefErr) {
-                  console.error('📱 [PUSH REGISTRATION] Error checking cached token:', prefErr);
-                }
-              } else {
-                console.warn('📱 [PUSH REGISTRATION] Permission denied by user');
-              }
-            }).catch(err => {
-              console.error('📱 [PUSH REGISTRATION] Error requesting permissions:', err);
-            });
-          }
+          // Push registration is now handled in a separate dedicated useEffect below.
+          // This ensures it always runs for every login, regardless of initializedRef.
 
           console.log(`[AUTH TRACE] timestamp: ${new Date().toISOString()} source: AuthContext event: effect_init_complete generation: ${generation}`);
 
@@ -519,6 +474,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [session?.access_token, user?.id]);
 
+  // ============================================================
+  // 6. DEDICATED Push Token Registration Effect
+  // This MUST be separate from initializeAuthSystems because that
+  // function has an early-return guard (initializedRef.current) that
+  // prevents it from running more than once. Push registration needs
+  // to run every time the user ID changes (fresh login, new session).
+  // ============================================================
+  useEffect(() => {
+    if (!user?.id || !Capacitor.isNativePlatform()) return;
+
+    let cancelled = false;
+
+    const registerPush = async () => {
+      console.log('📱 [PUSH] Starting push registration for user:', user.id);
+      try {
+        const result = await PushNotifications.requestPermissions();
+        if (cancelled) return;
+
+        if (result.receive !== 'granted') {
+          console.warn('📱 [PUSH] Permission not granted. Push notifications disabled.');
+          return;
+        }
+
+        console.log('📱 [PUSH] Permission granted. Calling PushNotifications.register()...');
+        // This triggers FCMService.onNewToken() if the token is new/changed,
+        // which writes to SharedPreferences. It also fires the JS 'registration' listener.
+        await PushNotifications.register();
+        console.log('📱 [PUSH] register() called. Now polling for token in storage...');
+
+        // Poll for up to 30 seconds for the token to appear in SharedPreferences
+        for (let i = 0; i < 30; i++) {
+          if (cancelled) return;
+          const { value: token } = await Preferences.get({ key: 'fcm_token' });
+          if (token) {
+            console.log('📱 [PUSH] Token found after', i, 'seconds. Syncing to Supabase...');
+            await syncPushToken(user.id, token, profileRef.current, user.email);
+            console.log('📱 [PUSH] ✅ Token synced successfully to Supabase!');
+            return;
+          }
+          console.log(`📱 [PUSH] Token not in storage yet, waiting... (${i + 1}/30)`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        console.error('📱 [PUSH] ❌ Token polling timed out after 30s. FCM registration may have failed.');
+      } catch (e) {
+        console.error('📱 [PUSH] Exception during push registration:', e);
+      }
+    };
+
+    registerPush();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
   useEffect(() => {
     if (user && !isLoading) {
       const fetchProfile = async () => {
@@ -536,7 +543,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
           if (error && error.code === 'PGRST116') {
             console.warn(`[AUTH] Profile not found yet (Postgres trigger might be running). Retrying... (${retries + 1}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 200));
             retries++;
             finalError = error;
           } else {
@@ -659,6 +666,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (Capacitor.isNativePlatform()) {
         try {
+          const { value: currentToken } = await Preferences.get({ key: 'fcm_token' });
+          if (currentToken) {
+            await supabase
+              .from('user_push_tokens' as any)
+              .update({ active: false })
+              .eq('token', currentToken)
+              .eq('user_id', currentUserId);
+            console.log('[PUSH REGISTRATION] Deactivated push token in user_push_tokens during sign out.');
+          }
+
           await supabase
             .from('profiles')
             .update({ push_token: null })
@@ -694,7 +711,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (user?.id) {
       try {
-        await removeLocalPrivateKey(user.id);
+        // Do NOT remove the local private key from storage to prevent E2EE PIN recovery prompt when switching back.
+        // We only clear the active native/in-memory keys.
         await clearNativeE2EEKeys();
         console.log('[AUTH] Cleared old E2EE keys on switch.');
       } catch (e2eeErr) {
@@ -735,6 +753,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const addAccount = async () => {
+    const prevUserId = user?.id;
+
     if (user && session && profile) {
       await updateSavedAccountInfo(user.id, {
         userId: user.id,
@@ -749,20 +769,23 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     if (user?.id) {
       try {
-        await removeLocalPrivateKey(user.id);
+        // Do NOT remove the local private key from storage to prevent E2EE PIN recovery prompt when switching back.
+        // We only clear the active native/in-memory keys.
         await clearNativeE2EEKeys();
       } catch (e2eeErr) {
         console.error('[AUTH] Failed to clear E2EE keys on addAccount:', e2eeErr);
       }
     }
 
-    await forceSoftLogout();
+    await forceSoftLogout(true, true);
 
     setUser(null);
     setSession(null);
     setProfile(null);
 
-    window.location.href = '/auth?add_account=true';
+    window.location.href = prevUserId 
+      ? `/auth?add_account=true&previous_user_id=${prevUserId}`
+      : '/auth?add_account=true';
   };
 
   const removeAccount = async (targetUserId: string) => {
@@ -770,6 +793,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const updated = currentAccounts.filter(acc => acc.userId !== targetUserId);
     await saveAccountsList(updated);
     setSavedAccounts(updated);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { value: currentToken } = await Preferences.get({ key: 'fcm_token' });
+        if (currentToken) {
+          await supabase
+            .from('user_push_tokens' as any)
+            .update({ active: false })
+            .eq('token', currentToken)
+            .eq('user_id', targetUserId);
+          console.log(`[PUSH REGISTRATION] Deactivated push token in user_push_tokens during removeAccount for user ${targetUserId}`);
+        }
+
+        await supabase
+          .from('profiles')
+          .update({ push_token: null })
+          .eq('id', targetUserId);
+        console.log(`[PUSH REGISTRATION] Removed push token from database profile during removeAccount for user ${targetUserId}`);
+      } catch (err) {
+        console.warn('[PUSH REGISTRATION] Failed to remove push token on removeAccount:', err);
+      }
+    }
 
     if (user?.id === targetUserId) {
       if (updated.length > 0) {
