@@ -389,6 +389,26 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
                 {/* Posts with Interleaved Sections */}
                 <div className="space-y-6">
+                    {/* New Posts Notification Banner */}
+                    {feedData.newPostsAvailable && (
+                        <div className="px-0 sm:px-4 mb-4 flex justify-center">
+                            <button
+                                onClick={() => {
+                                    feedData.resetNewPosts?.();
+                                    refreshFeed();
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary/90 transition-all flex items-center gap-2 animate-in slide-in-from-top-2 fade-in"
+                            >
+                                <span className="relative flex h-2.5 w-2.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white"></span>
+                                </span>
+                                New posts available
+                            </button>
+                        </div>
+                    )}
+
                     {feedData.posts.map((post: any, index: number) => {
                         const author = post.profiles;
                         const authorName = author?.full_name || author?.username || 'Anonymous User';

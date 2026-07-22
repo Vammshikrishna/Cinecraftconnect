@@ -9,17 +9,22 @@ export const generateDirectRoomId = (userId1: string, userId2: string): string =
 export const getDisplayMessage = (content: string) => {
     if (!content) return '';
     
+    let cleanText = content;
+    if (cleanText.startsWith('FORWARDED::')) {
+        cleanText = cleanText.replace('FORWARDED::', '');
+    }
+    
     // Pending decryption state
-    if (content === '__PENDING_DECRYPT__') return '🔑 Decrypting...';
+    if (cleanText === '__PENDING_DECRYPT__') return '🔑 Decrypting...';
     
     // Check for E2EE payload structure
-    if (content.includes('__e2ee') || content.includes('__e2ee_group')) {
+    if (cleanText.includes('__e2ee') || cleanText.includes('__e2ee_group')) {
         return '🔒 Encrypted Message';
     }
     
     // Check for standard shared content format: TYPE_SHARE::JSON_DATA
-    if (content.includes('_SHARE::')) {
-        const type = content.split('_SHARE::')[0].toLowerCase();
+    if (cleanText.includes('_SHARE::')) {
+        const type = cleanText.split('_SHARE::')[0].toLowerCase();
         
         // Custom labels for types that need more than just direct mapping
         const labels: Record<string, string> = {
@@ -38,7 +43,7 @@ export const getDisplayMessage = (content: string) => {
     }
 
     // Check for direct image/video links or markdown images
-    const lowerContent = content.toLowerCase();
+    const lowerContent = cleanText.toLowerCase();
     
     // Markdown image: ![alt](url)
     if (lowerContent.startsWith('![') && lowerContent.includes('](')) {
@@ -54,7 +59,7 @@ export const getDisplayMessage = (content: string) => {
         return '🎥 Video';
     }
 
-    return content;
+    return cleanText;
 };
 
 export const getNotificationIcon = (type: string) => {

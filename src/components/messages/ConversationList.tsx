@@ -6,6 +6,7 @@ import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
 import { cn } from '@/lib/utils';
 import { usePresence } from '@/hooks/usePresence';
 import { useCachedImage } from '@/hooks/useCachedImage';
+import { getDisplayMessage } from '@/lib/chat-utils';
 
 interface Thread {
   conversation_id: string;
@@ -101,7 +102,7 @@ export const ConversationList = ({ onSelectThread, isCollapsed }: ConversationLi
               {!isCollapsed && (
                 <div className="flex-1 truncate">
                   <p className="font-semibold truncate">{displayName}</p>
-                  <p className="text-sm text-muted-foreground truncate">{thread.last_message_content}</p>
+                  <p className="text-sm text-muted-foreground truncate">{getDisplayMessage(thread.last_message_content)}</p>
                 </div>
               )}
             </div>

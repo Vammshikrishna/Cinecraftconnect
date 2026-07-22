@@ -50,6 +50,8 @@ BEGIN
     (
       10.0 + -- base score
       CASE 
+        -- Boost own posts so users can see what they just posted
+        WHEN current_user_id IS NOT NULL AND current_user_id = p.author_id THEN 100.0
         -- Boost connections
         WHEN current_user_id IS NOT NULL AND EXISTS (
           SELECT 1 FROM user_follows f 

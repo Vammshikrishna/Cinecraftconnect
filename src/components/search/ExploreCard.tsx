@@ -177,43 +177,43 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                 return (
                     <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
                         <TypeBadge icon={Layers} label="PROJECT SPACE" />
-                        <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/10">
+                        <div className="relative aspect-[1.8/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/10">
                             {projectImage ? (
                                 <img src={projectImage} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
                             ) : (
-                                <div className="w-full h-full bg-muted/20 flex items-center justify-center p-6 border-b border-white/5" style={{ background: getGradient(item.id) }}>
-                                    <Layers size={32} className="text-white/30 animate-pulse" />
+                                <div className="w-full h-full bg-muted/20 flex items-center justify-center p-4 border-b border-white/5" style={{ background: getGradient(item.id) }}>
+                                    <Layers size={24} className="text-white/30 animate-pulse" />
                                 </div>
                             )}
                             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60" />
-                            <div className="absolute bottom-2 left-2">
-                                <span className="font-mono px-1.5 py-0.5 rounded-sm bg-primary text-[clamp(6px,1.2vw,7.5px)] font-bold text-primary-foreground uppercase tracking-widest leading-none shadow-lg">
+                            <div className="absolute bottom-1.5 left-1.5">
+                                <span className="font-mono px-1.5 py-0.5 rounded-sm bg-primary text-[clamp(6px,1vw,7px)] font-bold text-primary-foreground uppercase tracking-widest leading-none shadow-lg">
                                     STATUS // {(item as any).status || 'ACTIVE'}
                                 </span>
                             </div>
                         </div>
 
-                        <div className="flex-1 px-4 pt-2 pb-4 flex flex-col justify-between overflow-hidden min-h-0 bg-gradient-to-b from-card to-background">
+                        <div className="flex-1 p-3 flex flex-col justify-between overflow-hidden min-h-0 bg-gradient-to-b from-card to-background">
                             <div className="space-y-1">
-                                <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2 group-hover:text-primary transition-colors">
+                                <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-bold text-foreground uppercase tracking-tight leading-tight line-clamp-2 group-hover:text-primary transition-colors break-words">
                                     {item.title || item.name}
                                 </h3>
 
-                                <p className="text-muted-foreground text-[clamp(7px,1.5vw,8.5px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed">
+                                <p className="text-muted-foreground text-[clamp(7px,1.2vw,8px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed">
                                     {item.description || 'Professional production workspace for cinematic collaboration and project management.'}
                                 </p>
 
                                 <div className="flex flex-col gap-1 text-muted-foreground pt-1.5 border-t border-white/5">
                                     {((item as any).genre?.[0]) && (
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            <Film size={10} className="text-primary" />
-                                            <span className="font-mono text-[clamp(6.5px,1.2vw,7.5px)] font-bold uppercase tracking-widest truncate max-w-[120px]">GENRE // {(item as any).genre[0]}</span>
+                                            <Film size={9} className="text-primary" />
+                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-[120px]">GENRE // {(item as any).genre[0]}</span>
                                         </div>
                                     )}
                                     {(item as any).location && (
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            <MapPin size={10} className="text-primary" />
-                                            <span className="font-mono text-[clamp(6px,1.2vw,7.5px)] font-bold uppercase tracking-widest truncate max-w-[120px] opacity-70">LOC // {(item as any).location}</span>
+                                            <MapPin size={9} className="text-primary" />
+                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-[120px] opacity-70">LOC // {(item as any).location}</span>
                                         </div>
                                     )}
                                 </div>
@@ -230,36 +230,36 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                     (Array.isArray((item as any).craft) ? (item as any).craft.join(', ') : String((item as any).craft))
                     : 'CREATOR';
                 return (
-                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-[#F8F5F2] border border-black/5 transition-all hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm">
+                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 transition-all hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm">
                         <CornerBrackets />
-                        <div className="w-[45%] aspect-square rounded-full overflow-hidden shadow-xl border-[3px] border-white mb-3 group-hover:shadow-2xl transition-all duration-500 relative z-10">
+                        <div className="w-[54%] md:w-[56%] aspect-square rounded-full overflow-hidden shadow-xl border-[2.5px] border-background -mt-3 md:-mt-4 mb-1.5 group-hover:shadow-2xl transition-all duration-500 relative z-10">
                             {item.avatar_url ? (
                                 <img src={item.avatar_url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={item.full_name || item.username} />
                             ) : (
                                 <div className={`w-full h-full ${getGradient(item.id)} flex items-center justify-center`}>
-                                    <span className="text-3xl md:text-4xl font-black text-white uppercase tracking-tighter drop-shadow-md">{item.username?.charAt(0)}</span>
+                                    <span className="text-2xl md:text-3xl font-black text-white uppercase tracking-tighter drop-shadow-md">{item.username?.charAt(0)}</span>
                                 </div>
                             )}
                         </div>
 
-                        <div className="px-4 text-center w-full flex flex-col items-center z-10">
-                            <div className="flex items-center justify-center gap-1.5 w-full mb-2 px-1">
-                                <h3 className="font-serif text-[clamp(10px,2.5vw,14px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2">
+                        <div className="px-2.5 text-center w-full flex flex-col items-center z-10">
+                            <div className="flex items-center justify-center gap-1 w-full mb-1 px-1">
+                                <h3 className="font-serif text-[clamp(8.5px,2vw,12px)] font-bold text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-2 transition-colors">
                                     {item.full_name || item.username}
                                 </h3>
                                 {(item.is_verified ||
                                     item.username?.toLowerCase().includes('vamshi') ||
                                     item.full_name?.toLowerCase().includes('vamshi')) && (
-                                        <VerificationBadge size="xs" className="shrink-0 scale-90" />
+                                        <VerificationBadge size="xs" className="shrink-0 scale-75" />
                                     )}
                             </div>
 
-                            <div className="bg-[#FF3300]/10 border border-[#FF3300]/30 text-[#FF3300] font-black text-[6.5px] md:text-[8px] uppercase tracking-widest px-3 py-1 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%]">
-                                <Zap size={8} className="shrink-0" fill="currentColor" />
-                                <span className="line-clamp-2 leading-snug whitespace-normal text-center">{craftsStr}</span>
+                            <div className="bg-primary/10 border border-primary/20 text-primary font-bold text-[5.5px] md:text-[7px] uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%]">
+                                <Zap size={7} className="shrink-0" fill="currentColor" />
+                                <span className="line-clamp-2 leading-tight whitespace-normal text-center">{craftsStr}</span>
                             </div>
 
-                            <p className="mt-3 text-[9px] md:text-[10px] text-muted-foreground/80 italic font-medium line-clamp-2 px-1 leading-relaxed opacity-80 w-full text-center">
+                            <p className="mt-1.5 text-[7.5px] md:text-[8.5px] text-muted-foreground italic font-medium line-clamp-2 px-1 leading-normal opacity-80 w-full text-center">
                                 "{item.description || 'Passionate cinematic creator connecting through storytelling.'}"
                             </p>
                         </div>
@@ -273,34 +273,34 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                     <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border flex flex-col transition-all hover:scale-[1.02] active:scale-95 shadow-sm rounded-[1.25rem]">
                         <CornerBrackets />
 
-                        <div className="flex flex-col flex-1 p-5 relative z-10 h-full">
+                        <div className="flex flex-col flex-1 p-3 md:p-4 relative z-10 h-full">
                             {/* Top Header */}
-                            <div className="flex items-center gap-2.5 mb-5 pt-2">
-                                <div className="w-10 h-10 rounded-[12px] bg-[#FF3300]/10 border border-[#FF3300]/30 flex items-center justify-center shrink-0 shadow-sm">
-                                    <MessageSquare size={18} className="text-[#FF3300]" />
+                            <div className="flex items-center gap-1.5 md:gap-2 mb-2 md:mb-3 pt-0.5">
+                                <div className="w-6 h-6 md:w-8 md:h-8 rounded-lg md:rounded-xl bg-[#FF3300]/10 border border-[#FF3300]/30 flex items-center justify-center shrink-0 shadow-sm">
+                                    <MessageSquare className="w-3 h-3 md:w-4 md:h-4 text-[#FF3300]" />
                                 </div>
-                                <div className="flex flex-col justify-center -gap-0.5 mt-0.5">
-                                    <span className="text-foreground font-black text-[clamp(14px,3.5vw,16px)] uppercase tracking-[0.15em] leading-none">DISCUSSION</span>
-                                    <span className="text-[#FF3300] font-black text-[8.5px] uppercase tracking-[0.2em] leading-none mt-0.5 ml-[1px]">ROOM</span>
+                                <div className="flex flex-col justify-center overflow-hidden min-w-0">
+                                    <span className="text-foreground font-black text-[clamp(7.5px,1.8vw,11px)] uppercase tracking-wider leading-none truncate">DISCUSSION</span>
+                                    <span className="text-[#FF3300] font-black text-[6px] md:text-[7.5px] uppercase tracking-widest leading-none mt-0.5">ROOM</span>
                                 </div>
                             </div>
 
                             {/* Title */}
-                            <h3 className="font-serif text-[clamp(14px,3.5vw,18px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2 mb-4 pr-2">
+                            <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2 mb-2 pr-1">
                                 {item.title}
                             </h3>
 
                             {/* Description with left border */}
-                            <div className="pl-3 border-l-[2.5px] border-[#FF3300]/30 mb-auto">
-                                <p className="text-muted-foreground text-[11px] md:text-xs font-semibold line-clamp-4 leading-relaxed italic opacity-90">
+                            <div className="pl-2 border-l-[2px] border-[#FF3300]/30 mb-auto">
+                                <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-semibold line-clamp-3 leading-relaxed italic opacity-90">
                                     {item.description || 'Verified cinematic craft discussion room.'}
                                 </p>
                             </div>
 
                             {/* Bottom Footer */}
-                            <div className="flex items-center gap-2 mt-5 text-muted-foreground/80">
-                                <Users size={16} className="text-[#FF3300]" />
-                                <span className="font-black text-[10px] uppercase tracking-widest">{(item as any).member_count || 0} MEMBERS</span>
+                            <div className="flex items-center gap-1.5 mt-2 text-muted-foreground/80 truncate">
+                                <Users className="w-3 h-3 text-[#FF3300] shrink-0" />
+                                <span className="font-black text-[7.5px] md:text-[9px] uppercase tracking-widest truncate">{(item as any).member_count || 0} MEMBERS</span>
                             </div>
                         </div>
 
@@ -325,41 +325,54 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'company':
                 return (
-                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-white transition-all hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-black/5`}>
+                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card transition-all hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-border/50`}>
                         <CornerBrackets />
-                        <div className="absolute top-3 right-3 z-30 bg-[#0A0A0A] rounded-full px-2.5 py-1 flex items-center gap-1.5 shadow-lg">
-                            <Users size={12} className="text-[#FF1A1A]" />
-                            <span className="text-[10px] font-bold text-white">{item.like_count || 0}</span>
+                        <div className="absolute top-2 right-2 md:top-3 md:right-3 z-30 bg-[#0A0A0A] rounded-full px-2 py-0.5 md:px-2.5 md:py-1 flex items-center gap-1 md:gap-1.5 shadow-lg">
+                            <Users size={10} className="text-[#FF1A1A]" />
+                            <span className="text-[8px] md:text-[10px] font-bold text-white">{item.like_count || 0}</span>
                         </div>
 
-                        <div className="relative h-[45%] w-full overflow-hidden shrink-0 bg-[#1a1a1a]">
-                            <img src={item.image_url || 'https://images.unsplash.com/photo-1595679905207-6b08051774e1?auto=format&fit=crop&q=80'} className="w-full h-full object-cover opacity-60 transition-transform duration-700 group-hover:scale-110" alt="Company Banner" />
+                        <div className="relative h-[32%] md:h-[36%] w-full overflow-hidden shrink-0 bg-gradient-to-br from-neutral-900 via-zinc-800 to-black">
+                            {(item.image_url || (item as any).cover_image_url) ? (
+                                <img
+                                    src={item.image_url || (item as any).cover_image_url}
+                                    className="w-full h-full object-cover opacity-60 transition-transform duration-700 group-hover:scale-110"
+                                    alt=""
+                                    onError={(e) => {
+                                        (e.target as HTMLElement).style.display = 'none';
+                                    }}
+                                />
+                            ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-primary/30 via-neutral-900 to-black opacity-80 flex items-center justify-center">
+                                    <Building2 className="w-6 h-6 text-white/20" />
+                                </div>
+                            )}
                         </div>
 
-                        <div className="flex-1 bg-white p-4 flex flex-col items-center text-center relative z-10 pt-10">
-                            <div className="absolute -top-12 flex flex-col items-center">
-                                <div className="w-[4.5rem] h-[4.5rem] md:w-20 md:h-20 rounded-[1.25rem] bg-[#FF4500] border-[3px] border-white shadow-sm overflow-hidden flex items-center justify-center p-1 z-10 relative">
+                        <div className="flex-1 bg-card p-2.5 md:p-4 flex flex-col items-center text-center relative z-10 pt-5 md:pt-7">
+                            <div className="absolute -top-5 md:-top-7 flex flex-col items-center w-[90%]">
+                                <div className="w-9 h-9 md:w-13 md:h-13 rounded-lg md:rounded-xl bg-[#FF4500] border-[2px] border-card shadow-sm overflow-hidden flex items-center justify-center p-0.5 z-10 relative">
                                     {item.logo_url ? (
                                         <img src={item.logo_url} className="w-full h-full object-contain" alt={item.name} />
                                     ) : (
-                                        <Building2 size={32} className="text-white" />
+                                        <Building2 className="w-4 h-4 md:w-6 md:h-6 text-white" />
                                     )}
                                 </div>
-                                <div className="bg-[#FF1A1A] text-black font-black text-[9px] md:text-[10px] uppercase tracking-widest px-4 py-1.5 rounded-full -mt-2.5 relative z-20">
+                                <div className="bg-[#FF1A1A] text-black font-black text-[6px] md:text-[8px] uppercase tracking-widest px-2 py-0.5 rounded-full -mt-1.5 relative z-20 truncate max-w-full">
                                     {Array.isArray((item as any).industry) ? (item as any).industry[0] : ((item as any).industry || 'PRODUCTION HOUSE')}
                                 </div>
                             </div>
 
-                            <h3 className="font-serif text-[clamp(14px,3.5vw,18px)] font-black text-black uppercase tracking-tight leading-tight line-clamp-1 w-full mt-2">
+                            <h3 className="font-serif text-[clamp(11px,2.5vw,15px)] font-black text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-1 w-full mt-1 transition-colors">
                                 {item.name}
                             </h3>
 
-                            <div className="flex items-center gap-1 mt-1.5 text-muted-foreground mb-4">
-                                <MapPin size={12} className="text-[#FF1A1A]" />
-                                <span className="text-[10px] font-bold text-[#666666] uppercase tracking-widest">{item.location || 'GLOBAL'}</span>
+                            <div className="flex items-center gap-1 mt-1 text-muted-foreground mb-1.5 md:mb-2 w-full justify-center">
+                                <MapPin size={9} className="text-[#FF1A1A] shrink-0" />
+                                <span className="text-[7.5px] md:text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{item.location || 'GLOBAL'}</span>
                             </div>
 
-                            <p className="text-[#666666] text-xs font-medium italic line-clamp-2 px-2 mt-auto pb-2">
+                            <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-medium italic line-clamp-2 px-1 mt-auto pb-1 leading-relaxed opacity-80">
                                 "{item.description || 'movie is a soulful entertainment'}"
                             </p>
                         </div>

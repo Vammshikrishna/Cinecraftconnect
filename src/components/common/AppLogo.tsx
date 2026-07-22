@@ -30,8 +30,7 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '', textC
     <img
       src="/logo.png"
       alt="CineCraft Connect Logo"
-      className="flex-shrink-0 transition-transform duration-300 group-hover:scale-110 object-contain rounded-full shadow-sm"
-      style={{ width: s.icon, height: s.icon }}
+      className="flex-shrink-0 transition-transform duration-300 group-hover:scale-110 object-contain rounded-full shadow-sm w-6 h-6 sm:w-7 sm:h-7"
     />
   );
 
@@ -39,7 +38,7 @@ const AppLogo = ({ showText = true, size = 'md', to = '/', className = '', textC
     <span className={`flex items-center ${s.gap} group ${className}`}>
       {LogoIcon}
       {showText && (
-        <span className={`text-[13px] sm:text-base md:${s.text} font-serif font-bold uppercase tracking-tight whitespace-nowrap select-none flex items-center gap-0.5 sm:gap-1`}>
+        <span className={`text-[11px] sm:text-sm md:${s.text} font-serif font-bold uppercase tracking-tight whitespace-nowrap select-none flex items-center gap-0.5 sm:gap-1`}>
           <span className={textColor === 'ink' ? 'text-[#0D0D0D]' : textColor === 'cream' ? 'text-[#F8F5F0]' : 'text-foreground'}>CineCraft</span>
           <span className="text-primary">Connect</span>
         </span>
