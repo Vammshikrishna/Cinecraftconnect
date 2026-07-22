@@ -144,52 +144,34 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       const profileData = profileResult.data;
       const hasRemoteBackup = !!backupData?.encrypted_private_key;
       const profilePublicKey = profileData?.public_key;
+      const hasVerifiedSessionPIN = sessionStorage.getItem(`e2ee_pin_verified_${user.id}`) === 'true';
 
-      console.log(`🔐 [E2EE Context] DB results: hasRemoteBackup=${hasRemoteBackup}, profilePublicKeyExists=${!!profilePublicKey}`);
+      console.log(`🔐 [E2EE Context] DB results: hasRemoteBackup=${hasRemoteBackup}, profilePublicKeyExists=${!!profilePublicKey}, verifiedInSession=${hasVerifiedSessionPIN}`);
 
-      if (hasValidLocalKey) {
-        if (!profilePublicKey) {
-          // Desynced state: Local key exists but public key is missing from profile.
-          console.warn("🔐 [E2EE Context] Local key exists but profile public key missing. Forcing key regeneration.");
-          await generateNewKeyPairAndSave(user.id);
-          setIsSetupRequired(true);
-          setIsRecoveryRequired(false);
-        } else if (hasRemoteBackup) {
-          // Perfectly synced and backed up
-          console.log("🔐 [E2EE Context] Device synced and remote backup complete. No action required.");
+      if (hasRemoteBackup) {
+        setBackupSalt(backupData.salt);
+        setEncryptedPrivateKey(backupData.encrypted_private_key);
+
+        if (!hasVerifiedSessionPIN) {
+          console.log("🔐 [E2EE Context] Remote backup exists. Prompting PIN verification/recovery for login session.");
           setIsSetupRequired(false);
-          setIsRecoveryRequired(false);
+          setIsRecoveryRequired(true);
         } else {
-          // Key exists locally but has no backup. Prompt setup.
-          console.log("🔐 [E2EE Context] Local key exists but no backup. Prompting backup setup.");
-          setIsSetupRequired(true);
+          console.log("🔐 [E2EE Context] PIN verified for active session. Access granted.");
+          setIsSetupRequired(false);
           setIsRecoveryRequired(false);
         }
       } else {
-        // No valid local key
-        if (!profilePublicKey) {
-          // 1. New user (no public key on profiles)
-          console.log("🔐 [E2EE Context] Fresh account. Generating key pair and prompting backup setup.");
-          await generateNewKeyPairAndSave(user.id);
+        // No remote backup exists yet
+        if (hasValidLocalKey && profilePublicKey) {
+          console.log("🔐 [E2EE Context] Local key exists but no backup. Prompting backup setup.");
           setIsSetupRequired(true);
           setIsRecoveryRequired(false);
         } else {
-          // 2. Existing user (public key exists on profiles)
-          if (hasRemoteBackup) {
-            // Backup exists! Prompt recovery.
-            console.log("🔐 [E2EE Context] Existing keys found in backup. Prompting recovery.");
-            setBackupSalt(backupData.salt);
-            setEncryptedPrivateKey(backupData.encrypted_private_key);
-            setIsSetupRequired(false);
-            setIsRecoveryRequired(true);
-          } else {
-            // Public key exists on profiles, but no local key and no backup.
-            // Private key is unrecoverable, we must generate fresh.
-            console.warn("🔐 [E2EE Context] E2EE key is unrecoverable (no backup exists). Generating fresh key pair.");
-            await generateNewKeyPairAndSave(user.id);
-            setIsSetupRequired(true);
-            setIsRecoveryRequired(false);
-          }
+          console.log("🔐 [E2EE Context] Fresh account/key required. Generating key pair and prompting backup setup.");
+          await generateNewKeyPairAndSave(user.id);
+          setIsSetupRequired(true);
+          setIsRecoveryRequired(false);
         }
       }
 
@@ -236,6 +218,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       if (error) throw error;
 
+      sessionStorage.setItem(`e2ee_pin_verified_${user.id}`, 'true');
       setIsSetupRequired(false);
       toast.success("E2EE key backup created successfully!");
     } catch (err) {
@@ -260,6 +243,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       await setLocalPrivateKey(user.id, decryptedKeyStr);
       await syncPrivateKeyToNative(user.id, decryptedKeyStr);
 
+      sessionStorage.setItem(`e2ee_pin_verified_${user.id}`, 'true');
       setIsRecoveryRequired(false);
       toast.success("E2EE secure chats restored successfully!");
       return true;
@@ -317,6 +301,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     } else if (!user) {
       setIsChecking(false);
       checkingRef.current = false;
+      lastCheckedTokenRef.current = null;
       setIsSetupRequired(false);
       setIsRecoveryRequired(false);
     }

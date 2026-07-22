@@ -22,7 +22,9 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info } from 'lucide-react';
+import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info, Check, CheckCheck, ChevronDown, Star, Copy, Share2 } from 'lucide-react';
+import { ForwardMessageDialog } from './ForwardMessageDialog';
+import { StarredMessagesDialog } from './StarredMessagesDialog';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from '@/lib/utils';
 import { useCall } from '@/hooks/useCall';
@@ -159,6 +161,15 @@ const scrollToMessage = (messageId: string) => {
   }
 };
 
+const formatMessageTime = (dateStr: string) => {
+  if (!dateStr) return '';
+  try {
+    return format(new Date(dateStr), 'h:mm a').toLowerCase();
+  } catch (e) {
+    return '';
+  }
+};
+
 const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
 
 const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
@@ -211,6 +222,19 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [infoMessage, setInfoMessage] = useState<Message | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`starred_msgs_${roomId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [showStarredDialog, setShowStarredDialog] = useState(false);
+
   const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
   const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
@@ -219,8 +243,65 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const isSwipingRef = useRef<boolean>(false);
 
-  const handleTouchStart = (messageId: string, isDeleted: boolean) => (e: React.TouchEvent) => {
-    if (isDeleted) return;
+  const handleToggleStarMessages = (targetIds?: string[]) => {
+    const idsToToggle = targetIds || selectedMessageIds;
+    if (idsToToggle.length === 0) return;
+
+    const allStarred = idsToToggle.every(id => starredMessageIds.has(id));
+
+    setStarredMessageIds(prev => {
+      const next = new Set(prev);
+      idsToToggle.forEach(id => {
+        if (allStarred) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      });
+      
+      try {
+        localStorage.setItem(`starred_msgs_${roomId}`, JSON.stringify(Array.from(next)));
+      } catch (e) {}
+
+      return next;
+    });
+
+    toast({
+      description: allStarred ? "Unstarred message(s)" : "Starred message(s)"
+    });
+    
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleBatchDelete = () => {
+    selectedMessageIds.forEach(id => {
+      const msg = messages.find(m => m.id === id);
+      if (msg) {
+        if (msg.sender_id === user?.id) {
+          handleUndoMessage(id);
+        } else {
+          handleHideMessage(id);
+        }
+      }
+    });
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleBatchCopy = () => {
+    const selectedMsgs = messages.filter(m => selectedMessageIds.includes(m.id));
+    const combinedText = selectedMsgs.map(m => (m.content || '').replace('FORWARDED::', '')).filter(Boolean).join('\n\n');
+    if (combinedText) {
+      navigator.clipboard.writeText(combinedText);
+      toast({ description: `${selectedMsgs.length} message(s) copied` });
+    }
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleTouchStart = (message: Message) => (e: React.TouchEvent) => {
+    if (message.is_deleted) return;
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     isSwipingRef.current = false;
@@ -230,9 +311,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
         if (navigator.vibrate) {
           navigator.vibrate(50);
         }
-        setActiveMobileReactionMessageId(messageId);
+        setSelectedMessage(message);
+        setSelectedMessageIds(prev => prev.includes(message.id) ? prev : [...prev, message.id]);
+        setActiveMobileReactionMessageId(message.id);
       }
-    }, 500);
+    }, 450);
   };
 
   const handleTouchMove = (messageId: string) => (e: React.TouchEvent) => {
@@ -1198,120 +1281,235 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
   return (
     <div className="flex flex-col h-full bg-background text-foreground relative">
-      <header className="flex items-center justify-between px-4 py-4 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0">
-        <div className="flex items-center gap-3">
-          <button onClick={onBackClick} className="p-2 rounded-full hover:bg-muted lg:hidden">
-            <ArrowLeft className="h-6 w-6" />
-          </button>
-          {partnerName && (
-            <div 
-              className="flex items-center gap-3 cursor-pointer group/partner"
-              onClick={() => push(`/profile/${partnerId}`)}
+      {selectedMessageIds.length > 0 ? (
+        <header className="flex items-center justify-between px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0 gap-2 text-foreground animate-in fade-in duration-200 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <button 
+              onClick={() => {
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="p-1 sm:p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus:outline-none shrink-0"
+              title="Close selection"
             >
-              <Avatar className="transition-transform group-hover/partner:scale-110">
-                <AvatarImage src={partnerAvatarUrl} />
-                <AvatarFallback>{partnerName?.charAt(0) || 'U'}</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5">
-                  <h2 className="font-bold text-lg leading-tight group-hover/partner:text-primary transition-colors">{partnerName}</h2>
-                  {partnerIsVerified && <VerificationBadge size="sm" />}
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
-                  <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-70">
-                    {isPartnerOnline ? "Active Now" : "Away"}
-                  </span>
+              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <span className="font-bold text-xs sm:text-sm select-none">{selectedMessageIds.length}</span>
+          </div>
+
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            {/* Reply Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={selectedMessageIds.length !== 1}
+              onClick={() => {
+                const singleMsg = messages.find(m => m.id === selectedMessageIds[0]);
+                if (singleMsg) setReplyingTo(singleMsg);
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              title="Reply"
+            >
+              <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Star Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleToggleStarMessages()}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Star / Unstar"
+            >
+              <Star className={cn(
+                "h-3.5 w-3.5 sm:h-4 sm:w-4 transition-colors",
+                selectedMessageIds.every(id => starredMessageIds.has(id)) && "fill-amber-400 text-amber-400"
+              )} />
+            </Button>
+
+            {/* Forward Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                stopTyping();
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+                setShowForwardDialog(true);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Forward Message(s)"
+            >
+              <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4 scale-x-[-1]" />
+            </Button>
+
+            {/* Copy Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBatchCopy}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Copy"
+            >
+              <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Delete / Undo Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBatchDelete}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Info Icon (Direct in header!) */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              disabled={selectedMessageIds.length !== 1 || messages.find(m => m.id === selectedMessageIds[0])?.sender_id !== user?.id}
+              onClick={() => {
+                const singleMsg = messages.find(m => m.id === selectedMessageIds[0]);
+                if (singleMsg) {
+                  setInfoMessage(singleMsg);
+                  setShowInfoDialog(true);
+                }
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              title="Message Info"
+            >
+              <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+          </div>
+        </header>
+      ) : (
+        <header className="flex items-center justify-between px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0 gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
+            <button onClick={onBackClick} className="p-1 sm:p-1.5 rounded-full hover:bg-muted shrink-0 lg:hidden">
+              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            {partnerName && (
+              <div 
+                className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group/partner min-w-0"
+                onClick={() => push(`/profile/${partnerId}`)}
+              >
+                <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 transition-transform group-hover/partner:scale-105">
+                  <AvatarImage src={partnerAvatarUrl} />
+                  <AvatarFallback>{partnerName?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <h2 className="font-bold text-xs sm:text-sm md:text-base leading-tight truncate max-w-[110px] xs:max-w-[150px] sm:max-w-[240px] md:max-w-none group-hover/partner:text-primary transition-colors">{partnerName}</h2>
+                    {partnerIsVerified && <VerificationBadge size="sm" className="shrink-0" />}
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
+                    <span className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-70 truncate">
+                      {isPartnerOnline ? "Active Now" : "Away"}
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex items-center gap-2">
-          {activeCall && !isInCall ? (
-            <Button 
-                onClick={handleJoinCall} 
-                className="bg-green-600 hover:bg-green-700 text-white rounded-full px-4 gap-2 animate-bounce-subtle"
-            >
-                <Video className="h-4 w-4" /> Join Active Call
-            </Button>
-          ) : isInCall ? (
-            <Button 
-              variant="outline"
-              size="sm"
-              className="text-primary border-primary/20 bg-primary/10 rounded-full pointer-events-none"
-            >
-              <Video className="h-4 w-4 mr-2" /> In Call
-            </Button>
-          ) : (
-            <div className="flex items-center gap-1">
+            )}
+          </div>
+          
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            {activeCall && !isInCall ? (
               <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={handleStartCall}
-                className="h-9 w-9 rounded-full text-muted-foreground hover:bg-muted"
-                title="Start Call"
+                  onClick={handleJoinCall} 
+                  className="bg-green-600 hover:bg-green-700 text-white rounded-full px-2.5 sm:px-3 text-xs h-7 sm:h-8 gap-1 animate-bounce-subtle"
               >
-                <Video className="h-5 w-5" />
+                  <Video className="h-3.5 w-3.5" /> Join Call
               </Button>
-            </div>
-          )}
-          
-          <div className="h-4 w-[1px] bg-border mx-1" />
-
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={handleDeleteChat}
-            className="h-9 w-9 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
-            title="Delete Chat"
-          >
-            <Trash2 className="h-5 w-5" />
-          </Button>
-
-          <div className="h-4 w-[1px] bg-border mx-1" />
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-9 w-9 p-0 hover:bg-muted/50 transition-colors">
-                    <Settings className="h-5 w-5 opacity-70" />
+            ) : isInCall ? (
+              <Button 
+                variant="outline"
+                size="sm"
+                className="text-primary border-primary/20 bg-primary/10 rounded-full pointer-events-none text-xs h-7 sm:h-8"
+              >
+                <Video className="h-3.5 w-3.5 mr-1" /> In Call
+              </Button>
+            ) : (
+              <div className="flex items-center gap-0.5">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={handleStartCall}
+                  className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted"
+                  title="Start Call"
+                >
+                  <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 glass-modal border-border shadow-2xl p-1">
-                <DropdownMenuLabel className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Chat Settings</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-border/50" />
-                
-                <DropdownMenuItem onClick={() => push(`/profile/${partnerId}`)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-primary/10 transition-colors">
-                    <User className="h-4 w-4 text-primary" />
-                    <span>View Profile</span>
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
-                    <Search className="h-4 w-4" />
-                    <span>Search in Chat</span>
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
-                    <BellOff className="h-4 w-4" />
-                    <span>Mute Notifications</span>
-                </DropdownMenuItem>
-                
-                <DropdownMenuSeparator className="bg-border/50" />
-                
-                <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive focus:bg-destructive/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
-                    <Trash2 className="h-4 w-4" />
-                    <span>Clear Chat History</span>
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem className="text-destructive focus:bg-red-500/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
-                    <ShieldAlert className="h-4 w-4" />
-                    <span>Report User</span>
-                </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+              </div>
+            )}
+            
+            <div className="h-3.5 w-[1px] bg-border mx-0.5 hidden sm:block" />
+
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              onClick={handleDeleteChat}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="Delete Chat"
+            >
+              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            <div className="h-4 w-[1px] bg-border mx-0.5 hidden sm:block" />
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-muted/50 transition-colors">
+                      <Settings className="h-4 w-4 sm:h-5 sm:w-5 opacity-70" />
+                  </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 glass-modal border-border shadow-2xl p-1">
+                  <DropdownMenuLabel className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Chat Settings</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  
+                  <DropdownMenuItem onClick={() => push(`/profile/${partnerId}`)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-primary/10 transition-colors">
+                      <User className="h-4 w-4 text-primary" />
+                      <span>View Profile</span>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem onClick={() => setShowStarredDialog(true)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-amber-500/10 transition-colors">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      <span>Starred Messages</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <Search className="h-4 w-4" />
+                      <span>Search in Chat</span>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <BellOff className="h-4 w-4" />
+                      <span>Mute Notifications</span>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  
+                  <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive focus:bg-destructive/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <Trash2 className="h-4 w-4" />
+                      <span>Clear Chat History</span>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem className="text-destructive focus:bg-red-500/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <ShieldAlert className="h-4 w-4" />
+                      <span>Report User</span>
+                  </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+      )}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
@@ -1320,6 +1518,20 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
           <div 
             ref={scrollContainerRef}
             onScroll={handleScroll}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest('.group') && !target.closest('header') && !target.closest('[role="menu"]')) {
+                setSelectedMessage(null);
+                setActiveMobileReactionMessageId(null);
+              }
+            }}
+            onTouchStart={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest('.group') && !target.closest('header') && !target.closest('[role="menu"]')) {
+                setSelectedMessage(null);
+                setActiveMobileReactionMessageId(null);
+              }
+            }}
             className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
           >
             {loadingMore && hasMore && (
@@ -1454,23 +1666,32 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         style={{
                           transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
                         }}
+                        onClick={(e) => {
+                          if (selectedMessageIds.length > 0) {
+                            e.stopPropagation();
+                            setSelectedMessageIds(prev => 
+                              prev.includes(message.id) ? prev.filter(id => id !== message.id) : [...prev, message.id]
+                            );
+                          }
+                        }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
                           if (!message.is_deleted) {
                             handleToggleReaction(message.id, '❤️');
                           }
                         }}
-                        onTouchStart={handleTouchStart(message.id, !!message.is_deleted)}
+                        onTouchStart={handleTouchStart(message)}
                         onTouchMove={handleTouchMove(message.id)}
                         onTouchEnd={handleTouchEnd(message)}
                       >
                         <div className={cn(
                           "relative transition-all duration-300",
+                          selectedMessageIds.includes(message.id) ? "ring-2 ring-primary ring-offset-1 ring-offset-background bg-primary/95 text-primary-foreground font-medium rounded-xl px-3.5 py-2 shadow-lg scale-[1.01]" :
                           message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
                           (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.includes('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
                           isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
-                          isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md" : 
-                          "bg-muted text-foreground font-medium rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md"
+                          isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-3.5 py-2 shadow-sm hover:shadow-md" : 
+                          "bg-muted text-foreground font-medium rounded-xl px-3.5 py-2 shadow-sm hover:shadow-md"
                         )}>
 
                         {message.replied_to_message && !message.is_deleted && (
@@ -1488,8 +1709,17 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                             </div>
                           </div>
                         )}
+
+                        {/* Forwarded Tag */}
+                        {!message.is_deleted && message.content && message.content.startsWith('FORWARDED::') && (
+                          <div className="flex items-center gap-1 text-[10px] italic opacity-75 mb-1 font-medium select-none">
+                            <Reply className="h-3 w-3 scale-x-[-1] inline shrink-0" />
+                            <span>Forwarded</span>
+                          </div>
+                        )}
+
                         {message.is_deleted ? (
-                          <p className="text-sm italic text-muted-foreground flex items-center gap-1">
+                          <p className="text-xs italic text-muted-foreground flex items-center gap-1">
                             <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
                           </p>
                         ) : (
@@ -1534,146 +1764,246 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                             {message.content && 
                              message.content !== 'Shared an image' && 
                              message.content !== 'Shared a video' && 
-                             message.content !== 'Shared a file' && (
-                              message.content.startsWith('POST_SHARE::') ? (
+                             message.content !== 'Shared a file' && (() => {
+                              const cleanContent = message.content.replace('FORWARDED::', '');
+                              return cleanContent.startsWith('POST_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('POST_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('POST_SHARE::', ''));
                                     return <PostShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('PROFILE_SHARE::') ? (
+                              ) : cleanContent.startsWith('PROFILE_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('PROFILE_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('PROFILE_SHARE::', ''));
                                     return <ProfileShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('PITCH_SHARE::') ? (
+                              ) : cleanContent.startsWith('PITCH_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('PITCH_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('PITCH_SHARE::', ''));
                                     return <PitchShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('COMPANY_SHARE::') ? (
+                              ) : cleanContent.startsWith('COMPANY_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('COMPANY_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('COMPANY_SHARE::', ''));
                                     return <CompanyShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('MARKETPLACE_SHARE::') ? (
+                              ) : cleanContent.startsWith('MARKETPLACE_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('MARKETPLACE_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('MARKETPLACE_SHARE::', ''));
                                     return <MarketplaceShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                              ) : cleanContent.startsWith('ANNOUNCEMENT_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('ANNOUNCEMENT_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('ANNOUNCEMENT_SHARE::', ''));
                                     return <AnnouncementShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('VENDOR_SHARE::') ? (
+                              ) : cleanContent.startsWith('VENDOR_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('VENDOR_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('VENDOR_SHARE::', ''));
                                     return <VendorShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('PROJECT_SHARE::') ? (
+                              ) : cleanContent.startsWith('PROJECT_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('PROJECT_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('PROJECT_SHARE::', ''));
                                     return <ProjectShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.startsWith('CONTENT_SHARE::') ? (
+                              ) : cleanContent.startsWith('CONTENT_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const shareData = JSON.parse(message.content.replace('CONTENT_SHARE::', ''));
+                                    const shareData = JSON.parse(cleanContent.replace('CONTENT_SHARE::', ''));
                                     return <ContentShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : (message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::')) ? (
+                              ) : (cleanContent.startsWith('DISCUSSION_SHARE::') || cleanContent.startsWith('ROOM_SHARE::')) ? (
                                 (() => {
                                   try {
-                                    const prefix = message.content.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
-                                    const shareData = JSON.parse(message.content.replace(prefix, ''));
+                                    const prefix = cleanContent.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+                                    const shareData = JSON.parse(cleanContent.replace(prefix, ''));
                                     return <DiscussionShareCard {...shareData} />;
                                   } catch (e) {
-                                    return <p className="text-sm break-words">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
                                   }
                                 })()
-                              ) : message.content.includes('JOB_SHARE::') ? (
+                              ) : cleanContent.includes('JOB_SHARE::') ? (
                                 (() => {
                                   try {
-                                    const parts = message.content.split('JOB_SHARE::');
+                                    const parts = cleanContent.split('JOB_SHARE::');
                                     const caption = parts[0].trim();
                                     const jsonStr = parts[parts.length - 1].trim();
                                     const shareData = JSON.parse(jsonStr);
                                     return (
                                       <div className="space-y-2">
-                                        {caption && <p className="text-sm px-3 pt-2">{caption}</p>}
+                                        {caption && <p className="text-[13px] sm:text-sm px-3 pt-2">{caption}</p>}
                                         <JobShareCard {...shareData} />
                                       </div>
                                     );
                                   } catch (e) {
-                                    return <p className="text-sm break-words px-3 pt-2">{message.content}</p>;
+                                    return <p className="text-[13px] sm:text-sm break-words px-3 pt-2">{cleanContent}</p>;
                                   }
                                 })()
                               ) : (
-                                <p className="text-sm break-words">{message.content}</p>
-                              )
-                             )}
+                                <span className="text-[13px] sm:text-sm break-words">{cleanContent}</span>
+                              );
+                            })()}
+
+                              {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
+                              <span className={cn(
+                                "inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none",
+                                isSender ? "text-primary-foreground/80" : "text-muted-foreground/80"
+                              )}>
+                                {starredMessageIds.has(message.id) && (
+                                  <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
+                                )}
+                                <span>{formatMessageTime(message.created_at)}</span>
+
+                                {!message.is_deleted ? (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button 
+                                        className="p-0 text-current rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] relative"
+                                        title="Options"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {/* Ticks (Visible when NOT hovering & menu CLOSED) */}
+                                        {isSender && (
+                                          <span className="inline-flex items-center group-hover:hidden data-[state=open]:hidden">
+                                            {(message.is_read || message.read_at) ? (
+                                              <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold stroke-[2.5]" />
+                                            ) : (
+                                              <CheckCheck className="h-3.5 w-3.5 opacity-70 stroke-[2]" />
+                                            )}
+                                          </span>
+                                        )}
+
+                                        {/* Chevron Down (Visible when HOVERING OR menu OPEN) */}
+                                        <span className="hidden group-hover:inline-flex data-[state=open]:inline-flex items-center justify-center">
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </span>
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 z-[60]">
+                                      {isSender && (
+                                        <DropdownMenuItem 
+                                          onClick={() => {
+                                            setInfoMessage(message);
+                                            setShowInfoDialog(true);
+                                          }}
+                                          className="flex items-center justify-between cursor-pointer"
+                                        >
+                                          <div className="flex items-center">
+                                            <Info className="h-4 w-4 mr-2 text-primary" />
+                                            <span>Info</span>
+                                          </div>
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                        <Reply className="h-4 w-4 mr-2" /> Reply
+                                      </DropdownMenuItem>
+                                      {isSender && (
+                                        <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
+                                          <Trash2 className="h-4 w-4 mr-2" /> Undo
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
+                                          <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
+                                      </DropdownMenuItem>
+                                      {!isSender && (
+                                        <DropdownMenuItem onClick={() => setReportingMessage({ id: message.id, content: message.content })} className="text-destructive focus:bg-red-500/10">
+                                          <Flag className="h-4 w-4 mr-2" /> Report Message
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                ) : (
+                                  isSender && (
+                                    <span className="inline-flex items-center">
+                                      {(message.is_read || message.read_at) ? (
+                                        <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold stroke-[2.5]" />
+                                      ) : (
+                                        <CheckCheck className="h-3.5 w-3.5 opacity-70 stroke-[2]" />
+                                      )}
+                                    </span>
+                                  )
+                                )}
+                              </span>
                           </>
+                        )}
+                        
+                        {/* Reactions Pill attached cleanly to bottom corner of bubble */}
+                        {message.reactions && message.reactions.length > 0 && (
+                          <div className={cn(
+                            "absolute -bottom-2.5 z-10 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md transition-all",
+                            isSender ? "right-3" : "left-3"
+                          )}>
+                            {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
+                              const count = message.reactions!.filter(r => r.emoji === emoji).length;
+                              const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
+                              return (
+                                <button 
+                                    key={emoji} 
+                                    onClick={() => handleToggleReaction(message.id, emoji)}
+                                    className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors", hasReacted && "bg-primary/10 text-primary")}
+                                >
+                                  <span>{emoji}</span>
+                                  {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
 
-                      {/* Reactions Pill */}
-                      {message.reactions && message.reactions.length > 0 && (
-                        <div className={cn(
-                          "absolute -bottom-3 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-sm",
-                          isSender ? "right-2" : "left-2"
-                        )}>
-                          {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
-                             const count = message.reactions!.filter(r => r.emoji === emoji).length;
-                             const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
-                             return (
-                               <button 
-                                  key={emoji} 
-                                  onClick={() => handleToggleReaction(message.id, emoji)}
-                                  className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors", hasReacted && "bg-primary/10 text-primary")}
-                               >
-                                 <span>{emoji}</span>
-                                 {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
-                               </button>
-                             );
-                          })}
-                        </div>
+                      {/* WhatsApp Hover Reaction (Smile Button beside message bubble) */}
+                      {!message.is_deleted && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMobileReactionMessageId(activeMobileReactionMessageId === message.id ? null : message.id);
+                          }}
+                          className={cn(
+                            "opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-muted text-muted-foreground/70 hover:text-foreground self-center shrink-0",
+                            activeMobileReactionMessageId === message.id && "opacity-100"
+                          )}
+                          title="React"
+                        >
+                          <Smile className="h-4 w-4" />
+                        </button>
                       )}
-                      {/* Mobile floating reactions picker */}
+
+                      {/* Mobile floating reactions picker (WhatsApp & Instagram style) */}
                       {activeMobileReactionMessageId === message.id && (
                         <div 
                           className={cn(
@@ -1696,98 +2026,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                               {emoji}
                             </button>
                           ))}
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMobileReactionMessageId(null);
-                            }}
-                            className="p-1 text-muted-foreground hover:text-foreground rounded-full"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Action Buttons (Absolute) */}
-                      {!message.is_deleted && (
-                        <div className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-2' : 'left-full ml-2'} opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-10 flex items-center gap-0.5`}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="p-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
-                                <Smile className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl">
-                                {QUICK_REACTIONS.map(emoji => (
-                                  <button 
-                                    key={emoji} 
-                                    onClick={() => handleToggleReaction(message.id, emoji)} 
-                                    className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button className="p-1 px-1.5 text-muted-foreground hover:bg-muted rounded-full transition-colors">
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36">
-                              {isSender && (
-                                <DropdownMenuItem onClick={() => {
-                                  setInfoMessage(message);
-                                  setShowInfoDialog(true);
-                                }}>
-                                  <Info className="h-4 w-4 mr-2" /> Info
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                <Reply className="h-4 w-4 mr-2" /> Reply
-                              </DropdownMenuItem>
-                              {isSender && (
-                                <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
-                                  <Trash2 className="h-4 w-4 mr-2" /> Undo
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
-                                  <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
-                              </DropdownMenuItem>
-                              {!isSender && (
-                                <DropdownMenuItem onClick={() => setReportingMessage({ id: message.id, content: message.content })} className="text-destructive focus:bg-red-500/10">
-                                  <Flag className="h-4 w-4 mr-2" /> Report Message
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </div>
                       )}
                     </div>
-
-                    {!message.is_deleted && (
-                      <span className="text-[10px] text-muted-foreground/60 font-medium whitespace-nowrap mb-1">
-                        {formatTimestamp(message.created_at)}
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
-                {isSender && isLatestRead && (
-                  <div className="flex justify-end pr-10 mb-4 -mt-1.5">
-                    <span 
-                      className="text-[10px] text-primary/60 font-medium tracking-tight cursor-pointer hover:underline animate-in fade-in slide-in-from-top-1 duration-500"
-                      onClick={() => {
-                        setInfoMessage(message);
-                        setShowInfoDialog(true);
-                      }}
-                    >
-                      {partnerId ? 'Seen' : `Seen by ${partnerName}`}
-                    </span>
-                  </div>
-                )}
               </Fragment>
               );
             })}
@@ -1843,7 +2087,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               </div>
             )}
             <TypingIndicator typingUsers={typingUsers} />
-            <form onSubmit={handleSendMessage} className="flex items-center gap-2 p-1.5 bg-background">
+            <form onSubmit={handleSendMessage} className="flex items-center gap-1 sm:gap-2 p-1.5 sm:p-2 bg-background border-t border-border/40">
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -1857,11 +2101,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 size="icon"
                 variant="ghost"
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-full text-muted-foreground"
+                className="rounded-full text-muted-foreground h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
                 title="Attach media"
                 disabled={uploading}
               >
-                <Paperclip className="h-5 w-5" />
+                <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
               </Button>
 
               {/* WhatsApp-style toggle: keyboard icon when emoji open, emoji icon otherwise */}
@@ -1871,11 +2115,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   size="icon"
                   variant="ghost"
                   onClick={openKeyboard}
-                  className="rounded-full text-primary bg-primary/10"
+                  className="rounded-full text-primary bg-primary/10 h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
                   title="Open keyboard"
                   disabled={uploading}
                 >
-                  <Keyboard className="h-5 w-5" />
+                  <Keyboard className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
               ) : (
                 <Button
@@ -1890,11 +2134,11 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     e.stopPropagation();
                     e.preventDefault();
                   }}
-                  className="rounded-full text-muted-foreground emoji-toggle-button"
+                  className="rounded-full text-muted-foreground emoji-toggle-button h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
                   title="Open emoji picker"
                   disabled={uploading}
                 >
-                  <Smile className="h-5 w-5" />
+                  <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
               )}
               <Input
@@ -1910,20 +2154,20 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                     setTimeout(() => setShowEmojiPicker(false), 200);
                   }
                 }}
-                placeholder="Send a message..."
-                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-10"
+                placeholder="Message..."
+                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-8 sm:h-10 text-[13px] sm:text-sm px-3 sm:px-4"
                 autoComplete="off"
               />
               <Button 
                 type="submit" 
                 size="icon" 
-                className="rounded-full h-10 w-10 shrink-0" 
+                className="rounded-full h-8 w-8 sm:h-10 sm:w-10 shrink-0 p-0" 
                 disabled={(!newMessage.trim() && !selectedFile) || uploading}
               >
                 {uploading ? (
-                  <div className="h-5 w-5 border-2 border-background border-t-transparent rounded-full animate-spin" />
+                  <div className="h-4 w-4 sm:h-5 sm:w-5 border-2 border-background border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <Send className="h-5 w-5" />
+                  <Send className="h-4 w-4 sm:h-5 sm:w-5 ml-0.5" />
                 )}
               </Button>
             </form>
@@ -1995,45 +2239,90 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
       {/* Message Info Dialog */}
       <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Message Info</DialogTitle>
-            <DialogDescription>
-              Details of who has seen this message.
+        <DialogContent className="max-w-[92vw] sm:max-w-md rounded-2xl p-4 sm:p-6 bg-card border border-border/80 shadow-2xl">
+          <DialogHeader className="text-left pb-1">
+            <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Message Info
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Sent time and delivery status details
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[300px] overflow-y-auto py-2 divide-y divide-border/30">
+
+          <div className="space-y-3 pt-2">
             {infoMessage && (() => {
               const isRead = infoMessage.is_read || !!infoMessage.read_at;
               const readTime = infoMessage.read_at ? new Date(infoMessage.read_at) : null;
+              const sentTime = infoMessage.created_at ? new Date(infoMessage.created_at) : null;
+              const displayReadTime = readTime ? format(readTime, 'p (MMM d)') : sentTime ? format(sentTime, 'p (MMM d)') : 'N/A';
               
               return (
-                <div className="flex items-center justify-between py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={partnerAvatarUrl} />
-                      <AvatarFallback className="text-xs bg-secondary text-secondary-foreground font-bold">
-                        {partnerName?.charAt(0) || 'U'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="text-sm font-semibold leading-none mb-1">
-                        {partnerName}
-                      </p>
-                      <p className={cn("text-[10px] leading-none font-medium", isRead ? "text-primary" : "text-muted-foreground")}>
-                        {isRead ? "Read" : "Delivered"}
-                      </p>
+                <div className="space-y-2.5">
+                  {/* Sent Time Card */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <Check className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold leading-tight">Sent Time</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Dispatched to server</p>
+                      </div>
                     </div>
+                    <span className="text-[11px] sm:text-xs font-mono font-medium text-foreground shrink-0 ml-2">
+                      {sentTime ? format(sentTime, 'p (MMM d)') : 'N/A'}
+                    </span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground font-medium">
-                    {isRead && readTime ? format(readTime, 'p') : format(new Date(infoMessage.created_at), 'p')}
-                  </span>
+
+                  {/* Recipient Read / Delivered Card */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarImage src={partnerAvatarUrl} />
+                        <AvatarFallback className="text-xs bg-secondary text-secondary-foreground font-bold">
+                          {partnerName?.charAt(0) || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold leading-tight truncate">{partnerName}</p>
+                        <p className={cn("text-[10px] leading-tight font-semibold mt-0.5 flex items-center gap-1", isRead ? "text-primary" : "text-muted-foreground")}>
+                          {isRead ? <CheckCheck className="h-3 w-3 inline text-primary" /> : <Check className="h-3 w-3 inline text-muted-foreground" />}
+                          {isRead ? "Seen / Read" : "Delivered"}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-mono font-medium text-primary shrink-0 ml-2">
+                      {displayReadTime}
+                    </span>
+                  </div>
                 </div>
               );
             })()}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Forward Message Dialog */}
+      <ForwardMessageDialog
+        isOpen={showForwardDialog}
+        onOpenChange={setShowForwardDialog}
+        messagesToForward={messages.filter(m => selectedMessageIds.includes(m.id))}
+        currentUserId={user?.id}
+        onForwardSuccess={() => {
+          fetchMessages();
+          setSelectedMessageIds([]);
+          setSelectedMessage(null);
+        }}
+      />
+
+      {/* Starred Messages Dialog */}
+      <StarredMessagesDialog
+        isOpen={showStarredDialog}
+        onOpenChange={setShowStarredDialog}
+        starredMessages={messages.filter(m => starredMessageIds.has(m.id))}
+        onJumpToMessage={(msgId) => scrollToMessage(msgId)}
+        onUnstarMessage={(msgId) => handleToggleStarMessages([msgId])}
+      />
     </div>
   );
 };

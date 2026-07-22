@@ -132,7 +132,7 @@ const SearchPage = () => {
                 supabase.from('posts').select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)').order('created_at', { ascending: false }).limit(32),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: '', filter_category: undefined, filter_location: undefined, verified_only: false }).limit(12),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: '', filter_type: undefined, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(12),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url').limit(12)
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').limit(12)
             ];
 
             const results = await Promise.allSettled(promises as any[]);
@@ -187,6 +187,7 @@ const SearchPage = () => {
                 description: c.description || c.tagline || undefined,
                 location: c.headquarters,
                 industry: Array.isArray(c.industry) ? c.industry[0] : c.industry,
+                image_url: c.cover_image_url || c.image_url,
                 type: 'company' as const
             })));
 
@@ -234,7 +235,7 @@ const SearchPage = () => {
                 supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url').or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tagline.ilike.%${searchQuery}%`).limit(10)
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tagline.ilike.%${searchQuery}%`).limit(10)
             ];
 
             const results = await Promise.allSettled(promises as any[]);
@@ -260,7 +261,7 @@ const SearchPage = () => {
             const announcements = (announcementsData || []).map((a: any) => ({ id: a.id, title: a.title, content: a.content, type: 'announcement' as const }));
             const vendors = (vendorsData || []).map((v: any) => ({ ...v, id: v.id, business_name: v.business_name, logo_url: v.logo_url || undefined, category: v.category || v.specialization, city: v.city || v.location, type: 'vendor' as const }));
             const marketplace = (marketplaceData || []).map((m: any) => ({ ...m, id: m.id, title: m.title, description: m.description, image_url: m.image_url || (m.images?.[0]) || (m.listing_images?.[0]), price_per_day: m.price_per_day, listing_type: m.listing_type as 'equipment' | 'location', type: 'marketplace' as const }));
-            const companies = (companiesData || []).map((c: any) => ({ ...c, id: c.id, name: c.name, description: c.description || c.tagline || '', industry: Array.isArray(c.industry) ? c.industry[0] : c.industry, location: c.headquarters, logo_url: c.logo_url || undefined, type: 'company' as const }));
+            const companies = (companiesData || []).map((c: any) => ({ ...c, id: c.id, name: c.name, description: c.description || c.tagline || '', industry: Array.isArray(c.industry) ? c.industry[0] : c.industry, location: c.headquarters, logo_url: c.logo_url || undefined, image_url: c.cover_image_url || c.image_url, type: 'company' as const }));
 
             setResults([...projects, ...users, ...discussions, ...posts, ...announcements, ...vendors, ...marketplace, ...companies]);
         } catch (error) {
@@ -311,21 +312,23 @@ const SearchPage = () => {
                 <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
             </div>
 
-            <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-40 relative z-10">
-                <PageHeader
-                    title="Discovery"
-                    subtitle="Global content grid synchronization engine. Find production partners, projects, and gear."
-                    Icon={Compass}
-                    onBack={() => push('/feed', { noScroll: true })}
-                    actions={
-                        <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
-                    }
-                />
+            <main className="max-w-7xl mx-auto pt-20 pb-40 relative z-10">
+                <div className="px-4 md:px-8">
+                    <PageHeader
+                        title="Discovery"
+                        subtitle="Global content grid synchronization engine. Find production partners, projects, and gear."
+                        Icon={Compass}
+                        onBack={() => push('/feed', { noScroll: true })}
+                        actions={
+                            <Compass className="text-primary/20 animate-spin-slow hidden md:block" size={48} />
+                        }
+                    />
+                </div>
 
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="relative max-w-2xl mx-auto mt-6 mb-8 group"
+                    className="relative max-w-2xl mx-auto mt-6 mb-8 group px-4 md:px-8"
                 >
                     <div className="absolute -inset-1 bg-gradient-to-r from-primary/10 via-primary/5 to-secondary/10 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
                     <div className="relative">
@@ -336,12 +339,11 @@ const SearchPage = () => {
                             className="pl-14 pr-6 py-6 text-base w-full bg-card/60 backdrop-blur-xl border border-border/50 focus:border-primary/50 rounded-2xl transition-all shadow-xl font-medium tracking-tight placeholder:text-muted-foreground/40 focus:ring-4 focus:ring-primary/5"
                             value={query}
                             onChange={handleSearch}
-                            autoFocus={!query}
                         />
                     </div>
                 </motion.div>
 
-                <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4">
+                <div className="flex gap-3 overflow-x-auto py-4 mb-8 max-w-full mx-auto no-scrollbar justify-start md:justify-center px-4 md:px-8">
                     {availableCategories.map(category => (
                         <button
                             key={category.id}
@@ -358,7 +360,7 @@ const SearchPage = () => {
 
                 <div className="space-y-4">
                     {loading && (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-w-7xl mx-auto">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-w-7xl mx-auto px-4 md:px-8">
                             {[...Array(18)].map((_, i) => (
                                 <div key={i} className={`aspect-[4/5] bg-card/40 border border-border/50 animate-pulse rounded-2xl ${i % 10 === 0 ? 'col-span-2 row-span-2' : ''}`} />
                             ))}
@@ -367,33 +369,36 @@ const SearchPage = () => {
 
                     {!loading && !query && (
                         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center gap-3 mb-10 border-b border-border/20 pb-6">
-                                <Compass className="text-primary" size={28} />
-                                <h2 className="text-2xl font-black uppercase tracking-tight">Synchronized Discovery Feed</h2>
+                            <div className="flex items-center gap-2 md:gap-3 mb-6 md:mb-10 border-b border-border/20 pb-4 md:pb-6 px-4 md:px-8">
+                                <Compass className="text-primary w-5 h-5 md:w-7 md:h-7 shrink-0" />
+                                <h2 className="text-sm sm:text-lg md:text-2xl font-black uppercase tracking-tight">Synchronized Discovery Feed</h2>
                             </div>
-                            <ExploreGrid items={filteredExploreItems} />
+                            <div className="px-0.5 md:px-8">
+                                <ExploreGrid items={filteredExploreItems} />
+                            </div>
                         </div>
                     )}
 
                     {!loading && query.length > 0 && (
                         <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-                            <div className="flex items-center justify-between mb-10 border-b border-border/20 pb-6">
-                                <div className="flex items-center gap-3">
-                                    <Search className="text-primary" size={28} />
-                                    <h2 className="text-2xl font-black uppercase tracking-tight">Matches for "{query}"</h2>
+                            <div className="flex items-center justify-between mb-6 md:mb-10 border-b border-border/20 pb-4 md:pb-6 px-4 md:px-8">
+                                <div className="flex items-center gap-2 md:gap-3">
+                                    <Search className="text-primary w-5 h-5 md:w-7 md:h-7 shrink-0" />
+                                    <h2 className="text-sm sm:text-lg md:text-2xl font-black uppercase tracking-tight">Matches for "{query}"</h2>
                                 </div>
-                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-5 py-2.5 rounded-full border border-border/50 backdrop-blur-md">
-                                    {filteredSearchResults.length} Results Found
+                                <span className="text-[9px] md:text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-3 md:px-5 py-1.5 md:py-2.5 rounded-full border border-border/50 backdrop-blur-md">
+                                    {filteredSearchResults.length} Results
                                 </span>
                             </div>
-                            <ExploreGrid items={filteredSearchResults} />
+                            <div className="px-0.5 md:px-8">
+                                <ExploreGrid items={filteredSearchResults} />
+                            </div>
                         </div>
                     )}
                 </div>
             </main>
         </div>
     );
-
 };
 
 export default SearchPage;

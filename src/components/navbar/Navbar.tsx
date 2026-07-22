@@ -23,8 +23,8 @@ const Navbar = () => {
       <header 
         className="fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden pt-[env(safe-area-inset-top)]"
       >
-        <div className="w-full px-2 sm:px-4 lg:px-8 max-w-7xl mx-auto">
-          <div className="flex items-center justify-between py-2 sm:py-3 gap-2 sm:gap-4">
+        <div className="w-full px-1.5 sm:px-4 lg:px-8 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between py-2 sm:py-3 gap-1 sm:gap-4">
             {/* Logo */}
             <AppLogo size="md" to="/" />
 
@@ -40,16 +40,16 @@ const Navbar = () => {
 
 
                   {/* Group 1: Utility & Account (Search, Chat, Notifs, Profile) */}
-                  <div className="flex items-center gap-1 sm:gap-2 ml-1">
+                  <div className="flex items-center gap-0.5 sm:gap-2">
                     {/* Search - now part of the utility group on all devices */}
                     <Button 
                       variant={isSearchActive ? "default" : "ghost"} 
                       size="icon" 
                       asChild 
-                      className={`transition-all duration-300 ${isSearchActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+                      className={`h-8 w-8 sm:h-9 sm:w-9 lg:h-10 lg:w-10 p-0 transition-all duration-300 ${isSearchActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
                     >
                       <Link to="/search">
-                        <Search className={`h-5 w-5 ${isSearchActive ? "text-primary-foreground" : ""}`} />
+                        <Search className={`h-4 w-4 sm:h-5 sm:w-5 ${isSearchActive ? "text-primary-foreground" : ""}`} />
                       </Link>
                     </Button>
 
@@ -91,12 +91,12 @@ const ChatLink = () => {
       variant={isMessagesActive ? "default" : "ghost"} 
       size="icon" 
       asChild 
-      className={`relative transition-all duration-300 ${isMessagesActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
+      className={`h-8 w-8 sm:h-9 sm:w-9 lg:h-10 lg:w-10 p-0 relative transition-all duration-300 ${isMessagesActive ? "bg-primary text-primary-foreground shadow-md hover:bg-primary/90" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`}
     >
       <Link to="/messages">
-        <MessageSquare className={`h-5 w-5 ${isMessagesActive ? "text-primary-foreground" : ""}`} />
+        <MessageSquare className={`h-4 w-4 sm:h-5 sm:w-5 ${isMessagesActive ? "text-primary-foreground" : ""}`} />
         {unreadCount > 0 && (
-          <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 animate-in zoom-in ${isMessagesActive ? 'border-primary' : 'border-background'}`}>
+          <span className={`absolute -top-1 -right-1 flex h-3.5 w-3.5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-red-500 text-[9px] sm:text-[10px] font-bold text-white border-2 animate-in zoom-in ${isMessagesActive ? 'border-primary' : 'border-background'}`}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
