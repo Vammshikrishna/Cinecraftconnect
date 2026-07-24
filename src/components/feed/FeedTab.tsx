@@ -21,6 +21,8 @@ import { useConnections } from "@/hooks/useConnections";
 import { FirstContentBlock, SecondContentBlock } from "./FeedWidgets";
 import { useAuth } from "@/contexts/AuthContext";
 import { PostSkeleton, AnnouncementSkeleton, ProjectSkeleton } from "@/components/ui/enhanced-skeleton";
+import { FeedSkeleton } from "@/pages/Feed";
+import { AccountSwitcherSheet } from "@/components/profile/AccountSwitcherSheet";
 
 const postSchema = z.object({
   content: z.string().trim().optional(),
@@ -42,6 +44,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   const [mediaItems, setMediaItems] = useState<{ url: string, type: 'image' | 'video' }[]>([]);
   const { toast } = useToast();
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
 
   const handleDismiss = (id: string) => {
     setDismissedIds(prev => {
@@ -252,28 +255,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
   };
 
   if (isLoading && localPosts.length === 0) {
-    return (
-      <div className="flex justify-center gap-6 lg:gap-10 max-w-[1180px] mx-auto pt-2 lg:pt-4 px-4 sm:px-0 w-full animate-in fade-in duration-500">
-        <div className="w-full max-w-[560px] space-y-4">
-          <div className="glass-card p-4 lg:p-5 rounded-xl h-20 animate-pulse bg-muted/50 border border-border/50" />
-          
-          <div className="space-y-4 lg:space-y-5">
-            <PostSkeleton />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <AnnouncementSkeleton />
-               <ProjectSkeleton />
-            </div>
-            <PostSkeleton />
-            <PostSkeleton />
-          </div>
-        </div>
-        
-        <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-20 h-fit">
-          <div className="h-12 bg-muted/50 rounded-lg animate-pulse" />
-          <div className="h-64 bg-muted/50 rounded-lg animate-pulse" />
-        </aside>
-      </div>
-    );
+    return <FeedSkeleton />;
   }
 
   return (
@@ -429,7 +411,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
                     is_verified: !!post.company_pages.is_verified
                   } : undefined}
                   mediaUrl={post.media_urls?.[0] || post.media_url}
-                  mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+                  mediaItems={post.media_items || post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' }))}
+                  location={post.location || (post as any).media_items?.[0]?.location}
+                  comments_disabled={post.comments_disabled || (post as any).media_items?.[0]?.comments_disabled}
+                  hide_likes={post.hide_likes || (post as any).media_items?.[0]?.hide_likes}
+                  tagged_users={post.tagged_users || (post as any).media_items?.[0]?.tagged_users}
                   authorId={post.author_id}
                   onDelete={(postId) => {
                     setLocalPosts(prev => prev.filter(p => p.id !== postId));
@@ -465,7 +451,7 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
               </span>
             </div>
           </div>
-          <Button variant="ghost" size="sm" className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:bg-transparent">Switch</Button>
+          <Button variant="ghost" size="sm" onClick={() => setIsAccountSwitcherOpen(true)} className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:bg-transparent">Switch</Button>
         </div>
 
         {/* Suggestions Section */}
@@ -513,6 +499,11 @@ const FeedTab = ({ postRatings, onRate }: FeedTabProps) => {
           </p>
         </div>
       </aside>
+      
+      <AccountSwitcherSheet
+        isOpen={isAccountSwitcherOpen}
+        onOpenChange={setIsAccountSwitcherOpen}
+      />
     </div>
   );
 };

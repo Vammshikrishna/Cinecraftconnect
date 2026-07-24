@@ -9,7 +9,10 @@ export type MessageTableType = 'direct_messages' | 'room_messages' | 'project_me
  * Hook to handle Instagram-style "Seen" status using IntersectionObserver.
  * Now dynamic to support DMs, Discussion Rooms, and Project Spaces.
  */
-export const useMessageSeen = (tableType: MessageTableType = 'direct_messages') => {
+export const useMessageSeen = (
+    tableType: MessageTableType = 'direct_messages',
+    onSeen?: () => void
+) => {
     const { user } = useAuth();
     const { isInternal } = useAppRole();
     const observerRef = useRef<IntersectionObserver | null>(null);
@@ -41,11 +44,12 @@ export const useMessageSeen = (tableType: MessageTableType = 'direct_messages') 
                 console.error(`[useMessageSeen] Update failed for ${newestId} via ${rpcName}:`, error);
             } else {
                 seenQueue.current.clear();
+                onSeen?.();
             }
         } catch (err) {
             console.error('Error flushing seen queue:', err);
         }
-    }, [user, tableType, isInternal]);
+    }, [user, tableType, isInternal, onSeen]);
 
     // Native debounce implementation
     const debouncedFlush = useCallback(() => {

@@ -385,48 +385,48 @@ const Messages = () => {
                 className={cn(
                   "w-full flex items-center gap-4 p-4 rounded-[2rem] transition-all duration-300 relative border border-transparent mb-1 cursor-pointer group",
                   activePartnerId === convo.partner.id 
-                    ? "bg-primary/10 border-primary/10 shadow-sm" 
-                    : "hover:bg-muted/40 hover:border-border/30"
+                    ? "bg-chat-active-conv-bg border-transparent shadow-sm dark:bg-muted" 
+                    : "hover:bg-chat-hover-conv-bg hover:border-transparent dark:hover:bg-muted/40"
                 )}
               >
                 <div className="relative shrink-0">
-                  <Avatar className="h-14 w-14 border border-border/50">
+                  <Avatar className="h-14 w-14 border border-chat-border">
                     <AvatarImage src={convo.partner.avatar_url} />
-                    <AvatarFallback>{convo.partner.full_name?.[0]}</AvatarFallback>
+                    <AvatarFallback className="bg-chat-search-bg text-chat-text-primary">{convo.partner.full_name?.[0]}</AvatarFallback>
                   </Avatar>
                   {onlineUserIds.includes(convo.partner.id) && (
-                    <div className="absolute bottom-0 right-0 h-4 w-4 bg-green-500 border-4 border-background rounded-full shadow-lg animate-pulse" />
+                    <div className="absolute bottom-0 right-0 h-4 w-4 bg-chat-status-online border-4 border-chat-surface rounded-full shadow-lg animate-pulse dark:border-background" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0 text-left">
                   <div className="flex items-center justify-between mb-0.5">
                     <p className={cn(
                       "font-bold text-base truncate pr-2",
-                      activePartnerId === convo.partner.id ? "text-primary" : "text-foreground"
+                      activePartnerId === convo.partner.id ? "text-chat-brand-action dark:text-primary" : "text-chat-text-primary dark:text-foreground"
                     )}>
                       {convo.partner.full_name}
                     </p>
                     <div className="flex items-center gap-2 shrink-0">
                       {convo.partner.id !== activePartnerId && convo.unread_count > 0 && (
-                        <Badge className="bg-primary text-primary-foreground h-5 min-w-5 px-1 flex items-center justify-center font-black text-[10px] rounded-full">
+                        <Badge className="bg-chat-brand-action text-white h-5 min-w-5 px-1 flex items-center justify-center font-black text-[10px] rounded-full">
                           {convo.unread_count}
                         </Badge>
                       )}
                       <button
                         onClick={(e) => handleDeleteConversation(e, convo.partner.id)}
-                        className="p-1.5 rounded-full text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        className="p-1.5 rounded-full text-chat-icon-secondary hover:text-chat-status-busy hover:bg-chat-hover-button transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                         title="Delete Conversation"
                       >
                         <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-1 opacity-70">
+                  <p className="text-xs text-chat-text-muted dark:text-muted-foreground line-clamp-1 opacity-70">
                     {getDisplayMessage(convo.last_message.content)}
                   </p>
                 </div>
                 {activePartnerId === convo.partner.id && (
-                  <div className="absolute left-0 top-1/4 bottom-1/4 w-1.5 bg-primary rounded-r-full" />
+                  <div className="absolute left-0 top-1/4 bottom-1/4 w-1.5 bg-chat-active-conv-accent rounded-r-full" />
                 )}
               </div>
             ))}

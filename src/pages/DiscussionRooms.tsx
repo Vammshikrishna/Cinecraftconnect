@@ -259,10 +259,10 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         return;
       }
 
-      // NOTE: Do NOT cache-skip for private rooms — always re-verify against the database
-      // so that revoked access grants are immediately enforced on re-entry.
-
-      setCheckingAccess(true);
+      // Only show full loading spinner if we haven't already verified this room ID
+      if (verifiedRoomIdRef.current !== activeRoom.id) {
+        setCheckingAccess(true);
+      }
       try {
         // Internal staff ALWAYS require an active grant for private/secret rooms.
         // Membership is intentionally ignored — governance accounts should never
@@ -304,7 +304,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     };
 
     verifyRoomAccess();
-  }, [user, activeRoom, isInternal, roleLoading]);
+  }, [user, activeRoom?.id, isInternal, roleLoading]);
 
   useEffect(() => {
     const handleAccessRevoked = (e: any) => {

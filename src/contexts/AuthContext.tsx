@@ -26,6 +26,7 @@ import { startupOrchestrator, BootStage } from '@/lib/startup/startupOrchestrato
 import { mainThreadScheduler } from '@/lib/performance/mainThreadScheduler';
 
 import { secureStorageEngine } from '@/lib/auth/secureStorage';
+import { queryClient } from '@/lib/queryClient';
 
 export interface SavedAccount {
   userId: string;
@@ -729,7 +730,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
-    const { error } = await supabase.auth.setSession({
+    // Reset internal state flags & managers so new session initializes fresh
+    queryClient.clear();
+    initializedRef.current = false;
+    isInitializingRef.current = false;
+    sessionManager.destroy();
+    syncManager.destroy();
+    mutationQueue.clear();
+    realtimeManager.destroy();
+
+    const { data: sessionData, error } = await supabase.auth.setSession({
       access_token: targetAccount.session.access_token,
       refresh_token: targetAccount.session.refresh_token,
     });
@@ -749,7 +759,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
-    window.location.reload();
+    if (sessionData?.session) {
+      setSession(sessionData.session);
+      setUser(sessionData.session.user);
+      lastUserIdRef.current = sessionData.session.user.id;
+    }
+
+    // Trigger auth state machine transition and login broadcasts
+    transitionTo('AUTHENTICATED', 'switchAccount');
+    broadcastAuthEvent({ type: 'LOGIN_DETECTED', userId: targetAccount.userId, generation: getCurrentGeneration() });
+    eventBus.publish('AUTH_LOGIN', { userId: targetAccount.userId, generation: getCurrentGeneration() }, 'CRITICAL');
   };
 
   const addAccount = async () => {

@@ -28,6 +28,7 @@ import { Capacitor } from '@capacitor/core';
 import { E2EEBackupProvider } from "@/contexts/E2EEBackupContext";
 import { E2EEKeyBackupModal } from "@/components/security/E2EEKeyBackupModal";
 import SplashScreen from "@/components/common/SplashScreen";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 
 
@@ -116,9 +117,11 @@ const LandingRoute = () => {
 // Clean navigation wrapper that selects and hides navbars based on auth state and current route
 const NavigationWrapper = ({ isLoading, user, profile }: { isLoading: boolean; user: any; profile: any }) => {
   const location = useLocation();
+  const isMobile = useIsMobile();
   const isAuthPage = location.pathname === '/auth' || location.pathname === '/register';
+  const isMobileCreatePage = isMobile && location.pathname === '/create';
   
-  if (isLoading || isAuthPage) {
+  if (isLoading || isAuthPage || isMobileCreatePage) {
     return null;
   }
   

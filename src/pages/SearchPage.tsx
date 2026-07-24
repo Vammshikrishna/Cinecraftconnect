@@ -206,36 +206,37 @@ const SearchPage = () => {
         }
         setLoading(true);
         try {
+            const safeQuery = searchQuery.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
             const { data: skillMatches } = await (supabase
               .from('user_skills' as any)
               .select('user_id')
-              .ilike('skill_name', `%${searchQuery}%`) as any);
+              .ilike('skill_name', `%${safeQuery}%`) as any);
             
             const matchingIds = skillMatches ? skillMatches.map((m: any) => m.user_id) : [];
-            let profilesFilter = `username.ilike.%${searchQuery}%,full_name.ilike.%${searchQuery}%`;
+            let profilesFilter = `username.ilike.%${safeQuery}%,full_name.ilike.%${safeQuery}%`;
             if (matchingIds.length > 0) {
               profilesFilter += `,id.in.(${matchingIds.join(',')})`;
             }
 
             const promises = [
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('projects').select('id, title, description, status, location, genre, image_url').or(`title.ilike.%${safeQuery}%,description.ilike.%${safeQuery}%,location.ilike.%${safeQuery}%`).limit(10),
                 supabase.from('profiles').select('id, username, full_name, avatar_url, is_verified, craft, bio').or(profilesFilter).limit(10),
-                supabase.from('discussion_rooms').select('id, title, description').or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`).limit(10),
+                supabase.from('discussion_rooms').select('id, title, description').or(`title.ilike.%${safeQuery}%,description.ilike.%${safeQuery}%`).limit(10),
                 (() => {
                     let q = supabase
                         .from('posts')
                         .select('id, content, media_url, media_type, like_count, comment_count, author:profiles(username, full_name, is_verified)');
                     
                     if (searchQuery.startsWith('#')) {
-                        const cleanTag = searchQuery.substring(1).toLowerCase();
-                        return q.or(`tags.cs.{${cleanTag}},content.ilike.%${searchQuery}%`).limit(24);
+                        const cleanTag = searchQuery.substring(1).toLowerCase().replace(/,/g, '');
+                        return q.or(`tags.cs.{${cleanTag}},content.ilike.%${safeQuery}%`).limit(24);
                     }
                     return q.ilike('content', `%${searchQuery}%`).limit(24);
                 })(),
-                supabase.from('announcements').select('id, title, content').or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`).limit(10),
+                supabase.from('announcements').select('id, title, content').or(`title.ilike.%${safeQuery}%,content.ilike.%${safeQuery}%`).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_vendors', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, verified_only: false }).limit(10),
                 isFan ? Promise.resolve({ data: null, error: null }) : supabase.rpc('search_marketplace_listings', { search_query: searchQuery, filter_category: undefined, filter_location: undefined, min_price: undefined, max_price: undefined }).limit(10),
-                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tagline.ilike.%${searchQuery}%`).limit(10)
+                isFan ? Promise.resolve({ data: null, error: null }) : supabase.from('company_pages').select('id, name, description, tagline, industry, headquarters, logo_url, cover_image_url').or(`name.ilike.%${safeQuery}%,description.ilike.%${safeQuery}%,tagline.ilike.%${safeQuery}%`).limit(10)
             ];
 
             const results = await Promise.allSettled(promises as any[]);

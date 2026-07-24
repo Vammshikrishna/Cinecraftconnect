@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus } from 'lucide-react';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAccountType } from '@/hooks/useAccountType';
 import { BackButton } from '@/components/common/BackButton';
@@ -32,6 +32,31 @@ const AccountSettings = () => {
     const [isSigningOut, setIsSigningOut] = useState(false);
     const { accountType } = useAccountType();
     const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
+    const [switchingAccId, setSwitchingAccId] = useState<string | null>(null);
+
+    const handleSwitchSavedAccount = async (targetUserId: string, username: string) => {
+        if (switchingAccId) return;
+        try {
+            setSwitchingAccId(targetUserId);
+            toast({
+                title: "Switching account",
+                description: `Switching to @${username}...`,
+            });
+            await switchAccount(targetUserId);
+            toast({
+                title: "Account Switched",
+                description: `Now logged in as @${username}`,
+            });
+        } catch (e: any) {
+            toast({
+                title: "Switch Failed",
+                description: "Failed to switch account: " + (e?.message || 'Unknown error'),
+                variant: "destructive",
+            });
+        } finally {
+            setSwitchingAccId(null);
+        }
+    };
 
     // Verification state
     const [verificationStatus, setVerificationStatus] = useState<'none' | 'pending' | 'verified' | 'rejected'>('none');
@@ -478,14 +503,20 @@ const AccountSettings = () => {
                                                                 variant="outline"
                                                                 size="sm"
                                                                 className="h-8 rounded-lg font-medium text-xs"
-                                                                onClick={() => switchAccount(acc.userId)}
+                                                                disabled={switchingAccId !== null}
+                                                                onClick={() => handleSwitchSavedAccount(acc.userId, acc.username)}
                                                             >
-                                                                Switch
+                                                                {switchingAccId === acc.userId ? (
+                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                ) : (
+                                                                    'Switch'
+                                                                )}
                                                             </Button>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                                                disabled={switchingAccId !== null}
                                                                 onClick={() => removeAccount(acc.userId)}
                                                             >
                                                                 <Trash2 className="h-4 w-4" />

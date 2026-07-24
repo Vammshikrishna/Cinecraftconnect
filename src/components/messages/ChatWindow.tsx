@@ -135,17 +135,27 @@ export const ChatWindow = ({ threadId, onBack }: ChatWindowProps) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map(msg => {
+        {messages.map((msg, idx) => {
           const isSender = msg.user_id === user?.id;
+          const nextMsg = idx < messages.length - 1 ? messages[idx + 1] : null;
+          const isSameSenderAsNext = nextMsg && nextMsg.user_id === msg.user_id;
+          const showAvatar = !isSameSenderAsNext;
+
           return (
-          <div key={msg.id} className={`flex items-start gap-3 group ${isSender ? 'flex-row-reverse' : ''}`}>
+          <div key={msg.id} className={`flex items-start gap-3 group ${isSameSenderAsNext ? 'mb-1' : 'mb-3'} ${isSender ? 'flex-row-reverse' : ''}`}>
             {!isSender && (
               <div className="relative flex-shrink-0">
-                <MessageAvatar 
-                  src={msg.profiles?.avatar_url} 
-                  name={msg.profiles?.full_name || 'User'} 
-                />
-                {onlineUserIds.includes(msg.user_id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
+                {showAvatar ? (
+                  <>
+                    <MessageAvatar 
+                      src={msg.profiles?.avatar_url} 
+                      name={msg.profiles?.full_name || 'User'} 
+                    />
+                    {onlineUserIds.includes(msg.user_id) && <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />}
+                  </>
+                ) : (
+                  <div className="h-8 w-8" />
+                )}
               </div>
             )}
             <div className={`flex flex-col relative max-w-[70%] ${isSender ? 'items-end' : 'items-start'}`}>

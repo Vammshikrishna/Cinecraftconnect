@@ -135,8 +135,7 @@ export const useHomeFeed = () => {
             };
         },
         staleTime: 1000 * 60 * 5,
-        // Stagger requests on slow networks: don't fetch heavy static data until posts are loaded
-        enabled: !!user?.id && !!infinitePostsQuery.data,
+        enabled: !!user?.id,
     });
 
     // 3. User Likes Query
@@ -151,7 +150,7 @@ export const useHomeFeed = () => {
             if (error) throw error;
             return (data || []).map((l: any) => l.post_id);
         },
-        enabled: !!user?.id && !!infinitePostsQuery.data,
+        enabled: !!user?.id,
     });
 
     // 4. TMDB Ratings
@@ -159,7 +158,7 @@ export const useHomeFeed = () => {
         queryKey: ['home-feed-ratings'],
         queryFn: fetchLatestRatings,
         staleTime: 1000 * 60 * 60,
-        enabled: !!infinitePostsQuery.data,
+        enabled: true,
     });
 
     // Real-time subscriptions
@@ -251,11 +250,17 @@ export const useHomeFeed = () => {
         };
     }, [staticDataQuery.data, posts, ratingsQuery.data, likesQuery.data, infinitePostsQuery, newPostsAvailable]);
 
+    const hasCachedPosts = posts.length > 0;
+    const isLoadingInitial = infinitePostsQuery.isLoading && !hasCachedPosts;
+    const isFetching = staticDataQuery.isFetching || infinitePostsQuery.isFetching;
+
     return {
         data: combinedData,
-        isLoading: infinitePostsQuery.isLoading && !infinitePostsQuery.data,
+        isLoading: isLoadingInitial,
+        hasCachedPosts,
+        isRefreshing: isFetching && !isLoadingInitial && hasCachedPosts,
         isStaticLoading: staticDataQuery.isLoading && !staticDataQuery.data,
-        isFetching: staticDataQuery.isFetching || infinitePostsQuery.isFetching,
+        isFetching,
         isError: staticDataQuery.isError || infinitePostsQuery.isError,
         refetch: () => {
             staticDataQuery.refetch();

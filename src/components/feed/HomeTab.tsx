@@ -28,6 +28,7 @@ import DiscussionRoomIcon from '@/components/icons/DiscussionRoomIcon';
 import VendorIcon from '@/components/icons/VendorIcon';
 import UserCard from '../network/UserCard';
 import VerificationBadge from '../common/VerificationBadge';
+import { AccountSwitcherSheet } from '@/components/profile/AccountSwitcherSheet';
 
 // Services
 import { getSafeImageUrl } from '@/services/tmdb';
@@ -42,6 +43,8 @@ import { useHomeFeed, HomeFeedData } from '@/hooks/useHomeFeed';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMyPages, useCompanyPages, useToggleFollowPage, useFollowedPageIds } from '@/hooks/useCompanyPages';
 import { useKeyboard } from '@/contexts/KeyboardContext';
+
+import { FeedSkeleton } from '@/pages/Feed';
 
 const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { user, profile } = useAuth();
@@ -73,6 +76,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
     const { data: followedPageIds } = useFollowedPageIds();
     const toggleFollowPage = useToggleFollowPage();
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+    const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
 
     useEffect(() => {
         const observer = new IntersectionObserver(
@@ -81,7 +85,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                     data.fetchNextPage?.();
                 }
             },
-            { threshold: 1.0 }
+            { rootMargin: '200px', threshold: 0.1 }
         );
 
         if (observerTarget.current) {
@@ -149,15 +153,9 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
         return name.split(' ').map((word: string) => word[0]).join('').toUpperCase().slice(0, 2);
     };
 
-    // Show skeletons ONLY if we have no data at all
+    // Show skeletons ONLY if we have no data at all on initial load
     if (loading && feedData.posts.length === 0) {
-        return (
-            <div className="space-y-8 pt-4">
-                <div className="px-4"><PostSkeleton /></div>
-                <div className="px-4"><PostSkeleton /></div>
-                <div className="px-4"><PostSkeleton /></div>
-            </div>
-        );
+        return <FeedSkeleton />;
     }
 
     const featureSections = [
@@ -447,7 +445,11 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                                         createdAt={post.created_at}
                                         content={post.content}
                                         mediaUrl={post.media_urls?.[0] || post.media_url}
-                                        mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+                                        mediaItems={post.media_items || post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' }))}
+                                        location={post.location || (post as any).media_items?.[0]?.location}
+                                        comments_disabled={post.comments_disabled || (post as any).media_items?.[0]?.comments_disabled}
+                                        hide_likes={post.hide_likes || (post as any).media_items?.[0]?.hide_likes}
+                                        tagged_users={post.tagged_users || (post as any).media_items?.[0]?.tagged_users}
                                         hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
                                         hasVideo={post.media_type === 'video'}
                                         like_count={post.like_count || 0}
@@ -481,15 +483,14 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                     })}
 
                     {/* Infinite Scroll Sentinel */}
-                    <div ref={observerTarget} className="h-10 w-full flex items-center justify-center">
+                    <div ref={observerTarget} className="w-full flex flex-col items-center justify-center pt-2 pb-6">
                         {feedData.isFetchingNextPage && (
-                            <div className="flex flex-col items-center gap-2 py-4">
-                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Loading more posts...</span>
+                            <div className="w-full space-y-4 animate-in fade-in duration-300">
+                                <PostSkeleton />
                             </div>
                         )}
                         {!feedData.hasNextPage && feedData.posts.length > 0 && (
-                            <div className="text-center py-20 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="text-center py-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
                                 <div className="h-[1.5px] w-12 bg-primary/40 mx-auto mb-6 rounded-full" />
                                 <p className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-[0.4em] select-none">
                                     YOU'VE REACHED THE END OF THE SET
@@ -532,7 +533,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                         </div>
                     </div>
                     <button 
-                        onClick={() => push('/settings/account')}
+                        onClick={() => setIsAccountSwitcherOpen(true)}
                         className="text-primary text-[9px] font-black uppercase tracking-widest font-mono hover:opacity-80"
                     >
                         Switch
@@ -716,6 +717,10 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
 
             </aside>
         </div>
+        <AccountSwitcherSheet
+            isOpen={isAccountSwitcherOpen}
+            onOpenChange={setIsAccountSwitcherOpen}
+        />
     </div>
     );
 };
