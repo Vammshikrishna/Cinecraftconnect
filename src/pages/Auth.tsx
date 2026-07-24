@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
-import { AlertCircle, WifiOff, ArrowRight } from 'lucide-react';
+import { AlertCircle, WifiOff, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import AppLogo from '@/components/common/AppLogo';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -38,26 +38,46 @@ const Slug = ({ text }: { text: string }) => (
 /* ─── Input field ───────────────────────────── */
 const Field = ({
   type, placeholder, value, onChange, disabled, error,
-}: { type: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean; error?: string }) => (
-  <div style={{ marginBottom: 4 }}>
-    <input
-      type={type}
-      placeholder={placeholder}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      disabled={disabled}
-      style={{
-        fontFamily: MONO, width: '100%', background: 'transparent', border: 'none',
-        borderBottom: `1px solid ${error ? '#ef4444' : 'rgba(13,13,13,0.18)'}`,
-        padding: '12px 0', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase',
-        color: INK, outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box',
-      }}
-      onFocus={e => { if (!error) e.currentTarget.style.borderBottomColor = ORANGE; }}
-      onBlur={e => { if (!error) e.currentTarget.style.borderBottomColor = 'rgba(13,13,13,0.18)'; }}
-    />
-    {error && <p style={{ fontFamily: MONO, fontSize: 10, color: '#ef4444', marginTop: 6, fontWeight: 700, letterSpacing: '0.1em' }}>{error}</p>}
-  </div>
-);
+}: { type: string; placeholder: string; value: string; onChange: (v: string) => void; disabled?: boolean; error?: string }) => {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = type === 'password';
+  const inputType = isPassword ? (showPassword ? 'text' : 'password') : type;
+
+  return (
+    <div style={{ marginBottom: 4, position: 'relative' }}>
+      <input
+        type={inputType}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled}
+        style={{
+          fontFamily: MONO, width: '100%', background: 'transparent', border: 'none',
+          borderBottom: `1px solid ${error ? '#ef4444' : 'rgba(13,13,13,0.18)'}`,
+          padding: '12px 0', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase',
+          color: INK, outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box',
+          paddingRight: isPassword ? '40px' : '0'
+        }}
+        onFocus={e => { if (!error) e.currentTarget.style.borderBottomColor = ORANGE; }}
+        onBlur={e => { if (!error) e.currentTarget.style.borderBottomColor = 'rgba(13,13,13,0.18)'; }}
+      />
+      {isPassword && (
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          style={{
+            position: 'absolute', right: 0, top: '10px',
+            background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(13,13,13,0.4)',
+            padding: '4px'
+          }}
+        >
+          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      )}
+      {error && <p style={{ fontFamily: MONO, fontSize: 10, color: '#ef4444', marginTop: 6, fontWeight: 700, letterSpacing: '0.1em' }}>{error}</p>}
+    </div>
+  );
+};
 
 /* ─── Google SVG icon ───────────────────────── */
 const GoogleIcon = () => (
@@ -72,8 +92,8 @@ const GoogleIcon = () => (
 
 /* ─── Apple SVG icon ────────────────────────── */
 const AppleIcon = () => (
-  <svg width="17" height="17" viewBox="0 0 814 1000" fill="currentColor">
-    <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-43.1-152.7-123.3C114.1 710.2 68 616 68 514.9c0-200.4 140.4-306.3 278.3-306.3 70.8 0 130.7 45.8 174.4 45.8 42.1 0 108.2-48.2 186.8-48.2 30.1 0 108.2 2.6 165.4 79.8zm-360.4-195.7c32.1-38.1 55.5-91.2 55.5-144.3 0-7.7-.6-15.5-1.9-22.5-52.6 1.9-114.5 34.7-152.7 82.8-28.8 32.1-55.5 85.2-55.5 139.7 0 8.3 1.3 16.6 1.9 19.1 3.2.6 8.4 1.3 13.6 1.3 47.5 0 107.7-32.1 139-76.1z"/>
+  <svg width="18" height="18" viewBox="0 0 384 512" fill="currentColor">
+    <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.1-44.6-35.9-2.8-74.3 22.7-93.1 22.7-18.9 0-50-22.3-80.1-21.7-41.1 .5-79.6 24-100.8 61.2-43.2 76.5-11 189.6 30.6 249.7 20.6 29.5 45.4 62.7 77.2 61.7 30.6-1 41.7-19.6 78.4-19.6 36.6 0 46.7 19.6 78.9 19 33.3-.6 54.4-30.8 74.8-60.6 23.9-35.1 33.7-69.1 34.3-70.9-1-1-66-24.8-66.1-112.5zM263.8 89.2c20.3-24.5 34-58.4 30.3-92.2-28.5 1.1-64.4 19-85.3 43.6-16.7 19.4-32.9 54.1-28.4 87.1 31.9 2.5 63.2-13.9 83.4-38.5z"/>
   </svg>
 );
 

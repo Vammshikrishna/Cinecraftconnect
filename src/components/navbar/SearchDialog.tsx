@@ -50,12 +50,13 @@ const SearchDialog = ({ isOpen, onOpenChange }: SearchDialogProps) => {
     try {
       const results: SearchResult[] = [];
 
+      const safeQuery = query.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
       // Search Users
       if (filter === 'all' || filter === 'user') {
         const { data } = await supabase
           .from('profiles')
           .select('id, full_name, username, craft')
-          .or(`full_name.ilike.%${query}%,username.ilike.%${query}%`)
+          .or(`full_name.ilike.%${safeQuery}%,username.ilike.%${safeQuery}%`)
           .limit(5);
         data?.forEach(p => results.push({ type: 'user', id: p.id, title: p.full_name || p.username || 'User', subtitle: p.craft || `@${p.username}`, icon: User }));
       }

@@ -34,8 +34,11 @@ import {
   Zap,
   Share2,
   CalendarDays,
+  ChevronDown,
+  UserCheck,
 } from 'lucide-react';
 import { UniversalShareSheet } from '@/components/common/UniversalShareSheet';
+import { AccountSwitcherSheet } from '@/components/profile/AccountSwitcherSheet';
 import VerificationBadge from '@/components/common/VerificationBadge';
 
 import { useAccountType } from '@/hooks/useAccountType';
@@ -55,6 +58,7 @@ const ProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [isAccountSwitcherOpen, setIsAccountSwitcherOpen] = useState(false);
 
   const [postCount, setPostCount] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
@@ -314,9 +318,15 @@ const ProfilePage = () => {
                         )}
                       </span>
                     </h1>
-                    <p className="text-primary font-serif font-bold text-xs uppercase tracking-[0.15em] mt-0.5">
-                      @{profile.username}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsAccountSwitcherOpen(true)}
+                      className="group flex items-center gap-1.5 text-primary font-serif font-bold text-xs uppercase tracking-[0.15em] mt-0.5 hover:opacity-85 transition-all cursor-pointer focus:outline-none"
+                      title="Switch Account"
+                    >
+                      <span>@{profile.username}</span>
+                      <ChevronDown size={14} className="text-primary transition-transform group-hover:translate-y-0.5" />
+                    </button>
                   </div>
 
                   {profile.bio && (
@@ -410,6 +420,14 @@ const ProfilePage = () => {
                 >
                   <Pencil className="h-3 w-3" />
                   <span className="font-black uppercase tracking-widest font-mono text-[9px]">Edit</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="h-9 w-9 p-0 rounded-lg border-border/50 hover:bg-muted/50 transition-all text-primary"
+                  onClick={() => setIsAccountSwitcherOpen(true)}
+                  title="Switch Accounts"
+                >
+                  <UserCheck className="h-3.5 w-3.5" />
                 </Button>
                 <Button 
                   variant="outline" 
@@ -516,6 +534,10 @@ const ProfilePage = () => {
           initialTab={activeNetworkTab}
         />
       )}
+      <AccountSwitcherSheet
+        isOpen={isAccountSwitcherOpen}
+        onOpenChange={setIsAccountSwitcherOpen}
+      />
     </div>
   );
 };

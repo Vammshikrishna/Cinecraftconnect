@@ -13,7 +13,7 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   ArrowLeft, Settings, Loader2, ChevronDown,
-  MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan, Smile, Flag, Info
+  MessageSquare, Radio, X, MoreVertical, Reply, Trash2, ShieldBan, Smile, Flag, Info, CheckCheck, Copy, Share2, Check, Star
 } from 'lucide-react';
 import {
   Dialog,
@@ -23,6 +23,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useKeyboard } from '@/contexts/KeyboardContext';
+import { ForwardMessageDialog } from '@/components/chat/ForwardMessageDialog';
+import { StarredMessagesDialog } from '@/components/chat/StarredMessagesDialog';
 
 import { RoomSettings } from './RoomSettings';
 import { useGlobalCall } from '@/contexts/CallContext';
@@ -165,6 +167,59 @@ export const DiscussionChatInterface = ({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [infoMessage, setInfoMessage] = useState<Message | null>(null);
+  
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`starred_msgs_disc_${roomId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [showStarredDialog, setShowStarredDialog] = useState(false);
+  const [reportingMessage, setReportingMessage] = useState<{ id: string, content: string } | null>(null);
+
+  const handleToggleStarMessages = (targetIds?: string[]) => {
+    const idsToToggle = targetIds || selectedMessageIds;
+    if (idsToToggle.length === 0) return;
+
+    const allStarred = idsToToggle.every(id => starredMessageIds.has(id));
+    setStarredMessageIds(prev => {
+      const newSet = new Set(prev);
+      if (allStarred) {
+        idsToToggle.forEach(id => newSet.delete(id));
+      } else {
+        idsToToggle.forEach(id => newSet.add(id));
+      }
+      
+      try {
+        localStorage.setItem(`starred_msgs_disc_${roomId}`, JSON.stringify(Array.from(newSet)));
+      } catch (e) {
+        console.error('Failed to save starred messages', e);
+      }
+      return newSet;
+    });
+
+    if (targetIds) return; // If called from single message, don't clear selection
+    setSelectedMessageIds([]);
+    toast({
+      title: allStarred ? "Messages Unstarred" : "Messages Starred",
+      description: `${idsToToggle.length} message(s) have been ${allStarred ? 'removed from' : 'added to'} your starred messages.`
+    });
+  };
+
+  const toggleMessageSelection = (messageId: string) => {
+    setSelectedMessageIds(prev => {
+      if (prev.includes(messageId)) {
+        return prev.filter(id => id !== messageId);
+      } else {
+        return [...prev, messageId];
+      }
+    });
+  };
+
   const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
   const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState<number>(0);
@@ -279,7 +334,17 @@ export const DiscussionChatInterface = ({
 
 
 
-  const { observeMessage } = useMessageSeen('room_messages');
+  const handleBroadcastRead = useCallback(() => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'read_update',
+        payload: { userId: user?.id }
+      }).catch(console.error);
+    }
+  }, [user?.id]);
+
+  const { observeMessage } = useMessageSeen('room_messages', handleBroadcastRead);
   const [readStatuses, setReadStatuses] = useState<any[]>([]);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -643,8 +708,9 @@ export const DiscussionChatInterface = ({
   useEffect(() => {
     if (user && roomId && messages.length > 0) {
       markAsRead('discussion', roomId);
+      handleBroadcastRead();
     }
-  }, [roomId, messages.length, markAsRead, user]);
+  }, [roomId, messages.length, markAsRead, user, handleBroadcastRead]);
 
   const isAtBottomRef = useRef(isAtBottom);
   useEffect(() => {
@@ -832,6 +898,9 @@ export const DiscussionChatInterface = ({
       .on('broadcast', { event: 'reaction_update' }, (payload) => {
         handleReactionChange(payload.payload);
       })
+      .on('broadcast', { event: 'read_update' }, () => {
+        fetchReadStatusesRef.current();
+      })
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
@@ -861,16 +930,18 @@ export const DiscussionChatInterface = ({
         if (statusMsg && statusMsg.room_id === roomId) {
           fetchReadStatusesRef.current();
         }
-      })
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('Successfully subscribed to discussion room chat:', roomId);
-          channelRef.current = channel;
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('Error subscribing to discussion room chat:', roomId);
-          fetchMessagesRef.current(false);
-        }
       });
+
+    channelRef.current = channel;
+
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Successfully subscribed to discussion room chat:', roomId);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error('Error subscribing to discussion room chat:', roomId);
+        fetchMessagesRef.current(false);
+      }
+    });
 
     const handleWindowMessage = (e: any) => {
       const newMsg = e.detail;
@@ -1080,7 +1151,7 @@ export const DiscussionChatInterface = ({
   const renderMessageContent = (message: Message) => {
     const { content, media_url, media_type } = message;
     return (
-      <div className="space-y-2">
+      <>
         {media_url && (
           <div className={cn(
             "mb-1 rounded-lg overflow-hidden",
@@ -1205,9 +1276,9 @@ export const DiscussionChatInterface = ({
             } catch { return <p className="text-sm break-words whitespace-pre-wrap">{content}</p>; }
           })()
         ) : (content && content !== 'Shared an image' && content !== 'Shared a video' && content !== 'Shared a file') ? (
-          <p className="text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</p>
+          <span className="text-[13px] sm:text-sm font-medium leading-relaxed break-words whitespace-pre-wrap">{content}</span>
         ) : null}
-      </div>
+      </>
     );
   };
 
@@ -1398,11 +1469,30 @@ export const DiscussionChatInterface = ({
         )}
 
         {/* CHAT AREA */}
-        <div className={`flex flex-col flex-1 min-w-0 bg-background ${(!isDesktop && isInCall && mobileTab === 'discussion' && !isCallMinimized) ? 'hidden' : 'flex'}`}>
+        <div className={`flex flex-col flex-1 min-w-0 bg-background ${(!isDesktop && isInCall && mobileTab === 'discussion' && !isCallMinimized) ? 'hidden' : 'flex'} relative`}>
+          {/* Selection Toolbar */}
+          {selectedMessageIds.length > 0 && (
+            <div className="absolute top-0 left-0 right-0 z-50 bg-primary text-primary-foreground p-2 sm:p-3 flex items-center justify-between shadow-lg animate-in slide-in-from-top-full duration-200">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <Button variant="ghost" size="icon" onClick={() => setSelectedMessageIds([])} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full">
+                  <X className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+                <span className="font-semibold text-sm sm:text-base">{selectedMessageIds.length}</span>
+              </div>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <Button variant="ghost" size="icon" onClick={() => handleToggleStarMessages()} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Star Messages">
+                  <Star className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setShowForwardDialog(true)} className="h-8 w-8 text-primary-foreground hover:bg-primary-foreground/20 rounded-full" title="Forward">
+                  <Share2 className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+              </div>
+            </div>
+          )}
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 custom-scrollbar"
+            className="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
           >
             {loadingMore && hasMore && (
               <div className="flex justify-center py-2">
@@ -1437,6 +1527,13 @@ export const DiscussionChatInterface = ({
                   const messageDate = new Date(message.created_at);
                   const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
                   const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+                  const nextMessage = idx < visibleMessages.length - 1 ? visibleMessages[idx + 1] : null;
+                  const isNextDateSeparator = nextMessage ? !isSameDay(new Date(nextMessage.created_at), messageDate) : false;
+                  const isSameSenderAsNext = !!(nextMessage && !isNextDateSeparator && nextMessage.user_id === message.user_id);
+                  const isSameSenderAsPrev = !!(prevMessage && !showDateSeparator && prevMessage.user_id === message.user_id);
+
+                  const showAvatar = !isSameSenderAsNext;
+                  const showSenderName = !isSender && !isSameSenderAsPrev && !message.is_deleted;
 
                   const currentReadBy = readStatuses.filter(rs => {
                     if (rs.user_id === user?.id) return false;
@@ -1476,19 +1573,24 @@ export const DiscussionChatInterface = ({
                         ref={observeMessage}
                         data-message-id={message.id}
                         className={cn(
-                          "flex gap-3 my-2 group animate-in fade-in slide-in-from-bottom-2 duration-300",
+                          "flex gap-3 group animate-in fade-in slide-in-from-bottom-2 duration-300",
                           isSender ? 'flex-row-reverse' : 'flex-row',
+                          isSameSenderAsNext ? 'mb-1' : 'mb-3',
                           message.status === 'pending' && isSender && 'opacity-60 saturate-50'
                         )}
                       >
-                        <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
-                          <AvatarImage src={message.profiles?.avatar_url || undefined} />
-                          <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">
-                            {message.profiles?.full_name?.[0] || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
+                        {showAvatar ? (
+                          <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
+                            <AvatarImage src={message.profiles?.avatar_url || undefined} />
+                            <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">
+                              {message.profiles?.full_name?.[0] || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <div className="w-9 h-9 flex-shrink-0" />
+                        )}
                         <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
-                        <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
+                          <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-center gap-1 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
                           {/* Swipe to reply indicator icon behind message */}
                           {swipeMessageId === message.id && swipeOffset > 0 && (
                             <div 
@@ -1512,28 +1614,75 @@ export const DiscussionChatInterface = ({
                                 handleToggleReaction(message.id, '❤️');
                               }
                             }}
+                            onClick={() => {
+                              if (selectedMessageIds.length > 0 && !message.is_deleted) {
+                                toggleMessageSelection(message.id);
+                              }
+                            }}
                             onTouchStart={handleTouchStart(message.id, !!message.is_deleted)}
                             onTouchMove={handleTouchMove(message.id)}
                             onTouchEnd={handleTouchEnd(message)}
                           >
                             <div className={cn(
                               "relative transition-all duration-300",
+                              selectedMessageIds.includes(message.id) && "ring-2 ring-primary ring-offset-2 ring-offset-background scale-[0.98]",
                               message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
                               isShare ? "bg-transparent overflow-hidden rounded-2xl border border-border/10" :
                               (message.media_url && (!message.content || message.content === 'Shared an image' || message.content === 'Shared a video' || message.content === 'Shared a file')) ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
-                              isSender ? "bg-primary text-primary-foreground font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
-                              "bg-muted text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
+                              isSender ? "bg-gradient-to-br from-chat-outgoing-bg-start to-chat-outgoing-bg-end text-chat-outgoing-text font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
+                              "bg-chat-incoming-bg border border-chat-incoming-border text-chat-incoming-text dark:bg-muted dark:border-transparent dark:text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
                             )}>
                               {!isSender && !message.is_deleted && (
-                                <div className="flex items-center gap-1.5 mb-1">
-                                  <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
-                                    {message.profiles?.username || message.profiles?.full_name || 'User'}
-                                  </p>
-                                  {message.profiles?.is_verified && (
-                                      <VerificationBadge size="xs" />
-                                    )}
-                                </div>
-                              )}
+                                showSenderName ? (
+                                  <div className="flex items-center justify-between gap-4 mb-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className={`text-[11px] font-bold ${getUserColor(message.user_id)}`}>
+                                        {message.profiles?.username || message.profiles?.full_name || 'User'}
+                                      </p>
+                                      {message.profiles?.is_verified && (
+                                          <VerificationBadge size="xs" />
+                                        )}
+                                    </div>
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <button 
+                                          className="p-0 text-current opacity-70 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] pointer-events-none sm:pointer-events-auto"
+                                          title="Options"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <span className="hidden sm:group-hover:inline-flex sm:data-[state=open]:inline-flex items-center justify-center">
+                                            <ChevronDown className="h-4 w-4" />
+                                          </span>
+                                        </button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="start" className="w-36 z-50">
+                                      <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                        <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        navigator.clipboard.writeText(message.content || '');
+                                        toast({ title: "Copied to clipboard" });
+                                      }}>
+                                        <Copy className="h-3.5 w-3.5 mr-2" /> Copy
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        toggleMessageSelection(message.id);
+                                        setShowForwardDialog(true);
+                                      }}>
+                                        <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
+                                        <Check className="h-3.5 w-3.5 mr-2" /> Select
+                                      </DropdownMenuItem>
+                                      {(isSender || isAdmin) && (
+                                        <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                          <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
+                                ) : null)}
                               {message.reply_to_id && !message.is_deleted && (() => {
                                 const repliedMsg = messages.find(m => m.id === message.reply_to_id);
                                 if (!repliedMsg) return null;
@@ -1556,31 +1705,117 @@ export const DiscussionChatInterface = ({
                                   <ShieldBan className="h-3.5 w-3.5" />
                                   <span className="text-xs">Message deleted</span>
                                 </div>
-                              ) : renderMessageContent(message)}
-                            </div>
+                              ) : (
+                                <>
+                                  {renderMessageContent(message)}
+                                  {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
+                                  {!message.is_deleted && (
+                                    <span className="inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
+                                      {starredMessageIds.has(message.id) && (
+                                        <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
+                                      )}
+                                      <span>{format(new Date(message.created_at), 'p')}</span>
 
-                            {/* Reactions Pill */}
-                            {message.reactions && message.reactions.length > 0 && (
-                              <div className={cn(
-                                "absolute -bottom-3 z-10 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-sm",
-                                isSender ? "right-2" : "left-2"
-                              )}>
-                                {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
-                                   const count = message.reactions!.filter(r => r.emoji === emoji).length;
-                                   const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
-                                   return (
-                                     <button 
-                                        key={emoji} 
-                                        onClick={() => handleToggleReaction(message.id, emoji)}
-                                        className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors bg-background/50 border border-border/50", hasReacted && "bg-primary/10 text-primary border-primary/20")}
-                                     >
-                                       <span>{emoji}</span>
-                                       {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
-                                     </button>
-                                   );
-                                })}
-                              </div>
-                            )}
+                                      {(isSender || !showSenderName) && (
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <button 
+                                              className="p-0 text-current opacity-70 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] pointer-events-none sm:pointer-events-auto ml-0.5"
+                                              title="Options"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <ChevronDown className="h-3.5 w-3.5" />
+                                            </button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 z-[60]">
+                                            {isSender && (
+                                              <DropdownMenuItem 
+                                                onClick={() => {
+                                                  setInfoMessage(message);
+                                                  setShowInfoDialog(true);
+                                                }}
+                                                className="flex items-center justify-between cursor-pointer"
+                                              >
+                                                <div className="flex items-center">
+                                                  <Info className="h-3.5 w-3.5 mr-2 text-primary" />
+                                                  <span>Info</span>
+                                                </div>
+                                              </DropdownMenuItem>
+                                            )}
+                                            <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                              <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => {
+                                              navigator.clipboard.writeText(message.content || '');
+                                              toast({ title: "Copied to clipboard" });
+                                            }}>
+                                              <Copy className="h-3.5 w-3.5 mr-2" /> Copy
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => {
+                                              toggleMessageSelection(message.id);
+                                              setShowForwardDialog(true);
+                                            }}>
+                                              <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
+                                              <Check className="h-3.5 w-3.5 mr-2" /> Select
+                                            </DropdownMenuItem>
+                                            {(isSender || isAdmin) && (
+                                              <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                                <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                              </DropdownMenuItem>
+                                            )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      )}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+
+                        {/* Reactions Pill */}
+                        {message.reactions && message.reactions.length > 0 && (
+                          <div className={cn(
+                            "absolute -bottom-3.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md",
+                            isSender ? "right-2" : "left-2"
+                          )}>
+                            {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
+                               const count = message.reactions!.filter(r => r.emoji === emoji).length;
+                               const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
+                               return (
+                                 <button 
+                                    key={emoji} 
+                                    onClick={() => handleToggleReaction(message.id, emoji)}
+                                    className={cn(
+                                      "flex items-center gap-0.5 p-0.5 rounded-full leading-none transition-transform active:scale-95",
+                                      hasReacted && "text-primary font-bold"
+                                    )}
+                                 >
+                                   <span className="text-sm leading-none">{emoji}</span>
+                                   {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
+                                 </button>
+                               );
+                            })}
+                          </div>
+                        )}
+
+                      {/* Hover Reaction Button (like DM Chat) */}
+                      {!message.is_deleted && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMobileReactionMessageId(prev => prev === message.id ? null : message.id);
+                          }}
+                          className={cn(
+                            "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all opacity-0 group-hover:opacity-100 shrink-0",
+                            isSender ? "-left-8" : "-right-8",
+                            activeMobileReactionMessageId === message.id && "opacity-100"
+                          )}
+                          title="React"
+                        >
+                          <Smile className="h-4 w-4" />
+                        </button>
+                      )}
 
                             {/* Mobile floating reactions picker */}
                             {activeMobileReactionMessageId === message.id && (
@@ -1616,95 +1851,33 @@ export const DiscussionChatInterface = ({
                                 </button>
                               </div>
                             )}
-
-                            {/* Action Buttons (Absolute) */}
-                            {!message.is_deleted && (
-                              <div 
-                                className={`absolute top-1/2 -translate-y-1/2 ${isSender ? 'right-full mr-3' : 'left-full ml-3'} opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all duration-200 flex items-center gap-0.5 z-10`}
-                                onDoubleClick={(e) => e.stopPropagation()}
-                              >
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 dark:bg-zinc-800/80 hover:bg-muted dark:hover:bg-zinc-700 border border-border/50 text-muted-foreground shadow-sm backdrop-blur-sm">
-                                    <Smile className="h-3.5 w-3.5" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-fit p-1.5 flex items-center gap-1 rounded-full border-border/50 shadow-xl bg-background/95 backdrop-blur-xl">
-                                    {QUICK_REACTIONS.map(emoji => (
-                                      <button 
-                                        key={emoji} 
-                                        onClick={() => handleToggleReaction(message.id, emoji)} 
-                                        className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
-                                      >
-                                        {emoji}
-                                      </button>
-                                    ))}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-background/80 dark:bg-zinc-800/80 hover:bg-muted dark:hover:bg-zinc-700 border border-border/50 text-muted-foreground shadow-sm backdrop-blur-sm">
-                                    <MoreVertical className="h-3.5 w-3.5" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                  <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 rounded-xl">
-                                    {isSender && (
-                                      <DropdownMenuItem onClick={() => {
-                                        setInfoMessage(message);
-                                        setShowInfoDialog(true);
-                                      }}>
-                                        <Info className="h-3.5 w-3.5 mr-2" /> Info
-                                      </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                      <Reply className="h-3.5 w-3.5 mr-2" /> Reply
-                                    </DropdownMenuItem>
-                                    {(isSender || isAdmin) && (
-                                      <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
-                                        <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                                      </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem onClick={() => handleHideMessage(message.id)}>
-                                      <X className="h-3.5 w-3.5 mr-2" /> Hide
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                          </div>
+                          {isSender && (!isSameSenderAsNext || uniqueSeenBy.length > 0) && (
+                              <div className="flex justify-end mt-0.5 mb-1 px-1">
+                                {uniqueSeenBy.length > 0 ? (
+                                  <span 
+                                    className="text-[9px] font-bold text-primary/60 tracking-tight cursor-pointer hover:underline"
+                                    onClick={() => {
+                                      setInfoMessage(message);
+                                      setShowInfoDialog(true);
+                                    }}
+                                  >
+                                    Seen by {uniqueSeenBy.join(', ')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight">
+                                    {message.status === 'pending' ? 'Sending...' : 'Sent'}
+                                  </span>
+                                )}
                               </div>
                             )}
-                          </div>
-
-                          {!message.is_deleted && (
-                            <span className="text-[9px] text-muted-foreground/50 font-bold tabular-nums mb-1">
-                              {formatTimestamp(message.created_at)}
-                            </span>
-                          )}
                         </div>
-
-                        {isSender && (
-                          <div className="flex justify-end mt-1 mb-2">
-                            {uniqueSeenBy.length > 0 ? (
-                              <span 
-                                className="text-[9px] font-bold text-primary/60 tracking-tight cursor-pointer hover:underline"
-                                onClick={() => {
-                                  setInfoMessage(message);
-                                  setShowInfoDialog(true);
-                                }}
-                              >
-                                Seen by {uniqueSeenBy.join(', ')}
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight">
-                                {message.status === 'pending' ? 'Sending...' : 'Sent'}
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
               </>
             )}
             <div ref={messagesEndRef} />
@@ -1825,6 +1998,25 @@ export const DiscussionChatInterface = ({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ForwardMessageDialog
+        isOpen={showForwardDialog}
+        onOpenChange={setShowForwardDialog}
+        messagesToForward={messages.filter(m => selectedMessageIds.includes(m.id))}
+        currentUserId={user?.id}
+        onForwardSuccess={() => {
+          setSelectedMessageIds([]);
+          setShowForwardDialog(false);
+          toast({ title: "Messages forwarded successfully" });
+        }}
+      />
+      <StarredMessagesDialog
+        isOpen={showStarredDialog}
+        onOpenChange={setShowStarredDialog}
+        starredMessages={messages.filter(m => starredMessageIds.has(m.id))}
+        onUnstarMessage={(id) => handleToggleStarMessages([id])}
+        onJumpToMessage={scrollToMessage}
+      />
     </div>
   );
 };

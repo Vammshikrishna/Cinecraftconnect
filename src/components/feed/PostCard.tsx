@@ -1,4 +1,5 @@
-import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Bookmark, Flag, Plus, Pin } from "lucide-react";
+import { Heart, MessageCircle, Play, MoreVertical, Edit, Trash2, Loader2, X, ChevronLeft, ChevronRight, Bookmark, Flag, Plus, Pin, MapPin, User, Tag } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import ReportDialog from "../common/ReportDialog";
 import VerificationBadge from "../common/VerificationBadge";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppNavigation } from "@/contexts/NavigationContext";
 import { useState, useEffect, useRef } from "react";
 import useEmblaCarousel from "embla-carousel-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import CommentSection from "./CommentSection";
 import ShareButton from "../ShareButton";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +21,7 @@ import { useAccountType } from "@/hooks/useAccountType";
 import { useFollows } from "@/hooks/useFollows";
 import { useConnections } from "@/hooks/useConnections";
 import { useFollowedPageIds, useToggleFollowPage } from "@/hooks/useCompanyPages";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { FormattedText } from "@/components/ui/formatted-text";
 import { JobShareCard } from "@/components/chat/JobShareCard";
 import { cn } from "@/lib/utils";
@@ -94,7 +96,144 @@ interface PostProps {
     is_verified?: boolean;
   };
   authorId?: string;
+  location?: string | null;
+  comments_disabled?: boolean;
+  hide_likes?: boolean;
+  tagged_users?: any[];
 }
+
+const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: { 
+  isLiked: boolean; 
+  isLiking: boolean; 
+  handleLike: () => void; 
+  likeCount: number; 
+  hideLikes: boolean; 
+}) => {
+  const prefersReducedMotion = useReducedMotion();
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  // Trigger local animation state on click if it's a new like
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isLiked && !isLiking) {
+      setIsAnimating(true);
+      setTimeout(() => setIsAnimating(false), 800);
+    }
+    handleLike();
+  };
+
+  const particles = Array.from({ length: 6 });
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={isLiking}
+      className={`flex items-center gap-1.5 group/like focus:outline-none transition-colors ${
+        isLiked ? 'text-primary' : 'text-foreground/80 hover:text-primary'
+      }`}
+    >
+      <div className="relative p-2 -m-2 rounded-full group-hover/like:bg-primary/10 transition-colors flex items-center justify-center">
+        {/* Expanding Ring */}
+        <AnimatePresence>
+          {isAnimating && !prefersReducedMotion && (
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0, borderWidth: "10px" }}
+              animate={{ 
+                scale: 1.5, 
+                opacity: 0,
+                borderWidth: "0px"
+              }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className="absolute inset-0 rounded-full border-primary box-border pointer-events-none"
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Particles */}
+        <AnimatePresence>
+          {isAnimating && !prefersReducedMotion && particles.map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ 
+                scale: 0, 
+                x: 0, 
+                y: 0,
+                opacity: 1
+              }}
+              animate={{ 
+                scale: [0, 1, 0],
+                x: Math.cos((i * 60) * (Math.PI / 180)) * 20,
+                y: Math.sin((i * 60) * (Math.PI / 180)) * 20,
+                opacity: [1, 1, 0]
+              }}
+              transition={{ 
+                duration: 0.4, 
+                ease: "easeOut",
+                delay: 0.1 
+              }}
+              className="absolute w-1.5 h-1.5 rounded-full bg-primary pointer-events-none"
+            />
+          ))}
+        </AnimatePresence>
+
+        {/* Heart Icon */}
+        <motion.div
+          animate={
+            prefersReducedMotion 
+              ? { scale: 1 } 
+              : isAnimating
+                ? { 
+                    scale: [1, 1.25, 0.95, 1],
+                    rotate: [0, -6, 3, 0]
+                  }
+                : { scale: 1 }
+          }
+          transition={{ 
+            duration: 0.26, 
+            ease: [0.175, 0.885, 0.32, 1.275]
+          }}
+          whileTap={!prefersReducedMotion ? { scale: 0.85 } : {}}
+          className="relative z-10 flex items-center justify-center"
+        >
+          <Heart 
+            size={24} 
+            className={`transition-colors duration-200 ${isLiked ? 'fill-primary text-primary drop-shadow-sm' : ''}`} 
+          />
+        </motion.div>
+      </div>
+
+      {/* Animated Like Count */}
+      <div className="overflow-hidden h-5 relative flex items-center min-w-[1.5rem]">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {hideLikes ? (
+            <motion.span
+              key="hidden"
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -20, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-[13px] font-semibold absolute"
+            >
+              {isLiked ? 'Liked' : 'Likes'}
+            </motion.span>
+          ) : (
+            <motion.span
+              key={likeCount}
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -20, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-[13px] font-semibold absolute"
+            >
+              {likeCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </div>
+    </button>
+  );
+};
 
 const PostCard = ({
   id,
@@ -116,7 +255,11 @@ const PostCard = ({
   createdAt,
   onDelete,
   pageInfo,
-  authorId
+  authorId,
+  location,
+  comments_disabled,
+  hide_likes,
+  tagged_users
 }: PostProps) => {
 
   const [content, setContent] = useState(initialContent);
@@ -131,7 +274,33 @@ const PostCard = ({
   }, [initialMediaItems]);
 
   const [showComments, setShowComments] = useState(false);
+  const [showTaggedSheet, setShowTaggedSheet] = useState(false);
+  const [taggedFollowStates, setTaggedFollowStates] = useState<Record<string, boolean>>({});
+  // account_type keyed by user id, fetched when sheet opens
+  const [taggedUserAccountTypes, setTaggedUserAccountTypes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!showTaggedSheet || taggedUsersList.length === 0) return;
+    const ids = taggedUsersList.map((u: any) => u.id).filter(Boolean);
+    if (ids.length === 0) return;
+    supabase
+      .from('profiles')
+      .select('id, account_type')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const map: Record<string, string> = {};
+        data.forEach((p: any) => { map[p.id] = p.account_type || 'fan'; });
+        setTaggedUserAccountTypes(map);
+      });
+  }, [showTaggedSheet]);
+  const firstMediaItem: any = (mediaItems && mediaItems[0]) || (initialMediaItems && initialMediaItems[0]) || {};
+  const taggedUsersList: { id: string; username: string; full_name?: string; avatar_url?: string }[] =
+    tagged_users || firstMediaItem?.tagged_users || [];
+  const isCommentsDisabled = comments_disabled || !!firstMediaItem?.comments_disabled;
+  const isHideLikes = hide_likes || !!firstMediaItem?.hide_likes;
   const [isLiking, setIsLiking] = useState(false);
+  const [showFloatingHeart, setShowFloatingHeart] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const { push } = useAppNavigation();
@@ -169,6 +338,7 @@ const PostCard = ({
     }
   };
 
+  const navigate = useNavigate();
   // Edit/Delete State
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -394,6 +564,18 @@ const PostCard = ({
     }
   };
 
+  const handleMediaDoubleTap = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!isLiking) {
+      if (!isLiked) {
+        setShowFloatingHeart(true);
+        setTimeout(() => setShowFloatingHeart(false), 800);
+      }
+      handleLike();
+    }
+  };
+
   const handleComment = () => {
     setShowComments(!showComments);
   };
@@ -497,7 +679,10 @@ const PostCard = ({
     if (items.length === 1) {
       const item = items[0];
       return (
-        <div className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto flex items-center justify-center">
+        <div 
+          className="group/media -mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto flex items-center justify-center cursor-pointer select-none"
+          onDoubleClick={handleMediaDoubleTap}
+        >
           {item.type === 'image' ? (
             <CachedImage
               src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
@@ -516,10 +701,40 @@ const PostCard = ({
               </CachedVideo>
             </div>
           )}
+          
+          {/* Floating Heart for double tap */}
+          <AnimatePresence>
+            {showFloatingHeart && (
+              <motion.div
+                initial={{ scale: 0.5, opacity: 0, rotate: -15 }}
+                animate={{ scale: [0.5, 1.2, 1], opacity: [0, 1, 1], rotate: [-15, 0, 0] }}
+                exit={{ scale: 0.8, opacity: 0, transition: { duration: 0.2 } }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-40"
+              >
+                <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {isAIGenerated && (
             <div className="font-mono absolute top-4 right-4 bg-black/70 backdrop-blur-md border border-white/20 text-white text-[10px] font-bold tracking-widest uppercase px-3 py-1.5 rounded z-10 shadow-lg">
               TYPE // AI GENERATED
             </div>
+          )}
+
+          {/* Person icon - opens Instagram-style bottom sheet */}
+          {taggedUsersList.length > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowTaggedSheet(true);
+              }}
+              className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition-all active:scale-90"
+              title="See tagged people"
+            >
+              <User className="h-4 w-4 text-white" />
+            </button>
           )}
         </div>
       );
@@ -528,7 +743,7 @@ const PostCard = ({
     // Carousel for multiple items
     return (
       <div
-        className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10"
+        className="-mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] bg-black/5 sm:bg-black relative overflow-hidden group/carousel ring-1 ring-white/10 cursor-pointer select-none"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={() => processSwipe(items.length, false)}
@@ -537,6 +752,7 @@ const PostCard = ({
         onMouseUp={() => processSwipe(items.length, false)}
         onMouseLeave={() => { if (touchStart !== null) processSwipe(items.length, false); }}
         onWheel={(e) => handleWheel(e, items.length, false)}
+        onDoubleClick={handleMediaDoubleTap}
       >
         <div
           className="relative flex transition-transform duration-500 ease-out h-auto w-full"
@@ -575,8 +791,23 @@ const PostCard = ({
           ))}
         </div>
 
+        {/* Floating Heart for double tap (carousel) */}
+        <AnimatePresence>
+          {showFloatingHeart && (
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0, rotate: -15 }}
+              animate={{ scale: [0.5, 1.2, 1], opacity: [0, 1, 1], rotate: [-15, 0, 0] }}
+              exit={{ scale: 0.8, opacity: 0, transition: { duration: 0.2 } }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-40"
+            >
+              <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Navigation Buttons */}
-        <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity pointer-events-none">
+        <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-2 opacity-0 group-hover/carousel:opacity-100 transition-opacity pointer-events-none z-20">
           {currentMediaIndex > 0 && (
             <Button
               variant="ghost"
@@ -599,6 +830,20 @@ const PostCard = ({
             </Button>
           )}
         </div>
+
+        {/* Person icon for carousel - opens bottom sheet */}
+        {taggedUsersList.length > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowTaggedSheet(true);
+            }}
+            className="absolute bottom-3 left-5 z-30 p-2.5 rounded-full bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/25 text-white shadow-xl transition-all active:scale-90"
+            title="See tagged people"
+          >
+            <User className="h-4 w-4 text-white" />
+          </button>
+        )}
 
         {/* Dots Indicator */}
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1 rounded-full bg-black/20 backdrop-blur-sm z-10">
@@ -720,6 +965,102 @@ const PostCard = ({
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ── "In this post" sheet — Dialog on desktop, bottom sheet on mobile ── */}
+      {showTaggedSheet && taggedUsersList.length > 0 && (() => {
+        const isDesktop = window.innerWidth >= 768;
+
+        // Shared user rows content
+        const userRows = (
+          <div className="divide-y divide-border/40">
+            {taggedUsersList.map((u: any, idx: number) => {
+              const isActioned = taggedFollowStates[u.id] ?? false;
+              const isMe = user?.id === u.id;
+              // Match the app's follow/connect logic:
+              // Follow = viewer is fan OR tagged user is a fan
+              // Connect = both are professionals (creator/studio)
+              const taggedAccountType = taggedUserAccountTypes[u.id] || 'fan'; // default fan = Follow
+              const isFollowRelationshipForTagged = isFan || taggedAccountType === 'fan';
+              const actionLabel = isFollowRelationshipForTagged ? 'Follow' : 'Connect';
+              const actionedLabel = isFollowRelationshipForTagged ? 'Following' : 'Connected';
+              return (
+                <div key={idx} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors">
+                  <button onClick={() => { setShowTaggedSheet(false); push(`/profile/${u.id || u.username}`); }} className="shrink-0">
+                    <Avatar className="h-10 w-10 ring-2 ring-primary/20">
+                      <AvatarImage src={u.avatar_url || ''} />
+                      <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-primary-foreground text-sm font-bold">
+                        {(u.full_name || u.username || '?').charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                  <button onClick={() => { setShowTaggedSheet(false); push(`/profile/${u.id || u.username}`); }} className="flex-1 text-left min-w-0">
+                    <p className="text-foreground font-semibold text-sm leading-tight truncate">{u.username || u.full_name}</p>
+                    {u.full_name && u.full_name !== u.username && (
+                      <p className="text-muted-foreground text-xs truncate">{u.full_name}</p>
+                    )}
+                  </button>
+                  {!isMe && (
+                    <button
+                      onClick={() => {
+                        setTaggedFollowStates(prev => ({ ...prev, [u.id]: !isActioned }));
+                        if (!isActioned) {
+                          if (isFollowRelationshipForTagged) { sendFollow(u.id); }
+                          else { try { sendConnectionRequest(u.id); } catch (_) {} }
+                        }
+                      }}
+                      className={`shrink-0 text-xs font-bold px-4 py-1.5 rounded-lg transition-all border ${
+                        isActioned
+                          ? 'bg-muted text-muted-foreground border-border'
+                          : 'bg-primary text-primary-foreground border-primary hover:bg-primary/90'
+                      }`}
+                    >
+                      {isActioned ? actionedLabel : actionLabel}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+
+        if (isDesktop) {
+          // ── Desktop: compact centered Dialog matching share sheet style ──
+          return (
+            <Dialog open={showTaggedSheet} onOpenChange={setShowTaggedSheet}>
+              <DialogContent className="sm:max-w-[420px] p-0 overflow-hidden rounded-2xl bg-background border border-border shadow-2xl gap-0">
+                <DialogHeader className="px-5 pt-4 pb-3 border-b border-border/60">
+                  <DialogTitle className="text-sm font-bold text-foreground tracking-tight">In this post</DialogTitle>
+                  <DialogDescription className="sr-only">People tagged in this post</DialogDescription>
+                </DialogHeader>
+                <div className="overflow-y-auto max-h-[360px]">
+                  {userRows}
+                </div>
+                <div className="h-2" />
+              </DialogContent>
+            </Dialog>
+          );
+        }
+
+        // ── Mobile: compact bottom sheet ──
+        return (
+          <div className="fixed inset-0 z-[999] flex flex-col justify-end" onClick={() => setShowTaggedSheet(false)}>
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px] animate-in fade-in duration-150" />
+            <div className="relative bg-background border-t border-border rounded-t-2xl shadow-2xl animate-in slide-in-from-bottom-8 duration-250 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="w-8 h-1 bg-muted-foreground/30 rounded-full mx-auto mt-2.5 mb-1" />
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/60">
+                <h3 className="text-foreground font-bold text-sm tracking-tight">In this post</h3>
+                <button onClick={() => setShowTaggedSheet(false)} className="text-muted-foreground hover:text-foreground p-1 rounded-full hover:bg-muted transition-colors">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto">
+                {userRows}
+              </div>
+              <div className="h-4" />
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="relative overflow-hidden rounded-none sm:rounded-xl border-y border-x-0 sm:border-x border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 group">
         <div className="relative">
           {/* Header - Padded */}
@@ -783,9 +1124,27 @@ const PostCard = ({
                   ) : (
                     <p className="font-serif font-bold truncate text-[10px] lg:text-[11px] uppercase tracking-tight">{author.name}</p>
                   )}
-                  <p className="text-[8px] text-muted-foreground truncate uppercase tracking-widest font-mono font-bold opacity-80 mt-0.5">
-                    {pageInfo ? "Company Page" : author.role} • {timeAgo}
-                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <p className="text-[8px] text-muted-foreground truncate uppercase tracking-widest font-mono font-bold opacity-80">
+                      {pageInfo ? "Company Page" : author.role} • {timeAgo}
+                    </p>
+                    {(() => {
+                      const displayLoc = location || (mediaItems && (mediaItems[0] as any)?.location);
+                      if (!displayLoc) return null;
+                      return (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            push(`/search?q=${encodeURIComponent(displayLoc)}`);
+                          }}
+                          className="text-[9px] font-bold text-primary hover:underline flex items-center gap-0.5 transition-all cursor-pointer relative z-10"
+                        >
+                          <MapPin className="h-2.5 w-2.5 shrink-0" />
+                          <span>{displayLoc}</span>
+                        </button>
+                      );
+                    })()}
+                  </div>
                 </div>
 
                 <div className="flex-shrink-0 relative z-20">
@@ -798,7 +1157,7 @@ const PostCard = ({
                     <DropdownMenuContent align="end" className="bg-background/95 backdrop-blur-xl border-white/10 rounded-2xl shadow-xl">
                       {canManage ? (
                         <>
-                          <DropdownMenuItem onClick={() => setIsEditOpen(true)} className="rounded-lg gap-2 cursor-pointer focus:bg-white/5">
+                          <DropdownMenuItem onClick={() => navigate(`/create?editPostId=${id}`)} className="rounded-lg gap-2 cursor-pointer focus:bg-white/5">
                             <Edit className="h-4 w-4 text-primary" />
                             <span>Edit Post</span>
                           </DropdownMenuItem>
@@ -934,6 +1293,7 @@ const PostCard = ({
                   ))}
                 </div>
               )}
+
             </div>
           </div>
 
@@ -947,34 +1307,40 @@ const PostCard = ({
             <div className="flex items-center justify-between mb-2 lg:mb-3">
               <div className="flex items-center gap-5">
                 {!isInternal ? (
-                  <button
-                    onClick={handleLike}
-                    disabled={isLiking}
-                    className={`flex items-center gap-1.5 transition-all duration-300 group/like ${isLiked ? 'text-red-500' : 'text-foreground/80 hover:text-red-500'}`}
-                  >
-                    <div className="p-2 -m-2 rounded-full group-hover/like:bg-red-500/10 transition-colors">
-                      <Heart size={24} className={`transition-transform duration-300 group-active/like:scale-125 ${isLiked ? 'fill-current' : ''}`} />
-                    </div>
-                    <span className="text-[13px] font-semibold">{displayLikeCount}</span>
-                  </button>
+                  <LikeButton 
+                    isLiked={isLiked} 
+                    isLiking={isLiking} 
+                    handleLike={handleLike} 
+                    likeCount={displayLikeCount} 
+                    hideLikes={isHideLikes}
+                  />
                 ) : (
                   <div className="flex items-center gap-1.5 text-foreground/50 cursor-not-allowed" title="Staff accounts cannot like posts">
                     <div className="p-2 -m-2 rounded-full">
                       <Heart size={24} />
                     </div>
-                    <span className="text-[13px] font-semibold">{displayLikeCount}</span>
+                    <span className="text-[13px] font-semibold">
+                      {isHideLikes ? (isLiked ? 'Liked' : 'Likes') : displayLikeCount}
+                    </span>
                   </div>
                 )}
 
-                <button
-                  onClick={handleComment}
-                  className="flex items-center gap-1.5 transition-all duration-300 group/comment text-foreground/80 hover:text-primary"
-                >
-                  <div className="p-2 -m-2 rounded-full group-hover/comment:bg-primary/10 transition-colors">
-                    <MessageCircle size={24} />
+                {isCommentsDisabled ? (
+                  <div className="flex items-center gap-1.5 text-muted-foreground/60 cursor-not-allowed text-xs font-semibold" title="Comments turned off">
+                    <MessageCircle size={24} className="opacity-40" />
+                    <span className="text-[11px] italic">Off</span>
                   </div>
-                  <span className="text-[13px] font-semibold">{displayCommentCount}</span>
-                </button>
+                ) : (
+                  <button
+                    onClick={handleComment}
+                    className="flex items-center gap-1.5 transition-all duration-300 group/comment text-foreground/80 hover:text-primary"
+                  >
+                    <div className="p-2 -m-2 rounded-full group-hover/comment:bg-primary/10 transition-colors">
+                      <MessageCircle size={24} />
+                    </div>
+                    <span className="text-[13px] font-semibold">{displayCommentCount}</span>
+                  </button>
+                )}
 
                 {!isInternal && (
                   <ShareButton
@@ -1014,9 +1380,13 @@ const PostCard = ({
               )}
             </div>
 
-            <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
-              View all {displayCommentCount} comments
-            </button>
+            {isCommentsDisabled ? (
+              <p className="text-muted-foreground text-xs italic pt-1 font-medium">Comments are turned off for this post.</p>
+            ) : (
+              <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
+                View all {displayCommentCount} comments
+              </button>
+            )}
           </div>
         </div>
         <AnimatePresence>
@@ -1029,7 +1399,11 @@ const PostCard = ({
               className="overflow-hidden border-t border-white/5 bg-black/5"
             >
               <div className="p-3 sm:p-6 pt-2">
-                <CommentSection postId={id} />
+                {isCommentsDisabled ? (
+                  <p className="text-center text-xs text-muted-foreground italic py-3">Comments are turned off for this post.</p>
+                ) : (
+                  <CommentSection postId={id} />
+                )}
               </div>
             </motion.div>
           )}

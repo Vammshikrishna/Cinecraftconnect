@@ -1450,19 +1450,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
               </div>
             )}
             
-            <div className="h-3.5 w-[1px] bg-border mx-0.5 hidden sm:block" />
 
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleDeleteChat}
-              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
-              title="Delete Chat"
-            >
-              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            </Button>
-
-            <div className="h-4 w-[1px] bg-border mx-0.5 hidden sm:block" />
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1484,15 +1472,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       <span>Starred Messages</span>
                   </DropdownMenuItem>
 
-                  <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
-                      <Search className="h-4 w-4" />
-                      <span>Search in Chat</span>
-                  </DropdownMenuItem>
-                  
-                  <DropdownMenuItem className="cursor-pointer gap-2 py-2 px-3 transition-colors">
-                      <BellOff className="h-4 w-4" />
-                      <span>Mute Notifications</span>
-                  </DropdownMenuItem>
+
                   
                   <DropdownMenuSeparator className="bg-border/50" />
                   
@@ -1501,10 +1481,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       <span>Clear Chat History</span>
                   </DropdownMenuItem>
                   
-                  <DropdownMenuItem className="text-destructive focus:bg-red-500/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
-                      <ShieldAlert className="h-4 w-4" />
-                      <span>Report User</span>
-                  </DropdownMenuItem>
+
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -1618,7 +1595,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                 const isLatestRead = idx === lastReadIndexSentByMe;
                 const messageDate = new Date(message.created_at);
                 const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+                const nextMessage = idx < visibleMessages.length - 1 ? visibleMessages[idx + 1] : null;
                 const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+                const isNextDateSeparator = nextMessage ? !isSameDay(new Date(nextMessage.created_at), messageDate) : false;
+                const isSameSenderAsNext = !!(nextMessage && !isNextDateSeparator && nextMessage.sender_id === message.sender_id);
+                const showAvatar = !isSameSenderAsNext;
+
                 const isAttachmentOnly = message.attachment_url && (
                   !message.content || 
                   message.content === 'Shared an image' || 
@@ -1641,14 +1623,18 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                   data-message-id={message.id}
                   data-unread={!message.is_read && !message.read_at}
                   data-sender-id={message.sender_id}
-                  className={`flex items-start gap-2 my-2 ${isSender ? 'flex-row-reverse pl-12' : 'pr-12'}`}
+                  className={`flex gap-3 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSameSenderAsNext ? 'mb-1' : 'mb-3'} ${isSender ? 'flex-row-reverse' : ''}`}
                 >
-                  <Avatar className="h-7 w-7 mt-0.5 shrink-0">
-                    <AvatarImage src={message.sender_profile?.avatar_url} />
-                    <AvatarFallback>{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
-                  </Avatar>
+                  {showAvatar ? (
+                    <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
+                      <AvatarImage src={message.sender_profile?.avatar_url} />
+                      <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <div className="w-9 h-9 flex-shrink-0" />
+                  )}
                   <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
-                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-end gap-2 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
+                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-center gap-1 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
                       {/* Swipe to reply indicator icon behind message */}
                       {swipeMessageId === message.id && swipeOffset > 0 && (
                         <div 
@@ -1686,12 +1672,12 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                       >
                         <div className={cn(
                           "relative transition-all duration-300",
-                          selectedMessageIds.includes(message.id) ? "ring-2 ring-primary ring-offset-1 ring-offset-background bg-primary/95 text-primary-foreground font-medium rounded-xl px-3.5 py-2 shadow-lg scale-[1.01]" :
-                          message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-xl italic text-muted-foreground" :
+                          selectedMessageIds.includes(message.id) ? "ring-2 ring-primary ring-offset-1 ring-offset-background scale-[0.98]" : "",
+                          message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
                           (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.includes('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
                           isAttachmentOnly ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
-                          isSender ? "bg-primary text-primary-foreground font-medium rounded-xl px-3.5 py-2 shadow-sm hover:shadow-md" : 
-                          "bg-muted text-foreground font-medium rounded-xl px-3.5 py-2 shadow-sm hover:shadow-md"
+                          isSender ? "bg-gradient-to-br from-chat-outgoing-bg-start to-chat-outgoing-bg-end text-chat-outgoing-text font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" : 
+                          "bg-chat-incoming-bg border border-chat-incoming-border text-chat-incoming-text dark:bg-muted dark:border-transparent dark:text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
                         )}>
 
                         {message.replied_to_message && !message.is_deleted && (
@@ -1881,8 +1867,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
 
                               {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
                               <span className={cn(
-                                "inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none",
-                                isSender ? "text-primary-foreground/80" : "text-muted-foreground/80"
+                                "inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80"
                               )}>
                                 {starredMessageIds.has(message.id) && (
                                   <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
@@ -1893,13 +1878,13 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <button 
-                                        className="p-0 text-current rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] relative"
+                                        className="p-0 text-current rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] relative pointer-events-none sm:pointer-events-auto"
                                         title="Options"
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         {/* Ticks (Visible when NOT hovering & menu CLOSED) */}
                                         {isSender && (
-                                          <span className="inline-flex items-center group-hover:hidden data-[state=open]:hidden">
+                                          <span className="inline-flex items-center sm:group-hover:hidden sm:data-[state=open]:hidden">
                                             {(message.is_read || message.read_at) ? (
                                               <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold stroke-[2.5]" />
                                             ) : (
@@ -1909,7 +1894,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                         )}
 
                                         {/* Chevron Down (Visible when HOVERING OR menu OPEN) */}
-                                        <span className="hidden group-hover:inline-flex data-[state=open]:inline-flex items-center justify-center">
+                                        <span className="hidden sm:group-hover:inline-flex sm:data-[state=open]:inline-flex items-center justify-center">
                                           <ChevronDown className="h-3.5 w-3.5" />
                                         </span>
                                       </button>
@@ -1931,6 +1916,21 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                                       )}
                                       <DropdownMenuItem onClick={() => setReplyingTo(message)}>
                                         <Reply className="h-4 w-4 mr-2" /> Reply
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        navigator.clipboard.writeText(message.content);
+                                        toast({ title: "Copied to clipboard" });
+                                      }}>
+                                        <Copy className="h-4 w-4 mr-2" /> Copy
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        setSelectedMessageIds([message.id]);
+                                        setShowForwardDialog(true);
+                                      }}>
+                                        <Share2 className="h-4 w-4 mr-2" /> Forward
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => setSelectedMessageIds(prev => prev.includes(message.id) ? prev : [...prev, message.id])}>
+                                        <Check className="h-4 w-4 mr-2" /> Select
                                       </DropdownMenuItem>
                                       {isSender && (
                                         <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
@@ -1965,20 +1965,23 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                         {/* Reactions Pill attached cleanly to bottom corner of bubble */}
                         {message.reactions && message.reactions.length > 0 && (
                           <div className={cn(
-                            "absolute -bottom-2.5 z-10 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md transition-all",
-                            isSender ? "right-3" : "left-3"
+                            "absolute -bottom-2.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md",
+                            isSender ? "right-2" : "left-2"
                           )}>
                             {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
                               const count = message.reactions!.filter(r => r.emoji === emoji).length;
                               const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
                               return (
                                 <button 
-                                    key={emoji} 
-                                    onClick={() => handleToggleReaction(message.id, emoji)}
-                                    className={cn("flex items-center gap-0.5 px-1 rounded-full text-[11px] hover:bg-muted transition-colors", hasReacted && "bg-primary/10 text-primary")}
+                                  key={emoji} 
+                                  onClick={() => handleToggleReaction(message.id, emoji)}
+                                  className={cn(
+                                    "flex items-center gap-0.5 p-0.5 rounded-full leading-none transition-transform active:scale-95",
+                                    hasReacted && "text-primary font-bold"
+                                  )}
                                 >
-                                  <span>{emoji}</span>
-                                  {count > 1 && <span className="text-[9px] font-bold">{count}</span>}
+                                  <span className="text-sm leading-none">{emoji}</span>
+                                  {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
                                 </button>
                               );
                             })}
@@ -1995,6 +1998,7 @@ const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl
                           }}
                           className={cn(
                             "opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-muted text-muted-foreground/70 hover:text-foreground self-center shrink-0",
+                            isSender ? "mr-3" : "ml-3",
                             activeMobileReactionMessageId === message.id && "opacity-100"
                           )}
                           title="React"

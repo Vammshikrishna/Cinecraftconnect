@@ -28,7 +28,7 @@ interface E2EEBackupContextType {
 const E2EEBackupContext = createContext<E2EEBackupContextType | undefined>(undefined);
 
 export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, session } = useAuth();
+  const { user, session, profile } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
   const [isSetupRequired, setIsSetupRequired] = useState(false);
   const [isRecoveryRequired, setIsRecoveryRequired] = useState(false);
@@ -67,6 +67,13 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return;
     }
 
+    if (profile && !(profile as any).onboarding_completed) {
+      console.log("🔐 [E2EE Context] Profile onboarding incomplete. Skipping E2EE PIN setup prompt.");
+      setIsChecking(false);
+      checkingRef.current = false;
+      return;
+    }
+
     // Don't re-run if already running or if we've already checked with this exact token
     const currentToken = session?.access_token ?? null;
     if (checkingRef.current && retryCount === 0) {
@@ -83,8 +90,22 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsChecking(true);
 
     try {
-      console.log("🔐 [E2EE Context] Checking local private key...");
-      const localPrivateKeyStr = await getLocalPrivateKey(user.id);
+      console.log("🔐 [E2EE Context] Fetching key status, backup, and profile in parallel...");
+      
+      // Execute local storage read and DB queries in parallel for instant evaluation
+      const [localPrivateKeyStr, backupResult, profileResult] = await Promise.all([
+        getLocalPrivateKey(user.id),
+        (supabase as any)
+          .from('key_backups')
+          .select('encrypted_private_key, salt')
+          .eq('user_id', user.id)
+          .maybeSingle(),
+        supabase
+          .from('profiles')
+          .select('public_key')
+          .eq('id', user.id)
+          .maybeSingle()
+      ]);
 
       // Verify local private key is valid if present
       let hasValidLocalKey = false;
@@ -93,45 +114,14 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           await importPrivateKey(localPrivateKeyStr);
           hasValidLocalKey = true;
           console.log("🔐 [E2EE Context] Valid local private key exists.");
-          // Sync to native secure store
-          await syncPrivateKeyToNative(user.id, localPrivateKeyStr);
+          // Non-blocking sync to native store
+          syncPrivateKeyToNative(user.id, localPrivateKeyStr).catch(() => {});
         } catch (e) {
           console.error("🔐 [E2EE Context] Local private key is corrupted, treating as missing:", e);
         }
       } else {
         console.log("🔐 [E2EE Context] No local private key found.");
       }
-
-      console.log("🔐 [E2EE Context] Fetching key backup and profile from database...");
-      
-      // Create a dedicated client instance with the explicit Authorization header
-      // to completely eliminate any race condition with the global client's token storage.
-      const { createClient } = await import('@supabase/supabase-js');
-      const authClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL,
-        import.meta.env.VITE_SUPABASE_ANON_KEY,
-        {
-          global: {
-            headers: {
-              Authorization: `Bearer ${session?.access_token}`
-            }
-          }
-        }
-      );
-
-      // Fetch both remote backup and the profile public key from Supabase in parallel
-      const [backupResult, profileResult] = await Promise.all([
-        authClient
-          .from('key_backups')
-          .select('encrypted_private_key, salt')
-          .eq('user_id', user.id)
-          .maybeSingle(),
-        authClient
-          .from('profiles')
-          .select('public_key')
-          .eq('id', user.id)
-          .maybeSingle()
-      ]);
 
       if (backupResult.error) {
         throw new Error(`Failed to fetch key backup: ${backupResult.error.message}`);
@@ -140,8 +130,8 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         throw new Error(`Failed to fetch profile public key: ${profileResult.error.message}`);
       }
 
-      const backupData = backupResult.data;
-      const profileData = profileResult.data;
+      const backupData = backupResult.data as any;
+      const profileData = profileResult.data as any;
       const hasRemoteBackup = !!backupData?.encrypted_private_key;
       const profilePublicKey = profileData?.public_key;
       const hasVerifiedSessionPIN = sessionStorage.getItem(`e2ee_pin_verified_${user.id}`) === 'true';
@@ -152,8 +142,8 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setBackupSalt(backupData.salt);
         setEncryptedPrivateKey(backupData.encrypted_private_key);
 
-        if (!hasVerifiedSessionPIN) {
-          console.log("🔐 [E2EE Context] Remote backup exists. Prompting PIN verification/recovery for login session.");
+        if (!hasVerifiedSessionPIN || !hasValidLocalKey) {
+          console.log("🔐 [E2EE Context] Remote backup exists. Prompting instant PIN recovery.");
           setIsSetupRequired(false);
           setIsRecoveryRequired(true);
         } else {
@@ -294,7 +284,7 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // have the JWT applied, causing key_backups/profiles queries to 401 silently,
   // which swallows the result and means the PIN modal never shows.
   useEffect(() => {
-    if (user && session?.access_token) {
+    if (user && session?.access_token && profile?.onboarding_completed) {
       // Ensure the realtime auth is up to date before querying
       supabase.realtime.setAuth(session.access_token);
       checkBackupStatus();
@@ -304,8 +294,12 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       lastCheckedTokenRef.current = null;
       setIsSetupRequired(false);
       setIsRecoveryRequired(false);
+    } else if (user && profile && !profile.onboarding_completed) {
+      setIsChecking(false);
+      setIsSetupRequired(false);
+      setIsRecoveryRequired(false);
     }
-  }, [user?.id, session?.access_token]);
+  }, [user?.id, session?.access_token, profile?.onboarding_completed]);
 
   return (
     <E2EEBackupContext.Provider value={{

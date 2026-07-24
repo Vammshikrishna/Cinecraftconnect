@@ -1,39 +1,60 @@
-import { useState, Suspense, lazy } from 'react';
-import { EnhancedSkeleton } from '@/components/ui/enhanced-skeleton';
+import { useState } from 'react';
+import { EnhancedSkeleton, PostSkeleton } from '@/components/ui/enhanced-skeleton';
 import SEO from '@/components/common/SEO';
+import HomeTab from '@/components/feed/HomeTab';
 
-// Lazy load tab components
-const HomeTab = lazy(() => import('@/components/feed/HomeTab'));
+export const FeedSkeleton = () => (
+    <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-2 md:pt-6">
+        {/* Main Feed Column */}
+        <div className="w-full max-w-[480px] space-y-6 px-4 sm:px-0">
+            {/* Create Post Widget Skeleton */}
+            <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md p-4 flex items-center gap-3">
+                <EnhancedSkeleton className="h-10 w-10 rounded-full" />
+                <EnhancedSkeleton className="h-10 flex-1 rounded-xl" />
+            </div>
 
-const FeedSkeleton = () => (
-    <div className="min-h-screen bg-background pt-[68px] md:pt-20">
-        <div className="container mx-auto px-4 pb-8">
-            <div className="max-w-4xl mx-auto">
-                <div className="glass-card rounded-xl p-6">
-                    <div className="flex flex-wrap gap-2 mb-8">
-                        {[...Array(6)].map((_, i) => <EnhancedSkeleton key={i} className="h-8 w-24 rounded-full" />)}
-                    </div>
-                    <div className="space-y-6">
-                        {[...Array(3)].map((_, i) => (
-                            <div key={i} className="border border-border/50 p-6 rounded-xl bg-card/50">
-                                <div className="flex items-center space-x-4 mb-4">
-                                    <EnhancedSkeleton className="h-12 w-12 rounded-full" />
-                                    <div className="space-y-2">
-                                        <EnhancedSkeleton className="h-4 w-[250px]" />
-                                        <EnhancedSkeleton className="h-3 w-[150px]" />
-                                    </div>
-                                </div>
-                                <EnhancedSkeleton className="h-32 w-full rounded-lg mb-4" />
-                                <div className="flex gap-4">
-                                    <EnhancedSkeleton className="h-8 w-20" />
-                                    <EnhancedSkeleton className="h-8 w-20" />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+            {/* Post Cards Skeletons */}
+            <div className="space-y-6">
+                <PostSkeleton />
+                <PostSkeleton />
+                <PostSkeleton />
             </div>
         </div>
+
+        {/* Sidebar Skeleton (Visible on lg screens) */}
+        <aside className="hidden lg:flex flex-col w-[300px] gap-5 sticky top-24 h-fit p-5 rounded-2xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md shadow-sm">
+            {/* Mini Profile Skeleton */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <EnhancedSkeleton className="h-10 w-10 rounded-full" />
+                    <div className="space-y-1.5">
+                        <EnhancedSkeleton className="h-3.5 w-28" />
+                        <EnhancedSkeleton className="h-2.5 w-20" />
+                    </div>
+                </div>
+                <EnhancedSkeleton className="h-4 w-10" />
+            </div>
+
+            {/* Suggestions Header Skeleton */}
+            <div className="space-y-3 pt-2">
+                <div className="flex justify-between items-center">
+                    <EnhancedSkeleton className="h-3 w-32" />
+                    <EnhancedSkeleton className="h-3 w-12" />
+                </div>
+                {[...Array(3)].map((_, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                            <EnhancedSkeleton className="h-8 w-8 rounded-full" />
+                            <div className="space-y-1">
+                                <EnhancedSkeleton className="h-3 w-24" />
+                                <EnhancedSkeleton className="h-2.5 w-16" />
+                            </div>
+                        </div>
+                        <EnhancedSkeleton className="h-5 w-14 rounded-full" />
+                    </div>
+                ))}
+            </div>
+        </aside>
     </div>
 );
 
@@ -52,9 +73,7 @@ const Feed = ({ openCreate = false }: { openCreate?: boolean }) => {
             />
             <div className="w-full md:container mx-auto px-0 md:px-8 pb-36 animate-fade-in">
                 <div className="w-full">
-                    <Suspense fallback={<FeedSkeleton />}>
-                        <HomeTab postRatings={postRatings} onRate={handleRate} openCreate={openCreate} />
-                    </Suspense>
+                    <HomeTab postRatings={postRatings} onRate={handleRate} openCreate={openCreate} />
                 </div>
             </div>
         </div>

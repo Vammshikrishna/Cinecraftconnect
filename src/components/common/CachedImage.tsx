@@ -1,6 +1,4 @@
-import React from 'react';
-import { useCachedMedia } from '@/hooks/useCachedMedia';
-import { Skeleton } from '@/components/ui/skeleton';
+import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 interface CachedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> {
@@ -10,32 +8,46 @@ interface CachedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement
 }
 
 export const CachedImage = React.forwardRef<HTMLImageElement, CachedImageProps>(
-  ({ src, fallbackSrc, skeletonClassName, className, alt, ...props }, ref) => {
-    const { cachedUrl, isLoading, error } = useCachedMedia(src);
+  ({ src, fallbackSrc, skeletonClassName, className, alt, onLoad, onError, style, ...props }, ref) => {
+    const [isLoaded, setIsLoaded] = useState(false);
+    const [hasError, setHasError] = useState(false);
 
-    if (isLoading) {
+    if (!src && !fallbackSrc) {
       return (
-        <Skeleton 
-          className={cn("w-full h-full bg-muted animate-pulse", skeletonClassName, className)} 
-        />
+        <div className={cn("w-full min-h-[200px] bg-muted/20 flex items-center justify-center rounded-lg", className)} />
       );
     }
 
-    const finalSrc = error || !cachedUrl ? fallbackSrc : cachedUrl;
-
-    if (!finalSrc) {
-        // Render a placeholder or empty div if no src and no fallback
-        return <div className={cn("w-full h-full bg-muted flex items-center justify-center", className)} />;
-    }
+    const finalSrc = (hasError || !src) ? (fallbackSrc || '') : src;
 
     return (
-      <img
-        ref={ref}
-        src={finalSrc}
-        alt={alt || "Media"}
-        className={className}
-        {...props}
-      />
+      <div className={cn("relative overflow-hidden bg-muted/20 w-full min-h-[200px] flex items-center justify-center", skeletonClassName)}>
+        {!isLoaded && !hasError && (
+          <div className="absolute inset-0 bg-muted/30 animate-pulse z-0" />
+        )}
+        <img
+          ref={ref}
+          src={finalSrc}
+          alt={alt || "Media"}
+          loading="lazy"
+          decoding="async"
+          onLoad={(e) => {
+            setIsLoaded(true);
+            onLoad?.(e);
+          }}
+          onError={(e) => {
+            setHasError(true);
+            onError?.(e);
+          }}
+          className={cn(
+            "relative z-10 transition-opacity duration-300",
+            !isLoaded ? "opacity-0" : "opacity-100",
+            className
+          )}
+          style={style}
+          {...props}
+        />
+      </div>
     );
   }
 );
