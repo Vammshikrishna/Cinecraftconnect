@@ -78,6 +78,12 @@ export const getNotificationIcon = (type: string) => {
         case 'system_announcement': return '📢';
         case 'network_suggestion': return '🤝';
         case 'new_post': return '🎬';
+        // Pitch status notifications
+        case 'pitch_status_request_full_deck': return '📄';
+        case 'pitch_status_shortlisted': return '⭐';
+        case 'pitch_status_interested': return '🎉';
+        case 'pitch_status_invite_to_discuss': return '💬';
+        case 'pitch_status_passed': return '👍';
         case 'generic': return '🔔';
         default: return '🔔';
     }

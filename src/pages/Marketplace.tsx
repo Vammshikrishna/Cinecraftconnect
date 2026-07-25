@@ -21,6 +21,7 @@ import { useAccountType } from '@/hooks/useAccountType';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import SEO from '@/components/common/SEO';
 import { useAppRole } from '@/hooks/useAppRole';
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
 
 const Marketplace = () => {
     const { toast } = useToast();
@@ -28,10 +29,11 @@ const Marketplace = () => {
     const { push } = useAppNavigation();
     const { isFan } = useAccountType();
     const { isInternal } = useAppRole();
-    
+
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTab, setActiveTab] = useState<ListingType | 'all'>('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [filterOpen, setFilterOpen] = useState(false);
 
     const { isEnabled, loading: flagsLoading } = usePlatformFlags();
 
@@ -86,44 +88,46 @@ const Marketplace = () => {
 
     return (
         <div className="min-h-screen bg-background">
-            <SEO 
-                title="Marketplace" 
-                description="Source high-end film gear and unique production locations. Rent or buy equipment from the CineCraft community." 
+            <SEO
+                title="Marketplace"
+                description="Source high-end film gear and unique production locations. Rent or buy equipment from the CineCraft community."
             />
             <main className="max-w-7xl mx-auto px-4 md:px-8 pt-20 pb-36 animate-in fade-in slide-in-from-bottom-4 duration-700">
                 {/* Header */}
-                <PageHeader 
-                    title="Marketplace" 
-                    subtitle="Rent or buy equipment and locations from fellow creators" 
+                <PageHeader
+                    title="Marketplace"
+                    subtitle="Rent or buy equipment and locations from fellow creators"
                     Icon={ShoppingBag}
                     actionsAtTop={true}
                     actions={
-                      (!isFan && !isInternal) && (
-                        <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
-                            <Plus size={18} strokeWidth={3} />
-                            <span>Create Listing</span>
-                        </Button>
-                      )
+                        (!isFan && !isInternal) && (
+                            <Button onClick={() => setShowCreateModal(true)} className="gap-2 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 transition-all h-10 px-4 shrink-0 font-bold text-sm">
+                                <Plus size={18} strokeWidth={3} />
+                                <span>Create Listing</span>
+                            </Button>
+                        )
                     }
                 />
 
                 {/* Search & Filter Container */}
-                <div className="bg-zinc-50/80 dark:bg-card/60 backdrop-blur-xl border border-black/5 dark:border-white/10 rounded-[28px] p-2 md:p-3 mb-8 shadow-sm dark:shadow-none">
-                    <div className="flex flex-row gap-2 md:gap-3">
-                        <div className="relative flex-grow h-10 md:h-11">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
-                            <Input
-                                placeholder="Search marketplace..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-12 h-full bg-background/50 border-white/5 rounded-2xl text-sm focus-visible:ring-primary/20 shadow-inner dark:shadow-none"
-                            />
-                        </div>
-                        <div className="shrink-0 h-10 md:h-11 flex items-center">
-                            <MarketplaceFilters filters={filters} onFiltersChange={setFilters} />
-                        </div>
-                    </div>
-                </div>
+                <UnifiedSearchBar
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    searchPlaceholder="Search marketplace..."
+                    hasActiveFilters={!!(filters.location || filters.minPrice || filters.maxPrice || filters.category)}
+                    filterOpen={filterOpen}
+                    onFilterOpenChange={setFilterOpen}
+                    filterTitle="Filter Listings"
+                    filterContent={
+                        <MarketplaceFilters
+                            filters={filters}
+                            onFiltersChange={(f) => {
+                                setFilters(f);
+                                setFilterOpen(false);
+                            }}
+                        />
+                    }
+                />
 
                 {/* Active Filters Display */}
                 {(filters.location || filters.minPrice || filters.maxPrice || filters.category) && (
@@ -196,7 +200,7 @@ const Marketplace = () => {
                     </TabsContent>
 
                     <TabsContent value="equipment" className="mt-0 focus-visible:outline-none focus-visible:ring-0">
-                         {loading ? (
+                        {loading ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                                     <ListingSkeleton key={i} />
@@ -223,7 +227,7 @@ const Marketplace = () => {
                     </TabsContent>
 
                     <TabsContent value="location" className="mt-0 focus-visible:outline-none focus-visible:ring-0">
-                         {loading ? (
+                        {loading ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                                     <ListingSkeleton key={i} />

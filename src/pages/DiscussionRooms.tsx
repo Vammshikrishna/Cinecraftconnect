@@ -36,6 +36,7 @@ import { SpaceEscalationPanel } from '@/components/governance/SpaceEscalationPan
 import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
 import { decryptWithPrivateKey, importSymmetricKey, decryptGroupMessage, generateGroupKey, exportSymmetricKey, importPublicKey, encryptWithPublicKey } from '@/lib/e2ee';
 import { syncGroupKeyToNative } from '@/lib/e2ee-bridge';
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
 
 // --- DATA INTERFACES ---
 
@@ -686,38 +687,50 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
                   )}
                 </div>
 
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={14} />
-                  <Input
-                    placeholder="Search rooms..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    disabled={!!activeRoom} // Disable while room is active to prevent focus stealing
-                    className="bg-muted/50 border-none pl-9 h-10 text-sm rounded-xl focus-visible:ring-1 focus-visible:ring-primary/30"
-                  />
-                </div>
-
-                <div className="flex gap-2">
-                  <Select value={filterCategory} onValueChange={setFilterCategory}>
-                    <SelectTrigger className="flex-1 bg-muted/30 border-none h-8 text-[11px] font-bold rounded-lg uppercase tracking-wider">
-                      <SelectValue placeholder="Category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="flex-1 bg-muted/30 border-none h-8 text-[11px] font-bold rounded-lg uppercase tracking-wider">
-                      <SelectValue placeholder="Sort" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="popularity">Popular</SelectItem>
-                      <SelectItem value="newest">Newest</SelectItem>
-                      <SelectItem value="name">Name</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <UnifiedSearchBar
+                  className="mb-0 p-2 bg-muted/20 border-none rounded-xl"
+                  searchQuery={searchQuery}
+                  onSearchChange={setSearchQuery}
+                  searchPlaceholder="Search rooms..."
+                  hasActiveFilters={filterCategory !== 'all' || sortBy !== 'popularity'}
+                  filterTitle="Filter Rooms"
+                  filterContent={
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase">Category</Label>
+                        <Select value={filterCategory} onValueChange={setFilterCategory}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Categories</SelectItem>
+                            {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase">Sort by</Label>
+                        <Select value={sortBy} onValueChange={setSortBy}>
+                          <SelectTrigger className="h-9">
+                            <SelectValue placeholder="Sort by" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="popularity">Popularity</SelectItem>
+                            <SelectItem value="newest">Newest</SelectItem>
+                            <SelectItem value="name">Name</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        className="w-full text-xs" 
+                        onClick={() => { setFilterCategory('all'); setSortBy('popularity'); }}
+                      >
+                        Clear Filters
+                      </Button>
+                    </>
+                  }
+                />
               </div>
 
               <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-3">
@@ -958,38 +971,50 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <section>
           <h2 className="text-2xl font-semibold mb-4 text-primary">All Rooms</h2>
           {/* Filtering and Sorting UI */}
-          <div className="flex flex-col sm:flex-row flex-wrap items-center gap-2 sm:gap-4 mb-6 p-2 sm:p-4 bg-card border border-border rounded-lg">
-            <div className="relative w-full sm:flex-grow sm:w-1/3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
-              <Input
-                placeholder="Search rooms..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="bg-input border-border pl-9 h-9 sm:h-10 text-sm"
-              />
-            </div>
-            <div className="flex w-full sm:w-auto gap-2">
-              <Select value={filterCategory} onValueChange={setFilterCategory}>
-                <SelectTrigger className="flex-1 sm:w-[180px] bg-input border-border h-9 sm:h-10 text-sm">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="flex-1 sm:w-[180px] bg-input border-border h-9 sm:h-10 text-sm">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent className="bg-popover border-border">
-                  <SelectItem value="popularity">Popularity</SelectItem>
-                  <SelectItem value="newest">Newest</SelectItem>
-                  <SelectItem value="name">Name</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          {/* Filtering and Sorting UI */}
+          <UnifiedSearchBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchPlaceholder="Search rooms..."
+            hasActiveFilters={filterCategory !== 'all' || sortBy !== 'popularity'}
+            filterTitle="Filter Rooms"
+            filterContent={
+              <>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase">Category</Label>
+                  <Select value={filterCategory} onValueChange={setFilterCategory}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categories.map(cat => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase">Sort by</Label>
+                  <Select value={sortBy} onValueChange={setSortBy}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="popularity">Popularity</SelectItem>
+                      <SelectItem value="newest">Newest</SelectItem>
+                      <SelectItem value="name">Name</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button 
+                  variant="outline" 
+                  className="w-full text-xs" 
+                  onClick={() => { setFilterCategory('all'); setSortBy('popularity'); }}
+                >
+                  Clear Filters
+                </Button>
+              </>
+            }
+          />
 
           {/* Rooms Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

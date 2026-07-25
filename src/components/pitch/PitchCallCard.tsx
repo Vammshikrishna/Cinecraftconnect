@@ -4,7 +4,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PitchCall } from '@/hooks/usePitch';
-import { PitchSubmissionModal } from './PitchSubmissionModal';
 import { 
     Bookmark, Share2, Megaphone, Calendar, DollarSign, 
     Globe, Film, Users, CheckCircle2, MapPin, Clock, Shield
@@ -42,7 +41,6 @@ interface PitchCallCardProps {
 }
 
 export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmitted, index = 0 }: PitchCallCardProps) => {
-    const [showSubmitModal, setShowSubmitModal] = useState(false);
     const [showShare, setShowShare] = useState(false);
     const [localSaved, setLocalSaved] = useState(pitchCall.is_saved);
     const { user } = useAuth();
@@ -65,7 +63,7 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
             toast({ title: 'Not eligible', description: 'Only writers, directors, and creators can submit pitches.', variant: 'destructive' });
             return;
         }
-        setShowSubmitModal(true);
+        push(`/pitch/${pitchCall.id}/submit`);
     };
 
     return (
@@ -197,14 +195,6 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
                     </div>
                 </div>
             </motion.div>
-
-            {showSubmitModal && (
-                <PitchSubmissionModal
-                    pitchCall={pitchCall}
-                    isOpen={showSubmitModal}
-                    onClose={() => setShowSubmitModal(false)}
-                />
-            )}
 
             <UniversalShareSheet
                 isOpen={showShare}

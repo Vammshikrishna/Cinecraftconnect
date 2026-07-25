@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -8,6 +7,8 @@ import { Filter, X } from 'lucide-react';
 interface ProjectFiltersProps {
   onFiltersChange: (filters: FilterState) => void;
   activeFilters: FilterState;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export interface FilterState {
@@ -31,9 +32,14 @@ const AVAILABLE_STATUSES = [
   'planning', 'in-production', 'post-production', 'completed'
 ];
 
-export function ProjectFilters({ onFiltersChange, activeFilters }: ProjectFiltersProps) {
-  const [open, setOpen] = useState(false);
+export function ProjectFilters({ onFiltersChange, activeFilters, open, onOpenChange }: ProjectFiltersProps) {
   const [localFilters, setLocalFilters] = useState<FilterState>(activeFilters);
+
+  useEffect(() => {
+    if (open) {
+      setLocalFilters(activeFilters);
+    }
+  }, [open, activeFilters]);
 
   const toggleFilter = (category: keyof FilterState, value: string) => {
     setLocalFilters(prev => {
@@ -47,7 +53,7 @@ export function ProjectFilters({ onFiltersChange, activeFilters }: ProjectFilter
 
   const applyFilters = () => {
     onFiltersChange(localFilters);
-    setOpen(false);
+    if (onOpenChange) onOpenChange(false);
   };
 
   const clearFilters = () => {
@@ -59,35 +65,13 @@ export function ProjectFilters({ onFiltersChange, activeFilters }: ProjectFilter
     };
     setLocalFilters(emptyFilters);
     onFiltersChange(emptyFilters);
+    if (onOpenChange) onOpenChange(false);
   };
 
-  const activeFilterCount = Object.values(activeFilters).reduce(
-    (sum, arr) => sum + arr.length, 0
-  );
-
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="outline" className="relative px-3 sm:px-4">
-          <Filter className="h-4 w-4 sm:mr-2" />
-          <span className="hidden sm:inline">Filters</span>
-          {activeFilterCount > 0 && (
-            <Badge
-              variant="default"
-              className="absolute -top-1 -right-1 sm:static sm:ml-2 h-4 w-4 sm:h-5 sm:w-5 min-w-[1rem] rounded-full p-0 flex items-center justify-center text-[10px] sm:text-xs"
-            >
-              {activeFilterCount}
-            </Badge>
-          )}
-        </Button>
-      </SheetTrigger>
-
-      <SheetContent className="w-full sm:max-w-md overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Filter Projects</SheetTitle>
-        </SheetHeader>
-
-        <div className="space-y-6 mt-6">
+    <div className="flex flex-col h-full space-y-6">
+      <div className="flex-1 overflow-y-auto pr-2 space-y-6">
+        <div className="space-y-6">
           {/* Status Filter */}
           <div>
             <h3 className="font-medium mb-3">Status</h3>
@@ -145,18 +129,18 @@ export function ProjectFilters({ onFiltersChange, activeFilters }: ProjectFilter
 
           <Separator />
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button onClick={clearFilters} variant="outline" className="flex-1">
-              <X className="mr-2 h-4 w-4" />
-              Clear All
-            </Button>
-            <Button onClick={applyFilters} className="flex-1">
-              Apply Filters
-            </Button>
-          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-3 pt-4 border-t border-border/10 shrink-0">
+        <Button onClick={clearFilters} variant="outline" className="flex-1 text-xs font-bold uppercase tracking-widest">
+          Clear All
+        </Button>
+        <Button onClick={applyFilters} className="flex-1 text-xs font-bold uppercase tracking-widest">
+          Apply Filters
+        </Button>
+      </div>
+    </div>
   );
 }

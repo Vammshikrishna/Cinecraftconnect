@@ -87,6 +87,8 @@ const Support = lazy(() => import("./pages/Support"));
 const SupportTicketDetail = lazy(() => import("./pages/SupportTicketDetail"));
 const Pitch = lazy(() => import("./pages/Pitch"));
 const PitchDetail = lazy(() => import("./pages/PitchDetail"));
+const SubmitPitch = lazy(() => import("./pages/SubmitPitch"));
+const ReviewSubmission = lazy(() => import("./pages/ReviewSubmission"));
 
 
 // Legal Pages
@@ -251,6 +253,8 @@ const App = () => {
                           <Route path="/category/:categoryId" element={<ProtectedRoute><CategoryPage /></ProtectedRoute>} />
                           <Route path="/pitch" element={<ProtectedRoute><Pitch /></ProtectedRoute>} />
                           <Route path="/pitch/:pitchId" element={<PitchDetail />} />
+                          <Route path="/pitch/:pitchId/submit" element={<ProtectedRoute><SubmitPitch /></ProtectedRoute>} />
+                          <Route path="/pitch/submission/:submissionId/review" element={<ProtectedRoute><ReviewSubmission /></ProtectedRoute>} />
                           <Route path="/announcements" element={<AnnouncementsPage />} />
                           <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
                           <Route path="/pages" element={<ProtectedRoute><CompanyPages /></ProtectedRoute>} />

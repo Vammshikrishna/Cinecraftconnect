@@ -21,8 +21,10 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { useAccountType } from '@/hooks/useAccountType';
 import { useAppNavigation } from '@/contexts/NavigationContext';
 import { useAppRole } from '@/hooks/useAppRole';
-
-
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 const Vendors = () => {
     const { toast } = useToast();
     const { push } = useAppNavigation();
@@ -31,6 +33,8 @@ const Vendors = () => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [filterOpen, setFilterOpen] = useState(false);
+    const [filterVerified, setFilterVerified] = useState(false);
     const [showRegistrationModal, setShowRegistrationModal] = useState(false);
 
     // Services state
@@ -54,7 +58,7 @@ const Vendors = () => {
         } else {
             fetchServices();
         }
-    }, [searchQuery, activeTab, filterProductionType, filterMinCapacity]);
+    }, [searchQuery, activeTab, filterProductionType, filterMinCapacity, filterVerified]);
 
     const fetchServices = async () => {
         try {
@@ -94,7 +98,7 @@ const Vendors = () => {
                     search_query: searchQuery || undefined,
                     filter_category: undefined,
                     filter_location: undefined,
-                    verified_only: false
+                    verified_only: filterVerified
                 });
 
             if (error) throw error;
@@ -164,52 +168,80 @@ const Vendors = () => {
                     </button>
                 </div>
 
-                {/* Search Bar */}
-                <div className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-6 shadow-sm dark:shadow-none">
-                    <div className="flex flex-row gap-2 md:gap-3">
-                        <div className="relative flex-grow h-12 md:h-14">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={20} />
-                            <Input
-                                placeholder="Search for equipment, services, or locations..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-base transition-all font-medium placeholder:text-muted-foreground/50"
-                            />
+                {/* Unified Search Bar */}
+                <UnifiedSearchBar
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                    searchPlaceholder="Search for equipment, services, or locations..."
+                    filterOpen={filterOpen}
+                    onFilterOpenChange={setFilterOpen}
+                    hasActiveFilters={activeTab === 'services' ? (filterProductionType !== 'all' || !!filterMinCapacity) : filterVerified}
+                    filterTitle={`Filter ${activeTab === 'services' ? 'Services' : 'Vendors'}`}
+                    filterContent={
+                        <div className="space-y-4">
+                            {activeTab === 'services' ? (
+                                <>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase">Production Type</Label>
+                                        <Select value={filterProductionType} onValueChange={setFilterProductionType}>
+                                            <SelectTrigger className="h-9"><SelectValue placeholder="All Productions" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">All Productions</SelectItem>
+                                                {PRODUCTION_TYPES.map(pt => (
+                                                    <SelectItem key={pt} value={pt}>{pt}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase">Min Capacity</Label>
+                                        <Input
+                                            type="number"
+                                            placeholder="e.g. 50"
+                                            value={filterMinCapacity}
+                                            onChange={(e) => setFilterMinCapacity(e.target.value)}
+                                            className="bg-background border-border"
+                                        />
+                                    </div>
+                                    <div className="pt-2 border-t border-border/10">
+                                        <Button 
+                                            variant="ghost" 
+                                            className="w-full text-xs font-bold"
+                                            onClick={() => {
+                                                setFilterProductionType('all');
+                                                setFilterMinCapacity('');
+                                            }}
+                                        >
+                                            Clear Filters
+                                        </Button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-xs font-bold uppercase cursor-pointer" htmlFor="verified-filter">
+                                            Verified Professionals Only
+                                        </Label>
+                                        <Switch 
+                                            id="verified-filter"
+                                            checked={filterVerified} 
+                                            onCheckedChange={setFilterVerified} 
+                                        />
+                                    </div>
+                                    <div className="pt-2 border-t border-border/10">
+                                        <Button 
+                                            variant="ghost" 
+                                            className="w-full text-xs font-bold"
+                                            onClick={() => setFilterVerified(false)}
+                                        >
+                                            Clear Filters
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
                         </div>
-                        <Button variant="ghost" className="shrink-0 h-12 md:h-14 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-xs">
-                            <Filter size={18} />
-                            <span>Filters</span>
-                        </Button>
-                    </div>
-                </div>
-
-                {activeTab === 'services' && (
-                    <div className="flex flex-wrap gap-4 mb-10 p-4 bg-secondary/10 rounded-2xl border border-border/50">
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Type:</span>
-                            <select
-                                value={filterProductionType}
-                                onChange={(e) => setFilterProductionType(e.target.value)}
-                                className="bg-background border border-border rounded-lg text-sm px-3 py-2 outline-none"
-                            >
-                                <option value="all">All Productions</option>
-                                {PRODUCTION_TYPES.map(pt => (
-                                    <option key={pt} value={pt}>{pt}</option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Min Capacity:</span>
-                            <Input
-                                type="number"
-                                placeholder="e.g. 50"
-                                value={filterMinCapacity}
-                                onChange={(e) => setFilterMinCapacity(e.target.value)}
-                                className="w-24 bg-background border-border"
-                            />
-                        </div>
-                    </div>
-                )}
+                    }
+                />
 
                 {/* Content */}
                 {activeTab === 'vendors' ? (

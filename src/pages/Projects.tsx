@@ -54,6 +54,7 @@ import SEO from '@/components/common/SEO';
 
 import { useAccountType } from '@/hooks/useAccountType';
 import { useEffect } from 'react';
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
 
 const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const { user } = useAuth();
@@ -71,6 +72,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
     genres: [],
     roles: [],
@@ -143,10 +145,10 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           style={{ background: !project.image_url ? getGradientForString(project.title) : undefined }}
         >
           {project.image_url ? (
-            <img 
-              src={project.image_url} 
-              alt={project.title} 
-              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+            <img
+              src={project.image_url}
+              alt={project.title}
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
             />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center bg-black/10">
@@ -209,7 +211,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
                   <DropdownMenuItem onClick={handleShareClick}>
                     <Share2 className="mr-2 h-4 w-4" /> Share
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
+                  <DropdownMenuItem
                     className="text-amber-500 focus:text-amber-500"
                     onClick={() => {
                       setReportData({ id: project.id, title: project.title });
@@ -226,22 +228,22 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
           {/* Share Button for Non-Managers */}
           {(user?.id !== project.creator_id && !isAdmin) && (
             <div className="absolute bottom-3 right-3 z-20" onClick={(e) => e.stopPropagation()}>
-               <button
+              <button
                 onClick={handleShareClick}
                 className="p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 shadow-sm"
-               >
-                 <Share2 className="w-4 h-4 text-muted-foreground hover:text-primary transition-colors" />
-               </button>
-               <button
+              >
+                <Share2 className="w-4 h-4 text-muted-foreground hover:text-primary transition-colors" />
+              </button>
+              <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setReportData({ id: project.id, title: project.title });
                   setIsReportOpen(true);
                 }}
                 className="p-2 bg-background/80 backdrop-blur-sm rounded-full hover:bg-background transition-all hover:scale-110 shadow-sm"
-               >
-                 <Flag className="w-4 h-4 text-muted-foreground hover:text-red-500 transition-colors" />
-               </button>
+              >
+                <Flag className="w-4 h-4 text-muted-foreground hover:text-red-500 transition-colors" />
+              </button>
             </div>
           )}
 
@@ -314,27 +316,38 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
   return (
     <div className="min-h-screen bg-background pt-20">
-      <SEO 
-        title="ProjectSpace" 
-        description="Discover and collaborate on professional film and digital media projects. Browse open roles and build your production crew." 
+      <SEO
+        title="ProjectSpace"
+        description="Discover and collaborate on professional film and digital media projects. Browse open roles and build your production crew."
       />
       <div className="max-w-7xl mx-auto px-4 md:px-8 pb-36 animate-fade-in">
-        <PageHeader 
-          title="ProjectSpace" 
-          subtitle="Discover and collaborate on film projects" 
+        <PageHeader
+          title="ProjectSpace"
+          subtitle="Discover and collaborate on film projects"
           Icon={Film}
           actionsAtTop={true}
           actions={<ProjectCreationModal onProjectCreated={() => refetch()} defaultOpen={openCreate} />}
         />
 
         <div className="mb-6">
-          <div className="flex flex-row gap-2 sm:gap-4 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input placeholder="Search projects..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 text-sm" />
-            </div>
-            <ProjectFilters onFiltersChange={setFilters} activeFilters={filters} />
-          </div>
+          <UnifiedSearchBar
+            searchQuery={searchTerm}
+            onSearchChange={setSearchTerm}
+            searchPlaceholder="Search projects..."
+            hasActiveFilters={Object.values(filters).some(arr => arr.length > 0)}
+            filterOpen={filterOpen}
+            onFilterOpenChange={setFilterOpen}
+            filterTitle="Project Filters"
+            filterContent={
+              <ProjectFilters
+                onFiltersChange={(f) => {
+                  setFilters(f);
+                  setFilterOpen(false);
+                }}
+                activeFilters={filters}
+              />
+            }
+          />
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="bg-card border border-border w-full flex overflow-x-auto overflow-y-hidden justify-start no-scrollbar">
@@ -403,7 +416,7 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
 
         {/* Universal Share Sheet */}
         {projectToShare && (
-           <UniversalShareSheet 
+          <UniversalShareSheet
             isOpen={isShareSheetOpen}
             onOpenChange={setIsShareSheetOpen}
             shareType="project"
@@ -415,12 +428,12 @@ const Projects = ({ openCreate = false }: { openCreate?: boolean }) => {
               location: projectToShare.location,
               status: projectToShare.status
             }}
-           />
+          />
         )}
 
         {/* Report Dialog */}
         {reportData && (
-          <ReportDialog 
+          <ReportDialog
             isOpen={isReportOpen}
             onOpenChange={setIsReportOpen}
             targetType="project"

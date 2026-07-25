@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
 
 const Pitch = () => {
     const { user, profile } = useAuth();
@@ -35,7 +37,11 @@ const Pitch = () => {
         }
     }, [isFan, push]);
 
-    const [activeTab, setActiveTab] = useState('discover');
+    const location = useLocation();
+    const [activeTab, setActiveTab] = useState(() => {
+        const params = new URLSearchParams(location.search);
+        return params.get('tab') || 'discover';
+    });
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterOpen, setFilterOpen] = useState(false);
@@ -129,104 +135,85 @@ const Pitch = () => {
                     {/* ─── Discover Tab ─── */}
                     <TabsContent value="discover">
                         {/* Search + Filter Bar */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-card/40 border border-border/50 rounded-2xl p-3 mb-8 backdrop-blur-xl"
-                        >
-                            <div className="flex gap-3">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                    <Input
-                                        placeholder="Search pitch calls..."
-                                        className="h-12 pl-11 bg-transparent border-transparent focus:bg-muted/20 rounded-xl"
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                    />
-                                </div>
-                                <Popover open={filterOpen} onOpenChange={setFilterOpen}>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="ghost"
-                                            className={`h-12 px-5 rounded-xl border font-bold text-xs uppercase tracking-widest gap-2 ${hasActiveFilters ? 'text-primary border-primary/30 bg-primary/5' : 'border-border/50'}`}
-                                        >
-                                            <SlidersHorizontal className="h-4 w-4" />
-                                            Filters {hasActiveFilters && '•'}
-                                        </Button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-80 p-5 space-y-4" align="end">
-                                        <p className="font-black text-sm uppercase tracking-widest">Filter Pitch Calls</p>
-                                        
-                                        <div className="space-y-2">
-                                            <Label className="text-xs font-bold uppercase">Genre</Label>
-                                            <Select value={filters.genre || 'all'} onValueChange={v => setFilters(f => ({ ...f, genre: v === 'all' ? '' : v }))}>
-                                                <SelectTrigger className="h-9"><SelectValue placeholder="Any genre" /></SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">Any Genre</SelectItem>
-                                                    {['Action', 'Thriller', 'Drama', 'Comedy', 'Horror', 'Sci-Fi', 'Documentary'].map(g => (
-                                                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                        <UnifiedSearchBar
+                            searchQuery={searchQuery}
+                            onSearchChange={setSearchQuery}
+                            searchPlaceholder="Search pitch calls..."
+                            hasActiveFilters={!!hasActiveFilters}
+                            filterOpen={filterOpen}
+                            onFilterOpenChange={setFilterOpen}
+                            filterTitle="Filter Pitch Calls"
+                            filterContent={
+                                <>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase">Genre</Label>
+                                        <Select value={filters.genre || 'all'} onValueChange={v => setFilters(f => ({ ...f, genre: v === 'all' ? '' : v }))}>
+                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any genre" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Any Genre</SelectItem>
+                                                {['Action', 'Thriller', 'Drama', 'Comedy', 'Horror', 'Sci-Fi', 'Documentary'].map(g => (
+                                                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                        <div className="space-y-2">
-                                            <Label className="text-xs font-bold uppercase">Language</Label>
-                                            <Select value={filters.language || 'all'} onValueChange={v => setFilters(f => ({ ...f, language: v === 'all' ? '' : v }))}>
-                                                <SelectTrigger className="h-9"><SelectValue placeholder="Any language" /></SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">Any Language</SelectItem>
-                                                    {['Hindi', 'Telugu', 'Tamil', 'Malayalam', 'Kannada', 'English'].map(l => (
-                                                        <SelectItem key={l} value={l}>{l}</SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase">Language</Label>
+                                        <Select value={filters.language || 'all'} onValueChange={v => setFilters(f => ({ ...f, language: v === 'all' ? '' : v }))}>
+                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any language" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Any Language</SelectItem>
+                                                {['Hindi', 'Telugu', 'Tamil', 'Malayalam', 'Kannada', 'English'].map(l => (
+                                                    <SelectItem key={l} value={l}>{l}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                        <div className="space-y-2">
-                                            <Label className="text-xs font-bold uppercase">Compensation</Label>
-                                            <Select value={filters.compensation || 'all'} onValueChange={v => setFilters(f => ({ ...f, compensation: v === 'all' ? '' : v }))}>
-                                                <SelectTrigger className="h-9"><SelectValue placeholder="Any" /></SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="all">Any</SelectItem>
-                                                    <SelectItem value="paid">Paid Only</SelectItem>
-                                                    <SelectItem value="development_deal">Development Deal</SelectItem>
-                                                    <SelectItem value="revenue_share">Revenue Share</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase">Compensation</Label>
+                                        <Select value={filters.compensation || 'all'} onValueChange={v => setFilters(f => ({ ...f, compensation: v === 'all' ? '' : v }))}>
+                                            <SelectTrigger className="h-9"><SelectValue placeholder="Any" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">Any</SelectItem>
+                                                <SelectItem value="paid">Paid Only</SelectItem>
+                                                <SelectItem value="development_deal">Development Deal</SelectItem>
+                                                <SelectItem value="revenue_share">Revenue Share</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
 
-                                        <div className="space-y-3 pt-2 border-t border-border">
-                                            <div className="flex items-center justify-between">
-                                                <Label className="text-sm">Open to Debut Writers</Label>
-                                                <Switch
-                                                    checked={filters.openToDebut}
-                                                    onCheckedChange={v => setFilters(f => ({ ...f, openToDebut: v }))}
-                                                />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <Label className="text-sm">Regional Stories Welcome</Label>
-                                                <Switch
-                                                    checked={filters.regionalWelcome}
-                                                    onCheckedChange={v => setFilters(f => ({ ...f, regionalWelcome: v }))}
-                                                />
-                                            </div>
+                                    <div className="space-y-3 pt-2 border-t border-border">
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-sm">Open to Debut Writers</Label>
+                                            <Switch
+                                                checked={filters.openToDebut}
+                                                onCheckedChange={v => setFilters(f => ({ ...f, openToDebut: v }))}
+                                            />
                                         </div>
+                                        <div className="flex items-center justify-between">
+                                            <Label className="text-sm">Regional Stories Welcome</Label>
+                                            <Switch
+                                                checked={filters.regionalWelcome}
+                                                onCheckedChange={v => setFilters(f => ({ ...f, regionalWelcome: v }))}
+                                            />
+                                        </div>
+                                    </div>
 
-                                        <Button
-                                            variant="outline"
-                                            className="w-full text-xs"
-                                            onClick={() => {
-                                                setFilters({ genre: '', language: '', format: '', budgetRange: '', compensation: '', openToDebut: false, regionalWelcome: false });
-                                                setFilterOpen(false);
-                                            }}
-                                        >
-                                            Clear All Filters
-                                        </Button>
-                                    </PopoverContent>
-                                </Popover>
-                            </div>
-                        </motion.div>
+                                    <Button
+                                        variant="outline"
+                                        className="w-full text-xs"
+                                        onClick={() => {
+                                            setFilters({ genre: '', language: '', format: '', budgetRange: '', compensation: '', openToDebut: false, regionalWelcome: false });
+                                            setFilterOpen(false);
+                                        }}
+                                    >
+                                        Clear All Filters
+                                    </Button>
+                                </>
+                            }
+                        />
 
                         {/* Results */}
                         {loading ? (

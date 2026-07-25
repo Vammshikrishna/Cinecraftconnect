@@ -17,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu.tsx";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
@@ -39,7 +39,7 @@ interface Notification {
   priority: 'high' | 'medium' | 'low';
 }
 
-const NotificationIcon = ({ type, is_read }: { type: Notification['type'], is_read: boolean }) => {
+const NotificationIcon = ({ type, is_read }: { type: string, is_read: boolean }) => {
   const commonClass = `h-5 w-5 ${is_read ? 'text-muted-foreground' : 'text-primary'}`;
   switch (type) {
     case 'new_follower': return <UserPlus className={commonClass} />;
@@ -49,6 +49,11 @@ const NotificationIcon = ({ type, is_read }: { type: Notification['type'], is_re
     case 'like': return <span className="text-pink-500">❤️</span>;
     case 'comment': return <span className="text-blue-500">💬</span>;
     case 'job_application': return <span className="text-emerald-500">💼</span>;
+    case 'pitch_status_request_full_deck': return <span className="text-base">📄</span>;
+    case 'pitch_status_shortlisted': return <span className="text-base">⭐</span>;
+    case 'pitch_status_interested': return <span className="text-base">🎉</span>;
+    case 'pitch_status_invite_to_discuss': return <span className="text-base">💬</span>;
+    case 'pitch_status_passed': return <span className="text-base">👍</span>;
     default: return <Bell className={commonClass} />;
   }
 }
@@ -62,43 +67,44 @@ const NotificationsDropdown = () => {
   const location = useLocation();
   const isNotificationsActive = location.pathname.startsWith('/notifications');
 
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .neq('type', 'new_message')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      const formatted = (data || []).map((n: any) => ({
+        id: n.id,
+        user_id: n.user_id,
+        trigger_user_id: n.trigger_user_id,
+        type: n.type as any,
+        title: n.title,
+        message: n.message,
+        action_url: n.action_url,
+        is_read: n.is_read || false,
+        created_at: n.created_at,
+        priority: n.priority as any || 'medium'
+      }));
+
+      setNotifications(formatted);
+      setUnreadCount(formatted.filter((n: any) => !n.is_read).length);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
+
   useEffect(() => {
     if (!user) return;
-
-    const fetchNotifications = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('notifications')
-          .select('*')
-          .eq('user_id', user.id)
-          .neq('type', 'new_message')
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (error) throw error;
-
-        const formatted = (data || []).map((n: any) => ({
-          id: n.id,
-          user_id: n.user_id,
-          trigger_user_id: n.trigger_user_id,
-          type: n.type as any,
-          title: n.title,
-          message: n.message,
-          action_url: n.action_url,
-          is_read: n.is_read || false,
-          created_at: n.created_at,
-          priority: n.priority as any || 'medium'
-        }));
-
-        setNotifications(formatted);
-        setUnreadCount(formatted.filter((n: any) => !n.is_read).length);
-      } catch (err) {
-        console.error('Error fetching notifications:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
 
     fetchNotifications();
 
@@ -124,7 +130,7 @@ const NotificationsDropdown = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id]);
+  }, [user?.id, fetchNotifications]);
 
   const markAsRead = async (notificationId: string) => {
     const notification = notifications.find((n: Notification) => n.id === notificationId);
@@ -168,7 +174,7 @@ const NotificationsDropdown = () => {
   );
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(open) => { if (open) fetchNotifications(); }}>
       <DropdownMenuTrigger asChild>
         <Button 
           variant={isNotificationsActive ? "default" : "ghost"} 

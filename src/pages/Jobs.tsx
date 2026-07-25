@@ -32,7 +32,8 @@ import {
 import { PageHeader } from '@/components/common/PageHeader';
 import { JobSkeleton } from "@/components/ui/enhanced-skeleton";
 import SEO from "@/components/common/SEO";
-
+import { UnifiedSearchBar } from "@/components/ui/unified-search-bar";
+import { cn } from "@/lib/utils";
 
 const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -43,6 +44,7 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
   const [sortBy, setSortBy] = useState<'newest' | 'salary_high' | 'salary_low'>('newest');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterExperience, setFilterExperience] = useState<string>('all');
+  const [filterOpen, setFilterOpen] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const { isFan } = useAccountType();
@@ -181,100 +183,97 @@ const Jobs = ({ openCreate = false }: { openCreate?: boolean }) => {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="bg-card/40 border border-border/50 rounded-2xl md:rounded-3xl p-2 md:p-4 mb-8 md:mb-12 backdrop-blur-xl"
+          className="mb-8 md:mb-12"
         >
           <div className="flex flex-col md:flex-row gap-2 md:gap-4">
-            <div className="relative flex-grow">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
-              <Input
-                placeholder="Search for jobs, companies, or roles..."
-                className="h-12 md:h-14 pl-12 bg-transparent border-transparent focus:bg-muted/30 rounded-xl md:rounded-2xl transition-all font-medium placeholder:text-muted-foreground/50 text-sm md:text-base"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" className={`flex-1 md:flex-none h-12 md:h-14 px-4 md:px-6 rounded-xl md:rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors ${(filterType !== 'all' || filterExperience !== 'all') ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
-                    <Filter size={14} /> Filters
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80 p-6 glass-card border-border/40 rounded-[2rem] shadow-2xl mr-4" align="end">
-                  <div className="space-y-6">
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Job Type</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {['all', 'full-time', 'part-time', 'contract', 'project-based'].map((type) => (
-                          <Button 
-                            key={type}
-                            variant={filterType === type ? 'default' : 'outline'}
-                            onClick={() => setFilterType(type)}
-                            className="h-9 px-4 rounded-xl text-xs font-bold"
-                          >
-                            {type === 'all' ? 'Any' : type.replace('-', ' ')}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <DropdownMenuSeparator className="bg-border/20" />
-
-                    <div className="space-y-3">
-                      <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Experience</h4>
-                      <div className="flex flex-wrap gap-2">
-                        {['all', 'Entry', 'Mid', 'Senior', 'Lead'].map((level) => (
-                          <Button 
-                            key={level}
-                            variant={filterExperience === level ? 'default' : 'outline'}
-                            onClick={() => setFilterExperience(level)}
-                            className="h-9 px-4 rounded-xl text-xs font-bold"
-                          >
-                            {level === 'all' ? 'Any' : level}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {(filterType !== 'all' || filterExperience !== 'all') && (
-                      <>
-                        <DropdownMenuSeparator className="bg-border/20" />
+            <UnifiedSearchBar
+              className="mb-0 flex-1"
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              searchPlaceholder="Search for jobs, companies, or roles..."
+              hasActiveFilters={filterType !== 'all' || filterExperience !== 'all'}
+              filterTitle="Filter Jobs"
+              filterOpen={filterOpen}
+              onFilterOpenChange={setFilterOpen}
+              filterContent={
+                <>
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Job Type</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {['all', 'full-time', 'part-time', 'contract', 'project-based'].map((type) => (
                         <Button 
-                          variant="ghost" 
-                          className="w-full h-10 rounded-xl text-xs font-black text-primary uppercase"
-                          onClick={() => {
-                            setFilterType('all');
-                            setFilterExperience('all');
-                          }}
+                          key={type}
+                          variant={filterType === type ? 'default' : 'outline'}
+                          onClick={() => setFilterType(type)}
+                          className="h-9 px-4 rounded-xl text-xs font-bold"
                         >
-                          Clear All Filters
+                          {type === 'all' ? 'Any' : type.replace('-', ' ')}
                         </Button>
-                      </>
-                    )}
+                      ))}
+                    </div>
                   </div>
-                </PopoverContent>
-              </Popover>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className={`flex-1 md:flex-none h-14 px-6 rounded-2xl border border-border/50 hover:bg-muted/50 gap-2 font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors ${sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : ''}`}>
-                    <ArrowUpDown size={16} /> Sort
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56 p-2 glass-card border-border/40 rounded-2xl shadow-2xl" align="end">
-                  <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground/50 px-3 py-2">Sort By</DropdownMenuLabel>
-                  <DropdownMenuItem onClick={() => setSortBy('newest')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'newest' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
-                    Newest First
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortBy('salary_high')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_high' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
-                    Highest Salary
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setSortBy('salary_low')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_low' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
-                    Lowest Salary
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                  <DropdownMenuSeparator className="bg-border/20" />
+
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-black uppercase tracking-widest text-muted-foreground/50">Experience</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {['all', 'Entry', 'Mid', 'Senior', 'Lead'].map((level) => (
+                        <Button 
+                          key={level}
+                          variant={filterExperience === level ? 'default' : 'outline'}
+                          onClick={() => setFilterExperience(level)}
+                          className="h-9 px-4 rounded-xl text-xs font-bold"
+                        >
+                          {level === 'all' ? 'Any' : level}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {(filterType !== 'all' || filterExperience !== 'all') && (
+                    <>
+                      <DropdownMenuSeparator className="bg-border/20" />
+                      <Button 
+                        variant="ghost" 
+                        className="w-full h-10 rounded-xl text-xs font-black text-primary uppercase"
+                        onClick={() => {
+                          setFilterType('all');
+                          setFilterExperience('all');
+                        }}
+                      >
+                        Clear All Filters
+                      </Button>
+                    </>
+                  )}
+                </>
+              }
+              extraActions={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className={cn(
+                        "w-full sm:w-auto h-12 px-3 sm:px-5 rounded-xl border font-bold uppercase tracking-widest text-[10px] md:text-xs transition-colors shrink-0",
+                        sortBy !== 'newest' ? 'text-primary border-primary/30 bg-primary/5' : 'border-border/50 hover:bg-muted/50'
+                      )}>
+                      <ArrowUpDown size={16} /> 
+                      <span className="hidden sm:inline ml-2">Sort</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56 p-2 glass-card border-border/40 rounded-2xl shadow-2xl" align="end">
+                    <DropdownMenuLabel className="text-[10px] font-black uppercase tracking-tighter text-muted-foreground/50 px-3 py-2">Sort By</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => setSortBy('newest')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'newest' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                      Newest First
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortBy('salary_high')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_high' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                      Highest Salary
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortBy('salary_low')} className={`rounded-xl px-3 py-2.5 font-bold cursor-pointer ${sortBy === 'salary_low' ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50'}`}>
+                      Lowest Salary
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
+            />
           </div>
         </motion.div>
 

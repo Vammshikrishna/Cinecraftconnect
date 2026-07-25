@@ -41,7 +41,7 @@ const Bullet = ({ text }: { text: string }) => (
 );
 
 const TermsOfService = () => {
-  const lastUpdated = "April 17, 2026";
+  const lastUpdated = "July 25, 2026";
 
   return (
     <div style={{ background:CREAM, color:INK, fontFamily:SANS, overflowX:'hidden' }}>
@@ -95,7 +95,40 @@ const TermsOfService = () => {
 
         <Sec num="05" Icon={Shield} title="Limitation of Liability" tag="Liability Limits // Disclaimers">
           <p style={{ marginBottom:16 }}>In no event shall CineCraft Connect, its founders, or licensing partners be liable for any indirect, incidental, or consequential damages resulting from communications or rentals coordinated through our network tools.</p>
-          <p>The Platform is provided on an "as is" and "as available" basis without warranties of any kind, either express or implied.</p>
+          <p style={{ marginBottom:16 }}>The Platform is provided on an "as is" and "as available" basis without warranties of any kind, either express or implied.</p>
+          <p><strong>Pitch Marketplace Exclusion:</strong> CineCraft Connect is a neutral marketplace platform. We are explicitly held harmless for any intellectual property disputes, script theft allegations, compensation disagreements, or creative ownership claims arising between writers (submitters) and call creators (producers) using the Pitch feature. The platform's role is limited to facilitating introductions and storing timestamped evidence — not adjudicating disputes.</p>
+        </Sec>
+
+        <Sec num="06" Icon={Gavel} title="Pitch Marketplace — Dispute Resolution" tag="Mandatory Arbitration // Pitch Feature">
+          <p style={{ marginBottom:16 }}>This section governs all disputes arising from use of the Pitch feature, including pitch submission, review, or any resulting collaboration or IP claim.</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:20 }}>
+            <Bullet text="Mandatory Arbitration: All disputes must be resolved through binding private arbitration — not through public courts — except where applicable law explicitly prohibits this." />
+            <Bullet text="Arbitration Body: Arbitration shall be conducted under the rules of the Society of Mediators and Arbitrators of India (SAMA) or any mutually agreed arbitration body." />
+            <Bullet text="Venue: Arbitration proceedings shall take place in Hyderabad, Telangana, India, and may be conducted in English or Hindi." />
+            <Bullet text="Class Action Waiver: Users waive all rights to participate in class-action lawsuits or class-wide arbitration against CineCraft Connect arising from Pitch feature disputes." />
+            <Bullet text="Hold Harmless: Writers and call creators agree to hold CineCraft Connect harmless and indemnify it against any claims, damages, or legal costs arising from disputes between platform users." />
+            <Bullet text="Evidence Admissibility: Parties agree that server-side timestamps, access logs, NDA signatures, and guild registration numbers stored by CineCraft Connect constitute valid and admissible evidence in any arbitration or court proceeding." />
+          </div>
+          <div style={{ padding:'16px 20px', border:`1px solid rgba(249,115,22,0.2)`, background:'rgba(249,115,22,0.04)', borderRadius:4, fontSize:13, color:'rgba(13,13,13,0.55)', fontStyle:'italic' }}>
+            Governing Law for Pitch Disputes: Indian Copyright Act (1957), Information Technology Act (2000), and the Arbitration and Conciliation Act (1996).
+          </div>
+        </Sec>
+
+        <Sec num="07" Icon={FileText} title="Pitch-Specific IP Declarations" tag="Writer Obligations // Pitch Feature">
+          <p style={{ marginBottom:16 }}>By submitting a pitch through the CineCraft Connect Pitch Marketplace, writers and creators make the following legally binding declarations:</p>
+          <div style={{ display:'flex', flexDirection:'column', gap:12, marginBottom:20 }}>
+            <Bullet text="Rights Ownership: You confirm you are the sole or authorised owner of all rights to the submitted story, script, or concept." />
+            <Bullet text="Original Work: You declare the submission is an original creative work and has not been plagiarised from any existing copyrighted material." />
+            <Bullet text="Guild Registration: If a Screenwriters Association (SWA) or WGA registration number is provided, you confirm it is accurate and belongs to the submitted work." />
+            <Bullet text="False Declaration Liability: Submitting a pitch with false declarations constitutes fraudulent misrepresentation and may be prosecuted under the Indian Penal Code, Section 420, and the IT Act." />
+            <Bullet text="NDA Binding Effect: If a Non-Disclosure Agreement (NDA) is signed via the platform's e-signature feature, it constitutes a valid clickwrap agreement under the Indian IT Act, 2000, and is legally binding on both parties." />
+            <Bullet text="Call Creator Obligation: Call creators who sign an NDA to access protected pitch content are bound to maintain confidentiality and may not use the pitch concept without formal agreement with the writer." />
+          </div>
+          <div style={{ padding:'16px 20px', border:`1px solid rgba(249,115,22,0.2)`, background:'rgba(249,115,22,0.04)', borderRadius:4, fontSize:13, color:'rgba(13,13,13,0.55)' }}>
+            <strong>Register your script before pitching:</strong> Writers are strongly encouraged to register their work with the{' '}
+            <a href="https://swaindia.org" target="_blank" rel="noopener noreferrer" style={{ color:'#f97316', textDecoration:'underline' }}>Screenwriters Association (SWA)</a>{' '}
+            before submitting on the platform. SWA registration provides government-backed copyright proof that significantly strengthens your legal position in any dispute.
+          </div>
         </Sec>
 
         <div style={{ marginTop:56, padding:'32px 36px', border:`1px solid rgba(249,115,22,0.2)`, background:'rgba(249,115,22,0.04)', borderRadius:4 }}>
