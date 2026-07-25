@@ -107,12 +107,12 @@ export const JobShareCard = ({
 
                 {/* Compact Content */}
                 <div className="p-3 space-y-2 bg-white dark:bg-black/60 backdrop-blur-md">
-                    <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-serif text-[13px] font-bold text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase truncate">
+                    <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-serif text-[13px] font-bold text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase line-clamp-2 flex-1">
                             {title || 'Open Casting'}
                         </h3>
                         {type && (
-                            <div className="font-mono px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded text-[8px] font-bold text-primary uppercase tracking-widest shrink-0">
+                            <div className="font-mono px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded text-[8px] font-bold text-primary uppercase tracking-widest shrink-0 mt-0.5">
                                 TYPE // {type}
                             </div>
                         )}
@@ -153,12 +153,12 @@ export const JobShareCard = ({
             {/* Content Section */}
             <div className="pt-10 px-4 pb-4 space-y-4 bg-white dark:bg-black/60 backdrop-blur-md">
                 <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-serif text-[13px] font-bold text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase">
+                    <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-serif text-[13px] font-bold text-foreground leading-tight tracking-tight group-hover:text-primary transition-colors uppercase line-clamp-2 flex-1">
                             {title || 'Open Casting'}
                         </h3>
                         {type && (
-                            <div className="font-mono px-2 py-0.5 bg-primary/10 border border-primary/20 rounded text-[7.5px] font-bold text-primary uppercase tracking-widest">
+                            <div className="font-mono px-2 py-0.5 bg-primary/10 border border-primary/20 rounded text-[7.5px] font-bold text-primary uppercase tracking-widest shrink-0 mt-0.5">
                                 TYPE // {type}
                             </div>
                         )}

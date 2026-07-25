@@ -16,7 +16,7 @@ export const CachedVideo = React.forwardRef<HTMLVideoElement, CachedVideoProps>(
     }
 
     return (
-      <div className={cn("relative overflow-hidden bg-muted/20 w-full min-h-[200px] flex items-center justify-center", skeletonClassName)}>
+      <div className={cn("relative overflow-hidden bg-muted/20 w-full h-full flex items-center justify-center", skeletonClassName)}>
         {!isLoaded && !hasError && (
           <div className="absolute inset-0 bg-muted/30 animate-pulse z-0" />
         )}

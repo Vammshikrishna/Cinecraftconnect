@@ -142,14 +142,17 @@ export const E2EEBackupProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setBackupSalt(backupData.salt);
         setEncryptedPrivateKey(backupData.encrypted_private_key);
 
-        if (!hasVerifiedSessionPIN || !hasValidLocalKey) {
-          console.log("🔐 [E2EE Context] Remote backup exists. Prompting instant PIN recovery.");
-          setIsSetupRequired(false);
-          setIsRecoveryRequired(true);
-        } else {
-          console.log("🔐 [E2EE Context] PIN verified for active session. Access granted.");
+        // If a valid local private key is already stored locally on this device/app,
+        // we DO NOT ask for the recovery PIN on app restart/launch.
+        // Recovery PIN is ONLY required when logging in on a new device/fresh login where the local key is missing.
+        if (hasValidLocalKey) {
+          console.log("🔐 [E2EE Context] Valid local key present. PIN recovery not needed for app startup.");
           setIsSetupRequired(false);
           setIsRecoveryRequired(false);
+        } else {
+          console.log("🔐 [E2EE Context] Remote backup exists but local key is missing. Prompting PIN recovery for fresh login.");
+          setIsSetupRequired(false);
+          setIsRecoveryRequired(true);
         }
       } else {
         // No remote backup exists yet
