@@ -48,18 +48,30 @@ export const Chart = ({ data, type, config }: ChartProps) => {
             const pieData = config?.data || [];
             return (
                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                    <PieChart margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                         <Pie 
                             data={pieData} 
                             dataKey="value" 
                             nameKey="name" 
                             cx="50%" 
                             cy="50%" 
-                            outerRadius={80} 
-                            innerRadius={60}
+                            outerRadius={65} 
+                            innerRadius={45}
                             paddingAngle={5}
                             labelLine={false} 
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            label={({ name, percent, x, y, cx }) => (
+                                <text
+                                    x={x}
+                                    y={y}
+                                    fill="#ffffff"
+                                    textAnchor={x > cx ? 'start' : 'end'}
+                                    dominantBaseline="central"
+                                    fontSize={11}
+                                    fontWeight="bold"
+                                >
+                                    {`${name}: ${(percent * 100).toFixed(0)}%`}
+                                </text>
+                            )}
                         >
                             {(pieData.map((entry: EngagementData, index: number) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />

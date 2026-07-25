@@ -1432,7 +1432,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                             "relative transition-all duration-300",
                             selectedMessageIds.includes(message.id) && "ring-2 ring-primary ring-offset-2 ring-offset-background scale-[0.98]",
                             message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
-                              isShare ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
+                              isShare ? "p-0 bg-transparent rounded-2xl border border-border/10" :
                                 (message.attachment_url && (!message.content || message.content === 'Shared an image' || message.content === 'Shared a video' || message.content === 'Shared a file')) ? "p-0 bg-transparent rounded-xl overflow-hidden shadow-xl" :
                                   isOwn ? "bg-gradient-to-br from-chat-outgoing-bg-start to-chat-outgoing-bg-end text-chat-outgoing-text font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" :
                                     "bg-chat-incoming-bg border border-chat-incoming-border text-chat-incoming-text dark:bg-muted dark:border-transparent dark:text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
@@ -1446,16 +1446,25 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <button
-                                        className="p-0 text-current opacity-70 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] pointer-events-none sm:pointer-events-auto"
+                                        className="p-1 text-current opacity-80 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[18px] min-h-[18px] pointer-events-auto"
                                         title="Options"
                                         onClick={(e) => e.stopPropagation()}
                                       >
-                                        <span className="hidden sm:group-hover:inline-flex sm:data-[state=open]:inline-flex items-center justify-center">
+                                        <span className="inline-flex items-center justify-center">
                                           <ChevronDown className="h-4 w-4" />
                                         </span>
                                       </button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48 z-50">
+                                    <DropdownMenuContent align="end" className="w-40 z-50">
+                                      {!message.is_deleted && (
+                                        <DropdownMenuItem onClick={() => setActiveMobileReactionMessageId(message.id)}>
+                                          <Smile className="h-3.5 w-3.5 mr-2" /> React
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => handleToggleStarMessages([message.id])}>
+                                        <Star className={cn("h-3.5 w-3.5 mr-2", starredMessageIds.has(message.id) && "fill-amber-400 text-amber-400")} />
+                                        <span>{starredMessageIds.has(message.id) ? 'Unstar' : 'Star'}</span>
+                                      </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => setReplyingTo(message)}>
                                         <Reply className="h-3.5 w-3.5 mr-2" /> Reply
                                       </DropdownMenuItem>
@@ -1509,8 +1518,8 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                             ) : (
                               renderMessageContent(message)
                             )}
-                            {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
-                            {!message.is_deleted && (
+                            {/* WhatsApp style inline timestamp for normal text messages */}
+                            {!message.is_deleted && !isShare && (
                               <span className="inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80">
                                 {starredMessageIds.has(message.id) && (
                                   <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
@@ -1521,14 +1530,19 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <button
-                                        className="p-0 text-current opacity-70 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] pointer-events-none sm:pointer-events-auto ml-0.5"
+                                        className="p-0 text-current opacity-80 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[16px] min-h-[16px] pointer-events-auto ml-0.5"
                                         title="Options"
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         <ChevronDown className="h-3.5 w-3.5" />
                                       </button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-36 z-[60]">
+                                    <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-40 z-[60]">
+                                      {!message.is_deleted && (
+                                        <DropdownMenuItem onClick={() => setActiveMobileReactionMessageId(message.id)}>
+                                          <Smile className="h-3.5 w-3.5 mr-2" /> React
+                                        </DropdownMenuItem>
+                                      )}
                                       {isOwn && (
                                         <DropdownMenuItem
                                           onClick={() => {
@@ -1543,6 +1557,10 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                           </div>
                                         </DropdownMenuItem>
                                       )}
+                                      <DropdownMenuItem onClick={() => handleToggleStarMessages([message.id])}>
+                                        <Star className={cn("h-3.5 w-3.5 mr-2", starredMessageIds.has(message.id) && "fill-amber-400 text-amber-400")} />
+                                        <span>{starredMessageIds.has(message.id) ? 'Unstar' : 'Star'}</span>
+                                      </DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => setReplyingTo(message)}>
                                         <Reply className="h-3.5 w-3.5 mr-2" /> Reply
                                       </DropdownMenuItem>
@@ -1572,8 +1590,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                             {/* Reactions Pill */}
                             {message.reactions && message.reactions.length > 0 && (
                               <div className={cn(
-                                "absolute -bottom-3.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md",
-                                isOwn ? "right-2" : "left-2"
+                                "absolute -bottom-3.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md left-2"
                               )}>
                                 {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
                                   const count = message.reactions!.filter(r => r.emoji === emoji).length;
@@ -1594,65 +1611,137 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                 })}
                               </div>
                             )}
-                          </div>
 
-                          {/* Hover Reaction Button (like DM Chat) */}
-                          {!message.is_deleted && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMobileReactionMessageId(prev => prev === message.id ? null : message.id);
-                              }}
-                              className={cn(
-                                "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all opacity-0 group-hover:opacity-100 shrink-0",
-                                isOwn ? "-left-8" : "-right-8",
-                                activeMobileReactionMessageId === message.id && "opacity-100"
-                              )}
-                              title="React"
-                            >
-                              <Smile className="h-4 w-4" />
-                            </button>
-                          )}
-
-                          {/* Mobile floating reactions picker */}
-                          {activeMobileReactionMessageId === message.id && (
-                            <div
-                              className={cn(
-                                "absolute -top-12 z-50 flex items-center gap-1 p-1.5 rounded-full border border-border/50 shadow-xl bg-background/95 backdrop-blur-xl animate-in zoom-in-95 duration-100",
-                                isOwn ? "right-0" : "left-0"
-                              )}
-                              onTouchStart={(e) => e.stopPropagation()}
-                              onMouseDown={(e) => e.stopPropagation()}
-                            >
-                              {QUICK_REACTIONS.map(emoji => (
-                                <button
-                                  key={emoji}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleToggleReaction(message.id, emoji);
-                                    setActiveMobileReactionMessageId(null);
-                                  }}
-                                  className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
-                                >
-                                  {emoji}
-                                </button>
-                              ))}
+                            {/* Hover Reaction Button (like DM Chat) */}
+                            {!message.is_deleted && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setActiveMobileReactionMessageId(null);
+                                  setActiveMobileReactionMessageId(prev => prev === message.id ? null : message.id);
                                 }}
-                                className="p-1 text-muted-foreground hover:text-foreground rounded-full"
+                                className={cn(
+                                  "absolute top-1/2 -translate-y-1/2 p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all opacity-0 group-hover:opacity-100 shrink-0",
+                                  isOwn ? "-left-8" : "-right-8",
+                                  activeMobileReactionMessageId === message.id && "opacity-100"
+                                )}
+                                title="React"
                               >
-                                <X className="h-4 w-4" />
+                                <Smile className="h-4 w-4" />
                               </button>
+                            )}
+
+                            {/* Mobile floating reactions picker */}
+                            {activeMobileReactionMessageId === message.id && (
+                              <div
+                                className={cn(
+                                  "absolute -top-12 z-50 flex items-center gap-1 p-1.5 rounded-full border border-border/50 shadow-xl bg-background/95 backdrop-blur-xl animate-in zoom-in-95 duration-100",
+                                  isOwn ? "right-0" : "left-0"
+                                )}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                onMouseDown={(e) => e.stopPropagation()}
+                              >
+                                {QUICK_REACTIONS.map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleReaction(message.id, emoji);
+                                      setActiveMobileReactionMessageId(null);
+                                    }}
+                                    className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveMobileReactionMessageId(null);
+                                  }}
+                                  className="p-1 text-muted-foreground hover:text-foreground rounded-full"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Dedicated timestamp row for share cards below card */}
+                          {isShare && !message.is_deleted && (
+                            <div className="w-full flex items-center justify-end gap-1 mt-1 px-1 text-[10px] text-chat-text-muted/80 dark:text-muted-foreground/80 select-none">
+                              {starredMessageIds.has(message.id) && (
+                                <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
+                              )}
+                              <span>{formatTimestamp(message.created_at)}</span>
+
+                              {(isOwn || !showSenderName) && (
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      className="p-0 text-current opacity-80 hover:opacity-100 rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[16px] min-h-[16px] pointer-events-auto ml-0.5"
+                                      title="Options"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align={isOwn ? 'end' : 'start'} className="w-40 z-[60]">
+                                    {!message.is_deleted && (
+                                      <DropdownMenuItem onClick={() => setActiveMobileReactionMessageId(message.id)}>
+                                        <Smile className="h-3.5 w-3.5 mr-2" /> React
+                                      </DropdownMenuItem>
+                                    )}
+                                    {isOwn && (
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setInfoMessage(message);
+                                          setShowInfoDialog(true);
+                                        }}
+                                        className="flex items-center justify-between cursor-pointer"
+                                      >
+                                        <div className="flex items-center">
+                                          <Info className="h-3.5 w-3.5 mr-2 text-primary" />
+                                          <span>Info</span>
+                                        </div>
+                                      </DropdownMenuItem>
+                                    )}
+                                    <DropdownMenuItem onClick={() => handleToggleStarMessages([message.id])}>
+                                      <Star className={cn("h-3.5 w-3.5 mr-2", starredMessageIds.has(message.id) && "fill-amber-400 text-amber-400")} />
+                                      <span>{starredMessageIds.has(message.id) ? 'Unstar' : 'Star'}</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                      <Reply className="h-3.5 w-3.5 mr-2" /> Reply
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      navigator.clipboard.writeText(message.content || '');
+                                      toast({ title: "Copied to clipboard" });
+                                    }}>
+                                      <Copy className="h-3.5 w-3.5 mr-2" /> Copy
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => {
+                                      toggleMessageSelection(message.id);
+                                      setShowForwardDialog(true);
+                                    }}>
+                                      <Share2 className="h-3.5 w-3.5 mr-2" /> Forward
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => toggleMessageSelection(message.id)}>
+                                      <Check className="h-3.5 w-3.5 mr-2" /> Select
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive focus:bg-destructive/10">
+                                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              )}
                             </div>
                           )}
+
+                          {/* Seen status info block */}
                           {isOwn && (!isSameSenderAsNext || uniqueSeenBy.length > 0) && (
-                            <div className="flex justify-end mt-0.5 mb-1 px-1">
+                            <div className="w-full text-right mt-0.5 mb-1 px-1 select-none">
                               {uniqueSeenBy.length > 0 ? (
                                 <span
-                                  className="text-[9px] font-bold text-primary/60 tracking-tight cursor-pointer hover:underline"
+                                  className="text-[9px] font-bold text-primary/70 tracking-tight cursor-pointer hover:underline inline-block text-right"
                                   onClick={() => {
                                     setInfoMessage(message);
                                     setShowInfoDialog(true);
@@ -1661,7 +1750,7 @@ export const ProjectChatInterface = ({ projectId, isActive = true }: ProjectChat
                                   Seen by {uniqueSeenBy.join(', ')}
                                 </span>
                               ) : (
-                                <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight">
+                                <span className="text-[9px] font-medium text-muted-foreground/60 tracking-tight inline-block text-right">
                                   {message.status === 'pending' ? 'Sending...' : 'Sent'}
                                 </span>
                               )}

@@ -204,7 +204,7 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
       </div>
 
       {/* Animated Like Count */}
-      <div className="overflow-hidden h-5 relative flex items-center min-w-[1.5rem]">
+      <div className={`overflow-hidden h-5 relative flex items-center ${hideLikes ? 'min-w-[3.5rem]' : 'min-w-[1.5rem]'}`}>
         <AnimatePresence mode="popLayout" initial={false}>
           {hideLikes ? (
             <motion.span
@@ -213,7 +213,7 @@ const LikeButton = ({ isLiked, isLiking, handleLike, likeCount, hideLikes }: {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -20, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="text-[13px] font-semibold absolute"
+              className="text-[13px] font-semibold whitespace-nowrap"
             >
               {isLiked ? 'Liked' : 'Likes'}
             </motion.span>

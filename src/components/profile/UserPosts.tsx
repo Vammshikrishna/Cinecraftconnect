@@ -194,6 +194,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
                   <CachedVideo
                     src={effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl}
                     className="w-full h-full object-cover"
+                    skeletonClassName="w-full h-full"
                     preload="none"
                   />
                 ) : (
@@ -201,6 +202,7 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
                     src={getOptimizedImage(effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl, { width: 400, height: 400 })}
                     alt="Post"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    skeletonClassName="w-full h-full"
                   />
                 )
               ) : (

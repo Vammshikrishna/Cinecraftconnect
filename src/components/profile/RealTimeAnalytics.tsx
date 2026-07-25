@@ -244,9 +244,9 @@ export const RealTimeAnalytics = () => {
 
   const engagementDistribution = [
     { name: 'Posts', value: analytics.totalPosts, color: 'hsl(var(--primary))' },
-    { name: 'Comments', value: analytics.totalComments, color: 'hsl(var(--secondary))' },
-    { name: 'Likes', value: analytics.totalLikes, color: 'hsl(var(--accent))' },
-    { name: 'Shares', value: 0, color: 'hsl(var(--muted-foreground))' },
+    { name: 'Comments', value: analytics.totalComments, color: '#3b82f6' },
+    { name: 'Likes', value: analytics.totalLikes, color: '#f97316' },
+    { name: 'Shares', value: 0, color: '#a855f7' },
   ].filter(item => item.value > 0);
 
   // Fallback for empty pie
