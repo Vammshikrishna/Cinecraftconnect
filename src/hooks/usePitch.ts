@@ -51,6 +51,7 @@ export interface PitchSubmission {
     logline: string;
     short_synopsis: string;
     full_synopsis: string | null;
+    full_deck_url: string | null;
     genre: string | null;
     format: string | null;
     language: string | null;
@@ -69,6 +70,10 @@ export interface PitchSubmission {
     seen_at: string | null;
     reviewed_at: string | null;
     shortlisted_at: string | null;
+    // ── Legal protection fields ──────────────────────────────────────────────
+    guild_registration_number: string | null;  // SWA / WGA registration number
+    nda_signature: string | null;              // Writer's typed e-signature for NDA
+    nda_signed_at: string | null;              // Timestamp of writer's NDA acceptance
     profiles?: {
         full_name: string | null;
         avatar_url: string | null;
@@ -79,6 +84,7 @@ export interface PitchSubmission {
     pitch_calls?: {
         title: string | null;
         project_type: string | null;
+        nda_required: boolean | null;
     };
 }
 
@@ -200,10 +206,10 @@ export const useMyPitchSubmissions = () => {
         setLoading(true);
         const { data } = await supabase
             .from('pitch_submissions')
-            .select(`*, pitch_calls:pitch_call_id(title, project_type)`)
+            .select(`*, pitch_calls:pitch_call_id(title, project_type, nda_required)`)
             .eq('submitter_id', user.id)
             .order('created_at', { ascending: false });
-        setSubmissions(data || []);
+        setSubmissions((data || []) as any[]);
         setLoading(false);
     }, [user?.id]);
 
@@ -248,7 +254,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
                 .select(`
                     *,
                     profiles:submitter_id(full_name, avatar_url, username, craft, is_verified),
-                    pitch_calls:pitch_call_id(title, project_type)
+                    pitch_calls:pitch_call_id(title, project_type, nda_required)
                 `)
                 .in(
                     'pitch_call_id',
@@ -321,6 +327,7 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
                 accessed_by: user!.id,
                 action: 'viewed'
             });
+
         } catch (error) {
             toast({ title: 'Error', description: 'Failed to update status.', variant: 'destructive' });
         }

@@ -11,11 +11,28 @@ import { motion } from 'framer-motion';
 import { useAccountType } from '@/hooks/useAccountType';
 import StudioPageIcon from '@/components/icons/StudioPageIcon';
 import { useAppRole } from '@/hooks/useAppRole';
+import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const CompanyPages = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const { data: pages = [], isLoading } = useCompanyPages(searchQuery);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filters, setFilters] = useState({ verifiedOnly: false, companySize: '' });
+  
+  const { data: rawPages = [], isLoading } = useCompanyPages(searchQuery);
+  
+  // Apply local filters
+  const pages = rawPages.filter(page => {
+    if (filters.verifiedOnly && !page.is_verified) return false;
+    if (filters.companySize && page.company_size !== filters.companySize) return false;
+    return true;
+  });
+
+  const hasActiveFilters = filters.verifiedOnly || !!filters.companySize;
+
   const { isStudio } = useAccountType();
   const { isInternal } = useAppRole();
 
@@ -43,32 +60,54 @@ const CompanyPages = () => {
           }
         />
 
-        {/* Search Bar using system glassmorphism */}
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-card/40 backdrop-blur-xl border border-border/50 rounded-[28px] p-2 md:p-3 mb-12 shadow-sm dark:shadow-none"
-        >
-          <div className="flex flex-row gap-2 md:gap-3">
-            <div className="relative flex-grow h-10 md:h-11">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" size={18} />
-              <Input
-                placeholder="Search pages by name, location, or industry..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-12 h-full bg-background/50 border-transparent focus:bg-muted/30 rounded-2xl text-sm transition-all font-medium placeholder:text-muted-foreground/50"
-              />
+        {/* Search Bar using UnifiedSearchBar */}
+        <UnifiedSearchBar
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchPlaceholder="Search pages by name, location, or industry..."
+          filterOpen={filterOpen}
+          onFilterOpenChange={setFilterOpen}
+          hasActiveFilters={hasActiveFilters}
+          filterTitle="Filter Companies"
+          filterContent={
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase">Company Size</Label>
+                <Select value={filters.companySize || 'all'} onValueChange={v => setFilters(f => ({ ...f, companySize: v === 'all' ? '' : v }))}>
+                    <SelectTrigger className="h-9"><SelectValue placeholder="Any Size" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">Any Size</SelectItem>
+                        {['1-10', '11-50', '51-200', '201-500', '500+'].map(s => (
+                            <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold uppercase cursor-pointer" htmlFor="verified-filter">
+                      Verified Only
+                  </Label>
+                  <Switch 
+                      id="verified-filter"
+                      checked={filters.verifiedOnly} 
+                      onCheckedChange={c => setFilters(f => ({ ...f, verifiedOnly: c }))} 
+                  />
+              </div>
+              <div className="pt-2 border-t border-border/10">
+                  <Button 
+                      variant="ghost" 
+                      className="w-full text-xs font-bold"
+                      onClick={() => setFilters({ verifiedOnly: false, companySize: '' })}
+                  >
+                      Clear Filters
+                  </Button>
+              </div>
             </div>
-            <Button variant="ghost" className="shrink-0 h-10 md:h-11 gap-2 rounded-2xl border border-border/50 hover:bg-muted/50 font-bold uppercase tracking-widest text-[10px]">
-              <Filter size={18} />
-              <span>Filters</span>
-            </Button>
-          </div>
-        </motion.div>
+          }
+        />
 
         {/* Featured Pages (verified ones) */}
-        {!searchQuery && pages.filter(p => p.is_verified).length > 0 && (
+        {!searchQuery && !hasActiveFilters && pages.filter(p => p.is_verified).length > 0 && (
           <div className="mb-12">
             <div className="flex items-center gap-3 mb-6">
               <TrendingUp className="h-6 w-6 text-primary" />
