@@ -237,6 +237,16 @@ export default function ReviewSubmission() {
                     .eq('id', submissionId)
                     .single();
                 if (error) throw error;
+                
+                // If it is newly submitted, automatically mark it as seen/read
+                if (data.status === 'submitted') {
+                    await supabase
+                        .from('pitch_submissions')
+                        .update({ status: 'seen', seen_at: new Date().toISOString() } as any)
+                        .eq('id', submissionId);
+                    data.status = 'seen';
+                }
+                
                 setSubmission(data as any);
                 const nda = !!(data as any).pitch_calls?.nda_required;
                 setNdaRequired(nda);
@@ -288,6 +298,27 @@ export default function ReviewSubmission() {
     }
 
     if (!submission) return null;
+
+    // Parse union credentials
+    let swaMemberId = '';
+    let swaRegNum = '';
+    let copyrightRegNum = '';
+    let iftdaMemberId = '';
+    const rawReg = (submission as any).guild_registration_number || '';
+
+    if (rawReg.trim().startsWith('{')) {
+        try {
+            const parsed = JSON.parse(rawReg);
+            swaMemberId = parsed.swa_member_id || '';
+            swaRegNum = parsed.swa_registration_number || '';
+            copyrightRegNum = parsed.copyright_registration_number || '';
+            iftdaMemberId = parsed.iftda_member_id || '';
+        } catch (e) {}
+    } else {
+        swaRegNum = rawReg;
+    }
+
+    const hasCredentials = !!(swaMemberId || swaRegNum || copyrightRegNum || iftdaMemberId);
 
     const statusInfo = PITCH_STATUS_LABELS[submission.status || 'submitted'];
     const avatarUrl = getSafeImageUrl(submission.profiles?.avatar_url || null);
@@ -482,16 +513,49 @@ export default function ReviewSubmission() {
                                         <><span className="text-border">·</span><span className="flex items-center gap-1.5 text-sm font-bold text-amber-500"><Shield className="h-4 w-4" /> NDA Signed</span></>
                                     )}
                                 </div>
-                                {(submission as any).guild_registration_number ? (
-                                    <div className="flex items-center gap-2">
-                                        <Award className="h-4 w-4 text-primary" />
-                                        <span className="text-xs font-bold text-primary">Guild Registered:</span>
-                                        <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary">{(submission as any).guild_registration_number}</code>
+                                {hasCredentials ? (
+                                    <div className="flex flex-col gap-2 pt-1">
+                                        {swaMemberId && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">SWA Member ID:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {swaMemberId}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {swaRegNum && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">SWA Registration:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {swaRegNum}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {copyrightRegNum && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">Copyright Reg:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {copyrightRegNum}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {iftdaMemberId && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">IFTDA Member ID:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {iftdaMemberId}
+                                                </code>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                                        <span className="text-xs text-muted-foreground">No SWA/WGA registration number provided</span>
+                                        <span className="text-xs text-muted-foreground">No registration credentials provided</span>
                                     </div>
                                 )}
                             </motion.section>

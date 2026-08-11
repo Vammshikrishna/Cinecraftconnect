@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAppNavigation } from '@/contexts/NavigationContext';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { canCreatePitchCall, canSubmitPitch } from '@/hooks/usePitch';
+import { supabase } from '@/integrations/supabase/client';
 
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -77,7 +78,7 @@ const PublicProfile = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   useRecordView(profile?.id);
   const { push } = useAppNavigation();
-  const { user } = useAuth();
+  const { user, profile: myProfile } = useAuth();
   const { isFan } = useAccountType();
   const { isAdmin, isInternal } = useAppRole();
   const { toast } = useToast();
@@ -575,6 +576,14 @@ const PublicProfile = () => {
                             onClick={() => push(`/messages/${profile.id}`)}
                           >
                             <MessageCircle className="mr-2 h-3 w-3" />Message
+                          </Button>
+                        )}
+                        {profile && (profile.social_links as any)?.accept_direct_pitches !== false && canSubmitPitch((myProfile as any)?.craft || '', (myProfile as any)?.account_type || '') && canCreatePitchCall(profile.craft || '', profile.account_type || '') && (
+                          <Button 
+                            className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0"
+                            onClick={() => push(`/pitch/direct/submit?to=${profile.id}`)}
+                          >
+                            <Zap className="h-3 w-3" /> Direct Pitch
                           </Button>
                         )}
                       </div>

@@ -152,10 +152,13 @@ export const usePitchCalls = (filters?: Partial<FilterState>, searchQuery?: stri
                 savedIds = new Set((saved || []).map((s: any) => s.pitch_call_id));
             }
 
-            setPitchCalls((data || []).map(pc => ({
-                ...pc,
-                is_saved: savedIds.has(pc.id),
-            })));
+            setPitchCalls((data || [])
+                .filter((pc: any) => !pc.attachments?.is_direct_catcher)
+                .map(pc => ({
+                    ...pc,
+                    is_saved: savedIds.has(pc.id),
+                }))
+            );
         } catch (error: any) {
             console.error('Error fetching pitch calls:', error);
             toast({ title: 'Error', description: 'Failed to load pitch calls.', variant: 'destructive' });
@@ -206,7 +209,7 @@ export const useMyPitchSubmissions = () => {
         setLoading(true);
         const { data } = await supabase
             .from('pitch_submissions')
-            .select(`*, pitch_calls:pitch_call_id(title, project_type, nda_required)`)
+            .select(`*, pitch_calls:pitch_call_id(title, project_type, nda_required, attachments)`)
             .eq('submitter_id', user.id)
             .order('created_at', { ascending: false });
         setSubmissions((data || []) as any[]);
@@ -254,17 +257,17 @@ export const useCallCreatorSubmissions = (pitchCallId?: string) => {
                 .select(`
                     *,
                     profiles:submitter_id(full_name, avatar_url, username, craft, is_verified),
-                    pitch_calls:pitch_call_id(title, project_type, nda_required)
+                    pitch_calls:pitch_call_id(title, project_type, nda_required, attachments)
                 `)
                 .in(
                     'pitch_call_id',
                     pitchCallId
                         ? [pitchCallId]
-                        : (await supabase
+                        : (await (supabase as any)
                             .from('pitch_calls')
                             .select('id')
-                            .eq('creator_id', user.id)
-                            .then(r => (r.data || []).map((pc: any) => pc.id)))
+                            .or(`creator_id.eq.${user.id},attachments->>target_producer_id.eq.${user.id}`)
+                            .then((r: any) => (r.data || []).map((pc: any) => pc.id)))
                 )
                 .order('created_at', { ascending: false });
 

@@ -373,7 +373,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
             )}
             <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-2 md:pt-6">
             {/* Main Feed Column */}
-            <div className="w-full max-w-[480px] space-y-6">
+            <div className="w-full max-w-[480px] space-y-6 sm:space-y-8">
                 <div className="px-0 sm:px-4">
                     {/* Only creators can compose posts */}
                     {!isFan && <CreatePostWidget onPostCreated={refreshFeed} defaultExpanded={openCreate} />}
@@ -386,7 +386,7 @@ const HomeTab = ({ postRatings, onRate, openCreate = false }: HomeTabProps) => {
                 </div>
 
                 {/* Posts with Interleaved Sections */}
-                <div className="space-y-6">
+                <div className="space-y-6 sm:space-y-8">
                     {/* New Posts Notification Banner */}
                     {feedData.newPostsAvailable && (
                         <div className="px-0 sm:px-4 mb-4 flex justify-center">

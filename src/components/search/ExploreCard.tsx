@@ -59,7 +59,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
     };
 
     const Overlay = ({ actionText, author }: { actionText?: string, likes?: number, comments?: number, author?: { username: string, full_name: string, is_verified?: boolean } | null }) => (
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col p-3 z-20 cursor-pointer">
+        <div className="absolute inset-0 bg-black/60 opacity-0 pointer-events-none [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-hover:pointer-events-auto transition-all duration-300 flex flex-col p-3 z-20 cursor-pointer">
             <div className="flex justify-start">
                 {author && (
                     <div className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                 )}
             </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center translate-y-4 group-hover:translate-y-0 transition-transform duration-300">
+            <div className="flex-1 flex flex-col items-center justify-center translate-y-4 [@media(hover:hover)]:group-hover:translate-y-0 transition-transform duration-300">
                 {actionText && (
                     <div className="px-4 py-2 rounded-full bg-primary text-primary-foreground font-mono text-[10px] md:text-xs font-bold uppercase tracking-widest shadow-xl flex items-center gap-2 border border-white/10">
                         {actionText}
@@ -97,7 +97,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
     );
 
     const TypeBadge = ({ icon: Icon, label }: { icon: any, label: string }) => (
-        <div className="absolute top-2 left-2 z-30 px-2 py-0.5 rounded-full bg-black/90 backdrop-blur-md border border-white/10 flex items-center gap-1.5 pointer-events-none group-hover:opacity-0 transition-opacity duration-300">
+        <div className="absolute top-2 left-2 z-30 px-2 py-0.5 rounded-full bg-black/90 backdrop-blur-md border border-white/10 flex items-center gap-1.5 pointer-events-none [@media(hover:hover)]:group-hover:opacity-0 transition-opacity duration-300">
             <Icon size={10} className="text-white/80" />
             <span className="text-[7px] font-black text-white uppercase tracking-widest leading-none">{label?.toUpperCase()}</span>
         </div>
@@ -163,9 +163,9 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                 }
 
                 return (
-                    <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className={`block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden ${getGradient(item.id)} p-8 flex items-center justify-center text-center transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none`}>
+                    <Link to={`/post/${item.id}`} state={{ from: 'explore' }} className={`block aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden ${getGradient(item.id)} p-4 md:p-8 flex items-center justify-center text-center transition-all hover:brightness-110 active:scale-95 shadow-none rounded-none w-full max-w-full`}>
                         <TypeBadge icon={MessageCircle} label="INSIGHT" />
-                        <p className="font-serif text-white font-bold text-[clamp(12px,3vw,16px)] leading-relaxed uppercase tracking-tight line-clamp-6 drop-shadow-lg">
+                        <p className="font-serif text-white font-bold text-[clamp(12px,3vw,16px)] leading-relaxed uppercase tracking-tight line-clamp-6 drop-shadow-lg break-words">
                             {item.content?.split('JOB_SHARE::')[0].split('POST_SHARE::')[0].trim() || item.content}
                         </p>
                         <Overlay actionText="VIEW POST" likes={item.like_count} comments={item.comment_count} author={item.author} />
@@ -175,7 +175,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
             case 'project':
                 const projectImage = (item as any).image_url || (item as any).thumbnail_url;
                 return (
-                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
+                    <Link to={`/projects/${item.id}/space`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
                         <TypeBadge icon={Layers} label="PROJECT SPACE" />
                         <div className="relative aspect-[1.8/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/10">
                             {projectImage ? (
@@ -199,21 +199,21 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     {item.title || item.name}
                                 </h3>
 
-                                <p className="text-muted-foreground text-[clamp(7px,1.2vw,8px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed">
+                                <p className="text-muted-foreground text-[clamp(7px,1.2vw,8px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed break-words">
                                     {item.description || 'Professional production workspace for cinematic collaboration and project management.'}
                                 </p>
 
                                 <div className="flex flex-col gap-1 text-muted-foreground pt-1.5 border-t border-white/5">
                                     {((item as any).genre?.[0]) && (
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            <Film size={9} className="text-primary" />
-                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-[120px]">GENRE // {(item as any).genre[0]}</span>
+                                        <div className="flex items-center gap-1.5 shrink-0 overflow-hidden">
+                                            <Film size={9} className="text-primary shrink-0" />
+                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-full">GENRE // {(item as any).genre[0]}</span>
                                         </div>
                                     )}
                                     {(item as any).location && (
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            <MapPin size={9} className="text-primary" />
-                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-[120px] opacity-70">LOC // {(item as any).location}</span>
+                                        <div className="flex items-center gap-1.5 shrink-0 overflow-hidden">
+                                            <MapPin size={9} className="text-primary shrink-0" />
+                                            <span className="font-mono text-[clamp(6px,1vw,7px)] font-bold uppercase tracking-widest truncate max-w-full opacity-70">LOC // {(item as any).location}</span>
                                         </div>
                                     )}
                                 </div>
@@ -230,7 +230,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                     (Array.isArray((item as any).craft) ? (item as any).craft.join(', ') : String((item as any).craft))
                     : 'CREATOR';
                 return (
-                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 transition-all hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm">
+                    <Link to={`/profile/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border/50 transition-all hover:scale-[1.02] active:scale-95 flex flex-col items-center justify-center rounded-[1.25rem] shadow-sm w-full max-w-full">
                         <CornerBrackets />
                         <div className="w-[54%] md:w-[56%] aspect-square rounded-full overflow-hidden shadow-xl border-[2.5px] border-background -mt-3 md:-mt-4 mb-1.5 group-hover:shadow-2xl transition-all duration-500 relative z-10">
                             {item.avatar_url ? (
@@ -244,7 +244,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
                         <div className="px-2.5 text-center w-full flex flex-col items-center z-10">
                             <div className="flex items-center justify-center gap-1 w-full mb-1 px-1">
-                                <h3 className="font-serif text-[clamp(8.5px,2vw,12px)] font-bold text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-2 transition-colors">
+                                <h3 className="font-serif text-[clamp(8.5px,2vw,12px)] font-bold text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-2 transition-colors break-words">
                                     {item.full_name || item.username}
                                 </h3>
                                 {(item.is_verified ||
@@ -254,12 +254,12 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     )}
                             </div>
 
-                            <div className="bg-primary/10 border border-primary/20 text-primary font-bold text-[5.5px] md:text-[7px] uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%]">
+                            <div className="bg-primary/10 border border-primary/20 text-primary font-bold text-[5.5px] md:text-[7px] uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center justify-center gap-1 shadow-sm max-w-[95%] overflow-hidden">
                                 <Zap size={7} className="shrink-0" fill="currentColor" />
-                                <span className="line-clamp-2 leading-tight whitespace-normal text-center">{craftsStr}</span>
+                                <span className="line-clamp-2 leading-tight whitespace-normal text-center break-words">{craftsStr}</span>
                             </div>
 
-                            <p className="mt-1.5 text-[7.5px] md:text-[8.5px] text-muted-foreground italic font-medium line-clamp-2 px-1 leading-normal opacity-80 w-full text-center">
+                            <p className="mt-1.5 text-[7.5px] md:text-[8.5px] text-muted-foreground italic font-medium line-clamp-2 px-1 leading-normal opacity-80 w-full text-center break-words">
                                 "{item.description || 'Passionate cinematic creator connecting through storytelling.'}"
                             </p>
                         </div>
@@ -270,7 +270,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'discussion':
                 return (
-                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border flex flex-col transition-all hover:scale-[1.02] active:scale-95 shadow-sm rounded-[1.25rem]">
+                    <Link to={`/discussion-rooms/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border border-border flex flex-col transition-all hover:scale-[1.02] active:scale-95 shadow-sm rounded-[1.25rem] w-full max-w-full">
                         <CornerBrackets />
 
                         <div className="flex flex-col flex-1 p-3 md:p-4 relative z-10 h-full">
@@ -280,25 +280,25 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     <MessageSquare className="w-3 h-3 md:w-4 md:h-4 text-[#FF3300]" />
                                 </div>
                                 <div className="flex flex-col justify-center overflow-hidden min-w-0">
-                                    <span className="text-foreground font-black text-[clamp(7.5px,1.8vw,11px)] uppercase tracking-wider leading-none truncate">DISCUSSION</span>
+                                    <span className="text-foreground font-black text-[clamp(7.5px,1.8vw,11px)] uppercase tracking-wider leading-none truncate max-w-full">DISCUSSION</span>
                                     <span className="text-[#FF3300] font-black text-[6px] md:text-[7.5px] uppercase tracking-widest leading-none mt-0.5">ROOM</span>
                                 </div>
                             </div>
 
                             {/* Title */}
-                            <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2 mb-2 pr-1">
+                            <h3 className="font-serif text-[clamp(11px,2.4vw,15px)] font-black text-[#FF3300] uppercase tracking-tight leading-tight line-clamp-2 mb-2 pr-1 break-words">
                                 {item.title}
                             </h3>
 
                             {/* Description with left border */}
                             <div className="pl-2 border-l-[2px] border-[#FF3300]/30 mb-auto">
-                                <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-semibold line-clamp-3 leading-relaxed italic opacity-90">
+                                <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-semibold line-clamp-3 leading-relaxed italic opacity-90 break-words">
                                     {item.description || 'Verified cinematic craft discussion room.'}
                                 </p>
                             </div>
 
                             {/* Bottom Footer */}
-                            <div className="flex items-center gap-1.5 mt-2 text-muted-foreground/80 truncate">
+                            <div className="flex items-center gap-1.5 mt-2 text-muted-foreground/80 truncate max-w-full">
                                 <Users className="w-3 h-3 text-[#FF3300] shrink-0" />
                                 <span className="font-black text-[7.5px] md:text-[9px] uppercase tracking-widest truncate">{(item as any).member_count || 0} MEMBERS</span>
                             </div>
@@ -310,12 +310,12 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'announcement':
                 return (
-                    <Link to="/announcements" className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-6 flex flex-col items-center justify-center text-center transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none`}>
+                    <Link to="/announcements" className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-gradient-to-br from-orange-500/20 to-orange-600/5 p-4 md:p-6 flex flex-col items-center justify-center text-center transition-all hover:brightness-105 active:scale-95 shadow-2xl rounded-none w-full max-w-full`}>
                         <TypeBadge icon={Megaphone} label="NEWS" />
                         <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center mb-4 text-orange-500 border border-orange-500/20 shadow-2xl ring-1 ring-orange-500/30">
                             <Megaphone size={24} className="group-hover:rotate-12 transition-transform duration-500" />
                         </div>
-                        <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter line-clamp-3 leading-tight">{item.title}</h3>
+                        <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter line-clamp-3 leading-tight break-words">{item.title}</h3>
                         <div className="mt-4 px-4 py-1 rounded-full border border-orange-500/30 text-orange-500 text-[clamp(6.5px,1.5vw,8px)] font-black uppercase tracking-widest group-hover:bg-orange-500/10 transition-colors">
                             Read Update
                         </div>
@@ -325,7 +325,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'company':
                 return (
-                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card transition-all hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-border/50`}>
+                    <Link to={`/company/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card transition-all hover:scale-[1.02] active:scale-95 flex flex-col rounded-[1.25rem] shadow-md border border-border/50 w-full max-w-full`}>
                         <CornerBrackets />
                         <div className="absolute top-2 right-2 md:top-3 md:right-3 z-30 bg-[#0A0A0A] rounded-full px-2 py-0.5 md:px-2.5 md:py-1 flex items-center gap-1 md:gap-1.5 shadow-lg">
                             <Users size={10} className="text-[#FF1A1A]" />
@@ -363,7 +363,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                 </div>
                             </div>
 
-                            <h3 className="font-serif text-[clamp(11px,2.5vw,15px)] font-black text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-1 w-full mt-1 transition-colors">
+                            <h3 className="font-serif text-[clamp(11px,2.5vw,15px)] font-black text-foreground group-hover:text-primary uppercase tracking-tight leading-tight line-clamp-1 w-full mt-1 transition-colors break-words">
                                 {item.name}
                             </h3>
 
@@ -372,7 +372,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                 <span className="text-[7.5px] md:text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{item.location || 'GLOBAL'}</span>
                             </div>
 
-                            <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-medium italic line-clamp-2 px-1 mt-auto pb-1 leading-relaxed opacity-80">
+                            <p className="text-muted-foreground text-[8.5px] md:text-[10px] font-medium italic line-clamp-2 px-1 mt-auto pb-1 leading-relaxed opacity-80 break-words">
                                 "{item.description || 'movie is a soulful entertainment'}"
                             </p>
                         </div>
@@ -382,7 +382,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'vendor':
                 return (
-                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl`}>
+                    <Link to={`/vendors/${item.id}`} className={`aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col rounded-none shadow-2xl w-full max-w-full`}>
                         <TypeBadge icon={Building2} label="VENDOR" />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.logo_url ? (
@@ -402,12 +402,12 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                     <div className="font-mono px-1.5 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-[clamp(6px,1.2vw,7px)] font-bold text-primary uppercase tracking-widest leading-none w-fit shrink-0">
                                         CAT // {String((item as any).category || 'VENDOR').toUpperCase()}
                                     </div>
-                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-max">LOC // {item.city || 'GLOBAL'}</span>
+                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">LOC // {item.city || 'GLOBAL'}</span>
                                 </div>
 
-                                <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2">{item.business_name}</h3>
+                                <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2 break-words">{item.business_name}</h3>
 
-                                <p className="text-muted-foreground text-[clamp(7px,1.5vw,8.5px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed">
+                                <p className="text-muted-foreground text-[clamp(7px,1.5vw,8.5px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed break-words">
                                     {item.description || 'Verified cinematic craft professional service provider.'}
                                 </p>
                             </div>
@@ -418,7 +418,7 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
 
             case 'marketplace':
                 return (
-                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none">
+                    <Link to={`/marketplace/${item.id}`} className="aspect-[3/4.5] lg:aspect-[3/4] relative group overflow-hidden bg-card border-white/5 transition-all hover:brightness-105 active:scale-95 flex flex-col shadow-2xl rounded-none w-full max-w-full">
                         <TypeBadge icon={ShoppingBag} label={`${String(item.listing_type || 'EQUIPMENT').toUpperCase()}`} />
                         <div className="relative aspect-[1.5/1] w-full overflow-hidden shrink-0 bg-black border-b border-white/5">
                             {item.image_url ? (
@@ -442,11 +442,11 @@ export const ExploreCard = ({ item, isSpanned = false }: ExploreCardProps) => {
                                             ₹{item.price_per_day}
                                         </span>
                                     </div>
-                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-max">LOC // {item.location || 'GLOBAL'}</span>
+                                    <span className="font-mono block text-[clamp(6.5px,1.5vw,8px)] font-bold text-muted-foreground uppercase tracking-widest truncate opacity-60 bg-muted/10 border border-border/40 px-1 py-0.5 rounded w-fit max-w-full">LOC // {item.location || 'GLOBAL'}</span>
                                 </div>
 
-                                <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2">{item.title}</h3>
-                                <p className="text-muted-foreground text-[clamp(7px,1.5vw,8.5px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed">
+                                <h3 className="font-serif text-[clamp(12px,3vw,16px)] font-bold text-foreground uppercase tracking-tighter leading-tight line-clamp-2 break-words">{item.title}</h3>
+                                <p className="text-muted-foreground text-[clamp(7px,1.5vw,8.5px)] font-medium line-clamp-2 uppercase tracking-tight opacity-70 leading-relaxed break-words">
                                     {item.description || 'Verified cinematic production resource and world-class professional listing.'}
                                 </p>
                             </div>

@@ -11,17 +11,28 @@ import { MobileNav } from "./MobileNav";
 import AppLogo from '@/components/common/AppLogo';
 import { MessageSquare } from 'lucide-react';
 import { useUnreadMessages } from '@/hooks/useUnreadMessages';
+import { useScrollDirection } from '@/hooks/useScrollDirection';
 
 const Navbar = () => {
   const { user } = useAuth();
   const { isFan } = useAccountType();
   const location = useLocation();
   const isSearchActive = location.pathname.startsWith('/search');
+  const scrollDirection = useScrollDirection();
+  const isScrollingDown = scrollDirection === 'down';
+
+  const isChatPage = (location.pathname.startsWith('/messages/') && location.pathname !== '/messages') || 
+                    location.pathname.startsWith('/dm/') || 
+                    (location.pathname.startsWith('/chat/') && location.pathname !== '/chat') ||
+                    (location.pathname.startsWith('/discussion-rooms/') && location.pathname !== '/discussion-rooms') ||
+                    location.pathname.endsWith('/space');
+
+  const shouldHideTopNavMobile = isScrollingDown || isChatPage;
 
   return (
     <>
       <header 
-        className="fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-theme overflow-x-hidden pt-[env(safe-area-inset-top)]"
+        className={`fixed top-0 left-0 right-0 z-50 bg-card border-b border-border shadow-sm transition-transform duration-300 overflow-x-hidden pt-[env(safe-area-inset-top)] ${shouldHideTopNavMobile ? '-translate-y-full lg:translate-y-0' : 'translate-y-0'}`}
       >
         <div className="w-full px-1.5 sm:px-4 lg:px-8 max-w-7xl mx-auto">
           <div className="flex items-center justify-between py-2 sm:py-3 gap-1 sm:gap-4">

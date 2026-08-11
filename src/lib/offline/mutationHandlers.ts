@@ -115,6 +115,7 @@ export const registerAllMutationHandlers = () => {
       page_id: payload.pageId || null,
       media_urls: payload.mediaItems ? payload.mediaItems.map((item: any) => item.url) : [],
       media_type: payload.mediaItems && payload.mediaItems.length > 0 ? payload.mediaItems[0].type : null,
+      media_items: payload.mediaItems || null,
       tags: payload.tags || []
     });
     if (error) throw error;

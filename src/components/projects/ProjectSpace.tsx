@@ -643,18 +643,18 @@ export const ProjectSpace = ({
       <div id="active-project-anchor" data-project-id={projectId} data-space-id={resolvedSpaceId} className="hidden" />
       
       {/* Mobile Header & Navigation */}
-      <div className="lg:hidden flex flex-col bg-background z-[60] shrink-0 sticky top-0">
-        <div className="flex items-center px-3 py-2 gap-2">
+      <div className="lg:hidden flex flex-col bg-background z-[60] shrink-0 sticky top-0 border-b border-border/40 pb-1">
+        <div className="flex items-center px-4 py-3 gap-2">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => push('/projects', { noScroll: true })}
-            className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+            className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div className="flex flex-col min-w-0 flex-1 py-1">
-            <h2 className="text-base font-bold truncate leading-tight">{projectTitle}</h2>
+          <div className="flex flex-col min-w-0 flex-1 py-0.5">
+            <h2 className="text-lg font-bold truncate leading-tight">{projectTitle}</h2>
           </div>
           <div className="flex items-center gap-1.5">
             {isInternal && hasGrantedAccess && (
@@ -662,19 +662,19 @@ export const ProjectSpace = ({
                 variant="outline"
                 size="sm"
                 onClick={handleLockSpace}
-                className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-8 shrink-0 mr-1"
+                className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-9 shrink-0 mr-1 px-3"
               >
-                <Lock className="h-3.5 w-3.5" />
+                <Lock className="h-4 w-4" />
                 <span className="hidden sm:inline">Lock Space</span>
               </Button>
             )}
             {isInCall ? (
               <button 
                 onClick={() => setActiveSection('call')}
-                className="flex items-center gap-1.5 px-2 py-1 bg-primary/20 border border-primary/30 rounded-full animate-pulse hover:bg-primary/30 transition-all shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/20 border border-primary/30 rounded-full animate-pulse hover:bg-primary/30 transition-all shrink-0"
               >
-                <Video className="h-4 w-4 text-green-500" />
-                <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Live</span>
+                <Video className="h-4.5 w-4.5 text-green-500" />
+                <span className="text-xs font-bold text-green-500 uppercase tracking-wider">Live</span>
               </button>
             ) : !isInternal ? (
               <>
@@ -682,24 +682,24 @@ export const ProjectSpace = ({
                   variant="ghost"
                   size="icon"
                   onClick={handleStartCall}
-                  className="h-9 w-9 rounded-full hover:bg-white/10 shrink-0"
+                  className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
                   title="Start Call"
                 >
-                  <Video className="h-4 w-4" />
+                  <Video className="h-5 w-5" />
                 </Button>
               </>
             ) : (
               <div title="Staff Observation Mode">
-                <ShieldBan className="h-4 w-4 text-muted-foreground/30" />
+                <ShieldBan className="h-5 w-5 text-muted-foreground/30" />
               </div>
             )}
           </div>
         </div>
 
-        <div className="relative w-full">
+        <div className="relative w-full py-1">
           <div
             ref={scrollContainerRef}
-            className="flex overflow-x-auto gap-2 px-4 pb-2 no-scrollbar w-full"
+            className="flex overflow-x-auto gap-2.5 px-4 pb-2.5 pt-1 no-scrollbar w-full"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {allNavItems.map((item) => {
@@ -711,14 +711,14 @@ export const ProjectSpace = ({
                   key={item.id}
                   onClick={() => setActiveSection(item.id)}
                   className={cn(
-                    "flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all duration-300 border shrink-0",
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-300 border shrink-0 min-h-[38px]",
                     isActive
                       ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] scale-105"
-                      : "bg-secondary/30 border-transparent text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                      : "bg-secondary/40 border-border/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  {item.label}
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
                 </button>
               );
             })}

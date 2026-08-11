@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCallCreatorSubmissions, useMyPitchSubmissions, PITCH_STATUS_LABELS } from '@/hooks/usePitch';
+import { SubmissionReviewDialog } from './SubmissionReviewDialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -166,7 +167,14 @@ export const CallCreatorPitchInbox = () => {
                                             </div>
 
                                             {/* Which pitch call this is for */}
-                                            {(submission as any).pitch_calls?.title && (
+                                            {(submission as any).pitch_calls?.attachments?.is_direct_catcher ? (
+                                                <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                                    <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />
+                                                    <p className="text-[11px] font-bold text-amber-600 dark:text-amber-500 truncate">
+                                                        Direct Pitch (Private Submission)
+                                                    </p>
+                                                </div>
+                                            ) : (submission as any).pitch_calls?.title && (
                                                 <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1.5 bg-primary/5 border border-primary/15 rounded-lg">
                                                     <Megaphone className="h-3 w-3 text-primary/70 shrink-0" />
                                                     <p className="text-[11px] font-bold text-primary/80 truncate">
@@ -209,6 +217,7 @@ export const WriterPitchTracker = () => {
     const { push } = useAppNavigation();
     const { toast } = useToast();
     const [uploadingDeck, setUploadingDeck] = useState<string | null>(null);
+    const [selectedSubmission, setSelectedSubmission] = useState<PitchSubmission | null>(null);
 
     const handleUploadDeck = async (submissionId: string, event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -271,8 +280,9 @@ export const WriterPitchTracker = () => {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.04 }}
+                        onClick={() => setSelectedSubmission(sub)}
                         className={cn(
-                            'bg-card border rounded-2xl p-5 transition-all',
+                            'bg-card border rounded-2xl p-5 transition-all cursor-pointer hover:shadow-md',
                             isPositive ? 'border-green-500/20 bg-green-500/3' : 'border-border/50'
                         )}
                     >
@@ -283,7 +293,7 @@ export const WriterPitchTracker = () => {
                                     Pitched to:{' '}
                                     <span
                                         className="font-semibold text-primary cursor-pointer hover:underline"
-                                        onClick={() => push(`/pitch/${sub.pitch_call_id}`)}
+                                        onClick={(e) => { e.stopPropagation(); push(`/pitch/${sub.pitch_call_id}`); }}
                                     >
                                         {sub.pitch_calls?.title}
                                     </span>
@@ -336,7 +346,7 @@ export const WriterPitchTracker = () => {
                                                     disabled={uploadingDeck === sub.id}
                                                     asChild
                                                 >
-                                                    <div>
+                                                    <div onClick={(e) => e.stopPropagation()}>
                                                         {uploadingDeck === sub.id ? (
                                                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                                         ) : (
@@ -347,16 +357,26 @@ export const WriterPitchTracker = () => {
                                                 </Button>
                                                 <p className="text-[9px] text-muted-foreground mt-1 text-right italic">
                                                     Protected by NDA & account timestamp.
-                                                </p>
-                                            </label>
-                                        )}
-                                    </div>
-                                )}
+                                                 </p>
+                                             </label>
+                                         )}
+                                     </div>
+                                 )}
                             </div>
                         </div>
                     </motion.div>
                 );
             })}
+            
+            {selectedSubmission && (
+                <SubmissionReviewDialog
+                    submission={selectedSubmission}
+                    isOpen={!!selectedSubmission}
+                    onClose={() => setSelectedSubmission(null)}
+                    onUpdateStatus={() => {}}
+                    ndaRequired={!!selectedSubmission.pitch_calls?.nda_required}
+                />
+            )}
         </div>
     );
 };

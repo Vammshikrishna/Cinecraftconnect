@@ -27,7 +27,7 @@ const FeedSection = ({ title, icon: Icon, linkTo, children, className }: FeedSec
     };
 
     return (
-        <section className={cn("space-y-4 py-4", className)}>
+        <section className={cn("space-y-3 py-2", className)}>
             <div className="flex items-center justify-between px-4">
                 <div className="flex items-center gap-2">
                     {Icon && <Icon className="h-5 w-5 text-primary" />}

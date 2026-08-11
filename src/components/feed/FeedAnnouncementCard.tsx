@@ -31,34 +31,34 @@ import { useAppNavigation } from '@/contexts/NavigationContext';
 import { cn } from "@/lib/utils";
 
 const getYouTubeId = (url: string): string | null => {
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[2].length === 11) ? match[2] : null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
 };
 
 const extractYouTubeIdFromText = (text: string): string | null => {
-  if (!text) return null;
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const matches = text.match(urlRegex);
-  if (!matches) return null;
-  for (const url of matches) {
-    const videoId = getYouTubeId(url);
-    if (videoId) return videoId;
-  }
-  return null;
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matches = text.match(urlRegex);
+    if (!matches) return null;
+    for (const url of matches) {
+        const videoId = getYouTubeId(url);
+        if (videoId) return videoId;
+    }
+    return null;
 };
 
 const extractSpotifyInfoFromText = (text: string): { embedUrl: string, originalUrl: string } | null => {
-  if (!text) return null;
-  // Match Spotify track, album, playlist, episode, or show URLs
-  const match = text.match(/https?:\/\/open\.spotify\.com\/(track|album|playlist|episode|show)\/([a-zA-Z0-9]+)/);
-  if (match) {
-    return {
-      embedUrl: `https://open.spotify.com/embed/${match[1]}/${match[2]}?utm_source=generator&theme=0`,
-      originalUrl: match[0]
-    };
-  }
-  return null;
+    if (!text) return null;
+    // Match Spotify track, album, playlist, episode, or show URLs
+    const match = text.match(/https?:\/\/open\.spotify\.com\/(track|album|playlist|episode|show)\/([a-zA-Z0-9]+)/);
+    if (match) {
+        return {
+            embedUrl: `https://open.spotify.com/embed/${match[1]}/${match[2]}?utm_source=generator&theme=0`,
+            originalUrl: match[0]
+        };
+    }
+    return null;
 };
 
 const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
@@ -74,22 +74,22 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
     if (!data || !data.thumbnail_url) return null;
 
     return (
-        <div 
+        <div
             className="relative h-40 w-full rounded-2xl overflow-hidden mb-4 shadow-xl border border-white/5 shrink-0 group/video cursor-pointer flex items-center p-4 gap-4"
             onClick={() => window.open(originalUrl, '_blank')}
         >
             <div className="absolute inset-0 z-0">
-                <img 
-                    src={data.thumbnail_url} 
-                    className="w-full h-full object-cover blur-2xl brightness-[0.4] transform scale-125" 
-                    alt="" 
+                <img
+                    src={data.thumbnail_url}
+                    className="w-full h-full object-cover blur-2xl brightness-[0.4] transform scale-125"
+                    alt=""
                 />
             </div>
-            
+
             <div className="absolute inset-0 bg-white/0 z-10 transition-colors duration-300 group-hover/video:bg-white/5" />
 
             <div className="relative z-20 h-24 w-24 sm:h-28 sm:w-28 shrink-0 rounded-md overflow-hidden shadow-2xl border border-white/10">
-                <img 
+                <img
                     src={data.thumbnail_url}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover/video:scale-105"
                     alt={data.title || "Spotify Cover"}
@@ -112,7 +112,7 @@ const SpotifyBanner = ({ originalUrl }: { originalUrl: string }) => {
                     </p>
                 )}
             </div>
-            
+
             <div className="absolute right-6 z-20 opacity-0 transform translate-x-4 transition-all duration-300 group-hover/video:opacity-100 group-hover/video:translate-x-0 hidden sm:flex">
                 <div className="w-12 h-12 rounded-full bg-[#1DB954] flex items-center justify-center shadow-lg hover:scale-105 transition-transform">
                     <Play className="w-5 h-5 text-black ml-1 fill-black" />
@@ -293,8 +293,8 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                                     <div className="mb-6 space-y-3">
                                         {caption && (
                                             <div className="flex flex-col">
-                                                <FormattedText 
-                                                    text={caption} 
+                                                <FormattedText
+                                                    text={caption}
                                                     className="text-sm text-muted-foreground leading-relaxed line-clamp-6"
                                                 />
                                                 {caption.length > 200 && (
@@ -317,8 +317,8 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                             } catch (e) {
                                 return (
                                     <div className="flex flex-col mb-6">
-                                        <FormattedText 
-                                            text={announcement.content} 
+                                        <FormattedText
+                                            text={announcement.content}
                                             className="text-sm text-muted-foreground leading-relaxed flex-1 line-clamp-6"
                                         />
                                         {announcement.content.length > 200 && (
@@ -351,11 +351,11 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                     )}
 
                     {youtubeVideoId && (
-                        <div 
+                        <div
                             className="relative h-40 w-full rounded-xl overflow-hidden mb-4 shadow-md border border-black/10 dark:border-white/10 shrink-0 group/video cursor-pointer"
                             onClick={() => setIsDetailsOpen(true)}
                         >
-                            <img 
+                            <img
                                 src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
                                 className="w-full h-full object-cover object-center transition-transform duration-500 group-hover/video:scale-105"
                                 alt="YouTube Video Thumbnail"
@@ -372,7 +372,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                     {spotifyInfo && !youtubeVideoId && (
                         <SpotifyBanner originalUrl={spotifyInfo.originalUrl} />
                     )}
-                    
+
                     {(canManage || onDismiss) && (
                         <div className="absolute top-4 right-4 z-20 flex items-center gap-1">
                             {canManage && (
@@ -395,7 +395,7 @@ const FeedAnnouncementCard = ({ announcement, onDismiss, isWidget }: FeedAnnounc
                                 </DropdownMenu>
                             )}
                             {onDismiss && (
-                                <button 
+                                <button
                                     onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();

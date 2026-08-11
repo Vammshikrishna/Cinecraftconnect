@@ -72,7 +72,7 @@ const ChatPage = () => {
   }
 
   return (
-    <div className="h-[calc(100dvh)] pb-[60px] lg:pb-0 pt-[70px] md:pt-20 flex flex-col relative">
+    <div className="h-[100dvh] pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] lg:pt-20 flex flex-col relative">
       <EnhancedRealTimeChat
         roomId={channelId}
         partnerId={partner.id}

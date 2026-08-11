@@ -84,9 +84,9 @@ const PostDetailPage = () => {
     }
 
     return (
-        <div className="min-h-screen bg-background pt-20">
-            <div className="container mx-auto px-4 pb-24 max-w-2xl">
-                <BackButton label={backLabel} className="mb-6" />
+        <div className="min-h-screen bg-background pt-16 sm:pt-20">
+            <div className="container mx-auto px-2 sm:px-4 pb-24 max-w-[480px]">
+                <BackButton label={backLabel} className="mb-4" />
 
                 <PostCard
                     id={post.id}
@@ -104,7 +104,7 @@ const PostDetailPage = () => {
                     hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0)}
                     hasVideo={post.media_type === 'video'}
                     mediaUrl={post.media_urls?.[0] || post.media_url}
-                    mediaItems={post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items}
+                    mediaItems={post.media_items && Array.isArray(post.media_items) && post.media_items.length > 0 ? post.media_items : (post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })))}
                     like_count={post.like_count || 0}
                     comment_count={post.comment_count || 0}
                     share_count={post.share_count || 0}

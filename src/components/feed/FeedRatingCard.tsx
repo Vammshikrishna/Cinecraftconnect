@@ -77,7 +77,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                     </div>
 
                     {onDismiss && (
-                        <button 
+                        <button
                             onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -174,7 +174,7 @@ const FeedRatingCard = ({ rating, onRate, variant = 'horizontal', contentType = 
                 </div>
 
                 {onDismiss && (
-                    <button 
+                    <button
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();

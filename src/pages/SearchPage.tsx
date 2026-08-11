@@ -306,14 +306,14 @@ const SearchPage = () => {
     const filteredSearchResults = activeCategory === 'all' ? results : results.filter(result => result.type === CATEGORIES.find(c => c.id === activeCategory)?.type);
 
     return (
-        <div className="min-h-screen bg-background selection:bg-primary/30">
+        <div className="min-h-screen bg-background selection:bg-primary/30 overflow-x-hidden w-full max-w-full">
             {/* Background Orbs */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-[-5%] left-[-5%] w-[40%] h-[40%] rounded-full bg-primary/5 blur-[120px]" />
                 <div className="absolute bottom-[-5%] right-[-5%] w-[40%] h-[40%] rounded-full bg-secondary/5 blur-[120px]" />
             </div>
 
-            <main className="max-w-7xl mx-auto pt-20 pb-40 relative z-10">
+            <main className="max-w-7xl mx-auto pt-20 pb-40 relative z-10 w-full max-w-full overflow-x-hidden">
                 <div className="px-4 md:px-8">
                     <PageHeader
                         title="Discovery"
@@ -361,7 +361,7 @@ const SearchPage = () => {
 
                 <div className="space-y-4">
                     {loading && (
-                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 max-w-7xl mx-auto px-4 md:px-8">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-w-7xl mx-auto px-4 md:px-8">
                             {[...Array(18)].map((_, i) => (
                                 <div key={i} className={`aspect-[4/5] bg-card/40 border border-border/50 animate-pulse rounded-2xl ${i % 10 === 0 ? 'col-span-2 row-span-2' : ''}`} />
                             ))}

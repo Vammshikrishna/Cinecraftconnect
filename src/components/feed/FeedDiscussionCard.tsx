@@ -43,7 +43,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
     const handleShare = async (e: React.MouseEvent) => {
         e.stopPropagation();
         const shareUrl = window.location.origin + `/discussion-rooms/${discussion.id}`;
-        
+
         const copyFallback = async () => {
             const success = await copyToClipboard(shareUrl);
             if (success) {
@@ -75,7 +75,7 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
     const categoryName = discussion.category?.name || 'General';
 
     return (
-        <div 
+        <div
             onClick={handleCardClick}
             className={`h-full bg-card border ${hasUnread ? 'border-red-500/50 shadow-red-500/10' : 'border-border/50'} rounded-[28px] p-6 shadow-sm hover:shadow-md hover:border-primary/30 transition-all duration-300 flex flex-col relative overflow-hidden cursor-pointer group`}
         >
@@ -95,14 +95,14 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                     )}
                 </div>
                 <div className="flex items-center gap-1">
-                    <button 
+                    <button
                         onClick={handleShare}
                         className="text-muted-foreground hover:text-foreground transition-colors p-1 relative z-10"
                     >
                         <Share2 className="h-5 w-5" />
                     </button>
                     {onDismiss && (
-                        <button 
+                        <button
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onDismiss(discussion.id);
@@ -158,8 +158,8 @@ const FeedDiscussionCard = ({ discussion, onDismiss }: FeedDiscussionCardProps) 
                 </div>
                 {hasUnread && (
                     <span className="absolute top-2 right-4 flex h-2 w-2">
-                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                         <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
                     </span>
                 )}
             </Button>

@@ -185,6 +185,87 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
     const authorName = author?.full_name || author?.username || 'Anonymous User';
     const initials = authorName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
+    const isFilterEdited = (filter?: string) => {
+        if (!filter || filter === 'none') return false;
+        const normalized = filter.trim();
+        if (normalized === 'brightness(100%) contrast(100%) saturate(100%) sepia(0%)') return false;
+        return true;
+    };
+
+    const getMediaStyles = (item: { url: string; type: "image" | "video"; crop?: any; zoom?: number; pan?: any; filter?: string; aspectRatio?: string }) => {
+        const styles: React.CSSProperties = {};
+        const wrapperStyles: React.CSSProperties = {};
+
+        if (isFilterEdited(item.filter)) {
+            styles.filter = item.filter;
+        }
+
+        const hasZoom = item.zoom !== undefined && item.zoom !== null && item.zoom !== 100;
+        const panX = item.pan?.x || 0;
+        const panY = item.pan?.y || 0;
+        const hasPan = panX !== 0 || panY !== 0;
+        if (hasZoom || hasPan) {
+            const scaleVal = hasZoom ? (item.zoom! / 100) : 1;
+            styles.transform = `translate(${panX}px, ${panY}px) scale(${scaleVal})`;
+        }
+
+        const hasCrop = item.crop && (item.crop.top > 0 || item.crop.right > 0 || item.crop.bottom > 0 || item.crop.left > 0);
+        if (hasCrop) {
+            styles.clipPath = `inset(${item.crop.top || 0}% ${item.crop.right || 0}% ${item.crop.bottom || 0}% ${item.crop.left || 0}%)`;
+        }
+
+        const hasAspectRatio = item.aspectRatio && item.aspectRatio !== 'original' && item.aspectRatio !== 'free';
+        if (hasAspectRatio) {
+            const ratioMap: Record<string, string> = {
+                '1:1': '1/1',
+                '4:5': '4/5',
+                '16:9': '16/9',
+            };
+            if (ratioMap[item.aspectRatio!]) {
+                wrapperStyles.aspectRatio = ratioMap[item.aspectRatio!];
+            }
+        }
+
+        return { imageStyles: styles, wrapperStyles, hasAspectRatio: !!hasAspectRatio };
+    };
+
+    const renderCurrentItem = () => {
+        if (!currentItem) return null;
+        
+        const { imageStyles, wrapperStyles, hasAspectRatio } = getMediaStyles(currentItem);
+        
+        return (
+            <div className="h-full w-full flex items-center justify-center p-4 lg:p-0">
+                <div 
+                    className="relative max-h-full max-w-full flex items-center justify-center overflow-hidden rounded-lg lg:rounded-none"
+                    style={{
+                        ...wrapperStyles,
+                        width: hasAspectRatio ? '100%' : undefined,
+                        height: hasAspectRatio ? '100%' : undefined,
+                        maxHeight: '100vh'
+                    }}
+                >
+                    {currentItem.type === 'video' ? (
+                        <video 
+                            src={currentItem.url} 
+                            controls 
+                            autoPlay 
+                            className={`block ${hasAspectRatio ? 'w-full h-full object-cover' : 'max-w-full max-h-[85vh] lg:max-h-full object-contain'}`}
+                            style={imageStyles} 
+                        />
+                    ) : (
+                        <img 
+                            src={getOptimizedImage(currentItem.url, { width: 1200 })} 
+                            alt="Post content" 
+                            className={`block ${hasAspectRatio ? 'w-full h-full object-cover' : 'max-w-full max-h-[85vh] lg:max-h-full object-contain'}`}
+                            style={imageStyles} 
+                        />
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent aria-describedby={undefined} hideClose={true} className="max-w-7xl w-[95vw] sm:w-[95vw] md:w-[95vw] lg:w-full h-[98vh] lg:h-[95vh] p-0 gap-0 bg-black/95 backdrop-blur-xl border-none overflow-hidden rounded-3xl">
@@ -226,19 +307,7 @@ export const PostDialog = ({ postId, isOpen, onOpenChange, initialData, initialI
                 <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
                     {/* Media Section (Left) */}
                     <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 group/viewer overflow-hidden order-1 lg:order-none">
-                        {currentItem ? (
-                            <div className="h-full w-full flex items-center justify-center">
-                                {currentItem.type === 'video' ? (
-                                    <video src={currentItem.url} controls autoPlay className="w-full h-full object-contain" />
-                                ) : (
-                                    <img 
-                                        src={getOptimizedImage(currentItem.url, { width: 1200 })} 
-                                        alt="Post content" 
-                                        className="w-full h-full object-contain" 
-                                    />
-                                )}
-                            </div>
-                        ) : post.content.includes('JOB_SHARE::') ? (
+                        {currentItem ? renderCurrentItem() : post.content.includes('JOB_SHARE::') ? (
                             <div className="w-full h-full bg-black flex flex-col items-center justify-center p-3 lg:p-12 order-1 lg:order-none overflow-hidden relative group/hero">
                                 {(() => {
                                     try {

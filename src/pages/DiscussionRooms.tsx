@@ -871,7 +871,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
     if (!hasAccess) {
       return (
         <div className={cn(
-          "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40 pb-[calc(env(safe-area-inset-bottom)+76px)]"
+          "fixed inset-0 pt-[env(safe-area-inset-top)] lg:pt-16 bg-background overflow-hidden flex flex-col z-40 pb-[env(safe-area-inset-bottom)]"
         )}>
           {isInternal ? (
             <SpaceEscalationPanel
@@ -895,8 +895,8 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
 
     return (
       <div className={cn(
-        "fixed inset-0 pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40",
-        (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)]"
+        "fixed inset-0 pt-[env(safe-area-inset-top)] lg:pt-16 bg-background overflow-hidden flex flex-col z-40",
+        (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[env(safe-area-inset-bottom)]"
       )}>
         <div id="active-discussion-anchor" data-room-id={activeRoom.id} className="hidden" />
         <DiscussionChatInterface

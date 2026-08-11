@@ -295,8 +295,15 @@ const Messages = () => {
 
   return (
     <div className={cn(
-      "fixed inset-x-0 top-0 h-[100dvh] pt-[calc(env(safe-area-inset-top)+56px)] md:pt-16 bg-background overflow-hidden flex flex-col z-40",
-      (!isKeyboardVisible && !isEmojiPickerOpen) && "pb-[calc(env(safe-area-inset-bottom)+76px)] lg:pb-[env(safe-area-inset-bottom)]"
+      "fixed inset-x-0 top-0 h-[100dvh] bg-background overflow-hidden flex flex-col z-40 transition-all duration-300",
+      activePartnerId 
+        ? "pt-[env(safe-area-inset-top)] lg:pt-16" 
+        : "pt-[calc(env(safe-area-inset-top)+49px)] lg:pt-16",
+      (!isKeyboardVisible && !isEmojiPickerOpen) && (
+        activePartnerId 
+          ? "pb-[env(safe-area-inset-bottom)]" 
+          : "pb-[calc(env(safe-area-inset-bottom)+52px)] lg:pb-[env(safe-area-inset-bottom)]"
+      )
     )}>
       {/* Background Orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
