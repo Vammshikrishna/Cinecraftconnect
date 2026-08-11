@@ -27,14 +27,15 @@ export function MobileNav() {
   const scrollDirection = useScrollDirection();
   const { push, resetTo, lastTabPaths } = useAppNavigation();
   
-  // Define chat-related paths where we DON'T want to hide the navbar on scroll
-  const isChatPage = location.pathname.startsWith('/messages') || 
+  // Define chat-related paths where we hide the bottom navbar completely (active chats only)
+  const isChatPage = (location.pathname.startsWith('/messages/') && location.pathname !== '/messages') || 
                     location.pathname.startsWith('/dm/') || 
-                    location.pathname.startsWith('/discussion-rooms/') ||
+                    (location.pathname.startsWith('/chat/') && location.pathname !== '/chat') ||
+                    (location.pathname.startsWith('/discussion-rooms/') && location.pathname !== '/discussion-rooms') ||
                     location.pathname.endsWith('/space');
 
   const isScrollingDown = !isChatPage && scrollDirection === 'down';
-  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen && !isScrollingDown;
+  const showNav = user && !isKeyboardVisible && !isEmojiPickerOpen && !isScrollingDown && !isChatPage;
 
   const isActive = (path: string) => {
     if (path === "/") {

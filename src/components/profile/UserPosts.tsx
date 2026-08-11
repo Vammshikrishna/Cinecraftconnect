@@ -40,42 +40,43 @@ interface ExtendedPost extends Omit<Post, 'media_url' | 'media_urls' | 'media_it
   };
 }
 
+const isFilterEdited = (filter?: string) => {
+  if (!filter || filter === 'none') return false;
+  const normalized = filter.trim();
+  if (normalized === 'brightness(100%) contrast(100%) saturate(100%) sepia(0%)') return false;
+  return true;
+};
+
+const getMediaStyles = (item?: any) => {
+  if (!item) return {};
+  const styles: React.CSSProperties = {};
+
+  if (isFilterEdited(item.filter)) {
+    styles.filter = item.filter;
+  }
+
+  const hasZoom = item.zoom !== undefined && item.zoom !== null && item.zoom !== 100;
+  const panX = item.pan?.x || 0;
+  const panY = item.pan?.y || 0;
+  const hasPan = panX !== 0 || panY !== 0;
+  if (hasZoom || hasPan) {
+    const scaleVal = hasZoom ? (item.zoom! / 100) : 1;
+    styles.transform = `translate(${panX}px, ${panY}px) scale(${scaleVal})`;
+  }
+
+  const hasCrop = item.crop && (item.crop.top > 0 || item.crop.right > 0 || item.crop.bottom > 0 || item.crop.left > 0);
+  if (hasCrop) {
+    styles.clipPath = `inset(${item.crop.top || 0}% ${item.crop.right || 0}% ${item.crop.bottom || 0}% ${item.crop.left || 0}%)`;
+  }
+
+  return styles;
+};
+
 export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
   const navigate = useNavigate();
   const [posts, setPosts] = useState<ExtendedPost[]>([]);
-  const [viewMode, setViewMode] = useState<'grid' | 'feed'>('grid');
   const [loading, setLoading] = useState(true);
-  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const { user } = useAuth();
-
-  useEffect(() => {
-    if (viewMode === 'feed' && selectedPostId) {
-      let adjustTimer: ReturnType<typeof setTimeout>;
-      
-      const timer = setTimeout(() => {
-        const el = document.getElementById(`feed-post-${selectedPostId}`);
-        if (el) {
-          // Scroll instantly first so the page is immediately positioned near the post
-          el.scrollIntoView({ behavior: 'auto', block: 'start' });
-          window.scrollBy(0, -80);
-
-          // Smoothly adjust position after another short delay to account for any layout shifts/image loading
-          adjustTimer = setTimeout(() => {
-            const elUpdated = document.getElementById(`feed-post-${selectedPostId}`);
-            if (elUpdated) {
-              const y = elUpdated.getBoundingClientRect().top + window.scrollY - 80;
-              window.scrollTo({ top: y, behavior: 'smooth' });
-            }
-          }, 150);
-        }
-      }, 100);
-
-      return () => {
-        clearTimeout(timer);
-        if (adjustTimer) clearTimeout(adjustTimer);
-      };
-    }
-  }, [viewMode, selectedPostId]);
 
   useEffect(() => {
     fetchPosts();
@@ -134,75 +135,41 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
   }
 
   return (
-    <>
-      {viewMode === 'feed' ? (
-        <div className="max-w-2xl mx-auto py-4">
-          <Button variant="ghost" onClick={() => setViewMode('grid')} className="mb-6 font-black uppercase tracking-widest text-[10px] text-muted-foreground hover:text-foreground sticky top-[72px] z-10 bg-background/80 backdrop-blur-md">
-            <ChevronLeft className="mr-1 h-3 w-3" /> Back to Grid
-          </Button>
-          <div className="space-y-8">
-            {posts.map(post => (
-              <div key={post.id} id={`feed-post-${post.id}`}>
-                <PostCard
-                  id={post.id}
-                  author={{
-                    id: post.profiles.id,
-                    name: post.profiles.full_name || post.profiles.username || 'Unknown',
-                    role: post.profiles.craft || 'Creator',
-                    craft: post.profiles.craft || undefined,
-                    initials: (post.profiles.full_name || post.profiles.username || 'U').substring(0, 2).toUpperCase(),
-                    avatar: post.profiles.avatar_url || undefined,
-                    isVerified: post.profiles.is_verified || false
-                  }}
-                  timeAgo={formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-                  content={post.content}
-                  hasImage={post.media_type === 'image' || (post.media_urls && post.media_urls.length > 0) || false}
-                  hasVideo={post.media_type === 'video' || false}
-                  mediaUrl={post.media_urls?.[0] || post.media_url || undefined}
-                  mediaItems={post.media_items || post.media_urls?.map((url: string) => ({ url, type: (post.media_type === 'video' ? 'video' : 'image') }))}
-                  like_count={post.like_count || 0}
-                  comment_count={post.comment_count || 0}
-                  share_count={post.share_count || 0}
-                  createdAt={post.created_at}
-                  tags={post.tags || undefined}
-                  authorId={post.author_id}
-                  onDelete={() => {
-                    setPosts(posts.filter(p => p.id !== post.id));
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 gap-1 md:gap-2">
-          {posts.map((post) => {
-            const effectiveMediaItems = post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || post.media_items || [];
-            const effectiveMediaUrl = post.media_urls?.[0] || post.media_url;
-            const hasMedia = !!effectiveMediaUrl || effectiveMediaItems.length > 0;
-            const isVideo = post.media_type === 'video' || (effectiveMediaItems.length > 0 && effectiveMediaItems[0].type === 'video');
-            const isMulti = effectiveMediaItems.length > 1;
+    <div className="grid grid-cols-3 gap-1 md:gap-2">
+      {posts.map((post) => {
+        const effectiveMediaItems = (post.media_items && Array.isArray(post.media_items) && post.media_items.length > 0)
+          ? post.media_items
+          : (post.media_urls?.map((url: string) => ({ url, type: post.media_type || 'image' })) || []);
+        
+        const firstItem = effectiveMediaItems[0];
+        const effectiveMediaUrl = firstItem?.url || post.media_urls?.[0] || post.media_url;
+        const hasMedia = !!effectiveMediaUrl || effectiveMediaItems.length > 0;
+        const isVideo = post.media_type === 'video' || (firstItem && firstItem.type === 'video');
+        const isMulti = effectiveMediaItems.length > 1;
+        const itemStyles = getMediaStyles(firstItem);
 
-            return (
-              <div
-                key={post.id}
-                onClick={() => navigate(`/post/${post.id}`, { state: { from: 'profile' } })}
-                className="group relative aspect-square bg-muted overflow-hidden cursor-pointer rounded-none md:rounded-sm"
-              >
+        return (
+          <div
+            key={post.id}
+            onClick={() => navigate(`/post/${post.id}`, { state: { from: 'profile' } })}
+            className="group relative aspect-square bg-muted overflow-hidden cursor-pointer rounded-none md:rounded-sm"
+          >
               {hasMedia ? (
                 isVideo ? (
                   <CachedVideo
-                    src={effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl}
+                    src={effectiveMediaUrl}
                     className="w-full h-full object-cover"
                     skeletonClassName="w-full h-full"
                     preload="none"
+                    style={itemStyles}
                   />
                 ) : (
                   <CachedImage
-                    src={getOptimizedImage(effectiveMediaItems.length > 0 ? effectiveMediaItems[0].url : effectiveMediaUrl, { width: 400, height: 400 })}
+                    src={getOptimizedImage(effectiveMediaUrl, { width: 400, height: 400 })}
                     alt="Post"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     skeletonClassName="w-full h-full"
+                    style={itemStyles}
                   />
                 )
               ) : (
@@ -277,7 +244,5 @@ export const UserPosts = ({ targetUserId, isOwner }: UserPostsProps) => {
             );
           })}
         </div>
-      )}
-    </>
   );
 };

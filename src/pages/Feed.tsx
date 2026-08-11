@@ -6,15 +6,15 @@ import HomeTab from '@/components/feed/HomeTab';
 export const FeedSkeleton = () => (
     <div className="flex justify-center gap-6 lg:gap-10 max-w-[1280px] mx-auto pb-20 pt-2 md:pt-6">
         {/* Main Feed Column */}
-        <div className="w-full max-w-[480px] space-y-6 px-4 sm:px-0">
+        <div className="w-full max-w-[480px] space-y-4 sm:space-y-6 px-4 sm:px-0">
             {/* Create Post Widget Skeleton */}
-            <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md p-4 flex items-center gap-3">
-                <EnhancedSkeleton className="h-10 w-10 rounded-full" />
-                <EnhancedSkeleton className="h-10 flex-1 rounded-xl" />
+            <div className="rounded-xl border border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md p-3 flex items-center gap-3">
+                <EnhancedSkeleton className="h-8 w-8 rounded-full" />
+                <EnhancedSkeleton className="h-8 flex-1 rounded-xl" />
             </div>
 
             {/* Post Cards Skeletons */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
                 <PostSkeleton />
                 <PostSkeleton />
                 <PostSkeleton />

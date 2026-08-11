@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from '@/components/ui/use-toast';
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { STORAGE_BUCKETS } from '@/lib/storage';
 import { Profile } from '@/types';
@@ -182,6 +183,7 @@ const profileFormSchema = z.object({
     linkedin: optionalUrl,
     twitter: optionalUrl,
     facebook: optionalUrl,
+    accept_direct_pitches: z.boolean().optional(),
   }).optional(),
 });
 
@@ -218,6 +220,7 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
         linkedin: profile.social_links?.linkedin || "",
         twitter: profile.social_links?.twitter || "",
         facebook: profile.social_links?.facebook || "",
+        accept_direct_pitches: (profile.social_links as any)?.accept_direct_pitches ?? true,
       },
     },
   });
@@ -466,6 +469,29 @@ const EditProfileForm: FC<EditProfileFormProps> = ({ profile, onUpdate, setEditi
 
         {(profile as any).account_type !== 'fan' && (
           <div className="space-y-4 pt-4 border-t border-gray-800">
+            {((profile as any).account_type === 'creator' || (profile as any).account_type === 'studio') && (
+              <FormField
+                control={form.control}
+                name="social_links.accept_direct_pitches"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-gray-800 p-4 bg-gray-950/20">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base font-semibold">Accept Direct Pitches</FormLabel>
+                      <p className="text-xs text-muted-foreground">
+                        Allow writers to pitch original concepts directly to your profile.
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
+
             <h3 className="text-lg font-semibold">Social Media</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField

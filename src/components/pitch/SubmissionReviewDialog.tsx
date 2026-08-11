@@ -44,6 +44,25 @@ const downloadPitchAsPDF = async (submission: PitchSubmission, reviewerName: str
     const timestamp = format(new Date(), "dd MMM yyyy, hh:mm a 'IST'");
     const submittedAt = format(new Date(submission.submitted_at), "dd MMM yyyy");
 
+    // Parse union credentials
+    let swaMemberId = '';
+    let swaRegNum = '';
+    let copyrightRegNum = '';
+    let iftdaMemberId = '';
+    let rawReg = (submission as any).guild_registration_number || '';
+    
+    if (rawReg.trim().startsWith('{')) {
+        try {
+            const parsed = JSON.parse(rawReg);
+            swaMemberId = parsed.swa_member_id || '';
+            swaRegNum = parsed.swa_registration_number || '';
+            copyrightRegNum = parsed.copyright_registration_number || '';
+            iftdaMemberId = parsed.iftda_member_id || '';
+        } catch (e) {}
+    } else {
+        swaRegNum = rawReg;
+    }
+
     const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -166,7 +185,10 @@ const downloadPitchAsPDF = async (submission: PitchSubmission, reviewerName: str
     <div class="ip-box">
       ${submission.rights_owned ? '<div class="ip-item">Rights Owned by Submitter</div>' : ''}
       ${submission.is_original_work ? '<div class="ip-item">Declared as Original Work</div>' : ''}
-      ${(submission as any).guild_registration_number ? `<div class="ip-item">Guild Registration: ${(submission as any).guild_registration_number}</div>` : ''}
+      ${swaMemberId ? `<div class="ip-item">SWA Member ID: ${swaMemberId}</div>` : ''}
+      ${swaRegNum ? `<div class="ip-item">SWA Script Registration #: ${swaRegNum}</div>` : ''}
+      ${copyrightRegNum ? `<div class="ip-item">Copyright Office Registration #: ${copyrightRegNum}</div>` : ''}
+      ${iftdaMemberId ? `<div class="ip-item">IFTDA Member ID: ${iftdaMemberId}</div>` : ''}
       ${(submission as any).nda_signature ? `<div class="ip-item">Writer NDA Signed: ${(submission as any).nda_signature} (${(submission as any).nda_signed_at ? format(new Date((submission as any).nda_signed_at), 'dd MMM yyyy HH:mm') : ''})</div>` : ''}
     </div>
   </div>
@@ -353,7 +375,29 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
     const avatarUrl = getSafeImageUrl(submission.profiles?.avatar_url || null);
     const initials = (submission.profiles?.full_name || 'W').split(' ').map(n => n[0]).join('').toUpperCase();
     const statusInfo = PITCH_STATUS_LABELS[submission.status || 'submitted'];
+    const isSubmitter = submission.submitter_id === user?.id;
     const [downloading, setDownloading] = useState(false);
+
+    // Parse union credentials
+    let swaMemberId = '';
+    let swaRegNum = '';
+    let copyrightRegNum = '';
+    let iftdaMemberId = '';
+    const rawReg = (submission as any).guild_registration_number || '';
+
+    if (rawReg.trim().startsWith('{')) {
+        try {
+            const parsed = JSON.parse(rawReg);
+            swaMemberId = parsed.swa_member_id || '';
+            swaRegNum = parsed.swa_registration_number || '';
+            copyrightRegNum = parsed.copyright_registration_number || '';
+            iftdaMemberId = parsed.iftda_member_id || '';
+        } catch (e) {}
+    } else {
+        swaRegNum = rawReg;
+    }
+
+    const hasCredentials = !!(swaMemberId || swaRegNum || copyrightRegNum || iftdaMemberId);
 
     const [ndaGatePassed, setNdaGatePassed] = useState(!ndaRequired);
     const [checkingNda, setCheckingNda] = useState(!!ndaRequired);
@@ -538,52 +582,106 @@ export const SubmissionReviewDialog = ({ submission, isOpen, onClose, onUpdateSt
                                         </>
                                     )}
                                 </div>
-                                {(submission as any).guild_registration_number ? (
-                                    <div className="flex items-center gap-2 pt-1">
-                                        <Award className="h-4 w-4 text-primary" />
-                                        <span className="text-xs font-bold text-primary">Guild Registered:</span>
-                                        <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary">
-                                            {(submission as any).guild_registration_number}
-                                        </code>
+                                {hasCredentials ? (
+                                    <div className="space-y-2 pt-2 border-t border-green-500/10">
+                                        {swaMemberId && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">SWA Member ID:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {swaMemberId}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {swaRegNum && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-primary" />
+                                                <span className="text-xs font-bold text-muted-foreground">SWA Script Registration #:</span>
+                                                <code className="text-xs bg-primary/10 px-2 py-0.5 rounded-md font-mono text-primary font-bold">
+                                                    {swaRegNum}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {copyrightRegNum && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-amber-500" />
+                                                <span className="text-xs font-bold text-muted-foreground">Copyright Office Reg #:</span>
+                                                <code className="text-xs bg-amber-500/15 px-2 py-0.5 rounded-md font-mono text-amber-500 font-bold">
+                                                    {copyrightRegNum}
+                                                </code>
+                                            </div>
+                                        )}
+                                        {iftdaMemberId && (
+                                            <div className="flex items-center gap-2">
+                                                <Award className="h-3.5 w-3.5 text-purple-400" />
+                                                <span className="text-xs font-bold text-muted-foreground">IFTDA Member ID:</span>
+                                                <code className="text-xs bg-purple-500/15 px-2 py-0.5 rounded-md font-mono text-purple-400 font-bold">
+                                                    {iftdaMemberId}
+                                                </code>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 pt-1">
                                         <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground" />
-                                        <span className="text-xs text-muted-foreground">No SWA/WGA registration number provided</span>
+                                        <span className="text-xs text-muted-foreground">No registration credentials provided</span>
                                     </div>
                                 )}
                             </div>
 
                             {/* Status Actions */}
                             <div className="space-y-3 pt-2 border-t border-border/40">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Your Decision</p>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {STATUS_ACTIONS.map(action => (
-                                        <button
-                                            key={action.value}
-                                            onClick={() => onUpdateStatus(submission.id, action.value)}
-                                            className={cn(
-                                                'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all text-left',
-                                                submission.status === action.value
-                                                    ? 'bg-primary text-primary-foreground border-primary shadow-md'
-                                                    : `bg-card border-border/50 ${action.color} ${action.bg}`
-                                            )}
-                                        >
-                                            <action.icon className="h-3.5 w-3.5 shrink-0" />
-                                            {action.label}
-                                        </button>
-                                    ))}
-                                </div>
+                                {isSubmitter ? (
+                                    <div className="bg-primary/5 border border-primary/10 rounded-2xl p-4 flex flex-col gap-2">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Pitch Status</p>
+                                        <div className="flex items-center gap-2">
+                                            <Badge className={cn('text-xs font-bold px-3 py-1', statusInfo?.color || '')}>
+                                                {statusInfo?.label || submission.status}
+                                            </Badge>
+                                            <p className="text-xs text-muted-foreground flex-1">
+                                                {submission.status === 'submitted' && 'Your pitch has been sent. The producer has not opened it yet.'}
+                                                {submission.status === 'seen' && 'The producer has opened and read your pitch.'}
+                                                {submission.status === 'under_review' && 'Your story is currently under active review by the team.'}
+                                                {submission.status === 'shortlisted' && 'Congratulations! Your pitch was shortlisted for closer consideration.'}
+                                                {submission.status === 'interested' && 'The producer is highly interested in your concept!'}
+                                                {submission.status === 'request_full_deck' && 'The producer is requesting your full pitch deck/treatment.'}
+                                                {submission.status === 'invite_to_discuss' && 'You have been invited to schedule a meeting/discussion!'}
+                                                {submission.status === 'passed' && 'The producer reviewed your concept and passed at this time.'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Your Decision</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {STATUS_ACTIONS.map(action => (
+                                                <button
+                                                    key={action.value}
+                                                    onClick={() => onUpdateStatus(submission.id, action.value)}
+                                                    className={cn(
+                                                        'flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-bold transition-all text-left',
+                                                        submission.status === action.value
+                                                            ? 'bg-primary text-primary-foreground border-primary shadow-md'
+                                                            : `bg-card border-border/50 ${action.color} ${action.bg}`
+                                                    )}
+                                                >
+                                                    <action.icon className="h-3.5 w-3.5 shrink-0" />
+                                                    {action.label}
+                                                </button>
+                                            ))}
+                                        </div>
 
-                                {(submission.status === 'interested' || submission.status === 'invite_to_discuss') && (
-                                    <Button
-                                        className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-black rounded-xl gap-2"
-                                        onClick={() => { push(`/dm/${submission.submitter_id}`); onClose(); }}
-                                    >
-                                        <Sparkles className="h-4 w-4" />
-                                        Start Private Collaboration
-                                        <ChevronRight className="h-4 w-4" />
-                                    </Button>
+                                        {(submission.status === 'interested' || submission.status === 'invite_to_discuss') && (
+                                            <Button
+                                                className="w-full h-11 bg-green-600 hover:bg-green-700 text-white font-black rounded-xl gap-2"
+                                                onClick={() => { push(`/dm/${submission.submitter_id}`); onClose(); }}
+                                            >
+                                                <Sparkles className="h-4 w-4" />
+                                                Start Private Collaboration
+                                                <ChevronRight className="h-4 w-4" />
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         </div>

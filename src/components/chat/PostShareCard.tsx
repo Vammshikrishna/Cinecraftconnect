@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Film, Briefcase } from 'lucide-react';
+import { Film, Briefcase, AlertCircle } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PostDialog } from './PostDialog';
 import { JobShareCard } from './JobShareCard';
@@ -25,22 +25,22 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
     const [author, setAuthor] = useState(initialAuthor);
     const [preview, setPreview] = useState(previewUrl);
     const [text, setText] = useState(caption);
+    const [mediaItem, setMediaItem] = useState<any>(null);
+    const [isDeleted, setIsDeleted] = useState(false);
 
     useEffect(() => {
         const fetchPostData = async () => {
-            // Only fetch if we're missing critical data
-            if (author?.full_name || author?.username) {
-                if (preview && text) return;
-            }
-
             try {
-                const { data: postData } = await supabase
+                const { data: postData, error } = await supabase
                     .from('posts')
-                    .select('content, media_url, profiles(username, full_name, avatar_url, is_verified)')
+                    .select('id, content, media_url, media_items, profiles(username, full_name, avatar_url, is_verified)')
                     .eq('id', postId)
                     .maybeSingle();
 
-                if (postData) {
+                if (!postData || error) {
+                    setIsDeleted(true);
+                } else {
+                    setIsDeleted(false);
                     if (postData.profiles) {
                         const profile = Array.isArray(postData.profiles) ? postData.profiles[0] : postData.profiles;
                         setAuthor({
@@ -51,20 +51,24 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                         });
                     }
 
-                    if (!text) setText(postData.content);
-                    if (!preview) {
-                        setPreview(postData.media_url || undefined);
+                    setText(postData.content || "");
+                    setPreview(postData.media_url || undefined);
+                    if (postData.media_items && Array.isArray(postData.media_items) && postData.media_items.length > 0) {
+                        setMediaItem(postData.media_items[0]);
+                    } else {
+                        setMediaItem(null);
                     }
                 }
             } catch (err) {
                 console.error("Error fetching post data:", err);
+                setIsDeleted(true);
             }
         };
 
         if (postId) {
             fetchPostData();
         }
-    }, [postId, author, preview, text]);
+    }, [postId]);
 
     const isVideo = (url?: string) => {
         if (!url) return false;
@@ -72,7 +76,68 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
         return videoExtensions.some(ext => url.toLowerCase().includes(ext)) || url.includes('video');
     };
 
-    // const displayName = author?.full_name || author?.username || 'User';
+    const isFilterEdited = (filter?: string) => {
+        if (!filter || filter === 'none') return false;
+        const normalized = filter.trim();
+        if (normalized === 'brightness(100%) contrast(100%) saturate(100%) sepia(0%)') return false;
+        return true;
+    };
+
+    const getMediaStyles = (item: any) => {
+        if (!item) return { imageStyles: {}, wrapperStyles: {}, hasAspectRatio: false };
+
+        const styles: React.CSSProperties = {};
+        const wrapperStyles: React.CSSProperties = {};
+
+        if (isFilterEdited(item.filter)) {
+            styles.filter = item.filter;
+        }
+
+        const hasZoom = item.zoom !== undefined && item.zoom !== null && item.zoom !== 100;
+        const panX = item.pan?.x || 0;
+        const panY = item.pan?.y || 0;
+        const hasPan = panX !== 0 || panY !== 0;
+        if (hasZoom || hasPan) {
+            const scaleVal = hasZoom ? (item.zoom! / 100) : 1;
+            styles.transform = `translate(${panX}px, ${panY}px) scale(${scaleVal})`;
+        }
+
+        const hasCrop = item.crop && (item.crop.top > 0 || item.crop.right > 0 || item.crop.bottom > 0 || item.crop.left > 0);
+        if (hasCrop) {
+            styles.clipPath = `inset(${item.crop.top || 0}% ${item.crop.right || 0}% ${item.crop.bottom || 0}% ${item.crop.left || 0}%)`;
+        }
+
+        const hasAspectRatio = item.aspectRatio && item.aspectRatio !== 'original' && item.aspectRatio !== 'free';
+        if (hasAspectRatio) {
+            const ratioMap: Record<string, string> = {
+                '1:1': '1/1',
+                '4:5': '4/5',
+                '16:9': '16/9',
+            };
+            if (ratioMap[item.aspectRatio!]) {
+                wrapperStyles.aspectRatio = ratioMap[item.aspectRatio!];
+            }
+        }
+
+        return { imageStyles: styles, wrapperStyles, hasAspectRatio: !!hasAspectRatio };
+    };
+
+    const activeItem = mediaItem || (preview ? { url: preview, type: isVideo(preview) ? 'video' : 'image' } : null);
+    const { imageStyles, wrapperStyles, hasAspectRatio } = getMediaStyles(activeItem);
+
+    if (isDeleted) {
+        return (
+            <div className="w-[220px] sm:w-[240px] p-4 rounded-2xl bg-muted/30 border border-border/40 text-center flex flex-col items-center justify-center gap-2 my-1 shadow-sm">
+                <div className="p-2.5 rounded-full bg-muted/60 text-muted-foreground">
+                    <AlertCircle className="h-5 w-5" />
+                </div>
+                <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-foreground">Post unavailable</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug">This post was deleted by the owner.</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -102,12 +167,16 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                 </div>
 
                 {/* Media Section */}
-                <div className={`relative w-full ${!preview && text?.includes('JOB_SHARE::') ? 'py-6' : 'aspect-[4/5]'} bg-[#0a0a0a] flex items-center justify-center overflow-hidden`}>
+                <div
+                    className={`relative w-full ${!preview && text?.includes('JOB_SHARE::') ? 'py-6' : 'aspect-[4/5]'} bg-[#0a0a0a] flex items-center justify-center overflow-hidden`}
+                    style={hasAspectRatio ? wrapperStyles : undefined}
+                >
                     {preview ? (
                         isVideo(preview) ? (
                             <video
                                 src={preview}
-                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
+                                className={`w-full h-full ${hasAspectRatio ? 'object-cover' : 'object-contain'} transition-transform duration-700 group-hover:scale-105`}
+                                style={imageStyles}
                                 muted
                                 loop
                                 playsInline
@@ -118,7 +187,8 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                             <img
                                 src={getOptimizedImage(preview, { width: 400 })}
                                 alt="Post Preview"
-                                className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
+                                className={`w-full h-full ${hasAspectRatio ? 'object-cover' : 'object-contain'} transition-transform duration-700 group-hover:scale-105`}
+                                style={imageStyles}
                             />
                         )
                     ) : text?.includes('JOB_SHARE::') ? (
@@ -215,6 +285,7 @@ export const PostShareCard = ({ postId, previewUrl, caption, author: initialAuth
                     content: text,
                     media_url: preview,
                     media_type: isVideo(preview) ? 'video' : 'image',
+                    media_items: mediaItem ? [mediaItem] : undefined,
                     profiles: {
                         full_name: author?.full_name,
                         username: author?.username,

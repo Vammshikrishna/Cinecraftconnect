@@ -100,7 +100,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
             )}
 
             {onDismiss && (
-                <button 
+                <button
                     onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -114,13 +114,13 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
             )}
 
             <Link to={`/projects/${project.id}/space`} className="block relative aspect-[16/10] overflow-hidden">
-                <LazyImage 
-                    src={getOptimizedImage(displayImage, { width: 800, quality: 85 })} 
-                    alt={project.title} 
+                <LazyImage
+                    src={getOptimizedImage(displayImage, { width: 800, quality: 85 })}
+                    alt={project.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                
+
                 {/* Status Badge */}
                 <div className="absolute bottom-4 left-4">
                     <span className="font-mono px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] font-bold uppercase tracking-widest text-white shadow-lg border border-white/20">
@@ -163,7 +163,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                             }
                         })()}
                     </span>
-                    
+
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-black/5 dark:hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors">
@@ -177,7 +177,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                                     <span>Enter Workspace</span>
                                 </Link>
                             </DropdownMenuItem>
-                            
+
                             {isOwner && (
                                 <>
                                     <DropdownMenuItem className="flex items-center gap-2 cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-500/10" onClick={() => setIsDeleteOpen(true)}>
@@ -202,7 +202,7 @@ const FeedProjectCard = ({ project, onDismiss }: FeedProjectCardProps) => {
                     </AlertDialogHeader>
                     <AlertDialogFooter className="gap-2">
                         <AlertDialogCancel className="rounded-xl border-border/50">Cancel</AlertDialogCancel>
-                        <AlertDialogAction 
+                        <AlertDialogAction
                             onClick={handleDelete}
                             className="bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-lg shadow-red-500/20"
                             disabled={isDeleting}

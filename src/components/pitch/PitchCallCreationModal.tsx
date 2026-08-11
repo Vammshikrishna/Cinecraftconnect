@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useCreatePitchCall } from '@/hooks/usePitch';
-import { Megaphone, Loader2, Trash2, Calendar, DollarSign } from 'lucide-react';
+import { Megaphone, Loader2, Trash2, Calendar, DollarSign, Award } from 'lucide-react';
 
 interface PitchCallCreationModalProps {
     isOpen: boolean;
@@ -63,6 +63,9 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
         nda_required: false,
     });
 
+    const [producersGuildMemberId, setProducersGuildMemberId] = useState('');
+    const [companyRegistrationNumber, setCompanyRegistrationNumber] = useState('');
+
     useEffect(() => {
         if (initialData) {
             setForm({
@@ -77,17 +80,29 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                 rights_expectation: initialData.rights_expectation || '',
                 deadline: initialData.deadline || ''
             });
+            const att = initialData.attachments || {};
+            setProducersGuildMemberId(att.producers_guild_member_id || '');
+            setCompanyRegistrationNumber(att.company_registration_number || '');
         }
     }, [initialData]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
+        const submissionPayload = {
+            ...form,
+            attachments: {
+                ...(initialData?.attachments as any || {}),
+                producers_guild_member_id: producersGuildMemberId.trim(),
+                company_registration_number: companyRegistrationNumber.trim(),
+            }
+        };
+
         let result;
         if (pitchCallId) {
-            result = await updatePitchCall(pitchCallId, form);
+            result = await updatePitchCall(pitchCallId, submissionPayload);
         } else {
-            result = await createPitchCall(form);
+            result = await createPitchCall(submissionPayload);
         }
 
         if (result) {
@@ -100,6 +115,8 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                     requirement_description: '', tone: '', ref_films: '', deadline: '',
                     is_open_to_debut: false, is_regional_welcome: false, rights_expectation: '', nda_required: false,
                 });
+                setProducersGuildMemberId('');
+                setCompanyRegistrationNumber('');
             }
         }
     };
@@ -298,6 +315,32 @@ export const PitchCallCreationModal = ({ isOpen, onClose, onCreated, initialData
                     <div className="space-y-2">
                         <Label>Rights Expectation</Label>
                         <Input placeholder="e.g. Full IP transfer, co-ownership, option agreement..." value={form.rights_expectation} onChange={e => setForm((f: PitchCallForm) => ({ ...f, rights_expectation: e.target.value }))} />
+                    </div>
+
+                    {/* Producer & Company Credentials */}
+                    <div className="p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl space-y-4">
+                        <div className="flex items-center gap-2 font-bold text-amber-500 text-sm">
+                            <Award className="h-4 w-4" /> Professional Credentials (Optional)
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label className="text-xs">Producers Guild of India ID</Label>
+                                <Input 
+                                    placeholder="e.g. PGI-2026-XXXX" 
+                                    value={producersGuildMemberId} 
+                                    onChange={e => setProducersGuildMemberId(e.target.value)} 
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-xs">Company Registration Number</Label>
+                                <Input 
+                                    placeholder="e.g. CIN-U92100MH2026..." 
+                                    value={companyRegistrationNumber} 
+                                    onChange={e => setCompanyRegistrationNumber(e.target.value)} 
+                                />
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">Adding credentials displays a "Guild Verified" trust badge to writers, encouraging high-quality pitches.</p>
                     </div>
 
                     <div className="flex justify-end gap-3 pt-4 border-t">

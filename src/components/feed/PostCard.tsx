@@ -583,12 +583,42 @@ const PostCard = ({
   const handleDelete = async () => {
     setIsDeleting(true);
     try {
+      // 1. Delete post record from Database
       const { error } = await supabase
         .from('posts')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
+
+      // 2. Clean up uploaded photo/video media files from Supabase Storage
+      const urlsToDelete: string[] = [];
+      if (mediaUrl) urlsToDelete.push(mediaUrl);
+      if (Array.isArray(mediaItems)) {
+        mediaItems.forEach(item => {
+          if (item?.url && !urlsToDelete.includes(item.url)) {
+            urlsToDelete.push(item.url);
+          }
+        });
+      }
+
+      for (const url of urlsToDelete) {
+        try {
+          if (url.includes('/storage/v1/object/public/')) {
+            const parts = url.split('/storage/v1/object/public/');
+            if (parts[1]) {
+              const bucketAndPath = parts[1];
+              const bucketName = bucketAndPath.split('/')[0];
+              const filePath = bucketAndPath.substring(bucketName.length + 1);
+              if (bucketName && filePath) {
+                await supabase.storage.from(bucketName).remove([decodeURIComponent(filePath)]);
+              }
+            }
+          }
+        } catch (storageErr) {
+          console.warn("Could not remove media file from storage:", storageErr);
+        }
+      }
 
       toast({
         title: "Success",
@@ -663,6 +693,60 @@ const PostCard = ({
     }
   };
 
+  // Helper to check if filter string has actual non-default edits
+  const isFilterEdited = (filter?: string) => {
+    if (!filter || filter === 'none') return false;
+    // The default getFilterString output when no edits are made:
+    // "brightness(100%) contrast(100%) saturate(100%) sepia(0%)"
+    const normalized = filter.trim();
+    if (normalized === 'brightness(100%) contrast(100%) saturate(100%) sepia(0%)') return false;
+    return true;
+  };
+
+  // Helper to compute CSS styles from stored editing metadata
+  const getMediaStyles = (item: { url: string; type: "image" | "video"; crop?: any; zoom?: number; pan?: any; filter?: string; aspectRatio?: string }) => {
+    const styles: React.CSSProperties = {};
+    const wrapperStyles: React.CSSProperties = {};
+
+    // Apply filter (stored as a complete CSS filter string from the editor)
+    if (isFilterEdited(item.filter)) {
+      styles.filter = item.filter;
+    }
+
+    // Apply zoom and pan via transform
+    const hasZoom = item.zoom !== undefined && item.zoom !== null && item.zoom !== 100;
+    const panX = item.pan?.x || 0;
+    const panY = item.pan?.y || 0;
+    const hasPan = panX !== 0 || panY !== 0;
+    if (hasZoom || hasPan) {
+      const scaleVal = hasZoom ? (item.zoom! / 100) : 1;
+      styles.transform = `translate(${panX}px, ${panY}px) scale(${scaleVal})`;
+    }
+
+    // Apply crop via clipPath
+    const hasCrop = item.crop && (item.crop.top > 0 || item.crop.right > 0 || item.crop.bottom > 0 || item.crop.left > 0);
+    if (hasCrop) {
+      styles.clipPath = `inset(${item.crop.top || 0}% ${item.crop.right || 0}% ${item.crop.bottom || 0}% ${item.crop.left || 0}%)`;
+    }
+
+    // Apply aspect ratio on the wrapper container
+    const hasAspectRatio = item.aspectRatio && item.aspectRatio !== 'original' && item.aspectRatio !== 'free';
+    if (hasAspectRatio) {
+      const ratioMap: Record<string, string> = {
+        '1:1': '1/1',
+        '4:5': '4/5',
+        '16:9': '16/9',
+      };
+      if (ratioMap[item.aspectRatio!]) {
+        wrapperStyles.aspectRatio = ratioMap[item.aspectRatio!];
+      }
+    }
+
+    const hasAnyEdits = isFilterEdited(item.filter) || hasZoom || hasPan || hasCrop || hasAspectRatio;
+
+    return { imageStyles: styles, wrapperStyles, hasAnyEdits, hasAspectRatio: !!hasAspectRatio };
+  };
+
   // Helper to render media items
   const renderMediaGallery = () => {
     // Standardize to an array, checking both prop names just in case
@@ -678,24 +762,35 @@ const PostCard = ({
     // Single Item Layout
     if (items.length === 1) {
       const item = items[0];
+      const { imageStyles, wrapperStyles, hasAnyEdits, hasAspectRatio } = getMediaStyles(item);
       return (
         <div 
-          className="group/media -mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden h-auto flex items-center justify-center cursor-pointer select-none"
+          className="group/media -mx-3 lg:-mx-4 w-[calc(100%+1.5rem)] lg:w-[calc(100%+2rem)] relative ring-1 ring-white/10 group-hover:ring-primary/20 transition-all duration-300 overflow-hidden cursor-pointer select-none"
+          style={hasAspectRatio ? wrapperStyles : undefined}
           onDoubleClick={handleMediaDoubleTap}
         >
           {item.type === 'image' ? (
             <CachedImage
               src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
               alt={imageAlt || "Post content"}
-              className="w-full h-auto block hover:scale-[1.01] transition-transform duration-700"
+              className={cn(
+                "w-full block",
+                hasAspectRatio ? 'h-full object-cover' : 'h-auto',
+                !hasAnyEdits && 'hover:scale-[1.01] transition-transform duration-700'
+              )}
+              style={imageStyles}
             />
           ) : (
-            <div className="relative w-full h-auto flex items-center justify-center overflow-hidden">
+            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
               <CachedVideo
                 src={item.url}
                 controls
-                className="w-full h-auto block"
+                className={cn(
+                  "w-full block",
+                  hasAspectRatio ? 'h-full object-cover' : 'h-auto'
+                )}
                 preload="metadata"
+                style={imageStyles}
               >
                 Your browser does not support video playback.
               </CachedVideo>
@@ -758,37 +853,49 @@ const PostCard = ({
           className="relative flex transition-transform duration-500 ease-out h-auto w-full"
           style={{ transform: `translateX(-${currentMediaIndex * 100}%)` }}
         >
-          {items.map((item, idx) => (
-            <div
-              key={`${id}-carousel-${idx}`}
-              className="w-full flex-none"
-            >
-              {item.type === 'image' ? (
-                <CachedImage
-                  src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
-                  alt={`Media ${idx + 1}`}
-                  className="w-full h-auto block"
-                />
-              ) : (
-                <div className="relative w-full h-auto flex items-center justify-center overflow-hidden">
-                  <CachedVideo
-                    src={item.url}
-                    className="w-full h-auto block"
-                    muted
-                    loop
-                    preload="metadata"
-                    onMouseOver={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.play()}
-                    onMouseOut={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.pause()}
+          {items.map((item, idx) => {
+            const { imageStyles: carouselImageStyles, wrapperStyles: carouselWrapperStyles, hasAspectRatio } = getMediaStyles(item);
+            return (
+              <div
+                key={`${id}-carousel-${idx}`}
+                className="w-full flex-none overflow-hidden"
+                style={hasAspectRatio ? carouselWrapperStyles : undefined}
+              >
+                {item.type === 'image' ? (
+                  <CachedImage
+                    src={getOptimizedImage(item.url, { width: 800, quality: 85 })}
+                    alt={`Media ${idx + 1}`}
+                    className={cn(
+                      "w-full block",
+                      hasAspectRatio ? 'h-full object-cover' : 'h-auto'
+                    )}
+                    style={carouselImageStyles}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30">
-                      <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                ) : (
+                  <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+                    <CachedVideo
+                      src={item.url}
+                      className={cn(
+                        "w-full block",
+                        hasAspectRatio ? 'h-full object-cover' : 'h-auto'
+                      )}
+                      muted
+                      loop
+                      preload="metadata"
+                      style={carouselImageStyles}
+                      onMouseOver={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.play()}
+                      onMouseOut={(e: React.MouseEvent<HTMLVideoElement>) => e.currentTarget.pause()}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="bg-black/50 backdrop-blur-md p-2.5 rounded-full ring-1 ring-white/30">
+                        <Play className="w-5 h-5 text-white fill-white ml-0.5" />
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Floating Heart for double tap (carousel) */}
@@ -1061,7 +1168,7 @@ const PostCard = ({
         );
       })()}
 
-      <div className="relative overflow-hidden rounded-none sm:rounded-xl border-y border-x-0 sm:border-x border-black/5 dark:border-white/10 bg-white/80 dark:bg-card/30 backdrop-blur-md transition-all duration-300 hover:border-primary/50 group">
+      <div className="relative overflow-hidden bg-transparent border-none shadow-none group">
         <div className="relative">
           {/* Header - Padded */}
           <div className="flex items-center px-3 lg:px-4 py-2 lg:py-3">
@@ -1382,11 +1489,11 @@ const PostCard = ({
 
             {isCommentsDisabled ? (
               <p className="text-muted-foreground text-xs italic pt-1 font-medium">Comments are turned off for this post.</p>
-            ) : (
+            ) : displayCommentCount > 0 ? (
               <button onClick={handleComment} className="text-muted-foreground text-[13px] lg:text-sm hover:underline block pt-1">
-                View all {displayCommentCount} comments
+                View all {displayCommentCount} {displayCommentCount === 1 ? 'comment' : 'comments'}
               </button>
-            )}
+            ) : null}
           </div>
         </div>
         <AnimatePresence>

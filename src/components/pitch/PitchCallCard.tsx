@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { PitchCall } from '@/hooks/usePitch';
 import { 
     Bookmark, Share2, Megaphone, Calendar, DollarSign, 
-    Globe, Film, Users, CheckCircle2, MapPin, Clock, Shield
+    Globe, Film, Users, CheckCircle2, MapPin, Clock, Shield, Award
 } from 'lucide-react';
 import { formatDistanceToNow, isPast, parseISO } from 'date-fns';
 import VerificationBadge from '@/components/common/VerificationBadge';
@@ -115,6 +115,11 @@ export const PitchCallCard = ({ pitchCall, onSaveToggle, canSubmit, alreadySubmi
 
                     {/* Meta Badges */}
                     <div className="flex flex-wrap gap-1.5">
+                        {pitchCall.attachments?.producers_guild_member_id && (
+                            <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded flex items-center gap-1">
+                                <Award className="h-3 w-3" /> GUILD VERIFIED
+                            </div>
+                        )}
                         {pitchCall.project_type && (
                             <div className="font-mono text-[10px] uppercase tracking-widest font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
                                 TYPE // {FORMAT_LABELS[pitchCall.project_type] || pitchCall.project_type}

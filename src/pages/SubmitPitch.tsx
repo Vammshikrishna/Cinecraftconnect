@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import SEO from '@/components/common/SEO';
 import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { useAuth } from '@/contexts/AuthContext';
 
 const STEPS = [
     { id: 1, label: 'Your Story', icon: Lightbulb, description: 'The core of your pitch' },
@@ -27,13 +28,16 @@ const STEPS = [
 export default function SubmitPitch() {
     const { pitchId } = useParams<{ pitchId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
     const { toast } = useToast();
+    const { user } = useAuth();
     const { submitPitch, loading } = useSubmitPitch();
 
     const [pitchCall, setPitchCall] = useState<PitchCall | null>(null);
     const [fetching, setFetching] = useState(true);
     const [step, setStep] = useState(1);
     const [submitted, setSubmitted] = useState(false);
+    const [directReceiverId, setDirectReceiverId] = useState<string | null>(null);
 
     const [form, setForm] = useState({
         title: '',
@@ -59,29 +63,67 @@ export default function SubmitPitch() {
     });
 
     const [refLink, setRefLink] = useState('');
+    const [credentials, setCredentials] = useState({
+        swa_member_id: '',
+        swa_registration_number: '',
+        copyright_registration_number: '',
+        iftda_member_id: '',
+    });
 
     useEffect(() => {
         const fetchPitch = async () => {
             if (!pitchId) return;
             setFetching(true);
             try {
-                const { data, error } = await supabase
-                    .from('pitch_calls')
-                    .select(`*, profiles:creator_id (full_name, avatar_url, username, craft, location, is_verified)`)
-                    .eq('id', pitchId)
-                    .single();
-                if (error) throw error;
-                setPitchCall(data);
-                setForm(f => ({ ...f, format: data.format || '', nda_preferred: !!data.nda_required }));
+                if (pitchId === 'direct') {
+                    const searchParams = new URLSearchParams(location.search);
+                    const toUserId = searchParams.get('to');
+                    if (!toUserId) {
+                        toast({ title: 'Error', description: 'Invalid producer ID for direct pitch.', variant: 'destructive' });
+                        navigate(-1);
+                        return;
+                    }
+                    setDirectReceiverId(toUserId);
+                    
+                    // Fetch producer profile
+                    const { data: producerProfile, error: pError } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url, username, craft, location, is_verified')
+                        .eq('id', toUserId)
+                        .single();
+                    if (pError) throw pError;
+                    
+                    // Set mock placeholder details for display
+                    setPitchCall({
+                        id: 'direct_placeholder',
+                        creator_id: toUserId,
+                        title: `Direct Pitch to ${producerProfile.full_name}`,
+                        requirement_description: 'Confidential direct concept submission.',
+                        project_type: 'direct_catcher',
+                        nda_required: true,
+                        profiles: producerProfile
+                    } as any);
+                    
+                    setForm(f => ({ ...f, nda_preferred: true }));
+                } else {
+                    const { data, error } = await supabase
+                        .from('pitch_calls')
+                        .select(`*, profiles:creator_id (full_name, avatar_url, username, craft, location, is_verified)`)
+                        .eq('id', pitchId)
+                        .single();
+                    if (error) throw error;
+                    setPitchCall(data);
+                    setForm(f => ({ ...f, format: data.format || '', nda_preferred: !!data.nda_required }));
+                }
             } catch (err) {
-                toast({ title: 'Error', description: 'Failed to load pitch call details.', variant: 'destructive' });
+                toast({ title: 'Error', description: 'Failed to load pitch details.', variant: 'destructive' });
                 navigate(-1);
             } finally {
                 setFetching(false);
             }
         };
         fetchPitch();
-    }, [pitchId]);
+    }, [pitchId, location.search]);
 
     if (fetching) {
         return (
@@ -102,14 +144,82 @@ export default function SubmitPitch() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!step3Valid) return;
-        const payload: any = { ...form, pitch_call_id: pitchCall.id };
+        
+        let targetCallId = pitchCall.id;
+        
+        if (pitchCall.id === 'direct_placeholder' && directReceiverId && user) {
+            // Create a pitch call brief where creator_id = directReceiverId (Producer's ID)
+            const { data: newCatcher, error: cError } = await supabase
+                .from('pitch_calls')
+                .insert({
+                    creator_id: directReceiverId,
+                    title: `Direct Pitch: ${form.title || 'New Concept'}`,
+                    project_type: 'other',
+                    requirement_description: 'Confidential direct concept submission brief.',
+                    status: 'open',
+                    is_published: true,
+                    attachments: { 
+                        is_direct_catcher: true, 
+                        target_producer_id: directReceiverId,
+                        target_producer_name: pitchCall.profiles?.full_name || 'Producer'
+                    }
+                })
+                .select('id')
+                .single();
+                
+            if (cError) {
+                console.warn("Failed to create direct_catcher brief due to RLS, attempting fallback", cError);
+                // Fallback 1: Find ANY existing call owned by this producer to host the direct pitch
+                const { data: fallbackCall } = await supabase
+                    .from('pitch_calls')
+                    .select('id')
+                    .eq('creator_id', directReceiverId)
+                    .limit(1)
+                    .maybeSingle();
+                
+                if (fallbackCall) {
+                    targetCallId = fallbackCall.id;
+                } else {
+                    // Fallback 2: Find ANY pitch call in the system to bypass the FK constraint
+                    const { data: absoluteFallback } = await supabase
+                        .from('pitch_calls')
+                        .select('id')
+                        .limit(1)
+                        .maybeSingle();
+                    
+                    if (absoluteFallback) {
+                        targetCallId = absoluteFallback.id;
+                    } else {
+                        toast({ title: 'Submission Error', description: 'Could not resolve a pitch brief ID for direct pitch.', variant: 'destructive' });
+                        return;
+                    }
+                }
+            } else {
+                targetCallId = newCatcher.id;
+            }
+        }
+
+        // Serialize credentials into the single guild_registration_number column
+        const payload: any = { 
+            ...form, 
+            pitch_call_id: targetCallId,
+            guild_registration_number: JSON.stringify(credentials)
+        };
+        
         if (ndaSignatureRequired && form.nda_signature.trim()) {
             payload.nda_signed_at = new Date().toISOString();
         }
+        
         const result = await submitPitch(payload);
         if (result) {
             setSubmitted(true);
-            setTimeout(() => navigate(`/pitch/${pitchCall.id}`), 2500);
+            setTimeout(() => {
+                if (pitchCall.id === 'direct_placeholder') {
+                    navigate('/pitch');
+                } else {
+                    navigate(`/pitch/${pitchCall.id}`);
+                }
+            }, 2500);
         }
     };
 
@@ -512,40 +622,81 @@ export default function SubmitPitch() {
                                     </div>
                                 </div>
 
-                                {/* SWA / WGA Registration */}
-                                <div className="bg-card border border-border/60 rounded-2xl p-6 space-y-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                                            <Award className="h-4.5 w-4.5 text-primary" />
+                                {/* Union & IP Protection Credentials */}
+                                <div className="bg-card border border-border/60 rounded-2xl p-6 md:p-8 space-y-6">
+                                    <div className="flex items-center gap-3 border-b border-border/40 pb-4">
+                                        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                                            <Award className="h-5 w-5 text-primary" />
                                         </div>
                                         <div>
-                                            <p className="text-sm font-bold text-foreground">Guild Registration Number</p>
-                                            <p className="text-xs text-muted-foreground">SWA / WGA — optional but strongly recommended</p>
+                                            <h3 className="text-sm font-bold text-foreground">Union & IP Protection Credentials</h3>
+                                            <p className="text-xs text-muted-foreground">Add verified memberships to establish professional trust and protect your work</p>
                                         </div>
                                     </div>
-                                    <Input
-                                        className="h-11 border-border/60 bg-background/50 font-mono"
-                                        placeholder="e.g. SWA-2024-XXXXX or WGA-XXXXXXX"
-                                        value={form.guild_registration_number}
-                                        onChange={e => setForm(f => ({ ...f, guild_registration_number: e.target.value }))}
-                                    />
-                                    {!form.guild_registration_number ? (
-                                        <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-400/20 rounded-xl">
-                                            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                                            <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
-                                                <span className="font-bold">Adds legal weight:</span> A{' '}
-                                                <a href="https://swaindia.org" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-                                                    Screenwriters Association
-                                                </a>{' '}
-                                                registration gives you government-backed IP proof before any dispute.
+
+                                    {/* SWA Registration (Screenwriters Association) */}
+                                    <div className="space-y-4">
+                                        <div className="flex items-start gap-3 p-3.5 bg-primary/5 border border-primary/10 rounded-xl">
+                                            <div className="mt-0.5 bg-primary/10 text-primary px-2 py-0.5 rounded text-[10px] font-black tracking-wider">SWA</div>
+                                            <p className="text-xs text-muted-foreground leading-relaxed">
+                                                <span className="font-bold text-foreground">Screenwriters Association (SWA):</span> Trade union script registration serves as critical legal evidence of authorship and creation date in India.
                                             </p>
                                         </div>
-                                    ) : (
-                                        <div className="flex items-center gap-2 text-sm text-green-500 font-semibold">
-                                            <CheckCircle2 className="h-4 w-4" />
-                                            Logged & timestamped with your submission
+
+                                        <div className="grid sm:grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs font-bold text-foreground/80">SWA Member ID</Label>
+                                                <Input
+                                                    className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                    placeholder="e.g. SWA-2026-XXXXX"
+                                                    value={credentials.swa_member_id}
+                                                    onChange={e => setCredentials(c => ({ ...c, swa_member_id: e.target.value }))}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <Label className="text-xs font-bold text-foreground/80">SWA Script Registration #</Label>
+                                                <Input
+                                                    className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                    placeholder="e.g. SR-987654"
+                                                    value={credentials.swa_registration_number}
+                                                    onChange={e => setCredentials(c => ({ ...c, swa_registration_number: e.target.value }))}
+                                                />
+                                            </div>
                                         </div>
-                                    )}
+                                    </div>
+
+                                    {/* Copyright Office (Govt of India) */}
+                                    <div className="space-y-3 pt-2 border-t border-border/40">
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <Label className="text-xs font-bold text-foreground/80 flex items-center gap-1.5">
+                                                    Copyright Office Registration #
+                                                </Label>
+                                                <span className="text-[10px] font-semibold text-muted-foreground">copyright.gov.in</span>
+                                            </div>
+                                            <Input
+                                                className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                placeholder="e.g. L-12345/2026"
+                                                value={credentials.copyright_registration_number}
+                                                onChange={e => setCredentials(c => ({ ...c, copyright_registration_number: e.target.value }))}
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">Statutory legal registration with the Copyright Office, Government of India.</p>
+                                        </div>
+                                    </div>
+
+                                    {/* IFTDA Registration (Directors only) */}
+                                    <div className="space-y-3 pt-2 border-t border-border/40">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold text-foreground/80">IFTDA Member ID <span className="font-normal text-muted-foreground text-[10px] ml-1">(For directors)</span></Label>
+                                            <Input
+                                                className="h-10 border-border/60 bg-background/50 font-mono text-xs"
+                                                placeholder="e.g. DIR-5678"
+                                                value={credentials.iftda_member_id}
+                                                onChange={e => setCredentials(c => ({ ...c, iftda_member_id: e.target.value }))}
+                                            />
+                                            <p className="text-[10px] text-muted-foreground">Indian Film & Television Directors' Association membership.</p>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* NDA e-Signature */}

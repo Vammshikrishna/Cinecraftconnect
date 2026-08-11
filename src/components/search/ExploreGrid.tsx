@@ -8,7 +8,7 @@ interface ExploreGridProps {
 export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
     if (loading) {
         return (
-            <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1 md:gap-2 pb-20">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 md:gap-2.5 pb-20 w-full max-w-full overflow-hidden">
                 {[...Array(16)].map((_, i) => (
                     <div
                         key={i}
@@ -28,12 +28,12 @@ export const ExploreGrid = ({ items, loading }: ExploreGridProps) => {
     }
 
     return (
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1 md:gap-2 auto-rows-fr pb-32">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-1.5 md:gap-2.5 auto-rows-fr pb-32 w-full max-w-full overflow-hidden">
             {items.map((item) => {
                 return (
                     <div
                         key={`${item.type}-${item.id}`}
-                        className="col-span-1 row-span-1 transition-transform duration-500 hover:z-50"
+                        className="col-span-1 row-span-1 transition-transform duration-500 hover:z-50 w-full max-w-full overflow-hidden"
                     >
                         <ExploreCard item={item} />
                     </div>

@@ -18,19 +18,19 @@ export interface ImageTransformationOptions {
  */
 export const getOptimizedImage = (url: string | null | undefined, options: ImageTransformationOptions = {}): string => {
   if (!url) return '';
-  
+
   // If not a Supabase URL, return as is
   if (!url.includes('supabase.co')) return url;
 
   const optimizedUrl = url;
 
   // Default options
-  const { 
-    width, 
-    height, 
-    resize = 'cover', 
-    quality = 80, 
-    format = 'webp' 
+  const {
+    width,
+    height,
+    resize = 'cover',
+    quality = 80,
+    format = 'webp'
   } = options;
 
   const params = new URLSearchParams();

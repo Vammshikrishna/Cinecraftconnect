@@ -25,6 +25,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { UnifiedSearchBar } from '@/components/ui/unified-search-bar';
+import StoryExchangeTab from '@/components/pitch/StoryExchangeTab';
+import { Sparkles } from 'lucide-react';
 
 const Pitch = () => {
     const { user, profile } = useAuth();
@@ -114,6 +116,9 @@ const Pitch = () => {
                     <TabsList className="bg-card border border-border/50 p-1 rounded-xl h-auto flex-wrap">
                         <TabsTrigger value="discover" className="rounded-lg gap-2 font-bold">
                             <Lightbulb className="h-4 w-4" /> Discover Pitch Calls
+                        </TabsTrigger>
+                        <TabsTrigger value="story-exchange" className="rounded-lg gap-2 font-bold">
+                            <Sparkles className="h-4 w-4 text-amber-500" /> Story Exchange
                         </TabsTrigger>
                         {user && userCanSubmit && (
                             <TabsTrigger value="my-pitches" className="rounded-lg gap-2 font-bold">
@@ -251,6 +256,11 @@ const Pitch = () => {
                                 </AnimatePresence>
                             </div>
                         )}
+                    </TabsContent>
+
+                    {/* ─── Story Exchange Tab ─── */}
+                    <TabsContent value="story-exchange">
+                        <StoryExchangeTab />
                     </TabsContent>
 
                     {/* ─── My Pitches Tab (Writers) ─── */}
