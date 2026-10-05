@@ -45,7 +45,7 @@ jobs:
         run: npm run typecheck
 
       - name: Run Tests
-        run: npx vitest run
+        run: npm run test --workspace=@cinecraft/web
 
       - name: Build Application
         run: npm run build
