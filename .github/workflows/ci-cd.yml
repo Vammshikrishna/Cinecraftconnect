@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create placeholder mobile secrets
+        run: cp apps/mobile/src/config/env.secrets.example.ts apps/mobile/src/config/env.secrets.ts
+
       - name: Run Linter
         run: npm run lint
 
