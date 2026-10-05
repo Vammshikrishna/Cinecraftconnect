@@ -28,6 +28,8 @@ export default tseslint.config(
       "prefer-const": "warn",
       "no-case-declarations": "warn",
       "no-empty": "warn",
+      "no-constant-condition": "warn",
+      "no-duplicate-case": "warn",
       "no-useless-escape": "warn",
       "react-hooks/rules-of-hooks": "warn",
       "@typescript-eslint/ban-ts-comment": "warn",

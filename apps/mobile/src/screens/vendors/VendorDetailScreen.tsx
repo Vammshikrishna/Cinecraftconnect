@@ -236,7 +236,7 @@ export const VendorDetailScreen = ({ route, navigation }: { route: any; navigati
                   <Text style={styles.ratingNum}>{Number(ratingValue).toFixed(1)}</Text>
                   <Text style={[styles.ratingSub, { color: themeColors.textSecondary }]}>({reviewCount} reviews)</Text>
                 </View>
-              ) : !!vendor?.is_verified ? (
+              ) : vendor?.is_verified ? (
                 <View style={styles.verifiedTagPill}>
                   <Icon name="check" size={10} color="#059669" strokeWidth={3} />
                   <Text style={styles.verifiedTagPillText}>VERIFIED</Text>

@@ -869,7 +869,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
               <DiscussionChatInterface
                 key={activeRoom.id}
                 roomId={activeRoom.id}
-                userRole={!!(user && activeRoom.creator_id && user.id === activeRoom.creator_id) ? 'creator' : 'member'}
+                userRole={(user && activeRoom.creator_id && user.id === activeRoom.creator_id) ? 'creator' : 'member'}
                 roomTitle={activeRoom.title}
                 roomDescription={activeRoom.description}
                 categoryId={activeRoom.category_id}
@@ -955,7 +955,7 @@ const DiscussionRoomsPage = ({ openCreate = false }: { openCreate?: boolean }) =
         <DiscussionChatInterface
           key={activeRoom.id}
           roomId={activeRoom.id}
-          userRole={!!(user && activeRoom.creator_id && user.id === activeRoom.creator_id) ? 'creator' : 'member'}
+          userRole={(user && activeRoom.creator_id && user.id === activeRoom.creator_id) ? 'creator' : 'member'}
           roomTitle={activeRoom.title}
           roomDescription={activeRoom.description}
           categoryId={activeRoom.category_id}
