@@ -1,85 +1,77 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
 serve(async (req) => {
     try {
-        const bodyText = await req.text();
         let body;
         try {
-            body = JSON.parse(bodyText);
-        } catch (e) {
-            // Android HTTP client might send urlencoded or raw string, but we expect JSON
-            return new Response("Invalid JSON", { status: 400 });
+            body = JSON.parse(await req.text());
+        } catch (_e) {
+            return json({ error: "Invalid JSON" }, 400);
         }
 
-        const { conversationId, senderId, content, action, actionUrl } = body;
-
-        if (!conversationId || !senderId) {
-            return new Response("Missing conversationId or senderId", { status: 400 });
-        }
+        const { conversationId, content, action, actionUrl } = body;
+        if (!conversationId) return json({ error: "Missing conversationId" }, 400);
 
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        if (action === "read") {
-            // Try updating direct_messages
-            await supabase.from("direct_messages").update({ is_read: true }).eq("sender_id", conversationId).is("is_read", false);
-            
-            // Legacy messages
-            await supabase.from("messages").update({ is_read: true }).eq("conversation_id", conversationId).is("is_read", false);
+        // Identify the caller from their own access token. A client-supplied senderId is never trusted.
+        const token = (req.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        const { data: authData, error: authError } = await supabase.auth.getUser(token);
+        const userId = authData?.user?.id;
+        if (authError || !userId) return json({ error: "Unauthorized" }, 401);
 
-            return new Response(JSON.stringify({ success: true, message: "Marked as read" }), { status: 200 });
+        if (action === "read") {
+            // Only mark messages that were sent TO the caller.
+            await supabase.from("direct_messages").update({ is_read: true })
+                .eq("sender_id", conversationId).eq("receiver_id", userId).is("is_read", false);
+            return json({ success: true, message: "Marked as read" });
         }
 
         if (action === "reply") {
-            if (!content) return new Response("Missing content", { status: 400 });
+            if (!content || typeof content !== "string") return json({ error: "Missing content" }, 400);
 
             if (actionUrl && actionUrl.includes("/discussion-rooms/")) {
-                const { error: rmError } = await supabase.from("room_messages").insert({
-                    user_id: senderId,
-                    room_id: conversationId,
-                    content: content
+                const { data: member } = await supabase.from("room_members").select("user_id")
+                    .eq("room_id", conversationId).eq("user_id", userId).maybeSingle();
+                if (!member) return json({ error: "Forbidden" }, 403);
+
+                const { error } = await supabase.from("room_messages").insert({
+                    user_id: userId, room_id: conversationId, content,
                 });
-                if (rmError) return new Response(JSON.stringify({ success: false, error: rmError.message }), { status: 500 });
-                return new Response(JSON.stringify({ success: true }), { status: 200 });
-            } 
-            else if (actionUrl && actionUrl.includes("/projects/")) {
-                const { error: psmError } = await supabase.from("project_space_messages").insert({
-                    user_id: senderId,
-                    project_space_id: conversationId,
-                    content: content
-                });
-                if (psmError) return new Response(JSON.stringify({ success: false, error: psmError.message }), { status: 500 });
-                return new Response(JSON.stringify({ success: true }), { status: 200 });
-            } 
-            else {
-                // Must be DM
-                const channelId = [senderId, conversationId].sort().join('-');
-                const { error: dmError } = await supabase.from("direct_messages").insert({
-                    sender_id: senderId,
-                    receiver_id: conversationId,
-                    channel_id: channelId,
-                    content: content
-                });
-                
-                if (dmError) {
-                    // Fallback to legacy messages table just in case
-                    const { error: mError } = await supabase.from("messages").insert({
-                        sender_id: senderId,
-                        conversation_id: conversationId,
-                        content: content
-                    });
-                    if (mError) return new Response(JSON.stringify({ success: false, error: mError.message }), { status: 500 });
-                }
-                
-                return new Response(JSON.stringify({ success: true }), { status: 200 });
+                if (error) return json({ success: false, error: error.message }, 500);
+                return json({ success: true });
             }
+
+            if (actionUrl && actionUrl.includes("/projects/")) {
+                const { data: member } = await supabase.from("project_space_members").select("user_id")
+                    .eq("project_space_id", conversationId).eq("user_id", userId).maybeSingle();
+                if (!member) return json({ error: "Forbidden" }, 403);
+
+                const { error } = await supabase.from("project_space_messages").insert({
+                    user_id: userId, project_space_id: conversationId, content,
+                });
+                if (error) return json({ success: false, error: error.message }, 500);
+                return json({ success: true });
+            }
+
+            // Direct message: conversationId is the other participant's user id.
+            if (conversationId === userId) return json({ error: "Invalid recipient" }, 400);
+            const channelId = [userId, conversationId].sort().join("-");
+            const { error } = await supabase.from("direct_messages").insert({
+                sender_id: userId, receiver_id: conversationId, channel_id: channelId, content,
+            });
+            if (error) return json({ success: false, error: error.message }, 500);
+            return json({ success: true });
         }
 
-        return new Response("Invalid action", { status: 400 });
-
+        return json({ error: "Invalid action" }, 400);
     } catch (error: any) {
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+        return json({ error: error.message }, 500);
     }
 });

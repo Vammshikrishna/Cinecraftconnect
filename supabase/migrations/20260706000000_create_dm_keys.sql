@@ -1,1 +1,52 @@
-"-- Create dm_keys table for Symmetric E2EE DMs\nCREATE TABLE IF NOT EXISTS dm_keys (\n    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n    conversation_id TEXT NOT NULL,\n    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,\n    encrypted_symmetric_key TEXT NOT NULL,\n    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),\n    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),\n    UNIQUE(conversation_id, user_id)\n);\n\n-- Enable RLS\nALTER TABLE dm_keys ENABLE ROW LEVEL SECURITY;\n\n-- Policy: Users can insert their own keys (self-healing / provisioning)\nCREATE POLICY \"Users can insert dm_keys for themselves or others\"\nON dm_keys\nFOR INSERT\nWITH CHECK (true); -- Anyone can encrypt a key for anyone else\n\n-- Policy: Users can read their own keys\nCREATE POLICY \"Users can read their own dm_keys\"\nON dm_keys\nFOR SELECT\nUSING (auth.uid() = user_id);\n\n-- Policy: Users can update their own keys\nCREATE POLICY \"Users can update their own dm_keys\"\nON dm_keys\nFOR UPDATE\nUSING (auth.uid() = user_id);\n\n-- Policy: Users can delete their own keys\nCREATE POLICY \"Users can delete their own dm_keys\"\nON dm_keys\nFOR DELETE\nUSING (auth.uid() = user_id);\n\n-- Function to update updated_at timestamp\nCREATE OR REPLACE FUNCTION update_dm_keys_updated_at()\nRETURNS TRIGGER AS $$\nBEGIN\n    NEW.updated_at = NOW();\n    RETURN NEW;\nEND;\n$$ LANGUAGE plpgsql;\n\n-- Trigger for updated_at\nCREATE TRIGGER update_dm_keys_updated_at_trigger\nBEFORE UPDATE ON dm_keys\nFOR EACH ROW\nEXECUTE FUNCTION update_dm_keys_updated_at();\n"
+-- Create dm_keys table for Symmetric E2EE DMs
+CREATE TABLE IF NOT EXISTS dm_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id TEXT NOT NULL,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    encrypted_symmetric_key TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(conversation_id, user_id)
+);
+
+-- Enable RLS
+ALTER TABLE dm_keys ENABLE ROW LEVEL SECURITY;
+
+-- Policy: Users can insert their own keys (self-healing / provisioning)
+CREATE POLICY "Users can insert dm_keys for themselves or others"
+ON dm_keys
+FOR INSERT
+WITH CHECK (true); -- Anyone can encrypt a key for anyone else
+
+-- Policy: Users can read their own keys
+CREATE POLICY "Users can read their own dm_keys"
+ON dm_keys
+FOR SELECT
+USING (auth.uid() = user_id);
+
+-- Policy: Users can update their own keys
+CREATE POLICY "Users can update their own dm_keys"
+ON dm_keys
+FOR UPDATE
+USING (auth.uid() = user_id);
+
+-- Policy: Users can delete their own keys
+CREATE POLICY "Users can delete their own dm_keys"
+ON dm_keys
+FOR DELETE
+USING (auth.uid() = user_id);
+
+-- Function to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_dm_keys_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for updated_at
+CREATE TRIGGER update_dm_keys_updated_at_trigger
+BEFORE UPDATE ON dm_keys
+FOR EACH ROW
+EXECUTE FUNCTION update_dm_keys_updated_at();

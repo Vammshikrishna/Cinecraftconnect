@@ -93,6 +93,7 @@ Deno.serve(async (req: Request) => {
 
 
       try {
+        switch (jobType) {
           case "send_notification":
             console.warn("Legacy notification job ignored");
             break;

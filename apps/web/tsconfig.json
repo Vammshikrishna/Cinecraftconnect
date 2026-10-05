@@ -1,0 +1,28 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@cinecraft/types": ["../../packages/types/src"],
+      "@cinecraft/core": ["../../packages/core/src"],
+      "@cinecraft/validation": ["../../packages/validation/src"],
+      "@cinecraft/storage": ["../../packages/storage/src"],
+      "@cinecraft/api": ["../../packages/api/src"],
+      "@cinecraft/auth": ["../../packages/auth/src"],
+      "@cinecraft/e2ee": ["../../packages/e2ee/src"],
+      "@cinecraft/messaging": ["../../packages/messaging/src"],
+      "@cinecraft/calling": ["../../packages/calling/src"],
+      "@cinecraft/notifications": ["../../packages/notifications/src"],
+      "@cinecraft/ui": ["../../packages/ui/src"]
+    }
+  }
+}

@@ -1,34 +1,36 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
-    "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "target": "ES2022",
     "module": "ESNext",
-    "skipLibCheck": true,
-
-    /* Bundler mode */
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-
-    /* Linting */
+    "declaration": true,
     "strict": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noFallthroughCasesInSwitch": true,
-
-    /* Path Aliases */
+    "skipLibCheck": true,
+    "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
-    },
-    "types": ["vite/client", "react"]
-  },
-  "include": ["src"],
-  "exclude": ["supabase"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+      "@cinecraft/types": ["packages/types/src"],
+      "@cinecraft/types/*": ["packages/types/src/*"],
+      "@cinecraft/core": ["packages/core/src"],
+      "@cinecraft/core/*": ["packages/core/src/*"],
+      "@cinecraft/validation": ["packages/validation/src"],
+      "@cinecraft/validation/*": ["packages/validation/src/*"],
+      "@cinecraft/storage": ["packages/storage/src"],
+      "@cinecraft/storage/*": ["packages/storage/src/*"],
+      "@cinecraft/api": ["packages/api/src"],
+      "@cinecraft/api/*": ["packages/api/src/*"],
+      "@cinecraft/auth": ["packages/auth/src"],
+      "@cinecraft/auth/*": ["packages/auth/src/*"],
+      "@cinecraft/e2ee": ["packages/e2ee/src"],
+      "@cinecraft/e2ee/*": ["packages/e2ee/src/*"],
+      "@cinecraft/messaging": ["packages/messaging/src"],
+      "@cinecraft/messaging/*": ["packages/messaging/src/*"],
+      "@cinecraft/calling": ["packages/calling/src"],
+      "@cinecraft/calling/*": ["packages/calling/src/*"],
+      "@cinecraft/notifications": ["packages/notifications/src"],
+      "@cinecraft/notifications/*": ["packages/notifications/src/*"],
+      "@cinecraft/ui": ["packages/ui/src"],
+      "@cinecraft/ui/*": ["packages/ui/src/*"]
+    }
+  }
 }

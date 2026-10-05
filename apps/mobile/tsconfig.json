@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM"],
+    "allowJs": true,
+    "jsx": "react-native",
+    "noEmit": true,
+    "isolatedModules": true,
+    "strict": true,
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@cinecraft/types": ["../../packages/types/src"],
+      "@cinecraft/types/*": ["../../packages/types/src/*"],
+      "@cinecraft/core": ["../../packages/core/src"],
+      "@cinecraft/core/*": ["../../packages/core/src/*"],
+      "@cinecraft/validation": ["../../packages/validation/src"],
+      "@cinecraft/validation/*": ["../../packages/validation/src/*"],
+      "@cinecraft/storage": ["../../packages/storage/src"],
+      "@cinecraft/storage/*": ["../../packages/storage/src/*"],
+      "@cinecraft/api": ["../../packages/api/src"],
+      "@cinecraft/api/*": ["../../packages/api/src/*"],
+      "@cinecraft/auth": ["../../packages/auth/src"],
+      "@cinecraft/auth/*": ["../../packages/auth/src/*"],
+      "@cinecraft/e2ee": ["../../packages/e2ee/src"],
+      "@cinecraft/e2ee/*": ["../../packages/e2ee/src/*"],
+      "@cinecraft/messaging": ["../../packages/messaging/src"],
+      "@cinecraft/messaging/*": ["../../packages/messaging/src/*"],
+      "@cinecraft/calling": ["../../packages/calling/src"],
+      "@cinecraft/calling/*": ["../../packages/calling/src/*"],
+      "@cinecraft/notifications": ["../../packages/notifications/src"],
+      "@cinecraft/notifications/*": ["../../packages/notifications/src/*"],
+      "@cinecraft/ui": ["../../packages/ui/src"],
+      "@cinecraft/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["src", "index.js"]
+}

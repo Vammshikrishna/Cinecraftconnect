@@ -15,6 +15,16 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // This runs with the service role and trusts the posted `record`, so only the database webhook / backend
+  // (which presents the service-role key) may call it. Any other caller could update arbitrary posts.
+  const bearer = (req.headers.get('Authorization') || '').replace(/^Bearers+/i, '');
+  if (!SUPABASE_SERVICE_ROLE_KEY || bearer !== SUPABASE_SERVICE_ROLE_KEY) {
+    return new Response(JSON.stringify({ error: 'Forbidden' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 403,
+    });
+  }
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { record, table, type } = await req.json();

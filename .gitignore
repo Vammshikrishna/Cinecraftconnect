@@ -26,17 +26,67 @@ dist-ssr
 # Supabase CLI temporary files
 supabase/.temp/
 
-# Environment variables
+# Environment variables (all apps, packages, and root)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
 
-# Keystores & Build Artifacts
+# Keystores, Certificates & Private Keys
 *.keystore
 *.jks
+*.p8
+*.p12
+*.pem
+*.key
 *.apk
+*.aab
 
-# Google Services / Firebase Config
-google-services.json
+# Google Services & Firebase Config
+*google-services*.json
+*GoogleService-Info*.plist
+service_account*.json
+credentials.json
+
+# Scratch & diagnostic scripts
+scratch/
+test_dms.js
+test_e2ee.js
+
+# Mobile build secrets & signing
+apps/mobile/src/config/env.secrets.ts
+local.properties
+**/local.properties
+keystore.properties
+gradle.properties.local
+
+# Debug captures & build artefacts
+crash*.txt
+**/crash*.txt
+current_crash.txt
+screen_*.png
+bundle-stats.html
+
+# Local-only files
+signin_crash*.txt
+supabase-go.exe
+supabase_cli/
+*.exe
+CreatePost_original.tsx
+merge_layouts.cjs
+test_push_token.cjs
+test_query.ts
+apps/web/src/tests/performance/
+
+# Android / native build output
+.cxx/
+**/.cxx/
+.gradle/
+**/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/.idea/

@@ -1,0 +1,753 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { User, LogOut, Trash2, Zap, Building2, BadgeCheck, Clock, CheckCircle, XCircle, AlertTriangle, ShieldAlert, Plus, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAccountType } from '@/hooks/useAccountType';
+import { BackButton } from '@/components/common/BackButton';
+import { useScrollToHash } from '@/components/settings/SettingsUI';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+
+const AccountSettings = () => {
+    useScrollToHash();
+    const { push } = useAppNavigation();
+    const { signOut, user, savedAccounts, switchAccount, addAccount, removeAccount } = useAuth();
+    const { toast } = useToast();
+    const [isSigningOut, setIsSigningOut] = useState(false);
+    const { accountType } = useAccountType();
+    const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
+    const [switchingAccId, setSwitchingAccId] = useState<string | null>(null);
+
+    const handleSwitchSavedAccount = async (targetUserId: string, username: string) => {
+        if (switchingAccId) return;
+        try {
+            setSwitchingAccId(targetUserId);
+            toast({
+                title: "Switching account",
+                description: `Switching to @${username}...`,
+            });
+            await switchAccount(targetUserId);
+            toast({
+                title: "Account Switched",
+                description: `Now logged in as @${username}`,
+            });
+        } catch (e: any) {
+            toast({
+                title: "Switch Failed",
+                description: "Failed to switch account: " + (e?.message || 'Unknown error'),
+                variant: "destructive",
+            });
+        } finally {
+            setSwitchingAccId(null);
+        }
+    };
+
+    // Verification state
+    const [verificationStatus, setVerificationStatus] = useState<'none' | 'pending' | 'verified' | 'rejected'>('none');
+    const [verifyForm, setVerifyForm] = useState({ full_legal_name: '', request_type: 'creator', reason: '' });
+    const [isSubmittingVerification, setIsSubmittingVerification] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+    const [verificationLoaded, setVerificationLoaded] = useState(false);
+
+    useEffect(() => {
+        if (!user) return;
+        const checkVerification = async () => {
+            const { data: profile } = await (supabase as any).from('profiles').select('is_verified').eq('id', user.id).maybeSingle();
+            if (profile?.is_verified) { setVerificationStatus('verified'); setVerificationLoaded(true); return; }
+            const { data: req } = await (supabase as any).from('verification_requests')
+                .select('status, rejection_reason').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+            if (req) {
+                setVerificationStatus(req.status as any);
+                setRejectionReason(req.rejection_reason);
+            }
+            setVerificationLoaded(true);
+        };
+        checkVerification();
+    }, [user]);
+
+    const handleSubmitVerification = async () => {
+        if (!user || !verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()) {
+            toast({ title: 'Fill all fields', variant: 'destructive' }); return;
+        }
+        setIsSubmittingVerification(true);
+        try {
+            const { error } = await (supabase as any).from('verification_requests').insert({
+                user_id: user.id,
+                full_legal_name: verifyForm.full_legal_name.trim(),
+                request_type: verifyForm.request_type,
+                reason: verifyForm.reason.trim(),
+                status: 'pending',
+            });
+            if (error) throw error;
+            setVerificationStatus('pending');
+            toast({ title: '✅ Verification Request Submitted', description: 'Our team will review your application.' });
+        } catch (e: any) {
+            toast({ title: 'Error', description: e.message, variant: 'destructive' });
+        } finally {
+            setIsSubmittingVerification(false);
+        }
+    };
+
+    const handleSwitchAccountType = async (newType: 'fan' | 'creator' | 'studio') => {
+        if (!user || newType === accountType) return;
+        
+        try {
+            setIsUpdatingAccount(true);
+            const { error } = await supabase
+                .from('profiles')
+                .update({ account_type: newType } as any)
+                .eq('id', user.id);
+                
+            if (error) throw error;
+            
+            toast({
+                title: "Account Updated",
+                description: `Your account is now set to ${newType.charAt(0).toUpperCase() + newType.slice(1)}. Reloading...`,
+            });
+            
+            setTimeout(() => {
+                window.location.href = '/feed';
+            }, 1500);
+        } catch (error: any) {
+            console.error('Error updating account:', error);
+            toast({
+                title: "Error",
+                description: "Failed to update account type. Please try again.",
+                variant: 'destructive',
+            });
+        } finally {
+            setIsUpdatingAccount(false);
+        }
+    };
+
+    const handleSignOut = async () => {
+        try {
+            setIsSigningOut(true);
+            await signOut();
+            toast({
+                title: "Signed out successfully",
+                description: "You have been signed out of your account.",
+            });
+            push('/auth', { noScroll: true });
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: "Failed to sign out. Please try again.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsSigningOut(false);
+        }
+    };
+
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [deleteStep, setDeleteStep] = useState<1 | 2>(1);
+    const [deleteUnderstood, setDeleteUnderstood] = useState(false);
+    const [deleteConfirmEmail, setDeleteConfirmEmail] = useState('');
+
+    const handleDeleteAccount = async () => {
+        if (!user) return;
+        if (deleteConfirmEmail.trim().toLowerCase() !== user.email?.toLowerCase()) return;
+
+        try {
+            setIsDeleting(true);
+
+            // Server-side deletion: removes the auth user (cascading profile + owned data) and uploads.
+            const { data: fnData, error: fnError } = await supabase.functions.invoke('delete-account', {
+                body: { confirmEmail: deleteConfirmEmail.trim() },
+            });
+            if (fnError || (fnData as any)?.error) {
+                throw new Error((fnData as any)?.error || fnError?.message || 'Server could not delete the account.');
+            }
+
+            toast({
+                title: 'Account permanently deleted',
+                description: 'Your data has been erased. Goodbye — we hope to see you again someday.',
+            });
+
+            try {
+                await signOut();
+            } catch {
+                // The session no longer exists once the auth user is deleted; that's expected.
+            }
+            // Redirect to landing page
+            window.location.href = '/';
+        } catch (error: any) {
+            console.error('Error deleting account:', error);
+            toast({
+                title: 'Deletion failed',
+                description: error.message || 'Something went wrong. Please try again or contact support.',
+                variant: 'destructive',
+            });
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const openDeleteDialog = () => {
+        setDeleteStep(1);
+        setDeleteUnderstood(false);
+        setDeleteConfirmEmail('');
+        setDeleteDialogOpen(true);
+    };
+
+
+    const handleClearAllMessages = async () => {
+        if (!user) return;
+        try {
+            // Clear direct_messages where user is sender or receiver
+            const { error: dmError } = await supabase
+                .from('direct_messages' as any)
+                .delete()
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+            
+            // Clear general messages where user is sender
+            const { error: msgError } = await supabase
+                .from('messages')
+                .delete()
+                .eq('sender_id', user.id);
+            
+            if (dmError || msgError) throw (dmError || msgError);
+
+            toast({
+                title: "History Cleared",
+                description: "All your direct messages and chat history have been erased locally.",
+            });
+        } catch (error: any) {
+            console.error('Error clearing messages:', error);
+            toast({
+                title: "Error",
+                description: "Failed to clear message history: " + error.message,
+                variant: "destructive"
+            });
+        }
+    };
+
+    return (
+        <div className="pb-10">
+            <div className="w-full">
+                <div className="mb-6">
+                    <BackButton label="BACK TO SETTINGS" to="/settings" className="mb-4 lg:hidden" />
+                    <h1 className="text-2xl font-bold tracking-tight flex items-center gap-3">
+                        <User className="h-8 w-8 text-primary" />
+                        Account
+                    </h1>
+                    <p className="text-muted-foreground mt-2">Manage your account settings</p>
+                </div>
+
+                <div className="space-y-6">
+                    {/* Account Type Card */}
+                    <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader>
+                            <CardTitle>Account Role</CardTitle>
+                            <CardDescription>Switch between your roles on CineCraft Connect.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {[
+                                { 
+                                    id: 'fan', 
+                                    label: 'Fan / Audience', 
+                                    description: 'Follow creators, rate movies, and join discussions.',
+                                    icon: <User className="h-5 w-5" />
+                                },
+                                { 
+                                    id: 'creator', 
+                                    label: 'Creator Pro', 
+                                    description: 'Showcase your portfolio, apply for jobs, and access analytics.',
+                                    icon: <Zap className="h-5 w-5" />
+                                },
+                                { 
+                                    id: 'studio', 
+                                    label: 'Studio / Company', 
+                                    description: 'Post jobs, search for vendors, and hire talent.',
+                                    icon: <Building2 className="h-5 w-5" />
+                                }
+                            ].map((role) => (
+                                <div 
+                                    key={role.id}
+                                    className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
+                                        accountType === role.id 
+                                        ? 'bg-background border-primary shadow-sm' 
+                                        : 'bg-background/50 border-border hover:border-primary/30 hover:bg-background/80'
+                                    }`}
+                                >
+                                    <div className="flex gap-4">
+                                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${accountType === role.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                            {role.id === 'fan' ? <User className="h-5 w-5" /> : role.id === 'creator' ? <Zap className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
+                                        </div>
+                                        <div>
+                                            <Label className={`text-base font-bold ${accountType === role.id ? 'text-primary' : 'text-foreground'}`}>{role.label}</Label>
+                                            <p className="text-sm text-muted-foreground mt-0.5 max-w-sm">
+                                                {role.description}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        {accountType === role.id ? (
+                                            <div className="px-3 py-1 bg-primary text-primary-foreground text-xs font-bold rounded-full">
+                                                Active
+                                            </div>
+                                        ) : (
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm" 
+                                                disabled={isUpdatingAccount}
+                                                onClick={() => handleSwitchAccountType(role.id as any)}
+                                            >
+                                                Switch
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {(accountType === 'fan') && (
+                                <div className="mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg flex items-start gap-3">
+                                    <div className="h-5 w-5 text-amber-500 mt-0.5">⚠️</div>
+                                    <p className="text-xs text-amber-500 leading-relaxed">
+                                        Some Pro features require a subscription. Switching to Creator or Studio may prompt you to subscribe in the future.
+                                    </p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* ── Verification Card ── */}
+                    <Card className="border-primary/20">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <BadgeCheck className="h-5 w-5 text-primary" />
+                                Verified Badge
+                            </CardTitle>
+                            <CardDescription>Apply for the official CineCraft verified checkmark. Shown on your profile, posts, and network cards.</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {!verificationLoaded ? (
+                                <div className="text-sm text-muted-foreground">Checking status…</div>
+                            ) : verificationStatus === 'verified' ? (
+                                <div className="flex items-center gap-3 p-4 bg-green-500/5 border border-green-500/20 rounded-xl">
+                                    <CheckCircle className="w-6 h-6 text-green-500 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-green-600">You are verified!</p>
+                                        <p className="text-xs text-muted-foreground">Your badge is visible on your profile, posts and network.</p>
+                                    </div>
+                                </div>
+                            ) : verificationStatus === 'pending' ? (
+                                <div className="flex items-center gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                                    <Clock className="w-6 h-6 text-amber-500 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-600">Application Under Review</p>
+                                        <p className="text-xs text-muted-foreground">Our moderation team will review your request. You'll be notified once a decision is made.</p>
+                                    </div>
+                                </div>
+                            ) : verificationStatus === 'rejected' ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-center gap-3 p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
+                                        <XCircle className="w-6 h-6 text-red-500 shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-bold text-red-600">Previous Application Rejected</p>
+                                            {rejectionReason && (
+                                                <p className="text-[13px] font-bold text-red-500/80 mt-1 italic">" {rejectionReason} "</p>
+                                            )}
+                                            <p className="text-xs text-muted-foreground mt-1">You may reapply with updated information.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {(verificationStatus === 'none' || verificationStatus === 'rejected') && (
+                                <div className="mt-4 space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Full Legal Name</Label>
+                                            <Input
+                                                placeholder="Your real name"
+                                                value={verifyForm.full_legal_name}
+                                                onChange={e => setVerifyForm(f => ({ ...f, full_legal_name: e.target.value }))}
+                                                className="rounded-xl"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Account Type</Label>
+                                            <select
+                                                className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm"
+                                                value={verifyForm.request_type}
+                                                onChange={e => setVerifyForm(f => ({ ...f, request_type: e.target.value }))}
+                                            >
+                                                <option value="creator">Individual Creator</option>
+                                                <option value="company">Studio / Company</option>
+                                                <option value="public_figure">Public Figure</option>
+                                                <option value="professional">Journalist / Press</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Why should you be verified?</Label>
+                                        <Textarea
+                                            placeholder="Tell us about your work, achievements, or why you need the verified badge…"
+                                            className="rounded-xl resize-none min-h-[80px]"
+                                            value={verifyForm.reason}
+                                            onChange={e => setVerifyForm(f => ({ ...f, reason: e.target.value }))}
+                                        />
+                                    </div>
+                                    <Button
+                                        onClick={handleSubmitVerification}
+                                        disabled={isSubmittingVerification || !verifyForm.full_legal_name.trim() || !verifyForm.reason.trim()}
+                                        className="w-full rounded-xl font-bold"
+                                    >
+                                        <BadgeCheck className="mr-2 h-4 w-4" />
+                                        {isSubmittingVerification ? 'Submitting…' : 'Apply for Verification'}
+                                    </Button>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    {/* Saved Accounts Card */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <User className="h-5 w-5 text-primary" />
+                                Saved Accounts
+                            </CardTitle>
+                            <CardDescription>Switch between accounts logged in on this device, or link a new one.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            {savedAccounts.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No other accounts saved on this device.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {savedAccounts.map((acc) => {
+                                        const isActive = acc.userId === user?.id;
+                                        const initials = acc.username
+                                            .split(' ')
+                                            .map((n: string) => n[0])
+                                            .join('')
+                                            .toUpperCase()
+                                            .slice(0, 2) || 'U';
+
+                                        return (
+                                            <div
+                                                key={acc.userId}
+                                                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${
+                                                    isActive
+                                                    ? 'bg-primary/5 border-primary shadow-sm'
+                                                    : 'bg-background border-border hover:border-primary/30 hover:bg-muted/30'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                    <div className="relative">
+                                                        <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs border border-border/50 overflow-hidden">
+                                                            {acc.avatarUrl ? (
+                                                                <img loading="lazy" decoding="async"
+                                                                    src={acc.avatarUrl}
+                                                                    alt={acc.username}
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            ) : initials}
+                                                        </div>
+                                                        {isActive && (
+                                                            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-green-500 border-2 border-background" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="text-sm font-semibold truncate leading-none text-foreground">{acc.username}</span>
+                                                        <span className="text-[11px] text-muted-foreground truncate mt-1">{acc.email}</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {isActive ? (
+                                                        <span className="text-xs font-bold text-primary px-2.5 py-1 bg-primary/10 rounded-full">
+                                                            Active
+                                                        </span>
+                                                    ) : (
+                                                        <>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-8 rounded-lg font-medium text-xs"
+                                                                disabled={switchingAccId !== null}
+                                                                onClick={() => handleSwitchSavedAccount(acc.userId, acc.username)}
+                                                            >
+                                                                {switchingAccId === acc.userId ? (
+                                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                                ) : (
+                                                                    'Switch'
+                                                                )}
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                                                                disabled={switchingAccId !== null}
+                                                                onClick={() => removeAccount(acc.userId)}
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            <Button
+                                variant="outline"
+                                className="w-full rounded-xl border-dashed border-primary/40 text-primary hover:bg-primary/5 hover:border-primary transition-all duration-200 mt-2 font-semibold"
+                                onClick={addAccount}
+                            >
+                                <Plus className="mr-2 h-4 w-4" />
+                                Link / Add Another Account
+                            </Button>
+                        </CardContent>
+                    </Card>
+
+                    <Card id="signout" className="scroll-mt-24">
+                        <CardHeader>
+                            <CardTitle>Session</CardTitle>
+                            <CardDescription>Manage your current session</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <Label className="text-base font-medium">Sign Out</Label>
+                                    <p className="text-sm text-muted-foreground mt-1">Sign out of your account on this device</p>
+                                </div>
+                                <Button variant="outline" onClick={handleSignOut} disabled={isSigningOut}>
+                                    <LogOut className="mr-2 h-4 w-4" />
+                                    {isSigningOut ? 'Signing out...' : 'Sign Out'}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-destructive/50 bg-destructive/5">
+                        <CardHeader>
+                            <CardTitle className="text-destructive">Danger Zone</CardTitle>
+                            <CardDescription>Irreversible and destructive actions</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="p-4 rounded-lg bg-background border border-destructive/20">
+                                <div className="mb-3">
+                                    <Label className="text-base font-medium text-destructive">Delete Account</Label>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Permanently erase your account and all associated data. This action cannot be undone.
+                                    </p>
+                                </div>
+                                <Button variant="destructive" size="sm" onClick={openDeleteDialog}>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete Account
+                                </Button>
+                            </div>
+
+                            {/* ── 2-step deletion dialog ── */}
+                            <Dialog
+                                open={deleteDialogOpen}
+                                onOpenChange={(open) => {
+                                    if (!isDeleting) setDeleteDialogOpen(open);
+                                }}
+                            >
+                                <DialogContent className="max-w-md w-[95vw] bg-card border border-destructive/30 rounded-[28px] p-0 overflow-hidden">
+
+                                    {/* ── Step 1: What will be deleted ── */}
+                                    {deleteStep === 1 && (
+                                        <>
+                                            <DialogHeader className="p-6 pb-0">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 rounded-xl bg-destructive/10">
+                                                        <ShieldAlert className="h-5 w-5 text-destructive" />
+                                                    </div>
+                                                    <DialogTitle className="text-lg font-bold text-foreground">
+                                                        Delete your account?
+                                                    </DialogTitle>
+                                                </div>
+                                                <DialogDescription className="text-sm text-muted-foreground leading-relaxed">
+                                                    The following data will be <span className="font-bold text-destructive">permanently and irreversibly</span> erased:
+                                                </DialogDescription>
+                                            </DialogHeader>
+
+                                            <div className="px-6 py-4">
+                                                <ul className="space-y-2">
+                                                    {[
+                                                        'Profile, bio, and account credentials',
+                                                        'All posts, comments, and reactions',
+                                                        'Portfolio items and media uploads',
+                                                        'Direct messages and chat history',
+                                                        'Project memberships and files',
+                                                        'Job applications and listings',
+                                                        'Ratings, reviews, and legal documents',
+                                                        'All analytics and activity data',
+                                                    ].map((item) => (
+                                                        <li key={item} className="flex items-start gap-2.5 text-sm text-foreground">
+                                                            <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+                                                            {item}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+
+                                                {/* Checkbox confirmation */}
+                                                <label className="flex items-start gap-3 mt-5 p-3 bg-destructive/5 border border-destructive/20 rounded-xl cursor-pointer select-none">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="mt-0.5 accent-destructive h-4 w-4 shrink-0"
+                                                        checked={deleteUnderstood}
+                                                        onChange={e => setDeleteUnderstood(e.target.checked)}
+                                                    />
+                                                    <span className="text-xs text-muted-foreground leading-relaxed">
+                                                        I understand this is <span className="font-bold text-foreground">permanent and cannot be undone</span>, and I want to permanently delete my CineCraft Connect account.
+                                                    </span>
+                                                </label>
+                                            </div>
+
+                                            <div className="flex justify-between gap-3 px-6 pb-6">
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => setDeleteDialogOpen(false)}
+                                                    className="flex-1 rounded-xl"
+                                                >
+                                                    Cancel
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    disabled={!deleteUnderstood}
+                                                    onClick={() => setDeleteStep(2)}
+                                                    className="flex-1 rounded-xl font-bold"
+                                                >
+                                                    Continue →
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* ── Step 2: Type email to confirm ── */}
+                                    {deleteStep === 2 && (
+                                        <>
+                                            <DialogHeader className="p-6 pb-0">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 rounded-xl bg-destructive/10">
+                                                        <Trash2 className="h-5 w-5 text-destructive" />
+                                                    </div>
+                                                    <DialogTitle className="text-lg font-bold text-foreground">
+                                                        Final confirmation
+                                                    </DialogTitle>
+                                                </div>
+                                                <DialogDescription className="text-sm text-muted-foreground">
+                                                    Type your email address to permanently delete your account.
+                                                </DialogDescription>
+                                            </DialogHeader>
+
+                                            <div className="px-6 py-4 space-y-4">
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                                        Your email address
+                                                    </Label>
+                                                    <p className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg">
+                                                        {user?.email}
+                                                    </p>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                                                        Confirm by typing your email
+                                                    </Label>
+                                                    <Input
+                                                        type="email"
+                                                        placeholder={user?.email ?? 'your@email.com'}
+                                                        value={deleteConfirmEmail}
+                                                        onChange={e => setDeleteConfirmEmail(e.target.value)}
+                                                        className="rounded-xl border-destructive/30 focus-visible:ring-destructive/30"
+                                                        disabled={isDeleting}
+                                                        autoComplete="off"
+                                                    />
+                                                    {deleteConfirmEmail.length > 0 && deleteConfirmEmail.toLowerCase() !== user?.email?.toLowerCase() && (
+                                                        <p className="text-xs text-destructive font-medium flex items-center gap-1">
+                                                            <AlertTriangle className="h-3 w-3" />
+                                                            Email does not match
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex justify-between gap-3 px-6 pb-6">
+                                                <Button
+                                                    variant="outline"
+                                                    onClick={() => setDeleteStep(1)}
+                                                    disabled={isDeleting}
+                                                    className="flex-1 rounded-xl"
+                                                >
+                                                    ← Back
+                                                </Button>
+                                                <Button
+                                                    variant="destructive"
+                                                    disabled={isDeleting || deleteConfirmEmail.trim().toLowerCase() !== user?.email?.toLowerCase()}
+                                                    onClick={handleDeleteAccount}
+                                                    className="flex-1 rounded-xl font-bold"
+                                                >
+                                                    {isDeleting ? 'Deleting...' : '🗑 Delete Forever'}
+                                                </Button>
+                                            </div>
+                                        </>
+                                    )}
+
+                                </DialogContent>
+                            </Dialog>
+
+                            <div className="mt-4 p-4 rounded-lg bg-background border border-destructive/20">
+                                <div className="mb-3">
+                                    <Label className="text-base font-medium text-destructive">Clear All Message History</Label>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        Permanently delete all your direct messages. This action is irreversible.
+                                    </p>
+                                </div>
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors">
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Clear All Messages
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This will permanently delete all your private conversations and data in direct messages. This cannot be undone.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleClearAllMessages} className="bg-destructive text-destructive-foreground">
+                                                Clear Everything
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default AccountSettings;

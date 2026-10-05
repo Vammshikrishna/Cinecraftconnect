@@ -6215,7 +6215,7 @@ CREATE TRIGGER update_budget_items_updated_at BEFORE UPDATE ON public.budget_ite
 
 CREATE TRIGGER update_call_sheets_updated_at BEFORE UPDATE ON public.call_sheets FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE TRIGGER "Push Delivery - DMs" AFTER INSERT ON public.direct_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer REDACTED_SERVICE_ROLE_KEY"}', '{}', '1000');
+CREATE TRIGGER "Push Delivery - DMs" AFTER INSERT ON public.direct_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SUPABASE_SERVICE_ROLE_KEY>"}', '{}', '1000');
 
 CREATE TRIGGER direct_messages_push_delivery AFTER INSERT ON public.direct_messages FOR EACH ROW EXECUTE FUNCTION public.trigger_push_delivery();
 
@@ -6229,7 +6229,7 @@ CREATE TRIGGER update_legal_docs_updated_at BEFORE UPDATE ON public.legal_docs F
 
 CREATE TRIGGER trg_mention_notification AFTER INSERT ON public.mentions FOR EACH ROW EXECUTE FUNCTION public.handle_new_mention_notification();
 
-CREATE TRIGGER "Push Delivery - Notifications" AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer REDACTED_SERVICE_ROLE_KEY"}', '{}', '1000');
+CREATE TRIGGER "Push Delivery - Notifications" AFTER INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SUPABASE_SERVICE_ROLE_KEY>"}', '{}', '1000');
 
 CREATE TRIGGER update_portfolio_items_updated_at BEFORE UPDATE ON public.portfolio_items FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
@@ -6245,7 +6245,7 @@ CREATE TRIGGER on_profile_created_create_settings AFTER INSERT ON public.profile
 
 CREATE TRIGGER update_project_invites_updated_at BEFORE UPDATE ON public.project_invites FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE TRIGGER "Push Delivery - Projects" AFTER INSERT ON public.project_space_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer REDACTED_SERVICE_ROLE_KEY"}', '{}', '1000');
+CREATE TRIGGER "Push Delivery - Projects" AFTER INSERT ON public.project_space_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SUPABASE_SERVICE_ROLE_KEY>"}', '{}', '1000');
 
 CREATE TRIGGER project_space_messages_push_delivery AFTER INSERT ON public.project_space_messages FOR EACH ROW EXECUTE FUNCTION public.trigger_push_delivery();
 
@@ -6255,7 +6255,7 @@ CREATE TRIGGER update_member_count_on_join AFTER INSERT ON public.room_members F
 
 CREATE TRIGGER update_member_count_on_leave AFTER DELETE ON public.room_members FOR EACH ROW EXECUTE FUNCTION public.update_room_member_count();
 
-CREATE TRIGGER "Push Delivery - Rooms" AFTER INSERT ON public.room_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer REDACTED_SERVICE_ROLE_KEY"}', '{}', '1000');
+CREATE TRIGGER "Push Delivery - Rooms" AFTER INSERT ON public.room_messages FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('https://zugtdutimulibaxwnlbs.supabase.co/functions/v1/push-delivery', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SUPABASE_SERVICE_ROLE_KEY>"}', '{}', '1000');
 
 CREATE TRIGGER room_messages_push_delivery AFTER INSERT ON public.room_messages FOR EACH ROW EXECUTE FUNCTION public.trigger_push_delivery();
 

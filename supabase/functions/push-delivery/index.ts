@@ -3,13 +3,36 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { initializeApp, cert, getApps } from "npm:firebase-admin@12.1.0/app";
 import { getMessaging } from "npm:firebase-admin@12.1.0/messaging";
 
+function isEncryptedContent(content: string | null): boolean {
+    if (!content) return false;
+    if (
+        content.includes("__e2ee") ||
+        content.includes("__e2ee_group") ||
+        content.includes("__e2ee_dm") ||
+        content.includes("__e2ee_thread")
+    ) {
+        return true;
+    }
+    if (content.startsWith("{")) {
+        try {
+            const json = JSON.parse(content);
+            if (json.version === 2 || json.type === "group" || json.type === "dm" || json.ciphertext) {
+                return true;
+            }
+        } catch {
+            // Ignore non-JSON
+        }
+    }
+    return false;
+}
+
 function formatNotificationMessage(content: string | null): string {
     if (!content) {
         return "Sent an attachment";
     }
 
-    if (content.includes("__e2ee") || content.includes("__e2ee_group")) {
-        return "🔒 Encrypted message";
+    if (isEncryptedContent(content)) {
+        return "Sent you a message";
     }
 
     if (content.includes("_SHARE::")) {
@@ -36,9 +59,19 @@ function formatNotificationMessage(content: string | null): string {
     return content;
 }
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 serve(async (req) => {
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
+    }
+
     try {
-        const { record, type, table, schema } = await req.json();
+        const reqBody = await req.json();
+        const { record, type, table, schema } = reqBody;
 
         const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
         const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -61,11 +94,31 @@ serve(async (req) => {
         let encryptedContent = "";
         let perUserEncryptedKeys: Record<string, string> = {};
 
-        if (table === "notifications" && type === "INSERT") {
+        // DIRECT FAST-PATH FOR INSTANT 0-LATENCY CALL FCM PUSH & MULTI-DEVICE SYNC
+        if (reqBody.recipientIds && Array.isArray(reqBody.recipientIds) && reqBody.recipientIds.length > 0) {
+            targetUserIds = reqBody.recipientIds;
+            payload.type = reqBody.type || "incoming_call";
+            payload.title = reqBody.title || (reqBody.type === "call_answered" ? "Call Answered" : "Incoming Video Call");
+            payload.body = reqBody.body || `${reqBody.callerName || "Someone"} is calling you...`;
+            payload.id = reqBody.roomId || String(Date.now());
+            payload.conversationId = reqBody.roomId || "";
+            payload.senderId = reqBody.callerId || "system";
+            payload.actionUrl = reqBody.actionUrl || "/";
+            payload.senderName = reqBody.callerName || "CineCraft Call";
+            if (reqBody.callId) (payload as any).callId = reqBody.callId;
+            if (reqBody.roomId) (payload as any).roomId = reqBody.roomId;
+            if (reqBody.avatarUrl) payload.avatarUrl = reqBody.avatarUrl;
+        } else if (table === "notifications" && type === "INSERT") {
             // Check if this is a message notification loop from our own insertions
             if (record.type === "new_message") {
                 console.log("Ignored message notification loop to prevent duplicate FCM push.");
-                return new Response(JSON.stringify({ success: true, message: "Ignored message notification loop" }), { status: 200 });
+                return new Response(JSON.stringify({ success: true, message: "Ignored message notification loop" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
+
+            // Suppress duplicate call push from DB webhook (since calls are dispatched directly via fast-path)
+            if (record.type === "call_started" || record.type === "call_invite" || record.type === "incoming_call") {
+                console.log("Ignored call notification from notifications table (handled by direct fast-path)");
+                return new Response(JSON.stringify({ success: true, message: "Ignored call DB webhook (handled by fast-path)" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
 
             // Handle central 'notifications' table for all other app events (likes, follows, system, etc)
@@ -91,6 +144,9 @@ serve(async (req) => {
                     .single();
                 if (sender) {
                     payload.senderName = sender.full_name;
+                    const isCall = record.type === "call_invite" || record.type === "call_started" || record.type === "incoming_call";
+                    payload.title = isCall ? sender.full_name : (record.title || "New Notification");
+                    payload.body = isCall ? `${sender.full_name} is calling you...` : (record.message || "You have a new update.");
                     if (sender.avatar_url) payload.avatarUrl = sender.avatar_url;
                 }
             } else {
@@ -98,14 +154,19 @@ serve(async (req) => {
             }
 
         } else if (table === "direct_messages" && type === "INSERT") {
+            if (record.attachment_type === "call_event" || (typeof record.content === "string" && (record.content.includes("Video call started") || record.content.includes("Call ended")))) {
+                return new Response(JSON.stringify({ success: true, message: "Skipped call system event push" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
             if (record.receiver_id) targetUserIds.push(record.receiver_id);
-            payload.type = "conversation";
+            payload.type = "dm";
             payload.title = "New Message";
             payload.body = formatNotificationMessage(record.content);
             payload.conversationId = record.sender_id;
             payload.id = record.id;
             payload.actionUrl = `/messages/${record.sender_id}`;
             payload.senderId = record.sender_id;
+            (payload as any).partnerId = record.sender_id;
+            if (record.channel_id) (payload as any).channelId = record.channel_id;
 
             // Fetch sender name and avatar
             const { data: sender } = await supabase
@@ -120,10 +181,10 @@ serve(async (req) => {
             }
 
             // Detect encryption early
-            if (record.content && (record.content.includes("__e2ee") || record.content.includes("__e2ee_group"))) {
+            if (isEncryptedContent(record.content)) {
                 isEncrypted = true;
                 encryptedContent = record.content;
-                payload.body = "\u{1F512} Encrypted message";
+                payload.body = "Sent you a message";
             }
 
             // Move database notification generation here
@@ -149,6 +210,9 @@ serve(async (req) => {
             }
 
         } else if (table === "room_messages" && type === "INSERT") {
+            if (record.media_type === "call_event" || record.attachment_type === "call_event" || (typeof record.content === "string" && (record.content.includes("Video call started") || record.content.includes("Call ended")))) {
+                return new Response(JSON.stringify({ success: true, message: "Skipped call system event push" }), { status: 200 });
+            }
             const { data: members } = await supabase
                 .from("room_members")
                 .select("user_id")
@@ -157,9 +221,10 @@ serve(async (req) => {
 
             if (members) targetUserIds = members.map(m => m.user_id);
 
-            payload.type = "conversation";
+            payload.type = "room";
             payload.body = formatNotificationMessage(record.content);
             payload.conversationId = record.room_id;
+            (payload as any).roomId = record.room_id;
             payload.id = record.id;
             payload.actionUrl = `/discussion-rooms/${record.room_id}`;
             payload.senderId = record.user_id;
@@ -173,14 +238,15 @@ serve(async (req) => {
             const roomName = roomRes.data?.title || "Room";
 
             payload.senderName = senderName;
+            (payload as any).roomTitle = roomName;
             if (senderRes.data?.avatar_url) payload.avatarUrl = senderRes.data.avatar_url;
             payload.title = `${roomName}: ${senderName}`;
 
             // Detect encryption early
-            if (record.content && (record.content.includes("__e2ee") || record.content.includes("__e2ee_group"))) {
+            if (isEncryptedContent(record.content)) {
                 isEncrypted = true;
                 encryptedContent = record.content;
-                payload.body = "\u{1F512} Encrypted message";
+                payload.body = "Sent you a message";
             }
 
             // Move database notification generation here (insert for each target member)
@@ -194,7 +260,8 @@ serve(async (req) => {
                 related_id: record.id,
                 related_type: 'room_message',
                 priority: 'medium',
-                is_read: false
+                is_read: false,
+                metadata: isEncrypted ? { encrypted_content: record.content } : null
             }));
 
             if (notificationsToInsert.length > 0) {
@@ -207,6 +274,9 @@ serve(async (req) => {
             }
 
         } else if (table === "project_space_messages" && type === "INSERT") {
+            if (record.attachment_type === "call_event" || record.media_type === "call_event" || (typeof record.content === "string" && (record.content.includes("Video call started") || record.content.includes("Call ended")))) {
+                return new Response(JSON.stringify({ success: true, message: "Skipped call system event push" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
             const { data: members } = await supabase
                 .from("project_space_members")
                 .select("user_id")
@@ -215,9 +285,10 @@ serve(async (req) => {
 
             if (members) targetUserIds = members.map(m => m.user_id);
 
-            payload.type = "conversation";
+            payload.type = "project";
             payload.body = formatNotificationMessage(record.content);
             payload.conversationId = record.project_space_id;
+            (payload as any).spaceId = record.project_space_id;
             payload.id = record.id;
             payload.senderId = record.user_id;
 
@@ -229,6 +300,7 @@ serve(async (req) => {
             const senderName = senderRes.data?.full_name || "Someone";
             const spaceName = spaceRes.data?.name || "Project";
             const projectId = spaceRes.data?.project_id;
+            if (projectId) (payload as any).projectId = projectId;
 
             payload.actionUrl = projectId ? `/projects/${projectId}/space` : `/projects`;
             payload.senderName = senderName;
@@ -236,10 +308,10 @@ serve(async (req) => {
             payload.title = `${spaceName}: ${senderName}`;
 
             // Detect encryption early
-            if (record.content && (record.content.includes("__e2ee") || record.content.includes("__e2ee_group"))) {
+            if (isEncryptedContent(record.content)) {
                 isEncrypted = true;
                 encryptedContent = record.content;
-                payload.body = "\u{1F512} Encrypted message";
+                payload.body = "Sent you a message";
             }
 
             // Move database notification generation here (insert for each target member)
@@ -253,7 +325,8 @@ serve(async (req) => {
                 related_id: record.id,
                 related_type: 'project_space_message',
                 priority: 'medium',
-                is_read: false
+                is_read: false,
+                metadata: isEncrypted ? { encrypted_content: record.content } : null
             }));
 
             if (notificationsToInsert.length > 0) {
@@ -274,7 +347,7 @@ serve(async (req) => {
 
             if (post && post.author_id !== record.user_id) {
                 targetUserIds = [post.author_id];
-                payload.type = "social";
+                payload.type = "like";
                 payload.id = record.id;
                 payload.actionUrl = `/post/${record.post_id}`;
                 payload.senderId = record.user_id;
@@ -301,7 +374,7 @@ serve(async (req) => {
 
             if (post && post.author_id !== record.user_id) {
                 targetUserIds = [post.author_id];
-                payload.type = "social";
+                payload.type = "comment";
                 payload.id = record.id;
                 payload.actionUrl = `/post/${record.post_id}`;
                 payload.senderId = record.user_id;
@@ -320,7 +393,7 @@ serve(async (req) => {
             }
 
         } else {
-            return new Response(JSON.stringify({ message: "Ignored" }), { status: 200 });
+            return new Response(JSON.stringify({ message: "Ignored" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         // --- Group Key Prefetch (only for group message types) ---
@@ -349,7 +422,7 @@ serve(async (req) => {
         }
 
         if (targetUserIds.length === 0) {
-            return new Response(JSON.stringify({ error: "No target users" }), { status: 400 });
+            return new Response(JSON.stringify({ error: "No target users" }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         let userTokens: { userId: string, token: string }[] = [];
@@ -366,29 +439,11 @@ serve(async (req) => {
                 userTokens = tokens.map(t => ({ userId: t.user_id, token: t.token }));
             }
         } catch (e) {
-            console.warn("Failed to read user_push_tokens table, falling back to profiles.push_token:", e);
-        }
-
-        // 2. Fallback: Read push_token from profiles table if no tokens found yet
-        if (userTokens.length === 0) {
-            try {
-                const { data: profiles } = await supabase
-                    .from("profiles")
-                    .select("id, push_token")
-                    .in("id", targetUserIds);
-
-                if (profiles) {
-                    userTokens = profiles
-                        .filter(p => p.push_token !== null && p.push_token !== undefined && p.push_token !== "")
-                        .map(p => ({ userId: p.id, token: p.push_token }));
-                }
-            } catch (e) {
-                console.error("Failed to read fallback profiles.push_token:", e);
-            }
+            console.warn("Failed to read user_push_tokens table, push notifications unavailable:", e);
         }
 
         if (userTokens.length === 0) {
-            return new Response(JSON.stringify({ message: "No active push tokens found" }), { status: 200 });
+            return new Response(JSON.stringify({ message: "No active push tokens found" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
@@ -397,7 +452,7 @@ serve(async (req) => {
 
         if (!projectId || !clientEmail || !privateKey) {
             console.warn("FIREBASE credentials are not set. Skipping push delivery.");
-            return new Response(JSON.stringify({ message: "FIREBASE credentials missing, delivery skipped" }), { status: 200 });
+            return new Response(JSON.stringify({ message: "FIREBASE credentials missing, delivery skipped" }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         let app;
@@ -419,7 +474,7 @@ serve(async (req) => {
                 });
             } catch (e) {
                 console.error("Failed to initialize Firebase app with provided credentials.", e);
-                return new Response(JSON.stringify({ error: "Invalid FIREBASE credentials" }), { status: 500 });
+                return new Response(JSON.stringify({ error: "Invalid FIREBASE credentials" }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
         } else {
             app = getApps()[0];
@@ -440,7 +495,23 @@ serve(async (req) => {
             sanitizedData["body"] = String(payload.body);
             sanitizedData["conversationId"] = String(payload.conversationId || payload.id);
             sanitizedData["targetUserId"] = String(userId);
-            sanitizedData["actionUrl"] = String(payload.actionUrl || `/messages/${payload.conversationId || payload.id}`);
+            sanitizedData["sentAt"] = String(Date.now());
+            if ((payload as any).callId) sanitizedData["callId"] = String((payload as any).callId);
+            if ((payload as any).roomId) sanitizedData["roomId"] = String((payload as any).roomId);
+            if ((payload as any).spaceId) sanitizedData["spaceId"] = String((payload as any).spaceId);
+            if ((payload as any).projectId) sanitizedData["projectId"] = String((payload as any).projectId);
+            if ((payload as any).senderId) sanitizedData["senderId"] = String((payload as any).senderId);
+            if ((payload as any).partnerId) sanitizedData["partnerId"] = String((payload as any).partnerId);
+            if ((payload as any).channelId) sanitizedData["channelId"] = String((payload as any).channelId);
+            
+            let callActionUrl = String(payload.actionUrl || `/messages/${payload.conversationId || payload.id}`);
+            const pType = String(payload.type || '');
+            if (pType === 'incoming_call' || pType === 'call_started' || pType === 'call_invite' || payload.autoJoinCall) {
+                if (callActionUrl && !callActionUrl.includes('autoJoin=true')) {
+                    callActionUrl += callActionUrl.includes('?') ? '&autoJoin=true' : '?autoJoin=true';
+                }
+            }
+            sanitizedData["actionUrl"] = callActionUrl;
             if (payload.avatarUrl) sanitizedData["avatarUrl"] = String(payload.avatarUrl);
 
             // Include E2EE data for native decryption
@@ -454,10 +525,17 @@ serve(async (req) => {
                 }
             }
 
-            const message = {
+            const message: any = {
                 token: token,
                 data: sanitizedData,
+                android: {
+                    priority: "high" as const,
+                    ttl: 0,
+                },
                 apns: {
+                    headers: {
+                        "apns-priority": "10",
+                    },
                     payload: {
                         aps: {
                             alert: {
@@ -470,9 +548,6 @@ serve(async (req) => {
                             threadId: payload.conversationId || payload.id
                         }
                     }
-                },
-                android: {
-                    priority: "high" as const,
                 }
             };
 
@@ -483,19 +558,16 @@ serve(async (req) => {
                 const errorCode = error.code || "unknown";
                 if (errorCode === 'messaging/invalid-registration-token' || errorCode === 'messaging/registration-token-not-registered') {
                     console.log(`[DEAD TOKEN CLEANUP] Removing invalid token: ${token}`);
-                    await Promise.all([
-                        supabase.from("user_push_tokens").delete().eq("token", token),
-                        supabase.from("profiles").update({ push_token: null }).eq("push_token", token)
-                    ]);
+                    await supabase.from("user_push_tokens").delete().eq("token", token);
                 }
                 return { success: false, error: errorCode, message: error.message };
             }
         }));
 
-        return new Response(JSON.stringify({ success: true, responses }), { status: 200 });
+        return new Response(JSON.stringify({ success: true, responses }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error) {
         console.error(error);
-        return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+        return new Response(JSON.stringify({ error: (error as any).message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 });

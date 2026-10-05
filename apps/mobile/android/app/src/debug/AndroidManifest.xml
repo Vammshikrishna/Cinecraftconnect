@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+    <!-- Debug builds only: Metro (http://<dev-machine>:8081) is served over cleartext HTTP. -->
+    <application
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config_debug"
+        tools:replace="android:usesCleartextTraffic,android:networkSecurityConfig" />
+</manifest>

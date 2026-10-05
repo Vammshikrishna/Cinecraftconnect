@@ -1,1 +1,50 @@
-"-- Drop the functions if they already exist\nDROP FUNCTION IF EXISTS approve_join_request(uuid);\nDROP FUNCTION IF EXISTS approve_join_request(integer);\nDROP FUNCTION IF EXISTS reject_join_request(uuid);\nDROP FUNCTION IF EXISTS reject_join_request(integer);\n\n-- Create approve_join_request function\nCREATE OR REPLACE FUNCTION approve_join_request(_request_id integer)\nRETURNS void\nLANGUAGE plpgsql\nSECURITY DEFINER -- This allows the function to bypass RLS to insert members securely\nAS $$\nDECLARE\n    v_project_space_id uuid;\n    v_user_id uuid;\nBEGIN\n    -- Get the request details\n    SELECT project_space_id, user_id INTO v_project_space_id, v_user_id\n    FROM project_space_join_requests\n    WHERE id = _request_id;\n\n    IF NOT FOUND THEN\n        RAISE EXCEPTION 'Join request not found';\n    END IF;\n\n    -- Update the request status\n    UPDATE project_space_join_requests\n    SET status = 'approved'\n    WHERE id = _request_id;\n\n    -- Add the user to project_space_members (if not already a member)\n    INSERT INTO project_space_members (project_space_id, user_id, role)\n    VALUES (v_project_space_id, v_user_id, 'member')\n    ON CONFLICT DO NOTHING;\nEND;\n$$;\n\n-- Create reject_join_request function\nCREATE OR REPLACE FUNCTION reject_join_request(_request_id integer)\nRETURNS void\nLANGUAGE plpgsql\nSECURITY DEFINER\nAS $$\nBEGIN\n    -- Just update the request status\n    UPDATE project_space_join_requests\n    SET status = 'rejected'\n    WHERE id = _request_id;\nEND;\n$$;\n"
+-- Drop the functions if they already exist
+DROP FUNCTION IF EXISTS approve_join_request(uuid);
+DROP FUNCTION IF EXISTS approve_join_request(integer);
+DROP FUNCTION IF EXISTS reject_join_request(uuid);
+DROP FUNCTION IF EXISTS reject_join_request(integer);
+
+-- Create approve_join_request function
+CREATE OR REPLACE FUNCTION approve_join_request(_request_id integer)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER -- This allows the function to bypass RLS to insert members securely
+AS $$
+DECLARE
+    v_project_space_id uuid;
+    v_user_id uuid;
+BEGIN
+    -- Get the request details
+    SELECT project_space_id, user_id INTO v_project_space_id, v_user_id
+    FROM project_space_join_requests
+    WHERE id = _request_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Join request not found';
+    END IF;
+
+    -- Update the request status
+    UPDATE project_space_join_requests
+    SET status = 'approved'
+    WHERE id = _request_id;
+
+    -- Add the user to project_space_members (if not already a member)
+    INSERT INTO project_space_members (project_space_id, user_id, role)
+    VALUES (v_project_space_id, v_user_id, 'member')
+    ON CONFLICT DO NOTHING;
+END;
+$$;
+
+-- Create reject_join_request function
+CREATE OR REPLACE FUNCTION reject_join_request(_request_id integer)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Just update the request status
+    UPDATE project_space_join_requests
+    SET status = 'rejected'
+    WHERE id = _request_id;
+END;
+$$;

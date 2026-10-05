@@ -1,0 +1,1101 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useAppNavigation } from '@/contexts/NavigationContext';
+import {
+  MessageCircle,
+  CheckSquare,
+  FileText,
+  Users,
+  Camera,
+  ClipboardList,
+  Briefcase,
+  DollarSign,
+  ChevronRight,
+  ArrowLeft,
+  UserPlus,
+  Settings,
+  Phone,
+  Video,
+  ShieldBan,
+  Mic,
+  BookOpen,
+  Lock,
+  Bookmark,
+} from 'lucide-react';
+
+import { ProjectChatInterface } from '@/components/discussions/ProjectChatInterface';
+import Tasks from '@/components/projects/Tasks';
+import Files from '@/components/projects/Files';
+import CallSheet from '@/components/projects/CallSheet';
+import ShotList from '@/components/projects/ShotList';
+import ScreenplayReader from '@/components/projects/ScreenplayReader';
+import LegalDocs from '@/components/projects/LegalDocs';
+import BudgetSched from '@/components/projects/BudgetSched';
+import Team from '@/components/projects/Team';
+import ProjectApplicants from '@/components/projects/ProjectApplicants';
+import ProjectSettings from '@/components/projects/ProjectSettings';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { SpaceEscalationPanel } from '@/components/governance/SpaceEscalationPanel';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+
+import { useToast } from '@/hooks/use-toast';
+import { useAppRole } from '@/hooks/useAppRole';
+import { useGlobalCall } from '@/contexts/CallContext';
+import { clearGroupKeyCache } from '@/hooks/useGroupKey';
+import { StartAudioSpaceButton } from '@/components/calls/StartAudioSpaceButton';
+import { useActiveRoomCall } from '@/hooks/useActiveRoomCall';
+
+interface ProjectSpaceProps {
+  projectId: string;
+  projectTitle: string;
+  projectDescription: string;
+  projectCreatorId?: string;
+  initialSpaceId?: string | null;
+}
+
+const SECTIONS = ['chat', 'tasks', 'files', 'team', 'call-sheet', 'shot-list', 'script-reader', 'legal-docs', 'budget-sched', 'applicants', 'settings', 'call'] as const;
+type ActiveSection = typeof SECTIONS[number];
+
+export const ProjectSpace = ({
+  projectId,
+  projectTitle,
+  projectDescription,
+  projectCreatorId,
+  initialSpaceId,
+}: ProjectSpaceProps) => {
+  const { push } = useAppNavigation();
+  const { user } = useAuth();
+  const { isInternal, loading: roleLoading } = useAppRole();
+  const { toast } = useToast();
+  const [userRole, setUserRole] = useState<'creator' | 'admin' | 'member' | 'guest'>('guest');
+  const [resolvedSpaceId, setResolvedSpaceId] = useState<string | null>(initialSpaceId || null);
+  const [requestStatus, setRequestStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none');
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [hasGrantedAccess, setHasGrantedAccess] = useState<boolean>(false);
+  const [activeSection, setActiveSection] = useState<ActiveSection>('chat');
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [isResizing, setIsResizing] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Global Call state
+  const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall, toggleMinimize, togglePipHidden, findActiveCall } = useGlobalCall();
+  const isInCall = callState.isActive && (callState.roomId === resolvedSpaceId || callState.roomId === projectId);
+  // A call or audio space somebody has already started here: offer "Join" instead of the start options.
+  const activeRoomCall = useActiveRoomCall('project', resolvedSpaceId);
+  const isCallMinimized = callState.isMinimized;
+
+  const [isBookmarked, setIsBookmarked] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id || !resolvedSpaceId) return;
+    const checkBookmark = async () => {
+      const { data } = await supabase
+        .from('project_space_bookmarks')
+        .select('id')
+        .eq('project_space_id', resolvedSpaceId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setIsBookmarked(!!data);
+    };
+    checkBookmark();
+  }, [user?.id, resolvedSpaceId]);
+
+  useEffect(() => {
+    const handleBookmarkChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ projectId: string; isBookmarked: boolean }>;
+      if (customEvent.detail?.projectId === projectId || (resolvedSpaceId && customEvent.detail?.projectId === resolvedSpaceId)) {
+        setIsBookmarked(customEvent.detail.isBookmarked);
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'cc_project_bookmark_sync' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed?.projectId === projectId || (resolvedSpaceId && parsed?.projectId === resolvedSpaceId)) {
+            setIsBookmarked(parsed.isBookmarked);
+          }
+        } catch { }
+      }
+    };
+    window.addEventListener('projectBookmarkChanged', handleBookmarkChange);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('projectBookmarkChanged', handleBookmarkChange);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [projectId, resolvedSpaceId]);
+
+  const handleToggleBookmark = async () => {
+    if (!user) {
+      toast({ title: "Sign in required", variant: "destructive" });
+      return;
+    }
+    if (!resolvedSpaceId) return;
+
+    const nextState = !isBookmarked;
+    setIsBookmarked(nextState);
+
+    window.dispatchEvent(new CustomEvent('projectBookmarkChanged', {
+      detail: { projectId, isBookmarked: nextState }
+    }));
+    try {
+      localStorage.setItem('cc_project_bookmark_sync', JSON.stringify({
+        projectId,
+        isBookmarked: nextState,
+        ts: Date.now()
+      }));
+    } catch { }
+
+    try {
+      if (!nextState) {
+        await supabase
+          .from('project_space_bookmarks')
+          .delete()
+          .eq('project_space_id', resolvedSpaceId)
+          .eq('user_id', user.id);
+        toast({ title: "Bookmark removed" });
+      } else {
+        await supabase
+          .from('project_space_bookmarks')
+          .upsert(
+            { project_space_id: resolvedSpaceId, user_id: user.id },
+            { onConflict: 'user_id,project_space_id' }
+          );
+        toast({ title: "Project space bookmarked!" });
+      }
+    } catch (e: any) {
+      setIsBookmarked(!nextState);
+      window.dispatchEvent(new CustomEvent('projectBookmarkChanged', {
+        detail: { projectId, isBookmarked: !nextState }
+      }));
+      toast({ title: "Failed to update bookmark", variant: "destructive" });
+    }
+  };
+
+  const [searchParams] = useSearchParams();
+  const autoJoinParam = searchParams.get('autoJoin');
+  const autoJoinHandled = useRef(false);
+
+
+  useEffect(() => {
+    const callRoomId = resolvedSpaceId || projectId;
+    if (autoJoinParam === 'true' && callRoomId && !isInCall && !callState.isActive && !autoJoinHandled.current) {
+      autoJoinHandled.current = true;
+      console.log('📞 [AUTO-JOIN] Launching Project Space call for:', projectTitle || projectId);
+      joinGlobalCall('project', callRoomId, projectTitle || 'Project Space Call', 'member');
+    }
+  }, [autoJoinParam, resolvedSpaceId, projectId, isInCall, callState.isActive, projectTitle, joinGlobalCall]);
+
+  // Resolve space ID — only if not already provided by parent
+  useEffect(() => {
+    if (resolvedSpaceId) return; // Already have it from initialSpaceId
+    let mounted = true;
+    const resolveSpace = async () => {
+      if (!projectId) return;
+      try {
+        const { data } = await supabase
+          .from('project_spaces')
+          .select('id')
+          .eq('project_id', projectId)
+          .maybeSingle();
+
+        if (mounted && data) {
+          setResolvedSpaceId(data.id);
+        } else if (mounted) {
+          // Auto-create the space if it doesn't exist
+          const { data: newSpace } = await supabase
+            .from('project_spaces')
+            .insert({ project_id: projectId, name: 'General' })
+            .select()
+            .single();
+          if (mounted && newSpace) {
+            setResolvedSpaceId(newSpace.id);
+          }
+        }
+      } catch (e) {
+        // Silent catch for resolution
+      }
+    };
+    resolveSpace();
+    return () => { mounted = false; };
+  }, [projectId, resolvedSpaceId]);
+
+  // Scroll active tab into view
+  useEffect(() => {
+    const element = document.getElementById(`tab-${activeSection}`);
+    if (element && scrollContainerRef.current) {
+      const container = scrollContainerRef.current;
+      const elementRect = element.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+
+      // Calculate center position
+      const scrollLeft = element.offsetLeft - (containerRect.width / 2) + (elementRect.width / 2);
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+    }
+  }, [activeSection]);
+
+  const handleSelectSection = useCallback((section: ActiveSection) => {
+    if (section === 'call') {
+      if (isCallMinimized) toggleMinimize(false);
+      if (callState.isPipHidden) togglePipHidden(false);
+    } else if (isInCall) {
+      if (!isCallMinimized) toggleMinimize(true);
+    }
+    setActiveSection(section);
+  }, [isCallMinimized, toggleMinimize, callState.isPipHidden, togglePipHidden, isInCall]);
+
+  // Synchronize activeSection with call minimization state
+  useEffect(() => {
+    if (isInCall) {
+      if ((activeSection as string) === 'call') {
+        if (isCallMinimized) {
+          setActiveSection('chat');
+        } else if (callState.isPipHidden) {
+          togglePipHidden(false);
+        }
+      } else {
+        if (!isCallMinimized) {
+          handleSelectSection('call');
+        }
+      }
+    }
+  }, [activeSection, isInCall, isCallMinimized, togglePipHidden, setActiveSection, handleSelectSection]);
+
+  // Auto-switch away from 'call' section when call ends
+  useEffect(() => {
+    if (!isInCall && (activeSection as string) === 'call') {
+      setActiveSection('chat');
+    }
+  }, [isInCall, activeSection, setActiveSection]);
+
+  // Auto-switch to 'call' section when call starts for this space
+  const prevIsInCall = useRef(false);
+  useEffect(() => {
+    if (isInCall && !prevIsInCall.current) {
+      setActiveSection('call');
+    }
+    prevIsInCall.current = isInCall;
+  }, [isInCall, setActiveSection]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizing) {
+      const newWidth = e.clientX;
+      if (newWidth > 240 && newWidth < 500) {
+        setSidebarWidth(newWidth);
+      }
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+
+  // Instant creator detection — runs synchronously on every render cycle where user becomes available
+  // This is the FAST PATH: if we know the creator, skip ALL async checks and loading screens
+  useEffect(() => {
+    if (projectCreatorId && user?.id && projectCreatorId === user.id) {
+      setUserRole('creator');
+      setCheckingAccess(false);
+    }
+  }, [projectCreatorId, user?.id]);
+
+  useEffect(() => {
+    // Creator already identified — no async check needed
+    if (projectCreatorId && user?.id && projectCreatorId === user.id) return;
+
+    let active = true;
+    const checkAccess = async () => {
+      setCheckingAccess(true);
+      if (!user?.id || !resolvedSpaceId) {
+        if (active) setCheckingAccess(false);
+        return;
+      }
+
+      try {
+        // Run remaining checks in parallel
+        const [membershipRes, requestRes, applicationRes, grantRes] = await Promise.all([
+          // 1. Check Membership
+          supabase
+            .from('project_space_members')
+            .select('role')
+            .eq('project_space_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+
+          // 2. Check for pending join request
+          supabase
+            .from('project_space_join_requests' as any)
+            .select('status, id')
+            .eq('project_space_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+
+          // 3. Check for approved application (applicants who were accepted)
+          supabase
+            .from('project_applications' as any)
+            .select('status')
+            .eq('project_id', resolvedSpaceId)
+            .eq('user_id', user.id)
+            .eq('status', 'approved')
+            .maybeSingle(),
+
+          // 4. Check for active grant if staff is guest
+          isInternal ? (supabase as any)
+            .from('space_access_grants')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('target_type', 'project_space')
+            .eq('target_id', resolvedSpaceId)
+            .gt('expires_at', new Date().toISOString())
+            .maybeSingle() : Promise.resolve({ data: null })
+        ]);
+
+        if (!active) return;
+
+        // Internal staff ALWAYS require an active grant for private project spaces.
+        // Membership is intentionally ignored — governance accounts must go through
+        // break glass every time, even if they were added as a regular member.
+        if (isInternal) {
+          const hasGrant = !!grantRes.data;
+          setHasGrantedAccess(hasGrant);
+          if (!hasGrant) {
+            setUserRole('guest'); // Force Intercept screen — grant required
+            return;
+          }
+          // Has a valid grant — fall through to set membership role below
+        }
+
+        if (membershipRes.data) {
+          setUserRole(membershipRes.data.role === 'admin' ? 'admin' : 'member');
+          return;
+        }
+
+        // If user has an approved application, treat them as a member
+        if (applicationRes.data) {
+          setUserRole('member');
+          return;
+        }
+
+        if (requestRes.data) {
+          const status = (requestRes.data as any).status;
+          if (status === 'pending' || status === 'rejected' || status === 'approved') {
+            setRequestStatus(status);
+          }
+        }
+
+        setUserRole('guest');
+
+      } catch (err) {
+        // Silent catch for access check
+      } finally {
+        if (active) setCheckingAccess(false);
+      }
+    };
+
+    checkAccess();
+
+    return () => { active = false; };
+  }, [projectId, resolvedSpaceId, user?.id, isInternal, projectCreatorId]);
+
+  useEffect(() => {
+    if (!checkingAccess && !roleLoading && userRole === 'guest' && requestStatus !== 'approved' && !isInternal) {
+      push(`/projects/${projectId}`, { noScroll: true });
+    }
+  }, [checkingAccess, roleLoading, userRole, requestStatus, projectId, push, isInternal]);
+
+  const [requestNote, setRequestNote] = useState('');
+
+  const handleJoinRequest = async () => {
+
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in.", variant: "destructive" });
+      return;
+    }
+    if (!resolvedSpaceId) {
+      toast({ title: "Error", description: "Could not identify project space. Please refresh.", variant: "destructive" });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('project_space_join_requests' as any)
+        .insert({
+          project_space_id: resolvedSpaceId,
+          user_id: user.id,
+          message: requestNote || null
+        });
+
+      if (error) {
+        if (error.code === '23505') {
+          // Duplicate request, treat as success/pending
+          setRequestStatus('pending');
+          toast({ title: "Request Pending", description: "You have already requested to join." });
+          return;
+        }
+        throw error;
+      }
+      setRequestStatus('pending');
+      toast({ title: "Request Sent", description: "Your request has been sent to the project owner." });
+    } catch (e: any) {
+      toast({ title: "Error", description: "Failed to send request: " + (e.message || "Unknown error"), variant: "destructive" });
+    }
+  };
+
+  const handleLockSpace = async () => {
+    if (!user || !resolvedSpaceId) return;
+    try {
+      const { data, error } = await (supabase as any)
+        .from('space_access_grants')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('target_type', 'project_space')
+        .eq('target_id', resolvedSpaceId)
+        .select();
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error("No active grant found in database to revoke. Access may have already expired.");
+      }
+
+      clearGroupKeyCache('project_space', resolvedSpaceId); // Evict cached E2EE key immediately
+      setHasGrantedAccess(false);
+      setUserRole('guest'); // Force the Intercept screen guard to trigger immediately on re-entry
+      push('/projects', { noScroll: true });
+      toast({
+        title: "Space Locked",
+        description: "Your temporary escalated access has been revoked.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error revoking access",
+        description: err.message,
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Starting a call ends any call already running in this space, so join it when one (or an audio space) is live.
+  const handleStartAudioSpace = async (speakingMode: 'open' | 'request') => {
+    if (!resolvedSpaceId) return;
+    const active = await findActiveCall('project', resolvedSpaceId);
+    const success = active
+      ? await joinGlobalCall('project', resolvedSpaceId, projectTitle || 'Project Space')
+      : await startGlobalCall('project', resolvedSpaceId, projectTitle || 'Project Space', 'member', { mode: 'audio_space', speakingMode });
+    if (!success) {
+      toast({ title: "Could not start the audio space", description: "Audio spaces need the latest server update: run the database part_n SQL and deploy the livekit-token and space-control functions.", variant: "destructive" });
+    }
+  };
+
+  const handleStartCall = async () => {
+    if (!resolvedSpaceId) return;
+    const active = await findActiveCall('project', resolvedSpaceId);
+    const success = active
+      ? await joinGlobalCall('project', resolvedSpaceId, projectTitle || 'Project Call')
+      : await startGlobalCall('project', resolvedSpaceId, projectTitle || 'Project Call');
+    if (!success) {
+      toast({
+        title: "Error",
+        description: "Failed to start call. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const collaborationNavItems = [
+    { id: 'chat' as ActiveSection, label: 'Chat', icon: MessageCircle },
+    { id: 'tasks' as ActiveSection, label: 'Tasks', icon: CheckSquare },
+    { id: 'files' as ActiveSection, label: 'Files', icon: FileText },
+  ];
+
+  const productionOfficeNavItems = [
+    { id: 'call-sheet' as ActiveSection, label: 'Call Sheet', icon: ClipboardList },
+    { id: 'shot-list' as ActiveSection, label: 'Shot List', icon: Camera },
+    { id: 'script-reader' as ActiveSection, label: 'Script Reader', icon: BookOpen },
+    { id: 'legal-docs' as ActiveSection, label: 'Legal Docs', icon: Briefcase },
+    { id: 'budget-sched' as ActiveSection, label: 'Budget/Sched', icon: DollarSign },
+  ];
+
+  const teamNavItems = [
+    { id: 'team' as ActiveSection, label: 'Team', icon: Users },
+  ];
+
+  if (userRole === 'creator' || userRole === 'admin' || isInternal) {
+    teamNavItems.push({ id: 'applicants' as ActiveSection, label: 'Applicants', icon: UserPlus });
+    teamNavItems.push({ id: 'settings' as ActiveSection, label: 'Settings', icon: Settings });
+  }
+
+  const displayCollaborationNavItems = isInCall
+    ? [{ id: 'call' as ActiveSection, label: 'Live Call', icon: Video }, ...collaborationNavItems]
+    : collaborationNavItems;
+
+  const allNavItems = [
+    ...collaborationNavItems,
+    ...productionOfficeNavItems,
+    ...teamNavItems
+  ];
+
+  if (isInCall) {
+    allNavItems.unshift({ id: 'call' as ActiveSection, label: 'Live Call', icon: Video });
+  }
+
+  const renderContent = () => {
+    if (!resolvedSpaceId) return (
+      <div className="flex-1 flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+
+    if (userRole === 'guest' && !isInternal) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-6">
+          <div className="bg-primary/10 p-6 rounded-full">
+            <Users className="w-12 h-12 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold mb-2">Private Project Space</h2>
+            <p className="text-muted-foreground max-w-md">
+              {requestStatus === 'pending'
+                ? "Your request to join this project is pending approval from the creator."
+                : requestStatus === 'rejected'
+                  ? "Your request to join was declined by the project owner."
+                  : "You need to be a member of this project to view its content and collaborate."}
+            </p>
+          </div>
+
+          {requestStatus === 'none' && (
+            <Button onClick={handleJoinRequest} size="lg" className="animate-pulse">
+              Request to Join Project
+            </Button>
+          )}
+          {requestStatus === 'pending' && (
+            <Button disabled variant="outline">Request Pending</Button>
+          )}
+        </div>
+      );
+    }
+
+
+
+    return (
+      <div className="flex-1 w-full flex flex-col overflow-hidden relative">
+        {/* Persistent Sections (Hidden but Mounted) */}
+        <ProjectChatInterface
+          projectId={projectId}
+          spaceId={resolvedSpaceId}
+          isActive={activeSection === 'chat'}
+        />
+
+        <div className={cn("flex-1 flex flex-col min-h-0", activeSection !== 'call' && "hidden")}>
+          <div id="project-call-container" className="flex-1 w-full bg-[#09090b] relative min-h-0 overflow-hidden">
+            {/* LiveKitCallContainer portals here */}
+          </div>
+        </div>
+
+        {/* Dynamic Sections (Standard Switch) */}
+        {(() => {
+          switch (activeSection) {
+            case 'tasks':
+              return <Tasks project_id={resolvedSpaceId} />;
+            case 'files':
+              return <Files project_id={resolvedSpaceId} />;
+            case 'call-sheet':
+              return <CallSheet project_id={resolvedSpaceId} />;
+            case 'shot-list':
+              return <ShotList project_id={resolvedSpaceId} />;
+            case 'script-reader':
+              return <ScreenplayReader project_id={resolvedSpaceId} />;
+            case 'legal-docs':
+              return <LegalDocs project_id={resolvedSpaceId} />;
+            case 'budget-sched':
+              return <BudgetSched project_id={resolvedSpaceId} />;
+            case 'team':
+              return <Team project_id={resolvedSpaceId} real_project_id={projectId} />;
+            case 'applicants':
+              return <ProjectApplicants projectId={projectId} />;
+            case 'settings':
+              return <ProjectSettings projectId={projectId} />;
+            default:
+              return null;
+          }
+        })()}
+      </div>
+    );
+  };
+
+  // Only show a loading spinner for unknown users while their access is being checked.
+  // Creators bypass this entirely because their role is set synchronously.
+  if (userRole === 'guest' && (checkingAccess || roleLoading)) {
+    return (
+      <div className="h-screen w-screen bg-background flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  if (isInternal && userRole === 'guest' && !hasGrantedAccess) {
+    // Wait for resolvedSpaceId before showing the escalation panel.
+    // If we render with an empty targetId, the grant gets stored with target_id=""
+    // and Lock Space will fail to find the row when it tries to delete by real UUID.
+    if (!resolvedSpaceId) {
+      return (
+        <div className="h-screen w-screen bg-background flex items-center justify-center">
+          <LoadingSpinner size="lg" />
+        </div>
+      );
+    }
+    return (
+      <div className="flex-1 flex flex-col h-full bg-background overflow-hidden relative">
+        {/* Top bar with back navigation */}
+        <div className="px-6 py-4 border-b border-border/40 bg-card/40 backdrop-blur-md flex items-center gap-3 shrink-0">
+          <Button
+            variant="ghost"
+            onClick={() => push('/projects', { noScroll: true })}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-2 hover:bg-white/5 rounded-xl px-4"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="font-bold text-xs uppercase tracking-wider">Back to Projects</span>
+          </Button>
+          <div className="h-4 w-[1px] bg-border/40" />
+          <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Project Space Governance Intercept
+          </span>
+        </div>
+
+        {/* Escalation Interface */}
+        <SpaceEscalationPanel
+          targetType="project_space"
+          targetId={resolvedSpaceId}
+          chatTitle={projectTitle}
+          onAccessGranted={() => {
+            setHasGrantedAccess(true);
+            // Re-run the access check so userRole updates based on membership
+            // (the check effect won't fire again unless deps change)
+            setCheckingAccess(true);
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (userRole === 'guest' && !isInternal) {
+    return (
+      <div className="h-screen w-screen bg-background flex flex-col p-4">
+        {/* Guest View Dialog */}
+        <Dialog open={true} onOpenChange={(open) => { if (!open) push('/projects', { noScroll: true }); }}>
+          <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+            <DialogHeader className="sr-only">
+              <DialogTitle>Access Restricted</DialogTitle>
+              <DialogDescription>
+                You need to request access to join this project space.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col items-center justify-center p-6 space-y-4 text-center">
+              <div className="bg-primary/10 p-4 rounded-full">
+                <Users className="w-10 h-10 text-primary" />
+              </div>
+              <p className="text-muted-foreground">
+                You are not a member of this project. To view its content and collaborate, you must request to join.
+              </p>
+
+              {requestStatus === 'none' && (
+                <div className="w-full space-y-2 text-left">
+                  <label htmlFor="requestNote" className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Optional Note
+                  </label>
+                  <textarea
+                    id="requestNote"
+                    placeholder="Briefly explain why you're requesting to join..."
+                    value={requestNote}
+                    onChange={(e) => setRequestNote(e.target.value)}
+                    className="w-full min-h-[100px] bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
+                  />
+                </div>
+              )}
+
+              {requestStatus === 'pending' && (
+                <div className="p-3 bg-yellow-500/10 text-yellow-500 rounded-md border border-yellow-500/20 text-sm w-full">
+                  Your request is currently pending approval.
+                </div>
+              )}
+              {requestStatus === 'approved' && (
+                <div className="p-3 bg-primary/10 text-green-500 rounded-md border border-primary/20 text-sm w-full">
+                  Your request has been approved! <br />
+                  <Button variant="link" onClick={() => window.location.reload()} className="p-0 h-auto font-bold text-primary">
+                    Refresh Page
+                  </Button> to access.
+                </div>
+              )}
+              {requestStatus === 'rejected' && (
+                <div className="p-3 bg-red-500/10 text-red-500 rounded-md border border-red-500/20 text-sm w-full">
+                  Your request was declined by the project owner.
+                </div>
+              )}
+            </div>
+            <div className="flex flex-row justify-end space-x-2 w-full">
+              <Button variant="outline" onClick={() => push('/projects', { noScroll: true })} className="flex-1">
+                Cancel
+              </Button>
+              {requestStatus === 'none' ? (
+                <Button onClick={handleJoinRequest} className="flex-1">
+                  Request to Join
+                </Button>
+              ) : requestStatus === 'approved' ? (
+                <Button onClick={() => window.location.reload()} className="flex-1 bg-primary hover:bg-primary/90">
+                  Enter Space
+                </Button>
+              ) : (
+                <Button disabled className="flex-1 opacity-50">
+                  Request Sent
+                </Button>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <div className="flex-1 flex items-center justify-center opacity-10 filter blur-sm pointer-events-none">
+          <LoadingSpinner size="lg" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col flex-1 w-full bg-background/95 backdrop-blur-md text-foreground lg:border lg:border-border lg:rounded-xl overflow-hidden lg:shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] relative">
+      {/* Invisible anchor for Call UI logic to recognize this space */}
+      <div id="active-project-anchor" data-project-id={projectId} data-space-id={resolvedSpaceId} className="hidden" />
+
+      {/* Mobile Header & Navigation */}
+      <div className="lg:hidden flex flex-col bg-background z-[60] shrink-0 sticky top-0 border-b border-border/40 pb-1">
+        <div className="flex items-center px-4 py-3 gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => push('/projects', { noScroll: true })}
+            className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex flex-col min-w-0 flex-1 py-0.5">
+            <h2 className="text-lg font-bold truncate leading-tight">{projectTitle}</h2>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {isInternal && hasGrantedAccess && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLockSpace}
+                className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-9 shrink-0 mr-1 px-3"
+              >
+                <Lock className="h-4 w-4" />
+                <span className="hidden sm:inline">Lock Space</span>
+              </Button>
+            )}
+            {isInCall ? (
+              <button
+                onClick={() => handleSelectSection('call')}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/20 border border-primary/30 rounded-full hover:bg-primary/30 transition-all shrink-0"
+              >
+                <Video className="h-4.5 w-4.5 text-green-500" />
+                <span className="text-xs font-bold text-green-500 uppercase tracking-wider">Live</span>
+              </button>
+            ) : !isInternal ? (
+              activeRoomCall ? (
+                <button
+                  onClick={handleStartCall}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500/15 border border-green-500/30 rounded-full hover:bg-green-500/25 transition-all shrink-0"
+                  title={activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call'}
+                >
+                  {activeRoomCall.mode === 'audio_space' ? <Mic className="h-4 w-4 text-green-500" /> : <Video className="h-4 w-4 text-green-500" />}
+                  <span className="text-xs font-bold text-green-500 uppercase tracking-wider">
+                    {activeRoomCall.mode === 'audio_space' ? 'Join space' : 'Join call'}
+                  </span>
+                </button>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleStartCall}
+                    className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0"
+                    title="Start Call"
+                  >
+                    <Video className="h-5 w-5" />
+                  </Button>
+                  <StartAudioSpaceButton onStart={handleStartAudioSpace} className="h-10 w-10 rounded-full hover:bg-white/10 shrink-0" />
+                </>
+              )
+            ) : (
+              <div title="Staff Observation Mode">
+                <ShieldBan className="h-5 w-5 text-muted-foreground/30" />
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleToggleBookmark}
+              className={cn("h-10 w-10 rounded-full hover:bg-white/10 shrink-0", isBookmarked && "text-primary")}
+              title={isBookmarked ? "Remove Bookmark" : "Bookmark Space"}
+            >
+              <Bookmark className={cn("h-5 w-5", isBookmarked && "fill-current")} />
+            </Button>
+          </div>
+        </div>
+
+        <div className="relative w-full py-1">
+          <div
+            ref={scrollContainerRef}
+            className="flex overflow-x-auto gap-2.5 px-4 pb-2.5 pt-1 no-scrollbar w-full"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
+            {allNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeSection === item.id;
+              return (
+                <button
+                  id={`tab-${item.id}`}
+                  key={item.id}
+                  onClick={() => handleSelectSection(item.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-all duration-300 border shrink-0 min-h-[38px]",
+                    isActive
+                      ? "bg-primary text-primary-foreground border-primary shadow-[0_0_15px_-3px_rgba(var(--primary),0.4)] scale-105"
+                      : "bg-secondary/40 border-border/30 text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+            <div className="w-4 shrink-0" /> {/* End padding */}
+          </div>
+          {/* Gradient fade for scroll hint */}
+          <div className="absolute right-0 top-0 bottom-3 w-12 bg-gradient-to-l from-background to-transparent pointer-events-none" />
+          <div className="absolute left-0 top-0 bottom-3 w-4 bg-gradient-to-r from-background to-transparent pointer-events-none" />
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Desktop Sidebar */}
+        <div
+          className="hidden lg:flex flex-col border-r border-border bg-card/95 backdrop-blur-xl relative z-0 h-full"
+          style={{ width: sidebarWidth }}
+        >
+          <div className="p-4 border-b border-border bg-gradient-to-b from-muted/5 to-transparent flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => push('/projects', { noScroll: true })}
+              className="h-8 w-8 rounded-full hover:bg-white/10 shrink-0 text-muted-foreground hover:text-primary transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="overflow-hidden">
+              <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-purple-400 truncate">
+                {projectTitle}
+              </h2>
+              <p className="text-xs text-muted-foreground truncate">
+                {projectDescription}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1 ml-auto shrink-0">
+              {isInternal && hasGrantedAccess && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleLockSpace}
+                  className="text-red-500 hover:text-red-600 border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 rounded-xl text-xs flex items-center justify-center gap-1.5 h-8 shrink-0 mr-1"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Lock Space</span>
+                </Button>
+              )}
+
+              {isInCall ? (
+                <button
+                  onClick={() => handleSelectSection('call')}
+                  className="flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 rounded-full hover:bg-primary/20 transition-all"
+                >
+                  <Video className="h-3.5 w-3.5 text-green-500" />
+                  <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Live</span>
+                </button>
+              ) : !isInternal ? (
+                activeRoomCall ? (
+                  <button
+                    onClick={handleStartCall}
+                    className="flex items-center gap-1 px-2.5 py-1 bg-green-500/15 border border-green-500/30 rounded-full hover:bg-green-500/25 transition-all"
+                    title={activeRoomCall.mode === 'audio_space' ? 'Join the live audio space' : 'Join the live call'}
+                  >
+                    {activeRoomCall.mode === 'audio_space' ? <Mic className="h-3.5 w-3.5 text-green-500" /> : <Video className="h-3.5 w-3.5 text-green-500" />}
+                    <span className="text-[10px] font-bold text-green-500 uppercase tracking-wider">Join</span>
+                  </button>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleStartCall}
+                      className="h-8 w-8 rounded-full hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
+                      title="Start Call"
+                    >
+                      <Video className="h-4 w-4" />
+                    </Button>
+                    <StartAudioSpaceButton onStart={handleStartAudioSpace} />
+                  </>
+                )
+              ) : (
+                <div className="bg-muted/30 p-1.5 rounded-full border border-border/50" title="Staff Observation Mode">
+                  <ShieldBan className="h-3.5 w-3.5 text-muted-foreground/40" />
+                </div>
+              )}
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleToggleBookmark}
+                className={cn(
+                  "h-8 w-8 rounded-full hover:bg-primary/10 transition-all",
+                  isBookmarked ? "text-primary" : "text-muted-foreground hover:text-primary"
+                )}
+                title={isBookmarked ? "Remove Bookmark" : "Bookmark Space"}
+              >
+                <Bookmark className={cn("h-4 w-4", isBookmarked && "fill-current")} />
+              </Button>
+            </div>
+          </div>
+
+          <nav className="flex-1 p-4 space-y-8 overflow-y-auto custom-scrollbar">
+            <div>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Collaboration
+              </h3>
+              <div className="space-y-1">
+                {displayCollaborationNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.id;
+                  const isCallItem = item.id === 'call';
+                  return (
+                    <Button
+                      key={item.id}
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isCallItem
+                          ? isActive
+                            ? 'bg-red-500/20 text-red-500 border-l-2 border-red-500 font-bold'
+                            : 'bg-red-500/10 text-red-500 hover:bg-red-500/20 font-semibold'
+                          : isActive
+                            ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                            : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                        }`}
+                      onClick={() => handleSelectSection(item.id)}
+                    >
+                      <Icon className={`h-5 w-5 transition-colors ${isCallItem
+                          ? 'text-red-500'
+                          : isActive
+                            ? 'text-primary'
+                            : 'text-muted-foreground group-hover:text-foreground'
+                        }`} />
+                      <span>{item.label}</span>
+                      {isCallItem && (
+                        <span className="ml-auto text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                          Live
+                        </span>
+                      )}
+                      {!isCallItem && isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Production Office
+              </h3>
+              <div className="space-y-1">
+                {productionOfficeNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.id;
+                  return (
+                    <Button
+                      key={item.id}
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
+                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                        }`}
+                      onClick={() => handleSelectSection(item.id)}
+                    >
+                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                      <span>{item.label}</span>
+                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-bold text-muted-foreground/70 uppercase tracking-widest mb-3 px-3">
+                Team
+              </h3>
+              <div className="space-y-1">
+                {teamNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.id;
+                  return (
+                    <Button
+                      key={item.id}
+                      variant="ghost"
+                      className={`w-full justify-start gap-3 h-11 px-3 font-medium transition-all duration-200 rounded-lg group ${isActive
+                        ? 'bg-primary/15 text-primary border-l-2 border-primary rounded-l-none'
+                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                        }`}
+                      onClick={() => handleSelectSection(item.id)}
+                    >
+                      <Icon className={`h-5 w-5 transition-colors ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                      <span>{item.label}</span>
+                      {isActive && <ChevronRight className="h-4 w-4 ml-auto opacity-50" />}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+          </nav>
+        </div>
+
+        <div
+          className="hidden lg:block w-1 cursor-col-resize hover:bg-primary/50 transition-colors bg-border"
+          onMouseDown={handleMouseDown}
+        />
+
+        <main className="flex-1 flex flex-col overflow-hidden bg-background/50 relative w-full">
+          <div className="absolute inset-0 bg-[radial-gradient(#ffffff15_1px,transparent_1px)] [background-size:16px_16px] opacity-30 pointer-events-none" />
+          {renderContent()}
+        </main>
+      </div>
+    </div>
+  );
+};
+

@@ -1,0 +1,2523 @@
+import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
+import { format, isToday, isYesterday, isSameDay } from 'date-fns';
+import { useKeyboard } from '@/contexts/KeyboardContext';
+import { 
+    DropdownMenu, 
+    DropdownMenuContent, 
+    DropdownMenuItem, 
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { User, BellOff, Paperclip, Play, FileText, X, Send, Smile, Keyboard, ShieldBan, Trash2, Reply, MoreVertical, Video, Phone, Settings, ArrowLeft, ShieldAlert, Search, Flag, Info, Check, CheckCheck, ChevronDown, Star, Copy, Share2 } from 'lucide-react';
+import { CallDetailsDialog } from '@/components/calls/CallDetailsDialog';
+import { ForwardMessageDialog } from './ForwardMessageDialog';
+import { StarredMessagesDialog } from './StarredMessagesDialog';
+import { useAppNavigation } from '@/contexts/NavigationContext';
+import { cn } from '@/lib/utils';
+import { useCall } from '@/hooks/useCall';
+import { useGlobalCall } from '@/contexts/CallContext';
+import { useToast } from '@/hooks/use-toast';
+import EmojiPicker, { EmojiStyle, Theme as EmojiTheme } from '@/components/common/LazyEmojiPicker';
+import type { EmojiClickData } from 'emoji-picker-react';
+import { PostShareCard } from './PostShareCard';
+import { ProfileShareCard } from './ProfileShareCard';
+import { PitchShareCard } from './PitchShareCard';
+import { CompanyShareCard } from './CompanyShareCard';
+import { ContentShareCard } from './ContentShareCard';
+import { MarketplaceShareCard } from './MarketplaceShareCard';
+import { AnnouncementShareCard } from './AnnouncementShareCard';
+import { VendorShareCard } from './VendorShareCard';
+import { JobShareCard } from './JobShareCard';
+import { ProjectShareCard } from './ProjectShareCard';
+import { DiscussionShareCard } from './DiscussionShareCard';
+import { getReplyThumbnail, getReplySnippet } from './chatUtils';
+import { useSearchParams } from 'react-router-dom';
+import { usePresence } from '@/hooks/usePresence';
+import { useChatReadStatus } from '@/hooks/useChatReadStatus';
+import VerificationBadge from '../common/VerificationBadge';
+import { TypingIndicator } from '../discussions/TypingIndicator';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
+import { useE2EEChatKeys } from '@/hooks/useE2EEChatKeys';
+import { decryptDirectMessage, encryptDirectMessage, E2EEProtocolService, getDeviceId } from '@/lib/e2ee';
+import { useE2EEBackup } from '@/contexts/E2EEBackupContext';
+
+import { InputOTP, InputOTPGroup, InputOTPSeparator, InputOTPSlot } from '@/components/ui/input-otp';
+import { MessageReportDialog } from './MessageReportDialog';
+import { CachedImage } from '@/components/common/CachedImage';
+import { CachedVideo } from '@/components/common/CachedVideo';
+import { MediaAttachment } from './MediaAttachment';
+import { ImageLightboxModal } from './ImageLightboxModal';
+
+interface Message {
+  id: string;
+  content: string;
+  raw_content?: string;
+  created_at: string;
+  sender_id: string;
+  is_deleted?: boolean;
+  reply_to_id?: string | null;
+  attachment_url?: string | null;
+  attachment_type?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
+  replied_to_message?: {
+    id: string;
+    content: string;
+    is_deleted?: boolean;
+    attachment_url?: string | null;
+    attachment_type?: string | null;
+    media_url?: string | null;
+    media_type?: string | null;
+    sender_profile?: {
+      full_name: string;
+      avatar_url: string;
+      is_verified?: boolean;
+    } | null;
+  } | null;
+  sender_profile: {
+    full_name: string;
+    avatar_url: string;
+    is_verified?: boolean;
+  } | null;
+  deleted_for_users?: string[];
+  is_read?: boolean;
+  read_at?: string | null;
+  reactions?: MessageReaction[];
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+  user_profile?: {
+    full_name: string;
+    avatar_url: string;
+  };
+}
+
+interface EnhancedRealTimeChatProps {
+  roomId: string;
+  partnerId: string;
+  partnerName: string;
+  partnerAvatarUrl: string;
+  partnerIsVerified?: boolean;
+  onBackClick: () => void;
+}
+
+const SENDER_COLORS = [
+  'text-blue-700 dark:text-blue-300',
+  'text-primary dark:text-primary/70 dark:text-primary/80',
+  'text-rose-700 dark:text-rose-300',
+  'text-amber-700 dark:text-amber-300',
+  'text-indigo-700 dark:text-indigo-300',
+  'text-cyan-700 dark:text-cyan-300',
+  'text-violet-700 dark:text-violet-300',
+  'text-orange-700 dark:text-orange-300',
+  'text-sky-700 dark:text-sky-300',
+  'text-pink-700 dark:text-pink-300',
+  'text-teal-700 dark:text-teal-300',
+  'text-fuchsia-700 dark:text-fuchsia-300',
+];
+
+const getUserColor = (userId: string) => {
+  if (!userId) return SENDER_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+};
+
+const getMessagePreviewText = (content: string): string => {
+  if (!content) return '';
+  if (content.startsWith('POST_SHARE::')) return 'Shared a post';
+  if (content.startsWith('MARKETPLACE_SHARE::')) return 'Shared a listing';
+  if (content.startsWith('ANNOUNCEMENT_SHARE::')) return 'Shared an announcement';
+  if (content.startsWith('VENDOR_SHARE::')) return 'Shared a vendor';
+  if (content.startsWith('PROJECT_SHARE::')) return 'Shared a project';
+  if (content.startsWith('DISCUSSION_SHARE::')) return 'Shared a discussion';
+  if (content.startsWith('ROOM_SHARE::')) return 'Shared a room';
+  if (content.startsWith('COMPANY_SHARE::')) return 'Shared a company profile';
+  if (content.startsWith('PROFILE_SHARE::')) return 'Shared a user profile';
+  if (content.startsWith('PITCH_SHARE::')) return 'Shared a pitch deck';
+  if (content.startsWith('CONTENT_SHARE::')) return 'Shared a video/content';
+  if (content.includes('JOB_SHARE::')) return 'Shared a job post';
+  return content;
+};
+
+const scrollToMessage = (messageId: string) => {
+  const element = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const bubble = element.querySelector('.relative.transition-all.duration-300') || element.querySelector('.rounded-xl');
+    if (bubble) {
+      bubble.classList.add('ring-4', 'ring-primary/40', 'scale-105', 'transition-all');
+      setTimeout(() => {
+        bubble.classList.remove('ring-4', 'ring-primary/40', 'scale-105');
+      }, 1200);
+    }
+  }
+};
+
+const formatMessageTime = (dateStr: string) => {
+  if (!dateStr) return '';
+  try {
+    return format(new Date(dateStr), 'h:mm a').toLowerCase();
+  } catch (e) {
+    return '';
+  }
+};
+
+const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '🙏', '👍'];
+
+const EnhancedRealTimeChat = ({ roomId, partnerId, partnerName, partnerAvatarUrl, partnerIsVerified, onBackClick }: EnhancedRealTimeChatProps) => {
+  const { user, profile } = useAuth();
+  const { push } = useAppNavigation();
+  const { onlineUserIds } = usePresence();
+  const { typingUsers, startTyping, stopTyping } = useTypingIndicator(roomId || '');
+  const { privateKey, partnerPublicKey, userPublicKey, keysLoaded } = useE2EEChatKeys(partnerId);
+  const { recoverBackup, performReset, encryptedPrivateKey, backupSalt, isRecoveryRequired } = useE2EEBackup();
+  const privateKeyRef = useRef(privateKey);
+  useEffect(() => {
+    privateKeyRef.current = privateKey;
+  }, [privateKey]);
+  const [showKeyRecovery, setShowKeyRecovery] = useState(false);
+  const [recoveryPin, setRecoveryPin] = useState('');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [hasDecryptionFailures, setHasDecryptionFailures] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  const reactionLocksRef = useRef<Set<string>>(new Set());
+  const markedReadRef = useRef<Set<string>>(new Set());
+  const [newMessage, setNewMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [reportingMessage, setReportingMessage] = useState<{ id: string, content: string } | null>(null);
+  const [selectedCallMessage, setSelectedCallMessage] = useState<any>(null);
+  const { markAsRead } = useChatReadStatus();
+  const { toast } = useToast();
+  const { callState, startCall: startGlobalCall, joinCall: joinGlobalCall } = useGlobalCall();
+  const { activeCall } = useCall('direct', roomId || '');
+  const isInCall = callState.isActive && callState.roomId === roomId;
+  
+  const [searchParams] = useSearchParams();
+  const autoJoinParam = searchParams.get('autoJoin');
+  const autoJoinHandled = useRef(false);
+
+  useEffect(() => {
+    if (autoJoinParam === 'true' && roomId && !isInCall && !callState.isActive && !autoJoinHandled.current) {
+      autoJoinHandled.current = true;
+      const roomName = partnerName || 'Direct Call';
+      console.log('📞 [AUTO-JOIN] Launching video call for room:', roomId);
+      joinGlobalCall('direct', roomId, roomName, 'member');
+    }
+  }, [autoJoinParam, roomId, isInCall, callState.isActive, partnerName, joinGlobalCall]);
+  
+  const [uploading, setUploading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<{file: File, preview: string, type: 'image' | 'video' | 'other'}[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const channelRef = useRef<any>(null);
+  const globalUpdatesChannelRef = useRef<any>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const lastScrollHeight = useRef<number>(0);
+  const isInitialLoad = useRef(true);
+  const { isEmojiPickerOpen: showEmojiPicker, setIsEmojiPickerOpen: setShowEmojiPicker, keyboardHeight } = useKeyboard();
+  const [lightboxState, setLightboxState] = useState<{ open: boolean; images: string[]; initialIndex: number; senderName?: string }>({ open: false, images: [], initialIndex: 0 });
+
+  const isDefaultMediaContent = (str?: string | null) => {
+    if (!str) return true;
+    return /^Shared (\d+ photos|\d+ files|an image|a video|a file)$/i.test(str.trim());
+  };
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<Message | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [starredMessageIds, setStarredMessageIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`starred_msgs_${roomId}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch (e) {
+      return new Set();
+    }
+  });
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [showStarredDialog, setShowStarredDialog] = useState(false);
+
+  const [activeMobileReactionMessageId, setActiveMobileReactionMessageId] = useState<string | null>(null);
+  const [swipeMessageId, setSwipeMessageId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+
+  const longPressTimerRef = useRef<any>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isSwipingRef = useRef<boolean>(false);
+
+  const handleToggleStarMessages = (targetIds?: string[]) => {
+    const idsToToggle = targetIds || selectedMessageIds;
+    if (idsToToggle.length === 0) return;
+
+    const allStarred = idsToToggle.every(id => starredMessageIds.has(id));
+
+    setStarredMessageIds(prev => {
+      const next = new Set(prev);
+      idsToToggle.forEach(id => {
+        if (allStarred) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      });
+      
+      try {
+        localStorage.setItem(`starred_msgs_${roomId}`, JSON.stringify(Array.from(next)));
+      } catch (e) {}
+
+      return next;
+    });
+
+    toast({
+      description: allStarred ? "Unstarred message(s)" : "Starred message(s)"
+    });
+    
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleBatchDelete = () => {
+    selectedMessageIds.forEach(id => {
+      const msg = messages.find(m => m.id === id);
+      if (msg) {
+        if (msg.sender_id === user?.id) {
+          handleUndoMessage(id);
+        } else {
+          handleHideMessage(id);
+        }
+      }
+    });
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleBatchCopy = () => {
+    const selectedMsgs = messages.filter(m => selectedMessageIds.includes(m.id));
+    const combinedText = selectedMsgs.map(m => (m.content || '').replace('FORWARDED::', '')).filter(Boolean).join('\n\n');
+    if (combinedText) {
+      navigator.clipboard.writeText(combinedText);
+      toast({ description: `${selectedMsgs.length} message(s) copied` });
+    }
+    setSelectedMessageIds([]);
+    setSelectedMessage(null);
+  };
+
+  const handleTouchStart = (message: Message) => (e: React.TouchEvent) => {
+    if (message.is_deleted) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    isSwipingRef.current = false;
+    
+    longPressTimerRef.current = setTimeout(() => {
+      if (!isSwipingRef.current) {
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        setSelectedMessage(message);
+        setSelectedMessageIds(prev => prev.includes(message.id) ? prev : [...prev, message.id]);
+        setActiveMobileReactionMessageId(message.id);
+      }
+    }, 450);
+  };
+
+  const handleTouchMove = (messageId: string) => (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const touch = e.touches[0];
+    const diffX = touch.clientX - touchStartRef.current.x;
+    const diffY = touch.clientY - touchStartRef.current.y;
+    
+    if (!isSwipingRef.current && diffX > 10 && Math.abs(diffY) < 15) {
+      isSwipingRef.current = true;
+      setSwipeMessageId(messageId);
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === messageId) {
+      const offset = Math.max(0, Math.min(diffX, 80));
+      setSwipeOffset(offset);
+      if (offset >= 55 && swipeOffset < 55) {
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+      }
+    }
+    
+    if (Math.abs(diffY) > 10 && !isSwipingRef.current) {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    }
+  };
+
+  const handleTouchEnd = (message: Message) => () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+    }
+    
+    if (isSwipingRef.current && swipeMessageId === message.id) {
+      if (swipeOffset >= 55) {
+        setReplyingTo(message);
+      }
+    }
+    
+    setSwipeOffset(0);
+    setSwipeMessageId(null);
+    isSwipingRef.current = false;
+    touchStartRef.current = null;
+  };
+
+  useEffect(() => {
+    const handleOutsideClick = () => {
+      setActiveMobileReactionMessageId(null);
+    };
+    document.addEventListener('click', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('click', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
+  const isPartnerOnline = onlineUserIds.includes(partnerId);
+  
+  const scrollToBottom = (behavior: 'smooth' | 'auto' = 'smooth') => {
+    if (scrollContainerRef.current) {
+      const targetScroll = scrollContainerRef.current.scrollHeight;
+      if (behavior === 'smooth') {
+        scrollContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      } else {
+        scrollContainerRef.current.scrollTop = targetScroll;
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('button')?.querySelector('.lucide-smile')) {
+          setShowEmojiPicker(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Access the global updates channel. It is managed and subscribed by the parent page/sidebar components,
+    // so we do not call removeChannel on unmount to prevent tearing down the sidebar's subscription.
+    const channel = supabase.channel('global_chat_updates');
+    channel.subscribe();
+    globalUpdatesChannelRef.current = channel;
+  }, []);
+
+
+
+  const processMessages = async (msgs: Message[]) => {
+    if (!user) return msgs;
+    let anyFailed = false;
+    const processed = await Promise.all(msgs.map(async m => {
+      try {
+        const isSender = m.sender_id === user.id;
+        const raw = m.raw_content || m.content;
+        let decryptedContent = raw;
+        
+        if (raw && (raw.startsWith('{"version":') || raw.includes('"version":2'))) {
+          let v2Decrypted: string | null = null;
+          try {
+            const devId = await getDeviceId();
+            v2Decrypted = await E2EEProtocolService.receiveDirectMessage({
+              rawPayload: raw,
+              currentUserId: user.id,
+              currentDeviceId: devId,
+            });
+          } catch (e) {
+            console.error("Failed to decrypt Version 2 envelope:", e);
+          }
+          if (v2Decrypted && !v2Decrypted.startsWith('🔒')) {
+            decryptedContent = v2Decrypted;
+          } else if (privateKey) {
+            try {
+              const fb = await decryptDirectMessage(raw, privateKey, isSender);
+              if (fb && !fb.startsWith('🔒')) {
+                decryptedContent = fb;
+              } else {
+                decryptedContent = v2Decrypted || '🔒 Unable to decrypt message';
+              }
+            } catch {
+              decryptedContent = v2Decrypted || '🔒 Unable to decrypt message';
+            }
+          } else {
+            decryptedContent = '🔒 Encrypted Message (Unlock required)';
+          }
+        } else if (raw && (raw.includes('__e2ee') || (raw.startsWith('{') && (raw.includes('for_sender') || raw.includes('for_recipient'))))) {
+           if (!privateKey) {
+             decryptedContent = '🔒 Encrypted Message (Unlock required)';
+           } else {
+             try {
+               decryptedContent = await decryptDirectMessage(raw, privateKey, isSender);
+             } catch (e: any) {
+               if (e.name === 'OperationError') {
+                 anyFailed = true;
+                 decryptedContent = '🔒 Unable to decrypt message (Key mismatch)';
+               } else {
+                 console.error("Failed to decrypt message:", e);
+                 decryptedContent = '🔒 Decryption Error';
+               }
+             }
+           }
+        }
+
+        let repliedToMessage = m.replied_to_message;
+        if (repliedToMessage && (repliedToMessage.content.includes('__e2ee') || repliedToMessage.content.startsWith('{'))) {
+          if (!privateKey) {
+            repliedToMessage = { ...repliedToMessage, content: '🔒 Encrypted Message' };
+          } else {
+            try {
+              const originalWasSender = repliedToMessage.sender_profile?.full_name === profile?.full_name;
+              const decryptedReply = await decryptDirectMessage(repliedToMessage.content, privateKey, originalWasSender);
+              repliedToMessage = { ...repliedToMessage, content: decryptedReply };
+            } catch (e) {
+              console.error("Failed to decrypt replied message", e);
+            }
+          }
+        }
+
+        return { ...m, raw_content: raw, content: decryptedContent, replied_to_message: repliedToMessage };
+      } catch (err) {
+        console.error("Failed to process message:", err);
+        return m;
+      }
+    }));
+    
+    if (anyFailed && !hasDecryptionFailures) {
+      setHasDecryptionFailures(true);
+    }
+    
+    return processed;
+  };
+
+  const fetchReactions = async (msgs: Message[]) => {
+    const msgIds = msgs.map(m => m.id);
+    if (msgIds.length === 0) return msgs;
+    
+    const { data, error } = await supabase
+      .from('direct_message_reactions')
+      .select('*, profiles:user_id(full_name, avatar_url)')
+      .in('message_id', msgIds);
+      
+    if (error) {
+      console.error('Error fetching reactions:', error);
+      return msgs;
+    }
+    
+    const reactionsMap: Record<string, MessageReaction[]> = {};
+    (data || []).forEach(r => {
+      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+      reactionsMap[r.message_id].push({
+        id: r.id,
+        message_id: r.message_id,
+        user_id: r.user_id,
+        emoji: r.emoji,
+        created_at: r.created_at,
+        user_profile: Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+      });
+    });
+    
+    return msgs.map(m => ({
+      ...m,
+      reactions: reactionsMap[m.id] || []
+    }));
+  };
+
+  const fetchMessages = useCallback(async (isNewRoom = true) => {
+    if (!roomId || !keysLoaded) return;
+    
+    if (isNewRoom) {
+      setLoading(true);
+      isInitialLoad.current = true;
+    }
+
+    const { data, error } = await supabase.rpc('get_messages_for_channel_paginated', { 
+      p_channel_id: roomId,
+      p_limit: 30,
+      p_offset: 0
+    });
+
+    if (error) {
+      const { data: fallbackData, error: fallbackError } = await supabase.rpc('get_messages_for_channel', { p_channel_id: roomId });
+      if (fallbackError) {
+        console.error('Error fetching messages:', fallbackError);
+        setMessages([]);
+      } else {
+        const processed = await processMessages(fallbackData as Message[]);
+        const withReactions = await fetchReactions(processed);
+        setMessages(withReactions);
+        setHasMore(false);
+      }
+    } else {
+      const fetchedMessages = (data as Message[]) || [];
+      const sortedMessages = [...fetchedMessages].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      const processed = await processMessages(sortedMessages);
+      const withReactions = await fetchReactions(processed);
+      setMessages(withReactions);
+      setHasMore(fetchedMessages.length === 30);
+    }
+    setLoading(false);
+  }, [roomId, privateKey, keysLoaded, user?.id, profile?.full_name]);
+
+  const loadMoreMessages = async () => {
+    if (!roomId || loadingMore || !hasMore || messages.length === 0) return;
+
+    setLoadingMore(true);
+    lastScrollHeight.current = scrollContainerRef.current?.scrollHeight || 0;
+
+    const { data, error } = await supabase.rpc('get_messages_for_channel_paginated', {
+      p_channel_id: roomId,
+      p_limit: 30,
+      p_offset: messages.length
+    });
+
+    if (error) {
+      console.error('Error loading more messages:', error);
+    } else {
+      const fetchedMessages = (data as Message[]) || [];
+      if (fetchedMessages.length > 0) {
+        const sortedNewMessages = [...fetchedMessages].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        const processed = await processMessages(sortedNewMessages);
+        const withReactions = await fetchReactions(processed);
+        setMessages(prev => [...withReactions, ...prev]);
+        setHasMore(fetchedMessages.length === 30);
+      } else {
+        setHasMore(false);
+      }
+    }
+    setLoadingMore(false);
+  };
+
+  const fetchMessagesRef = useRef(fetchMessages);
+  useEffect(() => {
+    fetchMessagesRef.current = fetchMessages;
+  }, [fetchMessages]);
+
+  useEffect(() => {
+    setLoading(true);
+    setMessages([]);
+    isInitialLoad.current = true;
+  }, [roomId]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  // Re-decrypt messages when privateKey finishes loading or is unlocked
+  useEffect(() => {
+    if (privateKey && messages.length > 0) {
+      const hasEncrypted = messages.some(m => 
+        (m.raw_content && (m.raw_content.includes('__e2ee') || m.raw_content.startsWith('{'))) ||
+        (m.content && (m.content.startsWith('🔒') || m.content.includes('Unlock required') || m.content.includes('__e2ee') || m.content.startsWith('{')))
+      );
+      if (hasEncrypted) {
+        processMessages(messages).then(processed => {
+          setMessages(processed);
+        });
+      }
+    }
+  }, [privateKey]);
+
+  useEffect(() => {
+    if (partnerId && messages.length > 0) {
+      console.log(`[EnhancedRealTimeChat] Evaluating unread messages. Total messages: ${messages.length}, partnerId: ${partnerId}`);
+      const unreadMessages = messages.filter(m => {
+        const isIncoming = m.sender_id === partnerId;
+        const isUnread = !m.is_read;
+        const isNotTemp = !String(m.id).startsWith('temp-');
+        return isIncoming && isUnread && isNotTemp;
+      });
+      console.log(`[EnhancedRealTimeChat] Unread incoming messages count: ${unreadMessages.length}`);
+      
+      const toMark = unreadMessages.filter(m => !markedReadRef.current.has(m.id));
+      console.log(`[EnhancedRealTimeChat] Unread messages not yet marked: ${toMark.length}`);
+      
+      if (toMark.length > 0) {
+        // The RPC marks all messages up to this ID as read
+        const latest = toMark[toMark.length - 1];
+        console.log(`[EnhancedRealTimeChat] Triggering markAsRead for message: ${latest.id}`);
+        markAsRead('dm', partnerId, latest.id);
+        
+        // Add to ref to prevent duplicate calls before postgres_changes arrives
+        toMark.forEach(m => markedReadRef.current.add(m.id));
+
+        // Instantly broadcast the read receipt to the sender
+        if (channelRef.current) {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'message_seen',
+            payload: { messageId: latest.id }
+          }).catch(console.error);
+        }
+      }
+    }
+  }, [partnerId, messages, markAsRead]);
+
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      if (isInitialLoad.current) {
+        scrollToBottom('auto');
+        isInitialLoad.current = false;
+      } else {
+        if (scrollContainerRef.current && lastScrollHeight.current > 0) {
+          const newScrollHeight = scrollContainerRef.current.scrollHeight;
+          const heightDiff = newScrollHeight - lastScrollHeight.current;
+          scrollContainerRef.current.scrollTop += heightDiff;
+          lastScrollHeight.current = 0;
+        } else {
+          scrollToBottom('smooth');
+        }
+      }
+    }
+  }, [messages]);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current || loadingMore || !hasMore) return;
+    const { scrollTop } = scrollContainerRef.current;
+    if (scrollTop < 100) {
+      loadMoreMessages();
+    }
+  }, [loadingMore, hasMore, roomId, messages.length]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const handleDirectMessageChange = async (payload: any) => {
+      console.log('[Realtime] EnhancedRealTimeChat received payload:', payload);
+      const msg = payload.new || payload.old;
+      if (msg && msg.channel_id !== roomId) return;
+      
+      if (payload.eventType === 'INSERT') {
+        const newMsg = payload.new;
+        const isMyMessage = newMsg.sender_id === user?.id;
+        console.log('[Realtime] Processing new message:', newMsg.id);
+
+        let decryptedContent = newMsg.content;
+        if (newMsg.content?.startsWith('{"version":') || newMsg.content?.includes('"version":2')) {
+          try {
+            const devId = await getDeviceId();
+            decryptedContent = await E2EEProtocolService.receiveDirectMessage({
+              rawPayload: newMsg.content,
+              currentUserId: user?.id || '',
+              currentDeviceId: devId,
+            });
+          } catch (e) {
+            console.error("Failed to decrypt real-time Version 2 message", e);
+          }
+        } else if (newMsg.content?.includes('__e2ee')) {
+            if (privateKeyRef.current) {
+                try {
+                  decryptedContent = await decryptDirectMessage(newMsg.content, privateKeyRef.current, isMyMessage);
+                } catch (e) {
+                  console.error("Failed to decrypt real-time message", e);
+                }
+            } else {
+                decryptedContent = '🔒 Encrypted Message (Unlock required)';
+            }
+        }
+
+
+        setMessages(prev => {
+          const hasAlready = prev.some(m => m.id === newMsg.id);
+          if (hasAlready) return prev;
+
+          // Ignore delayed broadcasts of our own optimistic messages to prevent duplicates
+          if (String(newMsg.id).startsWith('temp-') && isMyMessage) {
+            return prev;
+          }
+
+          // Deduplicate incoming broadcasts against existing real messages
+          if (String(newMsg.id).startsWith('temp-') && !isMyMessage) {
+            const hasRealMessage = prev.some(m => 
+              m.sender_id === newMsg.sender_id && 
+              m.content === decryptedContent && 
+              !String(m.id).startsWith('temp-') && 
+              Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000
+            );
+            if (hasRealMessage) {
+               return prev;
+            }
+          }
+
+          // Find if we have a pending optimistic message with matching content and update its ID
+          const pendingIdx = prev.findIndex(m => 
+            (String(m.id).startsWith('temp-')) && 
+            m.sender_id === newMsg.sender_id && 
+            m.content === decryptedContent
+          );
+
+          if (pendingIdx !== -1) {
+            const updated = [...prev];
+            updated[pendingIdx] = {
+              ...updated[pendingIdx],
+              id: newMsg.id,
+              created_at: newMsg.created_at,
+              content: decryptedContent
+            };
+            return updated;
+          }
+
+          const sender_profile = isMyMessage ? {
+            full_name: profile?.full_name || user?.user_metadata?.full_name || 'You',
+            avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || '',
+            is_verified: profile?.is_verified || false
+          } : {
+            full_name: partnerName || '',
+            avatar_url: partnerAvatarUrl || '',
+            is_verified: partnerIsVerified || false
+          };
+
+          let replied_to_message = undefined;
+          if (newMsg.reply_to_id) {
+            const repliedMsg = prev.find(m => m.id === newMsg.reply_to_id);
+            if (repliedMsg) {
+               replied_to_message = {
+                 id: repliedMsg.id,
+                 content: repliedMsg.content,
+                 is_deleted: repliedMsg.is_deleted,
+                 attachment_url: repliedMsg.attachment_url,
+                 attachment_type: repliedMsg.attachment_type,
+                 media_url: repliedMsg.media_url,
+                 media_type: repliedMsg.media_type,
+                 sender_profile: repliedMsg.sender_profile
+               };
+            }
+          }
+
+          const appended: Message = {
+            id: newMsg.id,
+            raw_content: newMsg.content,
+            content: decryptedContent,
+            created_at: newMsg.created_at,
+            sender_id: newMsg.sender_id,
+            is_deleted: newMsg.is_deleted,
+            reply_to_id: newMsg.reply_to_id,
+            attachment_url: newMsg.attachment_url,
+            attachment_type: newMsg.attachment_type,
+            deleted_for_users: newMsg.deleted_for_users || [],
+            sender_profile: sender_profile,
+            replied_to_message: replied_to_message
+          };
+          return [...prev, appended];
+        });
+
+        setTimeout(() => scrollToBottom(), 100);
+
+      } else if (payload.eventType === 'UPDATE') {
+        const updatedMsg = payload.new;
+        const isMyMessage = updatedMsg.sender_id === user?.id;
+
+        let decryptedContent = updatedMsg.content;
+        if (updatedMsg.content?.includes('__e2ee')) {
+            if (privateKeyRef.current) {
+                try {
+                  decryptedContent = await decryptDirectMessage(updatedMsg.content, privateKeyRef.current, isMyMessage);
+                } catch (e) {
+                  console.error("Failed to decrypt updated real-time message", e);
+                }
+            } else {
+                decryptedContent = '🔒 Encrypted Message (Unlock required)';
+            }
+        }
+
+        setMessages(prev => prev.map(m => m.id === updatedMsg.id ? {
+          ...m,
+          content: decryptedContent,
+          is_deleted: updatedMsg.is_deleted,
+          attachment_url: updatedMsg.attachment_url,
+          attachment_type: updatedMsg.attachment_type,
+          deleted_for_users: updatedMsg.deleted_for_users || [],
+          is_read: updatedMsg.is_read,
+          read_at: updatedMsg.read_at
+        } : m));
+      } else if (payload.eventType === 'DELETE') {
+        const deletedId = payload.old.id;
+        setMessages(prev => prev.filter(m => m.id !== deletedId));
+      }
+    };
+
+    const handleReactionChange = async (payload: any) => {
+      const reaction = payload?.new || payload?.old || payload;
+      if (!reaction) return;
+      const msgId = reaction.message_id;
+      if (!msgId) return;
+      
+      const isDelete = payload?.eventType === 'DELETE' || (!payload?.new && payload?.old);
+
+      setMessages(prev => {
+        const idx = prev.findIndex(m => m.id === msgId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        const currentReactions: any[] = updated[idx].reactions || [];
+
+        if (isDelete) {
+          const filtered = currentReactions.filter((r: any) => {
+            if (reaction.id && r.id === reaction.id) return false;
+            if (reaction.user_id && r.user_id === reaction.user_id) return false;
+            return true;
+          });
+          updated[idx] = { ...updated[idx], reactions: filtered };
+        } else {
+          const filtered = currentReactions.filter((r: any) => r.user_id !== reaction.user_id);
+          filtered.push({
+            id: reaction.id || `temp-react-${Date.now()}`,
+            message_id: msgId,
+            user_id: reaction.user_id,
+            emoji: reaction.emoji,
+            user_profile: reaction.user_profile,
+          });
+          updated[idx] = { ...updated[idx], reactions: filtered };
+        }
+        return updated;
+      });
+
+      if (!isDelete && !reaction.user_profile && reaction.user_id) {
+        supabase
+          .from('profiles')
+          .select('full_name, avatar_url')
+          .eq('id', reaction.user_id)
+          .maybeSingle()
+          .then(
+            ({ data: profileData }) => {
+              if (profileData) {
+                setMessages(prev =>
+                  prev.map(m => {
+                    if (m.id !== msgId) return m;
+                    return {
+                      ...m,
+                      reactions: (m.reactions || []).map((r: any) =>
+                        r.user_id === reaction.user_id ? { ...r, user_profile: profileData } : r
+                      ),
+                    };
+                  })
+                );
+              }
+            },
+            () => {}
+          );
+      }
+    };
+
+    const channelName = `chat-v4-${roomId}`;
+    const existingChannels = supabase.getChannels().filter(
+      (c) => c.topic === `realtime:${channelName}` || c.topic === channelName
+    );
+    existingChannels.forEach((c) => {
+      try {
+        c.unsubscribe();
+        supabase.removeChannel(c);
+      } catch {}
+    });
+
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'direct_messages' },
+        handleDirectMessageChange
+      )
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'direct_messages' },
+        handleDirectMessageChange
+      )
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'direct_messages' },
+        handleDirectMessageChange
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'direct_message_reactions' },
+        handleReactionChange
+      )
+      .on('broadcast', { event: 'new_message' }, (payload) => {
+        const newMsg = payload.payload;
+        handleDirectMessageChange({ eventType: 'INSERT', new: newMsg });
+      })
+      .on('broadcast', { event: 'reaction_update' }, (payload) => {
+        handleReactionChange(payload.payload);
+      })
+      .on('broadcast', { event: 'message_seen' }, (payload) => {
+        const { messageId } = payload.payload;
+        setMessages(prev => {
+          const targetIdx = prev.findIndex(m => m.id === messageId);
+          if (targetIdx === -1) return prev;
+          
+          const targetDate = new Date(prev[targetIdx].created_at).getTime();
+          let updated = false;
+          
+          const newMsgs = prev.map(m => {
+            if (m.sender_id === user?.id && !m.is_read && new Date(m.created_at).getTime() <= targetDate) {
+              updated = true;
+              return { ...m, is_read: true, read_at: new Date().toISOString() };
+            }
+            return m;
+          });
+          
+          return updated ? newMsgs : prev;
+        });
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Successfully subscribed to real-time chat for room:', roomId);
+          channelRef.current = channel;
+        } else if (status === 'CLOSED') {
+          console.log('Real-time chat channel closed for room:', roomId);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Error in real-time chat channel for room:', roomId);
+          // Try to re-fetch manually as fallback
+          fetchMessagesRef.current(false);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [roomId, user?.id]);
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const { FILE_SIZE_LIMITS } = await import('@/utils/fileValidation');
+    const newSelected: {file: File, preview: string, type: 'image' | 'video' | 'other'}[] = [];
+
+    for (const file of files) {
+      const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'other';
+      const limit = type === 'video' ? FILE_SIZE_LIMITS.video : type === 'image' ? FILE_SIZE_LIMITS.image : FILE_SIZE_LIMITS.file;
+
+      if (file.size > limit) {
+        toast({ title: "File too large", description: `File ${file.name} exceeds ${Math.round(limit / (1024 * 1024))}MB limit`, variant: "destructive" });
+        continue;
+      }
+
+      const preview = URL.createObjectURL(file);
+      newSelected.push({ file, preview, type });
+    }
+
+    if (newSelected.length > 0) {
+      setSelectedFiles(prev => [...prev, ...newSelected]);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const uploadMedia = async (file: File): Promise<string | null> => {
+    try {
+      const { uploadFileToSupabase } = await import('@/utils/fileValidation');
+      const { url, error: uploadError } = await uploadFileToSupabase(
+        file,
+        'post-media',
+        user?.id || 'unknown'
+      );
+
+      if (uploadError || !url) throw new Error(uploadError || 'Failed to upload media');
+
+      return url;
+    } catch (error) {
+      console.error('Error uploading media:', error);
+      toast({ title: "Upload failed", description: "Failed to upload media", variant: "destructive" });
+      return null;
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if ((newMessage.trim() === '' && selectedFiles.length === 0) || !user || !roomId) return;
+
+    stopTyping();
+    setUploading(true);
+
+    const textInput = newMessage;
+    const filesToSend = [...selectedFiles];
+
+    setNewMessage('');
+    setSelectedFiles([]);
+    setShowEmojiPicker(false);
+    if (!showEmojiPicker) {
+      inputRef.current?.focus();
+    }
+
+    try {
+      let attachmentUrl: string | null = null;
+      let attachmentType: string | null = null;
+
+      if (filesToSend.length === 1) {
+        attachmentUrl = await uploadMedia(filesToSend[0].file);
+        attachmentType = filesToSend[0].type;
+      } else if (filesToSend.length > 1) {
+        const uploadedUrls = await Promise.all(
+          filesToSend.map(async item => await uploadMedia(item.file))
+        );
+        const validUrls = uploadedUrls.filter(Boolean) as string[];
+        if (validUrls.length > 0) {
+          attachmentUrl = JSON.stringify(validUrls);
+          attachmentType = filesToSend.every(f => f.type === 'image') ? 'image' : 'mixed';
+        }
+      }
+
+      const contentToSend = textInput.trim() || (attachmentType ? `Shared ${filesToSend.length > 1 ? `${filesToSend.length} photos` : attachmentType === 'image' ? 'an image' : attachmentType === 'video' ? 'a video' : 'a file'}` : '');
+
+      let finalContent = contentToSend;
+      if (keysLoaded && userPublicKey && partnerPublicKey) {
+        try {
+          finalContent = await encryptDirectMessage(contentToSend, userPublicKey, partnerPublicKey);
+        } catch (err) {
+          console.error('Error encrypting message payload:', err);
+          toast({
+            title: "Encryption Failed",
+            description: "Cannot send message: Cryptographic encryption error.",
+            variant: "destructive"
+          });
+          return;
+        }
+      } else {
+        toast({
+          title: "Encryption Keys Unavailable",
+          description: "Cannot send message: Security keys are loading or PIN recovery is required.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+      const optimisticMessage: Message = {
+        id: tempId,
+        content: contentToSend,
+        created_at: new Date().toISOString(),
+        sender_id: user.id,
+        reply_to_id: replyingTo?.id || null,
+        attachment_url: attachmentUrl,
+        attachment_type: attachmentType,
+        sender_profile: {
+          full_name: profile?.full_name || user?.user_metadata?.full_name || 'You',
+          avatar_url: profile?.avatar_url || user?.user_metadata?.avatar_url || '',
+          is_verified: profile?.is_verified || false
+        },
+        is_read: false
+      };
+
+      setMessages(prev => [...prev, optimisticMessage]);
+      setTimeout(() => scrollToBottom(), 50);
+
+      const { data: insertedMsg, error: sendError } = await supabase.from('direct_messages').insert({
+        content: finalContent,
+        sender_id: user.id,
+        channel_id: roomId,
+        receiver_id: partnerId,
+        reply_to_id: replyingTo?.id || null,
+        attachment_url: attachmentUrl,
+        attachment_type: attachmentType
+      }).select().single();
+      
+      if (sendError || !insertedMsg) {
+        console.error('Error sending message:', sendError);
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        toast({ title: "Failed to send", description: "Message could not be saved to server", variant: "destructive" });
+        return;
+      }
+
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: insertedMsg.id, created_at: insertedMsg.created_at } : m));
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'new_message',
+          payload: {
+            id: insertedMsg.id,
+            channel_id: roomId,
+            content: finalContent,
+            sender_id: user.id,
+            receiver_id: partnerId,
+            created_at: insertedMsg.created_at,
+            reply_to_id: replyingTo?.id || null,
+            attachment_url: attachmentUrl,
+            attachment_type: attachmentType
+          }
+        }).catch(console.error);
+      }
+
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+
+      if (globalUpdatesChannelRef.current) {
+        globalUpdatesChannelRef.current.send({
+          type: 'broadcast',
+          event: 'chat_list_update',
+          payload: { senderId: user.id, receiverId: partnerId }
+        }).catch(console.error);
+      }
+
+      setReplyingTo(null);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUndoMessage = async (messageId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('direct_messages')
+      .delete()
+      .eq('id', messageId)
+      .eq('sender_id', user.id);
+    
+    if (error) {
+      console.error('Error undoing message:', error);
+      toast({ title: "Error", description: "Failed to undo message", variant: "destructive" });
+    } else {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for undo');
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+      if (globalUpdatesChannelRef.current) {
+        console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (undo) to global updates channel');
+        globalUpdatesChannelRef.current.send({
+          type: 'broadcast',
+          event: 'chat_list_update',
+          payload: { senderId: user.id, receiverId: partnerId }
+        }).catch(console.error);
+      }
+    }
+  };
+
+  const handleHideMessage = async (messageId: string) => {
+    if (!user) return;
+    const { error } = await supabase.rpc('hide_message_for_user', {
+      p_table: 'direct_messages',
+      p_message_id: messageId,
+      p_user_id: user.id
+    });
+    
+    if (error) {
+      console.error('Error hiding message:', error);
+      toast({ title: "Error", description: "Failed to hide message", variant: "destructive" });
+    } else {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    }
+  };
+
+  const onEmojiClick = (emojiObject: EmojiClickData) => {
+    setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
+  };
+
+  const openEmojiPanel = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Aggressively blur any active element to force keyboard dismissal
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    inputRef.current?.blur();
+
+    setTimeout(() => {
+      setShowEmojiPicker(true);
+    }, 150);
+  };
+
+  const openKeyboard = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Focus input first to start bringing up system keyboard
+    inputRef.current?.focus();
+    // Wait for keyboard to start appearing before closing emoji panel
+    setTimeout(() => {
+      setShowEmojiPicker(false);
+    }, 200);
+  };
+
+  const handleDeleteChat = async () => {
+    if (!user || !roomId) return;
+    const confirmDelete = window.confirm("Are you sure you want to delete this specific conversation? This cannot be undone.");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from('direct_messages')
+      .delete()
+      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`);
+    
+    if (error) {
+      console.error('Error deleting chat history:', error);
+      alert('Failed to delete history. Please try again.');
+    } else {
+      setMessages([]);
+      
+      // Dispatch local event for instant UI update
+      console.log('[EnhancedRealTimeChat] Dispatching local chat_list_update event for delete');
+      window.dispatchEvent(new CustomEvent('chat_list_update', {
+        detail: { senderId: user.id, receiverId: partnerId }
+      }));
+
+      // Broadcast globally to other sessions
+      if (globalUpdatesChannelRef.current) {
+        console.log('[EnhancedRealTimeChat] Broadcasting chat_list_update (delete) to global updates channel');
+        globalUpdatesChannelRef.current.send({
+          type: 'broadcast',
+          event: 'chat_list_update',
+          payload: { senderId: user.id, receiverId: partnerId }
+        }).catch(console.error);
+      }
+
+      onBackClick();
+    }
+  };
+
+  const handleStartCall = async () => {
+    if (!roomId) return;
+    const success = await startGlobalCall('direct', roomId, partnerName || 'Direct Call');
+    if (!success) {
+      toast({ title: "Failed to start call", variant: "destructive" });
+    }
+  };
+
+  const handleJoinCall = async () => {
+    if (!roomId) return;
+    const success = await joinGlobalCall('direct', roomId, partnerName || 'Direct Call');
+    if (!success) {
+      toast({ title: "Failed to join call", variant: "destructive" });
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return format(date, 'p');
+  };
+
+  const getDateLabel = (date: Date) => {
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'MMMM d, yyyy');
+  };
+
+  const visibleMessages = messages.filter(m => !m.deleted_for_users?.includes(user?.id || ''));
+  const lastReadIndexSentByMe = visibleMessages.reduce((lastIdx, msg, idx) => 
+    (msg.sender_id === user?.id && (msg.is_read || msg.read_at)) ? idx : lastIdx, -1);
+
+  const handleToggleReaction = async (messageId: string, emoji: string) => {
+    if (!user) return;
+    
+    // Prevent concurrent reaction clicks for the same message to avoid duplicates
+    if (reactionLocksRef.current.has(messageId)) return;
+    reactionLocksRef.current.add(messageId);
+    
+    try {
+      // Get freshest state
+      let currentReactions: MessageReaction[] = [];
+      setMessages(prev => {
+        const msg = prev.find(m => m.id === messageId);
+        if (msg) currentReactions = msg.reactions || [];
+        return prev;
+      });
+      
+      const existingReaction = currentReactions.find(r => r.emoji === emoji && r.user_id === user.id);
+      const isTogglingOff = !!existingReaction;
+
+      // Optimistic UI Update
+      const optimisticId = `temp-react-${Date.now()}`;
+      setMessages(prev => {
+        const idx = prev.findIndex(m => m.id === messageId);
+        if (idx === -1) return prev;
+        const updated = [...prev];
+        let newReactions = [...(updated[idx].reactions || [])].filter(r => r.user_id !== user.id);
+        
+        if (!isTogglingOff) {
+          newReactions.push({
+             id: optimisticId,
+             message_id: messageId,
+             user_id: user.id,
+             emoji: emoji,
+             created_at: new Date().toISOString(),
+             user_profile: profile ? { full_name: profile.full_name || '', avatar_url: profile.avatar_url || '' } : undefined
+          });
+        }
+        updated[idx] = { ...updated[idx], reactions: newReactions };
+        return updated;
+      });
+
+      // Broadcast optimistic update
+      if (channelRef.current) {
+         channelRef.current.send({
+            type: 'broadcast',
+            event: 'reaction_update',
+            payload: { 
+               eventType: isTogglingOff ? 'DELETE' : 'INSERT', 
+               [isTogglingOff ? 'old' : 'new']: isTogglingOff ? existingReaction : { id: optimisticId, message_id: messageId, user_id: user.id, emoji }
+            }
+         }).catch(console.error);
+      }
+
+      // Database Operations
+      // Always clear existing reactions for this user & message to avoid conflicts
+      await supabase.from('direct_message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', user.id);
+
+      if (!isTogglingOff) {
+        // Insert new reaction
+        const { data, error } = await supabase.from('direct_message_reactions').insert({
+          message_id: messageId,
+          user_id: user.id,
+          emoji: emoji
+        }).select().single();
+        
+        if (error) {
+          console.error('Error adding reaction', error);
+          // Rollback UI
+          setMessages(prev => {
+            const idx = prev.findIndex(m => m.id === messageId);
+            if (idx === -1) return prev;
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], reactions: currentReactions };
+            return updated;
+          });
+        } else if (data) {
+          // Update temp ID with real ID
+          setMessages(prev => {
+             const idx = prev.findIndex(m => m.id === messageId);
+             if (idx === -1) return prev;
+             const updated = [...prev];
+             updated[idx] = { ...updated[idx], reactions: (updated[idx].reactions || []).map(r => r.id === optimisticId ? { ...r, id: data.id } : r) };
+             return updated;
+          });
+        }
+      }
+    } finally {
+      reactionLocksRef.current.delete(messageId);
+    }
+  };
+
+
+  return (
+    <div className="flex flex-col h-full bg-background text-foreground relative">
+      {selectedMessageIds.length > 0 ? (
+        <header className="flex items-center justify-between px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0 gap-2 text-foreground animate-in fade-in duration-200 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <button 
+              onClick={() => {
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="p-1 sm:p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors focus:outline-none shrink-0"
+              title="Close selection"
+            >
+              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            <span className="font-bold text-xs sm:text-sm select-none">{selectedMessageIds.length}</span>
+          </div>
+
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            {/* Reply Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={selectedMessageIds.length !== 1}
+              onClick={() => {
+                const singleMsg = messages.find(m => m.id === selectedMessageIds[0]);
+                if (singleMsg) setReplyingTo(singleMsg);
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              title="Reply"
+            >
+              <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Star Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleToggleStarMessages()}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Star / Unstar"
+            >
+              <Star className={cn(
+                "h-3.5 w-3.5 sm:h-4 sm:w-4 transition-colors",
+                selectedMessageIds.every(id => starredMessageIds.has(id)) && "fill-amber-400 text-amber-400"
+              )} />
+            </Button>
+
+            {/* Forward Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                stopTyping();
+                if (document.activeElement instanceof HTMLElement) {
+                  document.activeElement.blur();
+                }
+                setShowForwardDialog(true);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Forward Message(s)"
+            >
+              <Reply className="h-3.5 w-3.5 sm:h-4 sm:w-4 scale-x-[-1]" />
+            </Button>
+
+            {/* Copy Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBatchCopy}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="Copy"
+            >
+              <Copy className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Delete / Undo Icon */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBatchDelete}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+
+            {/* Info Icon (Direct in header!) */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              disabled={selectedMessageIds.length !== 1 || messages.find(m => m.id === selectedMessageIds[0])?.sender_id !== user?.id}
+              onClick={() => {
+                const singleMsg = messages.find(m => m.id === selectedMessageIds[0]);
+                if (singleMsg) {
+                  setInfoMessage(singleMsg);
+                  setShowInfoDialog(true);
+                }
+                setSelectedMessageIds([]);
+                setSelectedMessage(null);
+              }}
+              className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30"
+              title="Message Info"
+            >
+              <Info className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            </Button>
+          </div>
+        </header>
+      ) : (
+        <header className="flex items-center justify-between px-2.5 sm:px-3.5 py-1.5 sm:py-2 border-b border-border bg-background/95 backdrop-blur-md z-30 sticky top-0 gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1">
+            <button onClick={onBackClick} className="p-1 sm:p-1.5 rounded-full hover:bg-muted shrink-0 lg:hidden">
+              <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+            {partnerName && (
+              <div 
+                className="flex items-center gap-2 sm:gap-2.5 cursor-pointer group/partner min-w-0"
+                onClick={() => push(`/profile/${partnerId}`)}
+              >
+                <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 transition-transform group-hover/partner:scale-105">
+                  <AvatarImage src={partnerAvatarUrl} />
+                  <AvatarFallback>{partnerName?.charAt(0) || 'U'}</AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-1 min-w-0">
+                    <h2 className="font-bold text-xs sm:text-sm md:text-base leading-tight truncate max-w-[110px] xs:max-w-[150px] sm:max-w-[240px] md:max-w-none group-hover/partner:text-primary transition-colors">{partnerName}</h2>
+                    {partnerIsVerified && <VerificationBadge size="sm" className="shrink-0" />}
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <div className={`h-1.5 w-1.5 rounded-full ${isPartnerOnline ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' : 'bg-muted-foreground/30'}`} />
+                    <span className="text-[9px] sm:text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-70 truncate">
+                      {isPartnerOnline ? "Active Now" : "Away"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+            {activeCall && !isInCall ? (
+              <Button 
+                  onClick={handleJoinCall} 
+                  className="bg-green-600 hover:bg-green-700 text-white rounded-full px-2.5 sm:px-3 text-xs h-7 sm:h-8 gap-1 animate-bounce-subtle"
+              >
+                  <Video className="h-3.5 w-3.5" /> Join Call
+              </Button>
+            ) : isInCall ? (
+              <Button 
+                variant="outline"
+                size="sm"
+                className="text-primary border-primary/20 bg-primary/10 rounded-full pointer-events-none text-xs h-7 sm:h-8"
+              >
+                <Video className="h-3.5 w-3.5 mr-1" /> In Call
+              </Button>
+            ) : (
+              <div className="flex items-center gap-0.5">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={handleStartCall}
+                  className="h-7 w-7 sm:h-8 sm:w-8 rounded-full text-muted-foreground hover:bg-muted"
+                  title="Start Call"
+                >
+                  <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                </Button>
+              </div>
+            )}
+            
+
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 sm:h-9 sm:w-9 p-0 hover:bg-muted/50 transition-colors">
+                      <Settings className="h-4 w-4 sm:h-5 sm:w-5 opacity-70" />
+                  </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 glass-modal border-border shadow-2xl p-1">
+                  <DropdownMenuLabel className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Chat Settings</DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  
+                  <DropdownMenuItem onClick={() => push(`/profile/${partnerId}`)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-primary/10 transition-colors">
+                      <User className="h-4 w-4 text-primary" />
+                      <span>View Profile</span>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem onClick={() => setShowStarredDialog(true)} className="cursor-pointer gap-2 py-2 px-3 focus:bg-amber-500/10 transition-colors">
+                      <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                      <span>Starred Messages</span>
+                  </DropdownMenuItem>
+
+
+                  
+                  <DropdownMenuSeparator className="bg-border/50" />
+                  
+                  <DropdownMenuItem onClick={handleDeleteChat} className="text-destructive focus:bg-destructive/10 cursor-pointer gap-2 py-2 px-3 transition-colors">
+                      <Trash2 className="h-4 w-4" />
+                      <span>Clear Chat History</span>
+                  </DropdownMenuItem>
+                  
+
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+      )}
+
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>
+      ) : (
+        <>
+          <div 
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest('.group') && !target.closest('header') && !target.closest('[role="menu"]')) {
+                setSelectedMessage(null);
+                setActiveMobileReactionMessageId(null);
+              }
+            }}
+            onTouchStart={(e) => {
+              const target = e.target as HTMLElement;
+              if (!target.closest('.group') && !target.closest('header') && !target.closest('[role="menu"]')) {
+                setSelectedMessage(null);
+                setActiveMobileReactionMessageId(null);
+              }
+            }}
+            className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-8 scrollbar-hide"
+          >
+            {loadingMore && hasMore && (
+              <div className="flex justify-center py-2">
+                <LoadingSpinner size="sm" />
+              </div>
+            )}
+
+            {hasDecryptionFailures && (
+              <div className="sticky top-0 z-10 mx-2 mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 backdrop-blur-sm overflow-hidden">
+                {!showKeyRecovery ? (
+                  <div className="flex items-start gap-3 px-4 py-3 text-sm">
+                    <span className="text-lg mt-0.5">🔑</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-amber-600 dark:text-amber-400">Encryption Key Mismatch</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Messages are locked because your security keys changed. Enter your recovery PIN to restore access.</p>
+                    </div>
+                    <button
+                      onClick={() => { setShowKeyRecovery(true); setRecoveryError(null); setRecoveryPin(''); }}
+                      className="shrink-0 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/30 transition-colors"
+                    >
+                      Recover
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 px-4 py-4 text-sm">
+                    <p className="font-semibold text-amber-600 dark:text-amber-400 text-center">Enter your 6-digit Recovery PIN</p>
+                    <InputOTP
+                      maxLength={6}
+                      value={recoveryPin}
+                      onChange={async (val) => {
+                        setRecoveryPin(val);
+                        setRecoveryError(null);
+                        if (val.length === 6) {
+                          setRecoveryLoading(true);
+                          try {
+                            const success = await recoverBackup(val);
+                            if (success) {
+                              setShowKeyRecovery(false);
+                              setHasDecryptionFailures(false);
+                              setRecoveryPin('');
+                            } else {
+                              setRecoveryError('Incorrect PIN. Please try again.');
+                            }
+                          } catch {
+                            setRecoveryError('Recovery failed. Please check your PIN.');
+                          } finally {
+                            setRecoveryLoading(false);
+                          }
+                        }
+                      }}
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={1} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={2} className="w-10 h-10 text-base" />
+                      </InputOTPGroup>
+                      <InputOTPSeparator />
+                      <InputOTPGroup>
+                        <InputOTPSlot index={3} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={4} className="w-10 h-10 text-base" />
+                        <InputOTPSlot index={5} className="w-10 h-10 text-base" />
+                      </InputOTPGroup>
+                    </InputOTP>
+                    {recoveryError && <p className="text-xs text-destructive font-medium">{recoveryError}</p>}
+                    {recoveryLoading && <p className="text-xs text-muted-foreground animate-pulse">Recovering keys...</p>}
+                    <div className="flex gap-4 items-center mt-1">
+                      <button onClick={() => setShowKeyRecovery(false)} className="text-xs text-muted-foreground hover:underline">Cancel</button>
+                      <span className="text-muted-foreground">·</span>
+                      <button
+                        onClick={() => push('/settings/security')}
+                        className="text-xs text-amber-600 dark:text-amber-400 hover:underline"
+                      >
+                        Forgot PIN? Go to Settings
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {visibleMessages.map((message, idx) => {
+                const isSender = message.sender_id === user?.id;
+                const isLatestRead = idx === lastReadIndexSentByMe;
+                const messageDate = new Date(message.created_at);
+                const prevMessage = idx > 0 ? visibleMessages[idx - 1] : null;
+                const nextMessage = idx < visibleMessages.length - 1 ? visibleMessages[idx + 1] : null;
+                const showDateSeparator = !prevMessage || !isSameDay(messageDate, new Date(prevMessage.created_at));
+                const isNextDateSeparator = nextMessage ? !isSameDay(new Date(nextMessage.created_at), messageDate) : false;
+                const isSameSenderAsNext = !!(nextMessage && !isNextDateSeparator && nextMessage.sender_id === message.sender_id);
+                const showAvatar = !isSameSenderAsNext;
+
+                const isAttachmentOnly = message.attachment_url && (
+                  !message.content || 
+                  message.content === 'Shared an image' || 
+                  message.content === 'Shared a video' || 
+                  message.content === 'Shared a file'
+                );
+
+                const isCallEvent = message.attachment_type === 'call_event' || (message as any).media_type === 'call_event' || (typeof message.content === 'string' && (message.content.includes('Video call started') || message.content.includes('Call ended') || message.content.includes('call started') || message.content.includes('📞')));
+
+                if (isCallEvent) {
+                  const isStarted = message.content?.includes('started');
+                  const cleanContent = message.content ? message.content.replace(/^📞\s*/, '') : '';
+                  return (
+                    <Fragment key={message.id}>
+                      {showDateSeparator && (
+                        <div className="flex justify-center my-6">
+                          <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                              {getDateLabel(messageDate)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      <div 
+                        onClick={() => setSelectedCallMessage(message)}
+                        className="flex justify-center my-3 cursor-pointer group hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        title="Click to view call details"
+                      >
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-secondary/50 hover:bg-secondary/80 border border-border/40 backdrop-blur-md shadow-sm transition-all">
+                          <div className={cn(
+                            "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
+                            isStarted ? "bg-green-500/20 text-green-500" : "bg-red-500/20 text-red-400"
+                          )}>
+                            <Phone className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="text-xs font-medium text-foreground">
+                            {cleanContent}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground ml-1">
+                            {format(messageDate, 'h:mm a')}
+                          </span>
+                        </div>
+                      </div>
+                    </Fragment>
+                  );
+                }
+
+                return (
+                  <Fragment key={message.id}>
+                    {showDateSeparator && (
+                      <div className="flex justify-center my-8">
+                        <div className="px-3 py-1 rounded-full bg-muted/50 border border-border/50 shadow-sm">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            {getDateLabel(messageDate)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div 
+                      data-message-id={message.id}
+                      data-unread={!message.is_read && !message.read_at}
+                  data-sender-id={message.sender_id}
+                  className={`flex gap-3 group animate-in fade-in slide-in-from-bottom-2 duration-300 ${isSameSenderAsNext ? 'mb-1' : 'mb-3'} ${isSender ? 'flex-row-reverse' : ''}`}
+                >
+                  {showAvatar ? (
+                    <Avatar className="h-9 w-9 flex-shrink-0 shadow-sm border border-border/10">
+                      <AvatarImage src={message.sender_profile?.avatar_url} />
+                      <AvatarFallback className="text-sm font-bold bg-secondary text-secondary-foreground">{message.sender_profile?.full_name?.charAt(0) || 'U'}</AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <div className="w-9 h-9 flex-shrink-0" />
+                  )}
+                  <div className={`flex flex-col ${isSender ? 'items-end' : 'items-start'} max-w-[85%] relative`}>
+                    <div className={`flex ${isSender ? 'flex-row-reverse' : 'flex-row'} items-center gap-1 group relative ${message.reactions && message.reactions.length > 0 ? 'mb-4' : ''}`}>
+                      {/* Swipe to reply indicator icon behind message */}
+                      {swipeMessageId === message.id && swipeOffset > 0 && (
+                        <div 
+                          className="absolute left-[-35px] top-1/2 -translate-y-1/2 transition-all flex items-center justify-center bg-muted dark:bg-zinc-800 text-muted-foreground rounded-full p-1.5 shadow-sm border border-border/30 animate-in fade-in zoom-in duration-100"
+                          style={{
+                            opacity: Math.min(swipeOffset / 55, 1),
+                            transform: `translateY(-50%) scale(${Math.min(0.5 + (swipeOffset / 110), 1)})`
+                          }}
+                        >
+                          <Reply className="h-3.5 w-3.5" />
+                        </div>
+                      )}
+                      <div 
+                        className="relative select-none transition-transform duration-200"
+                        style={{
+                          transform: swipeMessageId === message.id ? `translateX(${swipeOffset}px)` : undefined
+                        }}
+                        onClick={(e) => {
+                          if (selectedMessageIds.length > 0) {
+                            e.stopPropagation();
+                            setSelectedMessageIds(prev => 
+                              prev.includes(message.id) ? prev.filter(id => id !== message.id) : [...prev, message.id]
+                            );
+                          }
+                        }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          if (!message.is_deleted) {
+                            handleToggleReaction(message.id, '❤️');
+                          }
+                        }}
+                        onTouchStart={handleTouchStart(message)}
+                        onTouchMove={handleTouchMove(message.id)}
+                        onTouchEnd={handleTouchEnd(message)}
+                      >
+                        <div className={cn(
+                          "relative transition-all duration-300",
+                          selectedMessageIds.includes(message.id) ? "ring-2 ring-primary ring-offset-1 ring-offset-background scale-[0.98]" : "",
+                          message.is_deleted ? "bg-muted/50 border border-dashed border-border/50 p-3 rounded-[22px] italic text-muted-foreground" :
+                          (message.content.startsWith('POST_SHARE::') || message.content.startsWith('MARKETPLACE_SHARE::') || message.content.startsWith('ANNOUNCEMENT_SHARE::') || message.content.startsWith('VENDOR_SHARE::') || message.content.includes('JOB_SHARE::') || message.content.startsWith('PROJECT_SHARE::') || message.content.startsWith('DISCUSSION_SHARE::') || message.content.startsWith('ROOM_SHARE::') || message.content.startsWith('COMPANY_SHARE::') || message.content.startsWith('PROFILE_SHARE::') || message.content.startsWith('PITCH_SHARE::') || message.content.startsWith('CONTENT_SHARE::')) ? "p-0 bg-transparent overflow-hidden rounded-2xl border border-border/10" :
+                          (message.attachment_url && isDefaultMediaContent(message.content)) ? "p-0 bg-transparent rounded-xl shadow-xl" :
+                          isSender ? "bg-gradient-to-br from-chat-outgoing-bg-start to-chat-outgoing-bg-end text-chat-outgoing-text font-medium rounded-[22px] rounded-tr-[4px] px-4 py-2.5 shadow-sm hover:shadow-md" : 
+                          "bg-chat-incoming-bg border border-chat-incoming-border text-chat-incoming-text dark:bg-muted dark:border-transparent dark:text-foreground font-medium rounded-[22px] rounded-tl-[4px] px-4 py-2.5 shadow-sm hover:shadow-md"
+                        )}>
+
+                        {(() => {
+                          const targetReply = message.replied_to_message || (message.reply_to_id ? messages.find(m => m.id === message.reply_to_id) : null);
+                          if (!targetReply || message.is_deleted) return null;
+                          const repThumb = getReplyThumbnail(targetReply);
+                          const rawText = targetReply.is_deleted ? 'This message was deleted' : getMessagePreviewText(targetReply.content);
+                          const snippet = targetReply.is_deleted ? rawText : getReplySnippet(targetReply, rawText);
+                          const author = targetReply.sender_profile?.full_name || 'User';
+
+                          return (
+                            <div 
+                              onClick={() => scrollToMessage(targetReply.id)}
+                              className={`mb-2 p-2 rounded-xl text-[11px] border-l-4 cursor-pointer hover:opacity-85 active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 ${isSender ? 'bg-black/15 border-l-white text-white/90' : 'bg-black/5 dark:bg-white/5 border-l-primary text-foreground/90'}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className={`font-semibold text-[10px] mb-0.5 truncate ${isSender ? 'text-white font-bold' : getUserColor(author)}`}>
+                                  {author}
+                                </div>
+                                <div className={`opacity-80 line-clamp-1 truncate ${isSender ? 'text-white/80' : 'text-muted-foreground'}`}>
+                                  {snippet}
+                                </div>
+                              </div>
+                              {repThumb && (
+                                <img loading="lazy" decoding="async"
+                                  src={repThumb}
+                                  alt="thumbnail"
+                                  className="w-9 h-9 rounded-md object-cover shrink-0 border border-black/10 dark:border-white/10"
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Forwarded Tag */}
+                        {!message.is_deleted && message.content && message.content.startsWith('FORWARDED::') && (
+                          <div className="flex items-center gap-1 text-[10px] italic opacity-75 mb-1 font-medium select-none">
+                            <Reply className="h-3 w-3 scale-x-[-1] inline shrink-0" />
+                            <span>Forwarded</span>
+                          </div>
+                        )}
+
+                        {message.is_deleted ? (
+                          <p className="text-xs italic text-muted-foreground flex items-center gap-1">
+                            <ShieldBan className="h-3.5 w-3.5" /> This message was deleted
+                          </p>
+                        ) : (
+                          <>
+                            {message.attachment_url && (
+                              <div className="mb-1">
+                                <MediaAttachment
+                                  url={message.attachment_url}
+                                  type={message.attachment_type}
+                                  onSelectMedia={(clickedUrl, idx, allUrls) => {
+                                    setLightboxState({
+                                      open: true,
+                                      images: allUrls && allUrls.length > 0 ? allUrls : [clickedUrl],
+                                      initialIndex: idx || 0,
+                                      senderName: isSender ? 'You' : (message.sender_profile?.full_name || 'User'),
+                                    });
+                                  }}
+                                />
+                              </div>
+                            )}
+                            {message.content && 
+                             !isDefaultMediaContent(message.content) && (() => {
+                              const cleanContent = message.content.replace('FORWARDED::', '');
+                              return cleanContent.startsWith('POST_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('POST_SHARE::', ''));
+                                    return <PostShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('PROFILE_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('PROFILE_SHARE::', ''));
+                                    return <ProfileShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('PITCH_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('PITCH_SHARE::', ''));
+                                    return <PitchShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('COMPANY_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('COMPANY_SHARE::', ''));
+                                    return <CompanyShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('MARKETPLACE_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('MARKETPLACE_SHARE::', ''));
+                                    return <MarketplaceShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('ANNOUNCEMENT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('ANNOUNCEMENT_SHARE::', ''));
+                                    return <AnnouncementShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('VENDOR_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('VENDOR_SHARE::', ''));
+                                    return <VendorShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('PROJECT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('PROJECT_SHARE::', ''));
+                                    return <ProjectShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.startsWith('CONTENT_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const shareData = JSON.parse(cleanContent.replace('CONTENT_SHARE::', ''));
+                                    return <ContentShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : (cleanContent.startsWith('DISCUSSION_SHARE::') || cleanContent.startsWith('ROOM_SHARE::')) ? (
+                                (() => {
+                                  try {
+                                    const prefix = cleanContent.startsWith('DISCUSSION_SHARE::') ? 'DISCUSSION_SHARE::' : 'ROOM_SHARE::';
+                                    const shareData = JSON.parse(cleanContent.replace(prefix, ''));
+                                    return <DiscussionShareCard {...shareData} />;
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : cleanContent.includes('JOB_SHARE::') ? (
+                                (() => {
+                                  try {
+                                    const parts = cleanContent.split('JOB_SHARE::');
+                                    const caption = parts[0].trim();
+                                    const jsonStr = parts[parts.length - 1].trim();
+                                    const shareData = JSON.parse(jsonStr);
+                                    return (
+                                      <div className="space-y-2">
+                                        {caption && <p className="text-[13px] sm:text-sm px-3 pt-2">{caption}</p>}
+                                        <JobShareCard {...shareData} />
+                                      </div>
+                                    );
+                                  } catch (e) {
+                                    return <p className="text-[13px] sm:text-sm break-words px-3 pt-2">{cleanContent}</p>;
+                                  }
+                                })()
+                              ) : (
+                                <span className="text-[13px] sm:text-sm break-words">{cleanContent}</span>
+                              );
+                            })()}
+
+                              {/* WhatsApp style inline timestamp & status ticks / dropdown chevron overlay */}
+                              <span className={cn(
+                                "inline-flex items-center gap-1 float-right text-[10px] ml-2.5 mt-1.5 align-baseline select-none shrink-0 leading-none text-chat-text-muted/80 dark:text-muted-foreground/80"
+                              )}>
+                                {starredMessageIds.has(message.id) && (
+                                  <Star className="h-3 w-3 fill-amber-400 text-amber-400 inline shrink-0 mr-0.5" />
+                                )}
+                                <span>{formatMessageTime(message.created_at)}</span>
+
+                                {!message.is_deleted ? (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button 
+                                        className="p-0 text-current rounded focus:outline-none inline-flex items-center justify-center shrink-0 min-w-[14px] min-h-[14px] relative pointer-events-none sm:pointer-events-auto"
+                                        title="Options"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {/* Ticks (Visible when NOT hovering & menu CLOSED) */}
+                                        {isSender && (
+                                          <span className="inline-flex items-center sm:group-hover:hidden sm:data-[state=open]:hidden">
+                                            {(message.is_read || message.read_at) ? (
+                                              <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold stroke-[2.5]" />
+                                            ) : (
+                                              <CheckCheck className="h-3.5 w-3.5 opacity-70 stroke-[2]" />
+                                            )}
+                                          </span>
+                                        )}
+
+                                        {/* Chevron Down (Visible when HOVERING OR menu OPEN) */}
+                                        <span className="hidden sm:group-hover:inline-flex sm:data-[state=open]:inline-flex items-center justify-center">
+                                          <ChevronDown className="h-3.5 w-3.5" />
+                                        </span>
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align={isSender ? 'end' : 'start'} className="w-36 z-[60]">
+                                      {isSender && (
+                                        <DropdownMenuItem 
+                                          onClick={() => {
+                                            setInfoMessage(message);
+                                            setShowInfoDialog(true);
+                                          }}
+                                          className="flex items-center justify-between cursor-pointer"
+                                        >
+                                          <div className="flex items-center">
+                                            <Info className="h-4 w-4 mr-2 text-primary" />
+                                            <span>Info</span>
+                                          </div>
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => setReplyingTo(message)}>
+                                        <Reply className="h-4 w-4 mr-2" /> Reply
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        navigator.clipboard.writeText(message.content);
+                                        toast({ title: "Copied to clipboard" });
+                                      }}>
+                                        <Copy className="h-4 w-4 mr-2" /> Copy
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => {
+                                        setSelectedMessageIds([message.id]);
+                                        setShowForwardDialog(true);
+                                      }}>
+                                        <Share2 className="h-4 w-4 mr-2" /> Forward
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => setSelectedMessageIds(prev => prev.includes(message.id) ? prev : [...prev, message.id])}>
+                                        <Check className="h-4 w-4 mr-2" /> Select
+                                      </DropdownMenuItem>
+                                      {isSender && (
+                                        <DropdownMenuItem onClick={() => handleUndoMessage(message.id)} className="text-destructive">
+                                          <Trash2 className="h-4 w-4 mr-2" /> Undo
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuItem onClick={() => handleHideMessage(message.id)} className="text-destructive">
+                                          <ShieldAlert className="h-4 w-4 mr-2" /> Delete for Me
+                                      </DropdownMenuItem>
+                                      {!isSender && (
+                                        <DropdownMenuItem onClick={() => setReportingMessage({ id: message.id, content: message.content })} className="text-destructive focus:bg-red-500/10">
+                                          <Flag className="h-4 w-4 mr-2" /> Report Message
+                                        </DropdownMenuItem>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                ) : (
+                                  isSender && (
+                                    <span className="inline-flex items-center">
+                                      {(message.is_read || message.read_at) ? (
+                                        <CheckCheck className="h-3.5 w-3.5 text-sky-400 font-bold stroke-[2.5]" />
+                                      ) : (
+                                        <CheckCheck className="h-3.5 w-3.5 opacity-70 stroke-[2]" />
+                                      )}
+                                    </span>
+                                  )
+                                )}
+                              </span>
+                          </>
+                        )}
+                        
+                        {/* Reactions Pill attached cleanly to bottom corner of bubble */}
+                        {message.reactions && message.reactions.length > 0 && (
+                          <div className={cn(
+                            "absolute -bottom-2.5 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-background/95 backdrop-blur-md border border-border/80 shadow-md",
+                            isSender ? "right-2" : "left-2"
+                          )}>
+                            {Array.from(new Set(message.reactions.map(r => r.emoji))).map(emoji => {
+                              const count = message.reactions!.filter(r => r.emoji === emoji).length;
+                              const hasReacted = message.reactions!.some(r => r.emoji === emoji && r.user_id === user?.id);
+                              return (
+                                <button 
+                                  key={emoji} 
+                                  onClick={() => handleToggleReaction(message.id, emoji)}
+                                  className={cn(
+                                    "flex items-center gap-0.5 p-0.5 rounded-full leading-none transition-transform active:scale-95",
+                                    hasReacted && "text-primary font-bold"
+                                  )}
+                                >
+                                  <span className="text-sm leading-none">{emoji}</span>
+                                  {count > 1 && <span className="text-[10px] font-extrabold pr-0.5">{count}</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* WhatsApp Hover Reaction (Smile Button beside message bubble) */}
+                      {!message.is_deleted && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveMobileReactionMessageId(activeMobileReactionMessageId === message.id ? null : message.id);
+                          }}
+                          className={cn(
+                            "opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full hover:bg-muted text-muted-foreground/70 hover:text-foreground self-center shrink-0 z-20",
+                            isSender ? "mr-3" : "ml-3",
+                            activeMobileReactionMessageId === message.id && "opacity-100"
+                          )}
+                          title="React"
+                        >
+                          <Smile className="h-4 w-4" />
+                        </button>
+                      )}
+
+                      {/* Mobile floating reactions picker (WhatsApp & Instagram style) */}
+                      {activeMobileReactionMessageId === message.id && (
+                        <div 
+                          className={cn(
+                            "absolute -top-12 z-50 flex items-center gap-1 p-1.5 rounded-full border border-border/50 shadow-xl bg-background/95 backdrop-blur-xl animate-in zoom-in-95 duration-100",
+                            isSender ? "right-0" : "left-0"
+                          )}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          {QUICK_REACTIONS.map(emoji => (
+                            <button 
+                              key={emoji} 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleReaction(message.id, emoji);
+                                setActiveMobileReactionMessageId(null);
+                              }} 
+                              className="hover:scale-125 transition-transform text-lg p-1.5 leading-none"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </Fragment>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+            <div className="flex flex-col relative bg-background z-20 shadow-[0_-5px_15px_-5px_rgba(0,0,0,0.1)]">
+            {replyingTo && (() => {
+              const repThumb = getReplyThumbnail(replyingTo);
+              const rawText = getMessagePreviewText(replyingTo.content);
+              const snippet = getReplySnippet(replyingTo, rawText);
+              return (
+                <div className="bg-muted/30 px-4 py-2 flex items-center justify-between border-b border-border text-xs animate-in fade-in slide-in-from-bottom-2 duration-200 gap-2">
+                  <div className="flex-1 overflow-hidden pr-2 min-w-0">
+                    <div className={`font-semibold mb-0.5 truncate ${getUserColor(replyingTo.sender_id)}`}>
+                      Replying to {replyingTo.sender_profile?.full_name || 'User'}
+                    </div>
+                    <div className="text-muted-foreground truncate">
+                      {snippet}
+                    </div>
+                  </div>
+                  {repThumb && (
+                    <img loading="lazy" decoding="async"
+                      src={repThumb}
+                      alt="thumbnail"
+                      className="w-8 h-8 rounded-md object-cover shrink-0 border border-border"
+                    />
+                  )}
+                  <button 
+                    onClick={() => setReplyingTo(null)}
+                    className="p-1.5 rounded-full hover:bg-muted text-muted-foreground transition-colors shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })()}
+            
+            {selectedFiles.length > 0 && (
+              <div className="p-3 bg-muted/20 border-b border-border flex gap-3 overflow-x-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-300">
+                {selectedFiles.map((item, idx) => (
+                  <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-white/10 shadow-xl bg-black shrink-0 group">
+                    {item.type === 'image' ? (
+                      <CachedImage src={item.preview} fallbackSrc={item.preview} alt="Preview" className="w-full h-full object-cover" />
+                    ) : item.type === 'video' ? (
+                      <CachedVideo src={item.preview} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <FileText className="h-8 w-8 text-primary" />
+                      </div>
+                    )}
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                      className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white hover:bg-black transition-colors z-10"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                      <span className="text-[9px] font-black text-white uppercase tracking-widest">{Math.round(item.file.size / 1024)}KB</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <TypingIndicator typingUsers={typingUsers} />
+            <form onSubmit={handleSendMessage} className="flex items-center gap-1 sm:gap-2 p-1.5 sm:p-2 bg-background border-t border-border/40">
+              <input 
+                type="file" 
+                multiple
+                ref={fileInputRef} 
+                onChange={handleFileSelect} 
+                className="hidden" 
+                accept="image/*,video/*"
+              />
+              
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded-full text-muted-foreground h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                title="Attach media"
+                disabled={uploading}
+              >
+                <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
+              </Button>
+
+              {/* WhatsApp-style toggle: keyboard icon when emoji open, emoji icon otherwise */}
+              {showEmojiPicker ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={openKeyboard}
+                  className="rounded-full text-primary bg-primary/10 h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                  title="Open keyboard"
+                  disabled={uploading}
+                >
+                  <Keyboard className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEmojiPanel(e);
+                  }}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  className="rounded-full text-muted-foreground emoji-toggle-button h-8 w-8 sm:h-10 sm:w-10 p-0 shrink-0"
+                  title="Open emoji picker"
+                  disabled={uploading}
+                >
+                  <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
+                </Button>
+              )}
+              <Input
+                ref={inputRef}
+                value={newMessage}
+                onChange={(e) => {
+                  setNewMessage(e.target.value);
+                  startTyping();
+                }}
+                onBlur={() => stopTyping()}
+                onFocus={() => {
+                  if (showEmojiPicker) {
+                    setTimeout(() => setShowEmojiPicker(false), 200);
+                  }
+                }}
+                placeholder="Message..."
+                className="flex-1 rounded-full bg-muted/50 border-none focus-visible:ring-1 focus-visible:ring-primary/20 h-8 sm:h-10 text-[13px] sm:text-sm px-3 sm:px-4"
+                autoComplete="off"
+              />
+              <Button 
+                type="submit" 
+                size="icon" 
+                className="rounded-full h-8 w-8 sm:h-10 sm:w-10 shrink-0 p-0" 
+                disabled={(!newMessage.trim() && selectedFiles.length === 0) || uploading}
+              >
+                {uploading ? (
+                  <div className="h-4 w-4 sm:h-5 sm:w-5 border-2 border-background border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 sm:h-5 sm:w-5 ml-0.5" />
+                )}
+              </Button>
+            </form>
+          </div>
+
+          <div
+            ref={emojiPickerRef}
+            className={cn(
+              "w-full bg-background border-t border-border overflow-hidden h-[300px] transition-all duration-300",
+              showEmojiPicker ? "block animate-in slide-in-from-bottom" : "hidden"
+            )}
+          >
+            <EmojiPicker 
+              onEmojiClick={onEmojiClick}
+              autoFocusSearch={false}
+              theme={EmojiTheme.DARK}
+              emojiStyle={EmojiStyle.APPLE}
+              width="100%"
+              height={Math.max(300, keyboardHeight || 350)}
+              lazyLoadEmojis={true}
+              previewConfig={{ showPreview: false }}
+              searchDisabled={false}
+              skinTonesDisabled={true}
+            />
+          </div>
+        </>
+      )}
+      {/* Lightbox Dialog */}
+      <ImageLightboxModal
+        open={lightboxState.open}
+        onOpenChange={(open) => setLightboxState(prev => ({ ...prev, open }))}
+        images={lightboxState.images}
+        initialIndex={lightboxState.initialIndex}
+        senderName={lightboxState.senderName}
+      />
+      {reportingMessage && (
+        <MessageReportDialog
+          isOpen={!!reportingMessage}
+          onOpenChange={(open) => !open && setReportingMessage(null)}
+          targetType="dm"
+          messageId={reportingMessage.id}
+          channelId={roomId}
+          decryptedContent={reportingMessage.content}
+        />
+      )}
+
+      {/* Message Info Dialog */}
+      <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
+        <DialogContent className="max-w-[92vw] sm:max-w-md rounded-2xl p-4 sm:p-6 bg-card border border-border/80 shadow-2xl">
+          <DialogHeader className="text-left pb-1">
+            <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Message Info
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Sent time and delivery status details
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            {infoMessage && (() => {
+              const isRead = infoMessage.is_read || !!infoMessage.read_at;
+              const readTime = infoMessage.read_at ? new Date(infoMessage.read_at) : null;
+              const sentTime = infoMessage.created_at ? new Date(infoMessage.created_at) : null;
+              const displayReadTime = readTime ? format(readTime, 'p (MMM d)') : sentTime ? format(sentTime, 'p (MMM d)') : 'N/A';
+              
+              return (
+                <div className="space-y-2.5">
+                  {/* Sent Time Card */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                        <Check className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold leading-tight">Sent Time</p>
+                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Dispatched to server</p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-mono font-medium text-foreground shrink-0 ml-2">
+                      {sentTime ? format(sentTime, 'p (MMM d)') : 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* Recipient Read / Delivered Card */}
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/40">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarImage src={partnerAvatarUrl} />
+                        <AvatarFallback className="text-xs bg-secondary text-secondary-foreground font-bold">
+                          {partnerName?.charAt(0) || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold leading-tight truncate">{partnerName}</p>
+                        <p className={cn("text-[10px] leading-tight font-semibold mt-0.5 flex items-center gap-1", isRead ? "text-primary" : "text-muted-foreground")}>
+                          {isRead ? <CheckCheck className="h-3 w-3 inline text-primary" /> : <Check className="h-3 w-3 inline text-muted-foreground" />}
+                          {isRead ? "Seen / Read" : "Delivered"}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] sm:text-xs font-mono font-medium text-primary shrink-0 ml-2">
+                      {displayReadTime}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Forward Message Dialog */}
+      <ForwardMessageDialog
+        isOpen={showForwardDialog}
+        onOpenChange={setShowForwardDialog}
+        messagesToForward={messages.filter(m => selectedMessageIds.includes(m.id))}
+        currentUserId={user?.id}
+        onForwardSuccess={() => {
+          fetchMessages();
+          setSelectedMessageIds([]);
+          setSelectedMessage(null);
+        }}
+      />
+
+      {/* Starred Messages Dialog */}
+      <StarredMessagesDialog
+        isOpen={showStarredDialog}
+        onOpenChange={setShowStarredDialog}
+        starredMessages={messages.filter(m => starredMessageIds.has(m.id))}
+        onJumpToMessage={(msgId) => scrollToMessage(msgId)}
+        onUnstarMessage={(msgId) => handleToggleStarMessages([msgId])}
+      />
+      {/* Call Details Dialog */}
+      <CallDetailsDialog
+        isOpen={!!selectedCallMessage}
+        onClose={() => setSelectedCallMessage(null)}
+        message={selectedCallMessage}
+        roomType="direct"
+        roomId={roomId || ''}
+      />
+    </div>
+  );
+};
+
+export default EnhancedRealTimeChat;
+

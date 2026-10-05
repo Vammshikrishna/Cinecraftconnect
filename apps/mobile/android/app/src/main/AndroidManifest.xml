@@ -1,0 +1,102 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Keeps microphone capture alive while a call is running in the background (Android 14+). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Screen sharing in calls (MediaProjection). The WebRTC library declares the service itself. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <!-- Android 11+ package visibility: lets the app resolve and launch the system camera for "Take photo". -->
+    <queries>
+      <intent>
+        <action android:name="android.media.action.IMAGE_CAPTURE" />
+      </intent>
+    </queries>
+
+    <application
+      android:name=".MainApplication"
+      android:label="@string/app_name"
+      android:icon="@mipmap/ic_launcher"
+      android:roundIcon="@mipmap/ic_launcher_round"
+      android:allowBackup="false"
+      android:fullBackupContent="false"
+      android:hasFragileUserData="false"
+      tools:replace="android:allowBackup,android:fullBackupContent"
+      android:theme="@style/AppTheme"
+      android:usesCleartextTraffic="false"
+      android:networkSecurityConfig="@xml/network_security_config"
+      android:largeHeap="true"
+      android:hardwareAccelerated="true"
+      android:supportsRtl="true">
+      
+      <activity
+        android:name=".MainActivity"
+        android:label="@string/app_name"
+        android:supportsPictureInPicture="true"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+        android:launchMode="singleTask"
+        android:windowSoftInputMode="adjustResize"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+        
+        <!-- Scheme deep links -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="cinecraftconnect" />
+        </intent-filter>
+
+        <!-- App Links -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="cinecraftconnect.com" />
+        </intent-filter>
+      </activity>
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_channel_id"
+        android:value="fcm_fallback_notification_channel"
+        tools:replace="android:value" />
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_icon"
+        android:resource="@mipmap/ic_launcher"
+        tools:replace="android:resource" />
+
+      <receiver
+        android:name=".NotificationActionReceiver"
+        android:exported="false">
+        <intent-filter>
+            <action android:name="com.cinecraftconnect.app.ACTION_REPLY" />
+            <action android:name="com.cinecraftconnect.app.ACTION_MARK_AS_READ" />
+            <action android:name="com.cinecraftconnect.app.ACTION_DISMISSED" />
+        </intent-filter>
+      </receiver>
+
+      <service
+        android:name=".CallForegroundService"
+        android:exported="false"
+        android:foregroundServiceType="microphone|mediaPlayback" />
+
+      <service
+        android:name=".NotificationActionHeadlessService"
+        android:exported="false" />
+    </application>
+</manifest>
