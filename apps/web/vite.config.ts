@@ -47,6 +47,10 @@ export default defineConfig(({ mode }) => ({
       "@cinecraft/ui": path.resolve(__dirname, "../../packages/ui/src"),
     },
   },
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+  },
   build: {
     rollupOptions: {
       output: {
